@@ -18,13 +18,13 @@ function requireEnv(name: string): string {
 
 export function signAccessToken(payload: AccessTokenPayload): string {
   return jwt.sign(payload, requireEnv("JWT_ACCESS_SECRET"), {
-    expiresIn: process.env.JWT_ACCESS_EXPIRY ?? "30m",
+    expiresIn: (process.env.JWT_ACCESS_EXPIRY ?? "30m") as jwt.SignOptions["expiresIn"],
   });
 }
 
 export function signRefreshToken(payload: RefreshTokenPayload): string {
   return jwt.sign(payload, requireEnv("JWT_REFRESH_SECRET"), {
-    expiresIn: process.env.JWT_REFRESH_EXPIRY ?? "7d",
+    expiresIn: (process.env.JWT_REFRESH_EXPIRY ?? "7d") as jwt.SignOptions["expiresIn"],
   });
 }
 
