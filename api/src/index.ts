@@ -10,6 +10,9 @@ import tripsRoutes from "./routes/trips";
 import metaRoutes from "./routes/meta";
 import consigneesRoutes from "./routes/consignees";
 import incentivesRoutes from "./routes/incentives";
+import trucksRoutes from "./routes/trucks";
+import ratesRoutes from "./routes/rates";
+import reportsRoutes from "./routes/reports";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -43,6 +46,9 @@ app.use("/api/v1/trips", tripsRoutes);
 app.use("/api/v1", metaRoutes); // /departments, /route-types
 app.use("/api/v1/consignees", consigneesRoutes);
 app.use("/api/v1/incentives", incentivesRoutes);
+app.use("/api/v1/trucks", trucksRoutes);
+app.use("/api/v1/rates", ratesRoutes);
+app.use("/api/v1/reports", reportsRoutes);
 
 app.use(errorHandler);
 
