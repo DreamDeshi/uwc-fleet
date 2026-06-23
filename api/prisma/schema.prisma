@@ -1,0 +1,293 @@
+// UWC Trucking Management System — Prisma schema
+// 16 tables per Development Brief Section 5.
+// Money fields are always Decimal, never Float.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ────────────────────────────────────────────────────────────
+
+enum Role {
+  admin
+  driver
+  requestor
+}
+
+enum UserStatus {
+  pending_approval
+  active
+  disabled
+}
+
+enum TripStatus {
+  pending
+  approved
+  rejected
+  assigned
+  in_progress
+  completed
+  cancelled
+}
+
+enum StopStatus {
+  pending
+  arrived
+  delivered
+}
+
+enum DocumentType {
+  do_photo
+  k2_form
+  other
+}
+
+// ── 1. User ──────────────────────────────────────────────────────────
+
+model User {
+  id                  String     @id @default(cuid())
+  phone               String     @unique // login ID
+  password_hash       String
+  refresh_token_hash  String? // current rotated refresh token, hashed
+  name                String
+  employee_number     String?
+  role                Role
+  status              UserStatus @default(pending_approval)
+  language_pref       String     @default("en") // en | ms | zh
+  department_id       String?
+  department          Department? @relation(fields: [department_id], references: [id])
+  assigned_truck_plate String?    @unique // drivers only — 1 driver : 1 truck
+  assigned_truck      Truck?      @relation(fields: [assigned_truck_plate], references: [plate])
+  created_at          DateTime   @default(now())
+
+  trips_requested  Trip[]          @relation("RequestorTrips")
+  trips_driven     Trip[]          @relation("DriverTrips")
+  location_logs    LocationLog[]
+  audit_logs       AuditLog[]
+  fuel_logs        FuelLog[]
+  consignees_added Consignee[]     @relation("ConsigneeCreatedBy")
+}
+
+// ── 2. Department ────────────────────────────────────────────────────
+
+model Department {
+  id    String @id @default(cuid())
+  name  String @unique
+  users User[]
+}
+
+// ── 3. Truck ─────────────────────────────────────────────────────────
+
+model Truck {
+  plate                  String    @id
+  type                   String // e.g. "10t-30ft"
+  max_pallets            Int
+  entitled_claim_weekday Decimal   @db.Decimal(10, 2)
+  entitled_claim_offpeak Decimal   @db.Decimal(10, 2)
+  daily_deduction_points Int
+  priority_zones         String[]
+  operating_hours_start  String    @default("07:00")
+  operating_hours_end    String    @default("18:00")
+  insurance_expiry       DateTime?
+  permit_expiry          DateTime?
+  road_tax_expiry        DateTime?
+  is_available           Boolean   @default(true)
+
+  driver       User?
+  trips        Trip[]
+  maintenance  VehicleMaintenance[]
+  fuel_logs    FuelLog[]
+}
+
+// ── 4. Zone ──────────────────────────────────────────────────────────
+
+model Zone {
+  code String @id // P1, P2, P3, K1, K2, A1, A2
+  name String
+
+  // Implicit many-to-many self-relation for adjacency (e.g. P2 <-> K1).
+  // Prisma creates the join table automatically — not a 17th model.
+  adjacentTo Zone[] @relation("ZoneAdjacency")
+  adjacentFrom Zone[] @relation("ZoneAdjacency")
+
+  consignees         Consignee[]
+  destination_rates  DestinationRate[]
+}
+
+// ── 5. RouteType ─────────────────────────────────────────────────────
+
+model RouteType {
+  id   String @id @default(cuid())
+  name String @unique // Customer Delivery, Supplier Delivery, Inter-Plant Delivery,
+                       // Customer Return, Supplier Return, Inter-Plant Return
+  trips Trip[]
+}
+
+// ── 6. DestinationRate ───────────────────────────────────────────────
+
+model DestinationRate {
+  id            String  @id @default(cuid())
+  zone_code     String?
+  zone          Zone?   @relation(fields: [zone_code], references: [code])
+  location_name String // e.g. "Ipoh", "Kuala Lumpur"
+  points        Int // first-trip-of-day points for this destination
+}
+
+// ── 7. Trip ──────────────────────────────────────────────────────────
+
+model Trip {
+  id               String     @id @default(cuid())
+  ticket_number    String     @unique // TKT-YYYYMMDD-NNN
+  requestor_id     String
+  requestor        User       @relation("RequestorTrips", fields: [requestor_id], references: [id])
+  driver_id        String?
+  driver           User?      @relation("DriverTrips", fields: [driver_id], references: [id])
+  truck_plate      String?
+  truck            Truck?     @relation(fields: [truck_plate], references: [plate])
+  route_type_id    String
+  route_type       RouteType  @relation(fields: [route_type_id], references: [id])
+  status           TripStatus @default(pending)
+  pickup_datetime  DateTime
+  incentive_earned Decimal?   @db.Decimal(10, 2)
+  is_external      Boolean    @default(false)
+  created_at       DateTime   @default(now())
+
+  stops               TripStop[]
+  cargo_details       CargoDetail[]
+  documents           TripDocument[]
+  location_logs       LocationLog[]
+  external_forwarder  ExternalForwarder?
+}
+
+// ── 8. TripStop ──────────────────────────────────────────────────────
+
+model TripStop {
+  id           String     @id @default(cuid())
+  trip_id      String
+  trip         Trip       @relation(fields: [trip_id], references: [id])
+  sequence     Int
+  consignee_id String
+  consignee    Consignee  @relation(fields: [consignee_id], references: [id])
+  status       StopStatus @default(pending)
+  arrived_at   DateTime?
+  delivered_at DateTime?
+  pod_photo    String? // Cloudinary URL
+  do_uploaded  Boolean    @default(false)
+  k2_form_ack  Boolean    @default(false) // required only when destination zone is K2
+}
+
+// ── 9. Consignee ─────────────────────────────────────────────────────
+
+model Consignee {
+  id              String   @id @default(cuid())
+  company_name    String
+  vendor_code     String?
+  contact_person  String?
+  phone           String?
+  address_1       String?
+  address_2       String?
+  area            String?
+  state           String?
+  postal_code     String?
+  zone_code       String
+  zone            Zone     @relation(fields: [zone_code], references: [code])
+  is_active       Boolean  @default(true)
+  created_by      String? // requestor can self-add
+  created_by_user User?    @relation("ConsigneeCreatedBy", fields: [created_by], references: [id])
+
+  stops TripStop[]
+}
+
+// ── 10. CargoDetail ──────────────────────────────────────────────────
+
+model CargoDetail {
+  id              String  @id @default(cuid())
+  trip_id         String
+  trip            Trip    @relation(fields: [trip_id], references: [id])
+  pallet_type     String // e.g. "4x4"
+  quantity        Int
+  cartons         Int?
+  custom_size     String?
+  remark          String?
+}
+
+// ── 11. TripDocument ─────────────────────────────────────────────────
+
+model TripDocument {
+  id          String       @id @default(cuid())
+  trip_id     String
+  trip        Trip         @relation(fields: [trip_id], references: [id])
+  type        DocumentType
+  file_url    String
+  uploaded_at DateTime     @default(now())
+}
+
+// ── 12. LocationLog ───────────────────────────────────────────────────
+
+model LocationLog {
+  id          String   @id @default(cuid())
+  trip_id     String
+  trip        Trip     @relation(fields: [trip_id], references: [id])
+  driver_id   String
+  driver      User     @relation(fields: [driver_id], references: [id])
+  latitude    Decimal  @db.Decimal(10, 7)
+  longitude   Decimal  @db.Decimal(10, 7)
+  recorded_at DateTime @default(now())
+  // GPS source abstracted — phone GPS now, vendor API later.
+  // Swap source in POST /locations endpoint only, no schema change needed.
+}
+
+// ── 13. AuditLog ──────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id])
+  action     String
+  table_name String
+  record_id  String
+  timestamp  DateTime @default(now())
+}
+
+// ── 14. VehicleMaintenance ───────────────────────────────────────────
+
+model VehicleMaintenance {
+  id            String    @id @default(cuid())
+  truck_plate   String
+  truck         Truck     @relation(fields: [truck_plate], references: [plate])
+  description   String
+  service_date  DateTime
+  cost          Decimal   @db.Decimal(10, 2)
+  next_due_date DateTime?
+}
+
+// ── 15. ExternalForwarder ────────────────────────────────────────────
+
+model ExternalForwarder {
+  id           String   @id @default(cuid())
+  trip_id      String   @unique
+  trip         Trip     @relation(fields: [trip_id], references: [id])
+  company_name String
+  booking_date DateTime
+  rate         Decimal  @db.Decimal(10, 2)
+  cargo_size   String
+}
+
+// ── 16. FuelLog ───────────────────────────────────────────────────────
+
+model FuelLog {
+  id          String   @id @default(cuid())
+  truck_plate String
+  truck       Truck    @relation(fields: [truck_plate], references: [plate])
+  driver_id   String
+  driver      User     @relation(fields: [driver_id], references: [id])
+  liters      Decimal  @db.Decimal(10, 2)
+  cost        Decimal  @db.Decimal(10, 2)
+  odometer    Int?
+  logged_at   DateTime @default(now())
+}

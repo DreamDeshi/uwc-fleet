@@ -1,0 +1,16 @@
+{
+  "name": "uwc-fleet",
+  "version": "1.0.0",
+  "private": true,
+  "description": "UWC Trucking Management System — monorepo",
+  "workspaces": [
+    "api",
+    "mobile",
+    "admin"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace=api",
+    "seed": "npm run seed --workspace=api"
+  },
+  "license": "ISC"
+}

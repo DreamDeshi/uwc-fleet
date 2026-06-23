@@ -1,0 +1,7 @@
+{
+  "name": "uwc-fleet-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "UWC Trucking — React Native + Expo app (Driver & Requestor). Built in Phase 3.",
+  "scripts": {}
+}
