@@ -5,6 +5,7 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 import authRoutes from "./routes/auth";
 import usersRoutes from "./routes/users";
+import tripsRoutes from "./routes/trips";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -31,6 +32,7 @@ app.get("/api/v1/health", (_req, res) => {
 
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", usersRoutes);
+app.use("/api/v1/trips", tripsRoutes);
 
 app.use(errorHandler);
 
