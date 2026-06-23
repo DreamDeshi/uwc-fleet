@@ -208,6 +208,93 @@ router.patch(
   }
 );
 
+// ── PATCH /trips/:id/cancel — requestor (owner) or admin cancels a booking ──
+// Only while still pending/approved — once a driver is assigned or rolling,
+// cancellation must be coordinated by an admin (out of scope for the app).
+router.patch("/:id/cancel", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const trip = await prisma.trip.findUnique({ where: { id } });
+    if (!trip) {
+      throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+    }
+
+    const isOwner = req.user!.role === "requestor" && trip.requestor_id === req.user!.id;
+    const isAdmin = req.user!.role === "admin";
+    if (!isOwner && !isAdmin) {
+      throw new ApiError(403, "FORBIDDEN", "You cannot cancel this booking.");
+    }
+    if (trip.status !== "pending" && trip.status !== "approved") {
+      throw new ApiError(
+        400,
+        "INVALID_STATUS",
+        "Only bookings that have not been assigned yet can be cancelled."
+      );
+    }
+
+    const updated = await prisma.trip.update({
+      where: { id },
+      data: { status: "cancelled" },
+      include: tripInclude,
+    });
+    await prisma.auditLog.create({
+      data: { user_id: req.user!.id, action: "trip.cancelled", table_name: "Trip", record_id: id },
+    });
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── PATCH /trips/:id/stops/:stopId/docs — driver confirms a stop's documents ──
+// Photo upload is out of scope for this phase, so the driver confirms the DO
+// (and the K2 customs form for K2 destinations) with a checkbox. These flags
+// gate the "delivered" action below via isDocumentationComplete().
+const stopDocsSchema = z.object({
+  do_uploaded: z.boolean().optional(),
+  k2_form_ack: z.boolean().optional(),
+});
+
+router.patch(
+  "/:id/stops/:stopId/docs",
+  requireRole("driver"),
+  validateBody(stopDocsSchema),
+  async (req, res, next) => {
+    try {
+      const { id, stopId } = req.params;
+      const { do_uploaded, k2_form_ack } = req.body;
+
+      const trip = await prisma.trip.findUnique({ where: { id }, include: { stops: true } });
+      if (!trip) {
+        throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      }
+      if (trip.driver_id !== req.user!.id) {
+        throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+      }
+      const stop = trip.stops.find((s) => s.id === stopId);
+      if (!stop) {
+        throw new ApiError(400, "STOP_NOT_FOUND", "That stop is not part of this trip.");
+      }
+
+      await prisma.tripStop.update({
+        where: { id: stopId },
+        data: {
+          ...(do_uploaded !== undefined ? { do_uploaded } : {}),
+          ...(k2_form_ack !== undefined ? { k2_form_ack } : {}),
+        },
+      });
+      await prisma.auditLog.create({
+        data: { user_id: req.user!.id, action: "stop.docs_updated", table_name: "TripStop", record_id: stopId },
+      });
+
+      const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // ── PATCH /trips/:id/status — driver updates status (start/arrived/delivered) ──
 const statusUpdateSchema = z.object({
   action: z.enum(["start", "arrived", "delivered"]),

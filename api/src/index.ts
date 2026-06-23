@@ -5,7 +5,11 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 import authRoutes from "./routes/auth";
 import usersRoutes from "./routes/users";
+import meRoutes from "./routes/me";
 import tripsRoutes from "./routes/trips";
+import metaRoutes from "./routes/meta";
+import consigneesRoutes from "./routes/consignees";
+import incentivesRoutes from "./routes/incentives";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -31,8 +35,14 @@ app.get("/api/v1/health", (_req, res) => {
 });
 
 app.use("/api/v1/auth", authRoutes);
+// meRoutes is mounted first so GET /users/me resolves to the self-profile
+// handler (any authenticated user) before the admin-only users router.
+app.use("/api/v1/users", meRoutes);
 app.use("/api/v1/users", usersRoutes);
 app.use("/api/v1/trips", tripsRoutes);
+app.use("/api/v1", metaRoutes); // /departments, /route-types
+app.use("/api/v1/consignees", consigneesRoutes);
+app.use("/api/v1/incentives", incentivesRoutes);
 
 app.use(errorHandler);
 
