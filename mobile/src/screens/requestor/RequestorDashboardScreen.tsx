@@ -1,0 +1,248 @@
+import React, { useMemo } from "react";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTranslation } from "react-i18next";
+import { useNavigation } from "@react-navigation/native";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
+import { RequestorTabParamList } from "../../navigation/types";
+import { useAuth } from "../../context/AuthContext";
+import { useTrips } from "../../hooks/queries";
+import { colors, radius, shadow } from "../../theme";
+import { Card } from "../../components/Card";
+import { StatusBadge } from "../../components/StatusBadge";
+import { LoadingState, ErrorState } from "../../components/States";
+import { formatDate, formatTime } from "../../lib/format";
+import { tripDestination, ORIGIN_LABEL } from "../../lib/trip";
+import { initials } from "../../lib/format";
+import { Trip } from "../../types";
+
+type Nav = BottomTabNavigationProp<RequestorTabParamList>;
+
+export function RequestorDashboardScreen() {
+  const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation<Nav>();
+  const { user } = useAuth();
+  const { data: trips, isLoading, isError, refetch, isRefetching } = useTrips();
+
+  const { active, pending, recent, stats } = useMemo(() => {
+    const list = (trips ?? []).slice().sort(
+      (a, b) => +new Date(b.created_at) - +new Date(a.created_at)
+    );
+    const active = list.find((tr) => tr.status === "in_progress" || tr.status === "assigned");
+    const pending = list.find((tr) => tr.status === "pending" || tr.status === "approved");
+    const recent = list.slice(0, 4);
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthTrips = list.filter((tr) => new Date(tr.created_at) >= monthStart);
+    const stats = {
+      total: monthTrips.length,
+      completed: monthTrips.filter((tr) => tr.status === "completed").length,
+      pending: monthTrips.filter((tr) => tr.status === "pending" || tr.status === "approved").length,
+    };
+    return { active, pending, recent, stats };
+  }, [trips]);
+
+  const openDetail = (tripId: string) =>
+    navigation.navigate("BookingsTab", { screen: "BookingDetail", params: { tripId } });
+
+  if (isLoading) return <View style={styles.fill}><LoadingState /></View>;
+  if (isError) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
+
+  return (
+    <ScrollView
+      style={styles.fill}
+      contentContainerStyle={{ paddingBottom: 24 }}
+      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+    >
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.hi}>{t("requestor.greeting", { name: user?.name ?? "" })}</Text>
+            <Text style={styles.dept}>{user?.department?.name ?? ""}</Text>
+          </View>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{initials(user?.name ?? "")}</Text>
+          </View>
+        </View>
+
+        {/* Grab-style CTA */}
+        <TouchableOpacity style={styles.cta} activeOpacity={0.9} onPress={() => navigation.navigate("NewBooking")}>
+          <View style={styles.ctaIcon}>
+            <MaterialCommunityIcons name="truck" size={22} color={colors.blue} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.ctaTitle}>{t("requestor.whereTo")}</Text>
+            <Text style={styles.ctaSub}>{t("requestor.tapToBook")}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.blue} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={{ height: 28 }} />
+
+      {/* Active booking */}
+      {active ? (
+        <View style={styles.section}>
+          <TouchableOpacity activeOpacity={0.9} onPress={() => openDetail(active.id)}>
+            <View style={styles.activeCard}>
+              <View style={styles.activeTop}>
+                <Text style={styles.activeLabel}>{t("requestor.activeTrip")}</Text>
+                <StatusBadge status={active.status} small />
+              </View>
+              <Text style={styles.activeTicket}>{active.ticket_number}</Text>
+              <View style={styles.routeMini}>
+                <View style={[styles.miniDot, { backgroundColor: colors.white }]} />
+                <Text style={styles.miniPlace}>{ORIGIN_LABEL}</Text>
+                <Text style={styles.miniArrow}>→</Text>
+                <View style={[styles.miniDot, { backgroundColor: colors.yellow }]} />
+                <Text style={styles.miniPlace}>{tripDestination(active)}</Text>
+              </View>
+              {active.driver ? (
+                <View style={styles.driverRow}>
+                  <View style={styles.driverAvatar}>
+                    <Text style={styles.driverAvatarText}>{initials(active.driver.name)}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.driverName}>{active.driver.name}</Text>
+                    <Text style={styles.driverPlate}>{active.truck_plate}</Text>
+                  </View>
+                  <Text style={styles.track}>{t("requestor.track")} →</Text>
+                </View>
+              ) : null}
+            </View>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {/* Pending booking */}
+      {pending ? (
+        <View style={styles.section}>
+          <TouchableOpacity activeOpacity={0.9} onPress={() => openDetail(pending.id)}>
+            <View style={styles.pendingCard}>
+              <View style={styles.pendingStripe} />
+              <View style={{ flex: 1, padding: 14 }}>
+                <View style={styles.pendingHead}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons name="time-outline" size={16} color="#d97706" />
+                    <Text style={styles.pendingLabel}>{t("requestor.pendingApproval")}</Text>
+                  </View>
+                  <View style={styles.awaitPill}>
+                    <Text style={styles.awaitText}>{t("requestor.awaiting")}</Text>
+                  </View>
+                </View>
+                <Text style={styles.pendingTicket}>{pending.ticket_number}</Text>
+                <Text style={styles.pendingRoute}>
+                  {ORIGIN_LABEL} → {tripDestination(pending)}
+                </Text>
+                <Text style={styles.pendingMeta}>
+                  {pending.route_type?.name} · {formatDate(pending.pickup_datetime)}, {formatTime(pending.pickup_datetime)}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#ccc" style={{ alignSelf: "center", marginRight: 12 }} />
+            </View>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {/* This month stats */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t("requestor.thisMonth")}</Text>
+        <View style={styles.statRow}>
+          <StatBox value={stats.total} label={t("history.all")} color={colors.blue} bg={colors.tintBlue} />
+          <StatBox value={stats.completed} label={t("history.completed")} color={colors.green} bg={colors.tintGreen} />
+          <StatBox value={stats.pending} label={t("requestor.pendingApproval")} color="#d97706" bg={colors.tintYellow} />
+        </View>
+      </View>
+
+      {/* Recent activity */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t("requestor.recentActivity")}</Text>
+        {recent.length === 0 ? (
+          <Card style={{ marginTop: 12 }}>
+            <Text style={styles.emptyText}>{t("requestor.noBookings")}</Text>
+          </Card>
+        ) : (
+          <Card style={{ marginTop: 12 }} padded={false}>
+            {recent.map((tr, i) => (
+              <TouchableOpacity
+                key={tr.id}
+                style={[styles.recentRow, i < recent.length - 1 && styles.divider]}
+                onPress={() => openDetail(tr.id)}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.recentRoute}>{ORIGIN_LABEL} → {tripDestination(tr)}</Text>
+                  <Text style={styles.recentMeta}>{tr.ticket_number} · {formatDate(tr.pickup_datetime)}</Text>
+                </View>
+                <StatusBadge status={tr.status} small />
+              </TouchableOpacity>
+            ))}
+          </Card>
+        )}
+      </View>
+    </ScrollView>
+  );
+}
+
+function StatBox({ value, label, color, bg }: { value: number; label: string; color: string; bg: string }) {
+  return (
+    <View style={[styles.statBox, { backgroundColor: bg }]}>
+      <Text style={[styles.statValue, { color }]}>{value}</Text>
+      <Text style={[styles.statLabel, { color }]} numberOfLines={1}>{label}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  fill: { flex: 1, backgroundColor: colors.bg },
+  header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 16 },
+  headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
+  hi: { color: colors.white, fontSize: 18, fontWeight: "800" },
+  dept: { color: "rgba(255,255,255,0.55)", fontSize: 13, marginTop: 2 },
+  avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
+  avatarText: { color: colors.white, fontSize: 13, fontWeight: "700" },
+  cta: { backgroundColor: colors.white, borderRadius: radius.lg, padding: 14, flexDirection: "row", alignItems: "center", gap: 14, ...shadow.floating, transform: [{ translateY: 14 }] },
+  ctaIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: colors.yellow, alignItems: "center", justifyContent: "center" },
+  ctaTitle: { fontSize: 16, fontWeight: "700", color: colors.navy },
+  ctaSub: { fontSize: 13, color: colors.textFaint },
+  section: { paddingHorizontal: 16, paddingTop: 12 },
+  sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
+
+  activeCard: { backgroundColor: colors.blueDark, borderRadius: radius.xl, padding: 18, ...shadow.card },
+  activeTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+  activeLabel: { fontSize: 11, fontWeight: "700", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: 1 },
+  activeTicket: { fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.5)", marginBottom: 10 },
+  routeMini: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" },
+  miniDot: { width: 8, height: 8, borderRadius: 4 },
+  miniPlace: { fontSize: 14, fontWeight: "700", color: colors.white },
+  miniArrow: { color: "rgba(255,255,255,0.3)" },
+  driverRow: { flexDirection: "row", alignItems: "center", gap: 10, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.1)", paddingTop: 12 },
+  driverAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
+  driverAvatarText: { color: colors.yellow, fontSize: 11, fontWeight: "800" },
+  driverName: { fontSize: 13, fontWeight: "600", color: colors.white },
+  driverPlate: { fontSize: 12, color: "rgba(255,255,255,0.5)" },
+  track: { fontSize: 12, color: "rgba(255,255,255,0.7)" },
+
+  pendingCard: { backgroundColor: colors.white, borderRadius: radius.lg, flexDirection: "row", overflow: "hidden", borderWidth: 2, borderStyle: "dashed", borderColor: "#FFB74D" },
+  pendingStripe: { width: 5, backgroundColor: colors.yellow },
+  pendingHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  pendingLabel: { fontSize: 12, fontWeight: "700", color: "#d97706", textTransform: "uppercase" },
+  awaitPill: { backgroundColor: "#fffbeb", paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.pill },
+  awaitText: { color: "#d97706", fontSize: 12, fontWeight: "700" },
+  pendingTicket: { fontSize: 12, fontWeight: "700", color: colors.blue, marginBottom: 4 },
+  pendingRoute: { fontSize: 14, fontWeight: "600", color: colors.navy },
+  pendingMeta: { fontSize: 12, color: "#888", marginTop: 4 },
+
+  statRow: { flexDirection: "row", gap: 10, marginTop: 12 },
+  statBox: { flex: 1, borderRadius: radius.md, padding: 14, alignItems: "center" },
+  statValue: { fontSize: 26, fontWeight: "900" },
+  statLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase", marginTop: 3 },
+
+  recentRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
+  divider: { borderBottomWidth: 1, borderBottomColor: colors.bg },
+  recentRoute: { fontSize: 14, fontWeight: "600", color: colors.navy },
+  recentMeta: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
+  emptyText: { fontSize: 14, color: colors.textMuted, lineHeight: 20 },
+});
