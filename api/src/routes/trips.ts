@@ -208,6 +208,89 @@ router.patch(
   }
 );
 
+// ── PATCH /trips/:id/reject — admin rejects a pending booking ──
+const rejectTripSchema = z.object({ reason: z.string().max(500).optional() });
+
+router.patch(
+  "/:id/reject",
+  requireRole("admin"),
+  validateBody(rejectTripSchema),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const trip = await prisma.trip.findUnique({ where: { id } });
+      if (!trip) {
+        throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      }
+      if (trip.status !== "pending") {
+        throw new ApiError(400, "INVALID_STATUS", "Only pending trips can be rejected.");
+      }
+
+      const updated = await prisma.trip.update({
+        where: { id },
+        data: { status: "rejected" },
+        include: tripInclude,
+      });
+      await prisma.auditLog.create({
+        data: { user_id: req.user!.id, action: "trip.rejected", table_name: "Trip", record_id: id },
+      });
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ── PATCH /trips/:id/assign-external — admin outsources to a forwarder ──
+const externalSchema = z.object({
+  company_name: z.string().min(1, "Company name is required."),
+  booking_date: z.coerce.date(),
+  rate: z.number().nonnegative(),
+  cargo_size: z.string().min(1, "Cargo size is required."),
+});
+
+router.patch(
+  "/:id/assign-external",
+  requireRole("admin"),
+  validateBody(externalSchema),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { company_name, booking_date, rate, cargo_size } = req.body;
+
+      const trip = await prisma.trip.findUnique({ where: { id } });
+      if (!trip) {
+        throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      }
+      if (trip.status !== "pending") {
+        throw new ApiError(400, "INVALID_STATUS", "Only pending trips can be assigned.");
+      }
+
+      await prisma.externalForwarder.upsert({
+        where: { trip_id: id },
+        create: { trip_id: id, company_name, booking_date, rate, cargo_size },
+        update: { company_name, booking_date, rate, cargo_size },
+      });
+      const updated = await prisma.trip.update({
+        where: { id },
+        data: { status: "assigned", is_external: true },
+        include: tripInclude,
+      });
+      await prisma.auditLog.create({
+        data: {
+          user_id: req.user!.id,
+          action: "trip.assigned_external",
+          table_name: "Trip",
+          record_id: id,
+        },
+      });
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // ── PATCH /trips/:id/cancel — requestor (owner) or admin cancels a booking ──
 // Only while still pending/approved — once a driver is assigned or rolling,
 // cancellation must be coordinated by an admin (out of scope for the app).

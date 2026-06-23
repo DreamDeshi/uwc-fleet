@@ -68,14 +68,17 @@ const DRIVERS = [
   },
 ];
 
+// expiry dates seed the document-expiry alert feature: a few fall within the
+// 30-day window so the admin dashboard demonstrably flags them. priority_zones
+// place each truck on the fleet map (we have no live GPS — see Section 12).
 const TRUCKS = [
-  { plate: "PLX 2406", type: "10t 30ft", max_pallets: 16, weekday: "11", offpeak: "13", deduction: 2 },
-  { plate: "PND 1888", type: "10t 30ft", max_pallets: 14, weekday: "11", offpeak: "13", deduction: 2 },
-  { plate: "PRJ 5292", type: "5t 17.5ft", max_pallets: 8, weekday: "10", offpeak: "10", deduction: 3 },
-  { plate: "PQL 5292", type: "5t 17.5ft", max_pallets: 8, weekday: "10", offpeak: "10", deduction: 3 },
-  { plate: "PPE 1804", type: "5t 17.5ft", max_pallets: 8, weekday: "10", offpeak: "12", deduction: 3 },
-  { plate: "PRH 5292", type: "1t", max_pallets: 2, weekday: "9", offpeak: "9", deduction: 2 },
-  { plate: "4 Wheel", type: "Generic", max_pallets: 2, weekday: "11", offpeak: "11", deduction: 2 }, // TODO: real plate unknown, confirm with UWC
+  { plate: "PLX 2406", type: "10t 30ft", max_pallets: 16, weekday: "11", offpeak: "13", deduction: 2, zones: ["P2"], insurance: "2026-12-15", permit: "2026-11-01", roadtax: "2026-07-10" },
+  { plate: "PND 1888", type: "10t 30ft", max_pallets: 14, weekday: "11", offpeak: "13", deduction: 2, zones: ["P1"], insurance: "2026-07-05", permit: "2027-01-20", roadtax: "2026-10-01" },
+  { plate: "PRJ 5292", type: "5t 17.5ft", max_pallets: 8, weekday: "10", offpeak: "10", deduction: 3, zones: ["K1"], insurance: "2026-09-01", permit: "2026-07-18", roadtax: "2026-12-01" },
+  { plate: "PQL 5292", type: "5t 17.5ft", max_pallets: 8, weekday: "10", offpeak: "10", deduction: 3, zones: ["P3"], insurance: "2027-02-01", permit: "2027-01-10", roadtax: "2026-11-20" },
+  { plate: "PPE 1804", type: "5t 17.5ft", max_pallets: 8, weekday: "10", offpeak: "12", deduction: 3, zones: ["K2"], insurance: "2027-03-15", permit: "2026-12-05", roadtax: "2027-01-08" },
+  { plate: "PRH 5292", type: "1t", max_pallets: 2, weekday: "9", offpeak: "9", deduction: 2, zones: ["P2"], insurance: "2027-01-01", permit: "2026-12-20", roadtax: "2027-02-10" },
+  { plate: "4 Wheel", type: "Generic", max_pallets: 2, weekday: "11", offpeak: "11", deduction: 2, zones: ["P1"], insurance: "2027-04-01", permit: "2027-03-01", roadtax: "2027-02-15" }, // TODO: real plate unknown, confirm with UWC
 ];
 
 const DEPARTMENTS = [
@@ -164,18 +167,22 @@ async function seedRouteTypes() {
 
 async function seedTrucks() {
   for (const t of TRUCKS) {
+    // priority_zones is owned by seedDrivers (driver coverage zones), so it is
+    // set only on create here and not overwritten on re-seed of existing rows.
+    const syncFields = {
+      type: t.type,
+      max_pallets: t.max_pallets,
+      entitled_claim_weekday: t.weekday,
+      entitled_claim_offpeak: t.offpeak,
+      daily_deduction_points: t.deduction,
+      insurance_expiry: new Date(t.insurance),
+      permit_expiry: new Date(t.permit),
+      road_tax_expiry: new Date(t.roadtax),
+    };
     await prisma.truck.upsert({
       where: { plate: t.plate },
-      update: {},
-      create: {
-        plate: t.plate,
-        type: t.type,
-        max_pallets: t.max_pallets,
-        entitled_claim_weekday: t.weekday,
-        entitled_claim_offpeak: t.offpeak,
-        daily_deduction_points: t.deduction,
-        priority_zones: [],
-      },
+      update: syncFields, // keep rates/expiries in sync with the brief on re-seed
+      create: { plate: t.plate, priority_zones: t.zones, ...syncFields },
     });
   }
   console.log(`Seeded ${TRUCKS.length} trucks.`);

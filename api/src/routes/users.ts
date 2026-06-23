@@ -14,8 +14,12 @@ router.use(requireAuth, requireRole("admin"));
 router.get("/", async (req, res, next) => {
   try {
     const status = typeof req.query.status === "string" ? req.query.status : undefined;
+    const role = typeof req.query.role === "string" ? req.query.role : undefined;
     const users = await prisma.user.findMany({
-      where: status ? { status: status as any } : undefined,
+      where: {
+        ...(status ? { status: status as any } : {}),
+        ...(role ? { role: role as any } : {}),
+      },
       select: {
         id: true,
         phone: true,
