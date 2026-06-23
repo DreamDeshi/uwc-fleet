@@ -1,0 +1,7 @@
+{
+  "name": "uwc-fleet-admin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "UWC Trucking — Admin dashboard (Vite + React + TypeScript). Built in Phase 4.",
+  "scripts": {}
+}

@@ -1,0 +1,27 @@
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+build/
+.expo/
+References/
+
+# logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
+
+# Vite/Expo caches
+.vite/
+.metro-cache/
+
+# Claude Code session files
+.claude/
