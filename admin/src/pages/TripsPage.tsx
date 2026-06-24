@@ -235,7 +235,12 @@ function TripDetail({ trip, onDone }: { trip: Trip; onDone: () => void }) {
       {trip.status === "completed" && <CompletedPanel trip={trip} />}
       {(trip.status === "cancelled" || trip.status === "rejected") && (
         <div style={{ background: colors.panel, borderRadius: radius.md, padding: 14, fontSize: 13, color: colors.textMuted }}>
-          This booking was {trip.status}.
+          <div>This booking was {trip.status}.</div>
+          {trip.status === "rejected" && trip.rejection_reason && (
+            <div style={{ marginTop: 8, color: colors.text }}>
+              <strong style={{ color: colors.red }}>Reason:</strong> {trip.rejection_reason}
+            </div>
+          )}
         </div>
       )}
     </Card>
