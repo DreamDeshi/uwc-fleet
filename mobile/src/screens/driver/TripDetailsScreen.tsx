@@ -70,7 +70,7 @@ export function TripDetailsScreen() {
         {/* Map header */}
         <View>
           {/* Route preview before the trip starts — no live dot yet (live={false}) */}
-          <LiveTripMap tripId={trip.id} destZone={tripDestZone(trip)} live={false} height={240} />
+          <LiveTripMap tripId={trip.id} destZone={tripDestZone(trip)} live={false} height={190} />
           <TouchableOpacity
             style={[styles.backBtn, { top: insets.top + 8 }]}
             onPress={() => navigation.goBack()}
@@ -115,26 +115,31 @@ export function TripDetailsScreen() {
           {/* Consignee */}
           <Card style={{ marginBottom: 12 }}>
             <Text style={styles.cardLabel}>{t("trip.consignee")}</Text>
-            <View style={styles.consigneeRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.consigneeName}>{tripConsigneeName(trip)}</Text>
-                <Text style={styles.consigneeSub}>
-                  {consignee?.contact_person ? `${consignee.contact_person} — ` : ""}
-                  {consignee?.phone ?? "—"}
-                </Text>
-                <Text style={styles.consigneeArea}>
-                  {[consignee?.area, consignee?.state].filter(Boolean).join(", ")}
-                </Text>
-              </View>
-              {consignee?.phone ? (
-                <TouchableOpacity
-                  style={styles.callBtn}
-                  onPress={() => Linking.openURL(`tel:${consignee.phone}`)}
-                >
-                  <Ionicons name="call" size={20} color={colors.white} />
-                </TouchableOpacity>
-              ) : null}
-            </View>
+            <Text style={styles.consigneeName}>{tripConsigneeName(trip)}</Text>
+            {consignee?.contact_person ? (
+              <Text style={styles.consigneeSub}>{consignee.contact_person}</Text>
+            ) : null}
+            {[consignee?.area, consignee?.state].filter(Boolean).length > 0 ? (
+              <Text style={styles.consigneeArea}>
+                {[consignee?.area, consignee?.state].filter(Boolean).join(", ")}
+              </Text>
+            ) : null}
+            {consignee?.phone ? (
+              <TouchableOpacity
+                style={styles.phoneRow}
+                activeOpacity={0.7}
+                onPress={() => Linking.openURL(`tel:${consignee.phone}`)}
+              >
+                <View style={styles.phoneInfo}>
+                  <Ionicons name="call-outline" size={16} color={colors.blue} />
+                  <Text style={styles.phoneNumber}>{consignee.phone}</Text>
+                </View>
+                <View style={styles.callBtn}>
+                  <Ionicons name="call" size={18} color={colors.white} />
+                  <Text style={styles.callBtnText}>{t("trip.call")}</Text>
+                </View>
+              </TouchableOpacity>
+            ) : null}
           </Card>
 
           {/* Requestor + truck */}
@@ -192,9 +197,15 @@ function InfoCard({
   return (
     <View style={styles.infoCard}>
       <Ionicons name={icon} size={20} color={colors.blue} />
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={[styles.infoValue, valueColor ? { color: valueColor } : null]}>{value}</Text>
-      {sub ? <Text style={styles.infoSub}>{sub}</Text> : null}
+      <Text style={styles.infoLabel} numberOfLines={1}>{label}</Text>
+      <Text
+        style={[styles.infoValue, valueColor ? { color: valueColor } : null]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+      >
+        {value}
+      </Text>
+      <Text style={styles.infoSub} numberOfLines={1}>{sub ?? " "}</Text>
     </View>
   );
 }
@@ -219,17 +230,20 @@ const styles = StyleSheet.create({
   ticketChipText: { color: colors.white, fontSize: 11, fontWeight: "700" },
   typeChip: { backgroundColor: colors.tintBlue, paddingHorizontal: 12, paddingVertical: 5, borderRadius: radius.pill },
   typeChipText: { color: colors.blue, fontSize: 11, fontWeight: "700" },
-  infoRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
-  infoCard: { flex: 1, backgroundColor: colors.white, borderRadius: radius.md, padding: 14, alignItems: "center", ...shadow.card },
-  infoLabel: { fontSize: 10, color: colors.textFaint, fontWeight: "600", textTransform: "uppercase", marginTop: 6, marginBottom: 4 },
-  infoValue: { fontSize: 16, fontWeight: "800", color: colors.navy },
-  infoSub: { fontSize: 11, color: colors.textFaint, marginTop: 2 },
+  infoRow: { flexDirection: "row", gap: 10, marginBottom: 12, alignItems: "stretch" },
+  infoCard: { flex: 1, minHeight: 104, backgroundColor: colors.white, borderRadius: radius.md, paddingVertical: 14, paddingHorizontal: 8, alignItems: "center", justifyContent: "flex-start", ...shadow.card },
+  infoLabel: { fontSize: 10, color: colors.textFaint, fontWeight: "600", textTransform: "uppercase", marginTop: 6, marginBottom: 4, textAlign: "center" },
+  infoValue: { fontSize: 16, fontWeight: "800", color: colors.navy, textAlign: "center" },
+  infoSub: { fontSize: 11, color: colors.textFaint, marginTop: 2, textAlign: "center" },
   cardLabel: { fontSize: 11, fontWeight: "700", color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 10 },
-  consigneeRow: { flexDirection: "row", alignItems: "center" },
   consigneeName: { fontSize: 15, fontWeight: "700", color: colors.navy },
   consigneeSub: { fontSize: 13, color: colors.textMuted, marginTop: 4 },
   consigneeArea: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
-  callBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.green, alignItems: "center", justifyContent: "center" },
+  phoneRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.bg },
+  phoneInfo: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
+  phoneNumber: { fontSize: 14, fontWeight: "700", color: colors.blue },
+  callBtn: { flexDirection: "row", alignItems: "center", gap: 6, height: 40, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: colors.green },
+  callBtnText: { color: colors.white, fontSize: 13, fontWeight: "800" },
   smallStrong: { fontSize: 13, fontWeight: "700", color: colors.navy },
   smallMuted: { fontSize: 11, color: colors.textFaint, marginTop: 2 },
   error: { color: colors.red, fontSize: 13, fontWeight: "600", marginTop: 8 },

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
+import { estimateTripDistanceKm } from "../lib/geo";
 
 const router = Router();
 router.use(requireAuth);
@@ -28,6 +29,7 @@ router.get("/mine", requireRole("driver"), async (req, res, next) => {
           take: 1,
           select: { consignee: { select: { company_name: true, area: true, zone_code: true } } },
         },
+        cargo_details: { select: { quantity: true } },
       },
       orderBy: { pickup_datetime: "desc" },
     });
@@ -44,6 +46,10 @@ router.get("/mine", requireRole("driver"), async (req, res, next) => {
         t.stops[0]?.consignee.company_name ??
         t.stops[0]?.consignee.zone_code ??
         null,
+      // Estimated round-trip distance (plant → zone → plant) for the earnings
+      // summary. Falls back to a zone-centroid estimate; not a billing figure.
+      distance_km: estimateTripDistanceKm(t.stops[0]?.consignee.zone_code ?? null),
+      pallets: t.cargo_details.reduce((sum, c) => sum + c.quantity, 0),
     }));
 
     // Current-month aggregate (server local time — matches the daily-reset
@@ -52,6 +58,7 @@ router.get("/mine", requireRole("driver"), async (req, res, next) => {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthTrips = trips.filter((t) => new Date(t.pickup_datetime) >= monthStart);
     const monthTotal = monthTrips.reduce((sum, t) => sum + Number(t.incentive_earned ?? 0), 0);
+    const monthDistance = monthTrips.reduce((sum, t) => sum + t.distance_km, 0);
 
     const monthLabel = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
@@ -60,6 +67,8 @@ router.get("/mine", requireRole("driver"), async (req, res, next) => {
         month: monthLabel, // YYYY-MM in local time
         total: monthTotal,
         trip_count: monthTrips.length,
+        total_distance_km: monthDistance,
+        avg_per_trip: monthTrips.length > 0 ? monthTotal / monthTrips.length : 0,
       },
       trips,
     });

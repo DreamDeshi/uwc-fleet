@@ -113,10 +113,18 @@ export interface IncentiveTrip {
   truck_plate: string | null;
   route_type: string | null;
   destination: string | null;
+  distance_km: number;
+  pallets: number;
 }
 
 export interface IncentiveSummary {
-  summary: { month: string; total: number; trip_count: number };
+  summary: {
+    month: string;
+    total: number;
+    trip_count: number;
+    total_distance_km: number;
+    avg_per_trip: number;
+  };
   trips: IncentiveTrip[];
 }
 

@@ -93,6 +93,7 @@
     "truck": "Trak",
     "cargo": "Kargo",
     "incentive": "Insentif",
+    "call": "Panggil",
     "documents": "Dokumen",
     "startTrip": "Mula Perjalanan",
     "openMap": "Buka Peta & Navigasi",
@@ -138,7 +139,13 @@
     "tripsCount": "{{count}} perjalanan",
     "breakdown": "Pecahan Perjalanan",
     "noEarnings": "Belum ada perjalanan selesai.",
-    "points": "mata"
+    "points": "mata",
+    "thisWeek": "Minggu Ini",
+    "totalDistance": "Jumlah Jarak",
+    "tripsCompleted": "Perjalanan Selesai",
+    "avgPerTrip": "Purata / Perjalanan",
+    "km": "km",
+    "noChartData": "Tiada pendapatan direkodkan minggu ini lagi."
   },
   "profile": {
     "title": "Profil",
