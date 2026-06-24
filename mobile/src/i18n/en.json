@@ -210,7 +210,9 @@
     "area": "Area",
     "addConsigneeBtn": "Add Consignee",
     "consigneeRequired": "Company name and delivery zone are required.",
-    "consigneeAdded": "Consignee added."
+    "consigneeAdded": "Consignee added.",
+    "rebookLast": "Rebook last trip",
+    "recentConsignees": "Recent"
   },
   "bookingDetail": {
     "title": "Booking Details",

@@ -14,7 +14,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { RequestorTabParamList } from "../../navigation/types";
-import { useRouteTypes, useConsignees, useCreateTrip } from "../../hooks/queries";
+import { useRouteTypes, useConsignees, useCreateTrip, useTrips } from "../../hooks/queries";
 import { apiErrorMessage } from "../../services/api";
 import { colors, radius, shadow } from "../../theme";
 import { Button } from "../../components/Button";
@@ -23,11 +23,13 @@ import { OptionsModal } from "../../components/OptionsModal";
 import { NewConsigneeModal } from "../../components/NewConsigneeModal";
 import { LoadingState } from "../../components/States";
 import { formatDate, formatTime } from "../../lib/format";
-import { Consignee } from "../../types";
+import { Consignee, Trip } from "../../types";
 
 type Nav = BottomTabNavigationProp<RequestorTabParamList>;
 
-const STEPS = ["stepWhere", "stepWhat", "stepWhen", "stepConfirm"] as const;
+// Grab-style flow: 3 steps. Date/time/remarks (all defaulted) folded into the
+// final Confirm step so there's no near-empty "When" page.
+const STEPS = ["stepWhere", "stepWhat", "stepConfirm"] as const;
 const PALLET_SIZES = ["4×4", "3×4", "4×8", "5×10", "2×2"];
 
 export function BookingFormScreen() {
@@ -36,7 +38,29 @@ export function BookingFormScreen() {
   const navigation = useNavigation<Nav>();
 
   const { data: routeTypes = [], isLoading: rtLoading } = useRouteTypes();
+  const { data: trips = [] } = useTrips();
   const createTrip = useCreateTrip();
+
+  // Most recent booking drives "Rebook last trip"; its consignees (plus those of
+  // earlier trips) become 1-tap "recent" chips so a requestor rarely has to type.
+  const sortedTrips = useMemo(
+    () => [...trips].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)),
+    [trips]
+  );
+  const lastTrip = sortedTrips[0];
+  const recentConsignees = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Consignee[] = [];
+    for (const tr of sortedTrips) {
+      for (const s of tr.stops ?? []) {
+        if (s.consignee && !seen.has(s.consignee.id)) {
+          seen.add(s.consignee.id);
+          out.push(s.consignee);
+        }
+      }
+    }
+    return out.slice(0, 6);
+  }, [sortedTrips]);
 
   const [step, setStep] = useState(0);
   const [routeTypeId, setRouteTypeId] = useState<string | undefined>();
@@ -101,6 +125,29 @@ export function BookingFormScreen() {
     setDayOffset(0);
     setHour(9);
     setError(null);
+  };
+
+  // "Rebook last trip" — copy route type, stops and cargo from a past trip and
+  // jump straight to Confirm (date/time keep today's defaults).
+  const prefillFromTrip = (tr: Trip) => {
+    setError(null);
+    if (tr.route_type_id) setRouteTypeId(tr.route_type_id);
+    setStops((tr.stops ?? []).map((s) => s.consignee).filter((c): c is Consignee => Boolean(c)));
+
+    const lines = tr.cargo_details ?? [];
+    const custom = lines.find((l) => l.pallet_type === "custom");
+    const carton = lines.find((l) => l.pallet_type === "carton");
+    if (custom) {
+      setCargoType("others");
+      setOthersText(custom.custom_size ?? "");
+    } else if (carton) {
+      setCargoType("carton");
+      setCartonQty(carton.cartons ?? carton.quantity ?? 0);
+    } else {
+      setCargoType("pallet");
+      setPalletQtys(PALLET_SIZES.map((size) => lines.find((l) => l.pallet_type === size)?.quantity ?? 0));
+    }
+    setStep(STEPS.length - 1); // jump to Confirm
   };
 
   const validateStep = (): string | null => {
@@ -201,6 +248,9 @@ export function BookingFormScreen() {
             setRouteTypeId={setRouteTypeId}
             stops={stops}
             setStops={setStops}
+            recent={recentConsignees}
+            canRebook={Boolean(lastTrip)}
+            onRebook={() => lastTrip && prefillFromTrip(lastTrip)}
           />
         )}
         {step === 1 && (
@@ -217,31 +267,6 @@ export function BookingFormScreen() {
           />
         )}
         {step === 2 && (
-          <>
-            <PressableField
-              label={t("booking.pickupDate")}
-              leftIcon="calendar-outline"
-              value={formatDate(pickupDate)}
-              onPress={() => setDayOpen(true)}
-            />
-            <PressableField
-              label={t("booking.pickupTime")}
-              leftIcon="time-outline"
-              value={formatTime(pickupDate)}
-              onPress={() => setTimeOpen(true)}
-            />
-            <FieldLabel>{t("booking.remarks")}</FieldLabel>
-            <TextInput
-              value={remarks}
-              onChangeText={setRemarks}
-              placeholder={t("booking.remarksPlaceholder")}
-              placeholderTextColor={colors.textFaint}
-              multiline
-              style={styles.textarea}
-            />
-          </>
-        )}
-        {step === 3 && (
           <StepConfirm
             routeTypeName={routeTypes.find((r) => r.id === routeTypeId)?.name}
             stops={stops}
@@ -253,6 +278,10 @@ export function BookingFormScreen() {
                   : othersText
             }
             pickupDate={pickupDate}
+            remarks={remarks}
+            setRemarks={setRemarks}
+            onPickDate={() => setDayOpen(true)}
+            onPickTime={() => setTimeOpen(true)}
             onEditStep={setStep}
           />
         )}
@@ -337,12 +366,18 @@ function StepWhere({
   setRouteTypeId,
   stops,
   setStops,
+  recent,
+  canRebook,
+  onRebook,
 }: {
   routeTypes: { id: string; name: string }[];
   routeTypeId?: string;
   setRouteTypeId: (id: string) => void;
   stops: Consignee[];
   setStops: React.Dispatch<React.SetStateAction<Consignee[]>>;
+  recent: Consignee[];
+  canRebook: boolean;
+  onRebook: () => void;
 }) {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
@@ -355,8 +390,18 @@ function StepWhere({
   };
   const removeStop = (id: string) => setStops((prev) => prev.filter((s) => s.id !== id));
 
+  // Recent consignees not already added — surfaced as 1-tap chips.
+  const recentAvailable = recent.filter((c) => !stops.some((s) => s.id === c.id));
+
   return (
     <View>
+      {canRebook ? (
+        <TouchableOpacity style={styles.rebookBtn} onPress={onRebook} activeOpacity={0.85}>
+          <Ionicons name="repeat" size={18} color={colors.white} />
+          <Text style={styles.rebookText}>{t("booking.rebookLast")}</Text>
+        </TouchableOpacity>
+      ) : null}
+
       <FieldLabel>{t("booking.routeType")}</FieldLabel>
       <View style={styles.routeGrid}>
         {routeTypes.map((r) => {
@@ -374,6 +419,24 @@ function StepWhere({
       </View>
 
       <FieldLabel>{t("booking.consignee")}</FieldLabel>
+
+      {/* Recent consignees — tap to add without typing (Grab-style) */}
+      {recentAvailable.length > 0 ? (
+        <View style={styles.recentWrap}>
+          <Text style={styles.recentLabel}>{t("booking.recentConsignees")}</Text>
+          <View style={styles.recentChips}>
+            {recentAvailable.map((c) => (
+              <TouchableOpacity key={c.id} style={styles.recentChip} onPress={() => addStop(c)}>
+                <Ionicons name="add" size={14} color={colors.blue} />
+                <Text style={styles.recentChipText} numberOfLines={1}>
+                  {c.company_name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
       {/* Selected stops */}
       {stops.map((c, i) => (
         <View key={c.id} style={styles.stopChip}>
@@ -547,12 +610,20 @@ function StepConfirm({
   stops,
   cargoSummaryText,
   pickupDate,
+  remarks,
+  setRemarks,
+  onPickDate,
+  onPickTime,
   onEditStep,
 }: {
   routeTypeName?: string;
   stops: Consignee[];
   cargoSummaryText: string;
   pickupDate: Date;
+  remarks: string;
+  setRemarks: (v: string) => void;
+  onPickDate: () => void;
+  onPickTime: () => void;
   onEditStep: (s: number) => void;
 }) {
   const { t } = useTranslation();
@@ -592,10 +663,32 @@ function StepConfirm({
         <Row k={t("trip.cargo")} v={cargoSummaryText} />
       </Section>
 
-      <Section title={t("booking.schedule")} editStep={2}>
-        <Row k={t("booking.pickupDate")} v={formatDate(pickupDate)} />
-        <Row k={t("booking.pickupTime")} v={formatTime(pickupDate)} />
-      </Section>
+      {/* Schedule is edited inline here (date/time default to today, so the old
+          standalone "When" step was just friction). */}
+      <View style={styles.confirmCard}>
+        <Text style={[styles.confirmTitle, { marginBottom: 10 }]}>{t("booking.schedule")}</Text>
+        <PressableField
+          label={t("booking.pickupDate")}
+          leftIcon="calendar-outline"
+          value={formatDate(pickupDate)}
+          onPress={onPickDate}
+        />
+        <PressableField
+          label={t("booking.pickupTime")}
+          leftIcon="time-outline"
+          value={formatTime(pickupDate)}
+          onPress={onPickTime}
+        />
+        <FieldLabel>{t("booking.remarks")}</FieldLabel>
+        <TextInput
+          value={remarks}
+          onChangeText={setRemarks}
+          placeholder={t("booking.remarksPlaceholder")}
+          placeholderTextColor={colors.textFaint}
+          multiline
+          style={styles.textarea}
+        />
+      </View>
     </View>
   );
 }
@@ -611,6 +704,35 @@ const styles = StyleSheet.create({
   stepLabel: { fontSize: 11, fontWeight: "700", color: colors.textFaint, marginTop: 4, textTransform: "uppercase" },
   stepConn: { position: "absolute", top: 14, right: -50, width: 100, height: 2, backgroundColor: "#e8ecf4", zIndex: -1 },
   body: { padding: 16, paddingBottom: 24 },
+
+  rebookBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: colors.blue,
+    borderRadius: radius.md,
+    paddingVertical: 14,
+    marginBottom: 20,
+    ...shadow.card,
+  },
+  rebookText: { color: colors.white, fontSize: 14, fontWeight: "700" },
+  recentWrap: { marginBottom: 12 },
+  recentLabel: { fontSize: 11, fontWeight: "700", color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 },
+  recentChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  recentChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    maxWidth: "100%",
+    backgroundColor: colors.tintBlue,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  recentChipText: { fontSize: 13, fontWeight: "700", color: colors.blue, flexShrink: 1 },
 
   routeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 },
   routeCard: { width: "48%", borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md, padding: 14, backgroundColor: colors.white },
