@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { BookingsStackParamList } from "../../navigation/types";
+import { RequestorStackParamList } from "../../navigation/types";
 import { useTrip, useCancelTrip, useTripLatestLocation } from "../../hooks/queries";
 import { useToast } from "../../components/Toast";
 import { apiErrorMessage } from "../../services/api";
@@ -20,8 +20,8 @@ import { tripDestination, tripConsigneeName, cargoSummary, tripDestZone, ORIGIN_
 import { formatDateTime, initials as nameInitials } from "../../lib/format";
 import { TripStatus } from "../../types";
 
-type Nav = NativeStackNavigationProp<BookingsStackParamList, "BookingDetail">;
-type Rt = RouteProp<BookingsStackParamList, "BookingDetail">;
+type Nav = NativeStackNavigationProp<RequestorStackParamList, "BookingDetail">;
+type Rt = RouteProp<RequestorStackParamList, "BookingDetail">;
 
 const ORDER: Record<TripStatus, number> = {
   pending: 0,

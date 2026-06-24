@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTranslation } from "react-i18next";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute, type RouteProp, type CompositeNavigationProp } from "@react-navigation/native";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { BookingsStackParamList } from "../../navigation/types";
+import { RequestorStackParamList, RequestorTabParamList } from "../../navigation/types";
 import { useTrips } from "../../hooks/queries";
 import { colors, radius, shadow } from "../../theme";
 import { Header } from "../../components/Header";
@@ -13,7 +14,12 @@ import { dayMonth } from "../../lib/format";
 import { tripDestination, ORIGIN_LABEL } from "../../lib/trip";
 import { Trip, TripStatus } from "../../types";
 
-type Nav = NativeStackNavigationProp<BookingsStackParamList, "BookingList">;
+// Tab screen, but it can also push BookingDetail onto the parent requestor stack.
+type Nav = CompositeNavigationProp<
+  BottomTabNavigationProp<RequestorTabParamList, "BookingsTab">,
+  NativeStackNavigationProp<RequestorStackParamList>
+>;
+type Rt = RouteProp<RequestorTabParamList, "BookingsTab">;
 type Filter = "all" | "active" | "completed";
 
 const ACTIVE: TripStatus[] = ["pending", "approved", "assigned", "in_progress"];
@@ -21,8 +27,14 @@ const ACTIVE: TripStatus[] = ["pending", "approved", "assigned", "in_progress"];
 export function BookingListScreen() {
   const { t } = useTranslation();
   const navigation = useNavigation<Nav>();
+  const route = useRoute<Rt>();
   const { data: trips, isLoading, isError, refetch, isRefetching } = useTrips();
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>(route.params?.filter ?? "all");
+
+  // Honour deep links from the dashboard stat cards (e.g. tapping "Completed").
+  useEffect(() => {
+    if (route.params?.filter) setFilter(route.params.filter);
+  }, [route.params?.filter]);
 
   const filtered = useMemo(() => {
     const list = (trips ?? []).slice().sort(

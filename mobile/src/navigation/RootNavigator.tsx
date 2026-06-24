@@ -8,7 +8,7 @@ import { Button } from "../components/Button";
 import { colors } from "../theme";
 import { AuthStack } from "./AuthStack";
 import { DriverTabs } from "./DriverTabs";
-import { RequestorTabs } from "./RequestorTabs";
+import { RequestorStack } from "./RequestorStack";
 
 export function RootNavigator() {
   const { status, user, logout } = useAuth();
@@ -25,7 +25,7 @@ export function RootNavigator() {
       ) : user.role === "driver" ? (
         <DriverTabs />
       ) : user.role === "requestor" ? (
-        <RequestorTabs />
+        <RequestorStack />
       ) : (
         // Admin uses the web dashboard (Phase 4) — show a friendly note here.
         <View style={styles.adminFill}>

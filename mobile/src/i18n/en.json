@@ -155,6 +155,9 @@
   },
   "requestor": {
     "greeting": "Hi, {{name}}",
+    "goodMorning": "Good morning",
+    "goodAfternoon": "Good afternoon",
+    "goodEvening": "Good evening",
     "whereTo": "Where do you need delivery?",
     "tapToBook": "Tap to book a truck",
     "activeTrip": "Active Trip",
@@ -212,7 +215,9 @@
     "consigneeRequired": "Company name and delivery zone are required.",
     "consigneeAdded": "Consignee added.",
     "rebookLast": "Rebook last trip",
-    "recentConsignees": "Recent"
+    "recentConsignees": "Recent",
+    "truckConfirmNote": "Admin will confirm truck availability based on your cargo size.",
+    "largeLoadWarning": "That's a large load ({{count}} pallets). Admin may split it across more than one truck."
   },
   "bookingDetail": {
     "title": "Booking Details",

@@ -20,14 +20,20 @@ export type DriverTabParamList = {
 };
 
 // ── Requestor ─────────────────────────────────────────────────────────
-export type BookingsStackParamList = {
-  BookingList: undefined;
-  BookingDetail: { tripId: string };
-};
+export type BookingFilter = "all" | "active" | "completed";
 
 export type RequestorTabParamList = {
   Home: undefined;
   NewBooking: undefined;
-  BookingsTab: NavigatorScreenParams<BookingsStackParamList>;
+  // Optional `filter` lets the dashboard's stat cards deep-link the Bookings
+  // list straight to All / Active / Completed.
+  BookingsTab: { filter?: BookingFilter } | undefined;
   Profile: undefined;
+};
+
+// BookingDetail lives ABOVE the tabs so it can be opened from any tab (Home or
+// the Bookings list) and "back" returns to whichever tab you came from.
+export type RequestorStackParamList = {
+  Tabs: NavigatorScreenParams<RequestorTabParamList>;
+  BookingDetail: { tripId: string };
 };
