@@ -210,7 +210,9 @@
     "area": "Kawasan",
     "addConsigneeBtn": "Tambah Penerima",
     "consigneeRequired": "Nama syarikat dan zon penghantaran diperlukan.",
-    "consigneeAdded": "Penerima ditambah."
+    "consigneeAdded": "Penerima ditambah.",
+    "rebookLast": "Tempah semula perjalanan terakhir",
+    "recentConsignees": "Terkini"
   },
   "bookingDetail": {
     "title": "Butiran Tempahan",
