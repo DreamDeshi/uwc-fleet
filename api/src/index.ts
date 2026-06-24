@@ -16,6 +16,7 @@ import reportsRoutes from "./routes/reports";
 import locationsRoutes from "./routes/locations";
 import fleetRoutes from "./routes/fleet";
 import { errorHandler } from "./middleware/errorHandler";
+import { startPendingTripAlerts } from "./services/pendingTripAlerts";
 
 const app = express();
 
@@ -59,4 +60,6 @@ app.use(errorHandler);
 const PORT = process.env.PORT ?? 3000;
 app.listen(PORT, () => {
   console.log(`UWC Fleet API listening on port ${PORT}`);
+  // Background job: ping admins about orders left pending for 15+ minutes.
+  startPendingTripAlerts();
 });

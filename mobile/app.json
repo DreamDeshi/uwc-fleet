@@ -36,6 +36,12 @@
           "cameraPermission": "UWC Trucking uses your camera to capture proof-of-delivery photos at each stop.",
           "photosPermission": "UWC Trucking accesses your photos so you can attach delivery orders and invoices to a booking."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#003087"
+        }
       ]
     ],
     "extra": {

@@ -58,4 +58,23 @@ router.patch("/me", validateBody(updateMeSchema), async (req, res, next) => {
   }
 });
 
+// ── PATCH /users/push-token — register this device's Expo push token ────
+// Called by the mobile app after login. Passing null clears the token (logout).
+const pushTokenSchema = z.object({
+  expo_push_token: z.string().min(1).nullable(),
+});
+
+router.patch("/push-token", validateBody(pushTokenSchema), async (req, res, next) => {
+  try {
+    const { expo_push_token } = req.body;
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { expo_push_token },
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

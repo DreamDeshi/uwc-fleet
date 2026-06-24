@@ -6,9 +6,11 @@ import {
   loginRequest,
   registerRequest,
   RegisterPayload,
+  savePushToken,
   setAuthFailureHandler,
   setTokens,
 } from "../services/api";
+import { registerForPushNotificationsAsync } from "../lib/notifications";
 import { Me } from "../types";
 import i18n from "../i18n";
 
@@ -39,6 +41,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return res.data;
   };
 
+  // Register this device for push and save the token to the API. Best-effort —
+  // a denied permission or missing token must never break the session.
+  const syncPushToken = async () => {
+    try {
+      const token = await registerForPushNotificationsAsync();
+      if (token) await savePushToken(token);
+    } catch {
+      /* ignore — notifications are non-critical */
+    }
+  };
+
   // Bootstrap: load saved tokens and resolve the session on app launch.
   useEffect(() => {
     let mounted = true;
@@ -51,6 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         await fetchMe();
         if (mounted) setStatus("authed");
+        syncPushToken();
       } catch {
         await clearTokens();
         if (mounted) {
@@ -77,6 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await setTokens(data.accessToken, data.refreshToken);
     await fetchMe();
     setStatus("authed");
+    syncPushToken();
   };
 
   const register = async (payload: RegisterPayload) => {
@@ -86,6 +101,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
+    // Unregister this device first (while we still hold a valid token) so the
+    // user stops receiving pushes after logging out.
+    try {
+      await savePushToken(null);
+    } catch {
+      /* ignore — proceed with logout regardless */
+    }
     await clearTokens();
     setUser(null);
     setStatus("guest");

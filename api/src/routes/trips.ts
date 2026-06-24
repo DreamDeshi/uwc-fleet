@@ -14,6 +14,7 @@ import {
 import { PLANT_ORIGIN, zoneCoord, getRoute, type LatLng } from "../lib/geo";
 import { upload } from "../lib/upload";
 import { uploadBuffer } from "../lib/cloudinary";
+import { sendPushNotifications } from "../lib/pushNotifications";
 
 const router = Router();
 router.use(requireAuth);
@@ -27,6 +28,15 @@ const tripInclude = {
   cargo_details: true,
   documents: { orderBy: { uploaded_at: "desc" as const } },
 };
+
+// Human-readable destination for notifications — first stop's area/company.
+function tripDestinationLabel(trip: {
+  stops: { sequence: number; consignee: { area: string | null; company_name: string; zone_code: string } }[];
+}): string {
+  const first = [...trip.stops].sort((a, b) => a.sequence - b.sequence)[0];
+  const c = first?.consignee;
+  return c?.area || c?.company_name || c?.zone_code || "destination";
+}
 
 // ── Ticket number generation: TKT-YYYYMMDD-NNN, sequential per calendar day ──
 async function generateTicketNumber(now: Date): Promise<string> {
@@ -297,6 +307,26 @@ router.patch(
         data: { user_id: req.user!.id, action: "trip.approved", table_name: "Trip", record_id: id },
       });
 
+      // Notify the driver (new assignment) and the requestor (approved). Tokens
+      // are fetched fresh; sends are best-effort and never block the response.
+      const [driverDevice, requestorDevice] = await Promise.all([
+        prisma.user.findUnique({ where: { id: driver_id }, select: { expo_push_token: true } }),
+        prisma.user.findUnique({ where: { id: updated.requestor_id }, select: { expo_push_token: true } }),
+      ]);
+      const destination = tripDestinationLabel(updated);
+      await Promise.all([
+        sendPushNotifications([driverDevice?.expo_push_token], {
+          title: "New trip assigned",
+          body: `New trip assigned: ${destination}`,
+          data: { type: "trip_assigned", tripId: updated.id },
+        }),
+        sendPushNotifications([requestorDevice?.expo_push_token], {
+          title: "Booking approved",
+          body: `Your booking ${updated.ticket_number} has been approved`,
+          data: { type: "booking_approved", tripId: updated.id },
+        }),
+      ]);
+
       res.json(updated);
     } catch (err) {
       next(err);
@@ -322,6 +352,7 @@ router.patch(
         throw new ApiError(400, "INVALID_STATUS", "Only pending trips can be rejected.");
       }
 
+      const { reason } = req.body;
       const updated = await prisma.trip.update({
         where: { id },
         data: { status: "rejected" },
@@ -330,6 +361,18 @@ router.patch(
       await prisma.auditLog.create({
         data: { user_id: req.user!.id, action: "trip.rejected", table_name: "Trip", record_id: id },
       });
+
+      const requestorDevice = await prisma.user.findUnique({
+        where: { id: updated.requestor_id },
+        select: { expo_push_token: true },
+      });
+      const reasonSuffix = reason ? `: ${reason}` : "";
+      await sendPushNotifications([requestorDevice?.expo_push_token], {
+        title: "Booking rejected",
+        body: `Your booking ${updated.ticket_number} was rejected${reasonSuffix}`,
+        data: { type: "booking_rejected", tripId: updated.id },
+      });
+
       res.json(updated);
     } catch (err) {
       next(err);
