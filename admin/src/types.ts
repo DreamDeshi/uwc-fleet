@@ -130,6 +130,18 @@ export interface Truck {
   alerts: TruckAlert[];
 }
 
+// Phase 5: a truck's latest real GPS fix (from GET /fleet/live).
+export interface LivePosition {
+  plate: string;
+  trip_id: string;
+  ticket_number: string;
+  driver: { id: string; name: string } | null;
+  latitude: number;
+  longitude: number;
+  recorded_at: string;
+  stale: boolean; // no ping for >3 min — show as "signal lost"
+}
+
 export type DriverStatus = "on_trip" | "available" | "off_duty";
 
 export interface DriverPerf {

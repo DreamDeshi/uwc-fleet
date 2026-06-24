@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useDashboard, useDrivers, useTrips, useTrucks } from "@/hooks/queries";
+import { useDashboard, useDrivers, useFleetLive, useTrips, useTrucks } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
 import { Card, KpiCard, Loading, ErrorState, ProgressBar, TripStatusBadge, SectionTitle, Pill, EmptyState } from "@/components/ui";
 import { FleetMap } from "@/components/FleetMap";
@@ -23,6 +23,7 @@ export function DashboardPage() {
   const trucks = useTrucks();
   const trips = useTrips();
   const drivers = useDrivers();
+  const live = useFleetLive();
 
   if (dash.isLoading || trucks.isLoading) return <Loading />;
   if (dash.isError) return <ErrorState message="Could not load dashboard." onRetry={() => dash.refetch()} />;
@@ -30,6 +31,7 @@ export function DashboardPage() {
   const k = dash.data!;
   const truckList: Truck[] = trucks.data ?? [];
   const recentTrips = (trips.data ?? []).slice(0, 6);
+  const liveCount = (live.data ?? []).filter((p) => !p.stale).length;
 
   // Aggregate alerts: truck doc expiries + unassigned pending bookings.
   const docAlerts = truckList.flatMap((t) =>
@@ -116,7 +118,12 @@ export function DashboardPage() {
           <div style={{ padding: "16px 18px", borderBottom: `1px solid ${colors.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <div style={{ fontSize: 15, fontWeight: 700 }}>Fleet Map — Penang &amp; Northern Region</div>
-              <div style={{ fontSize: 12, color: colors.textMuted }}>Zone overlays · approximate truck positions (no live GPS yet)</div>
+              <div style={{ fontSize: 12, color: colors.textMuted }}>
+                Zone overlays ·{" "}
+                {liveCount > 0
+                  ? `${liveCount} truck${liveCount === 1 ? "" : "s"} live on GPS`
+                  : "approximate positions (awaiting GPS)"}
+              </div>
             </div>
             <div style={{ display: "flex", gap: 12, fontSize: 11.5, color: colors.textMuted }}>
               <LegendDot color={colors.green} label="Active" />
@@ -125,7 +132,7 @@ export function DashboardPage() {
             </div>
           </div>
           <div style={{ flex: 1, minHeight: 400 }}>
-            <FleetMap trucks={truckList} />
+            <FleetMap trucks={truckList} live={live.data ?? []} />
           </div>
         </Card>
 

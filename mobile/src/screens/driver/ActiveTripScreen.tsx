@@ -8,7 +8,8 @@ import { useTranslation } from "react-i18next";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { TripsStackParamList } from "../../navigation/types";
-import { useTrip, useUpdateTripStatus, useUpdateStopDocs } from "../../hooks/queries";
+import { useTrip, useUpdateTripStatus, useUpdateStopDocs, useTripRoute } from "../../hooks/queries";
+import { useTripLocation, TripLocationState } from "../../hooks/useTripLocation";
 import { apiErrorMessage } from "../../services/api";
 import { colors, radius, shadow } from "../../theme";
 import { Button } from "../../components/Button";
@@ -27,6 +28,12 @@ export function ActiveTripScreen() {
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<Rt>();
   const { data: trip, isLoading, isError, refetch } = useTrip(params.tripId);
+
+  // Phase 5: track this phone's GPS while the trip is active, and fetch the
+  // real road path. Both hooks run unconditionally (before the early returns
+  // below) to keep hook order stable across renders.
+  const tracking = useTripLocation(params.tripId, trip?.status === "in_progress");
+  const { data: route } = useTripRoute(params.tripId, Boolean(trip));
 
   const sheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ["32%", "78%"], []);
@@ -84,7 +91,20 @@ export function ActiveTripScreen() {
       <MapView style={StyleSheet.absoluteFill} initialRegion={region}>
         <Marker coordinate={PLANT_ORIGIN} title="UWC Batu Kawan" pinColor={colors.blue} />
         <Marker coordinate={dest} title={tripDestination(trip)} pinColor={colors.red} />
-        <Polyline coordinates={[PLANT_ORIGIN, dest]} strokeColor={colors.blue} strokeWidth={5} />
+        {/* Real road path from Google Directions; straight line until it loads */}
+        <Polyline
+          coordinates={route?.polyline?.length ? route.polyline : [PLANT_ORIGIN, dest]}
+          strokeColor={colors.blue}
+          strokeWidth={5}
+        />
+        {/* Live "you are here" dot from this phone's GPS */}
+        {tracking.current ? (
+          <Marker coordinate={tracking.current} anchor={{ x: 0.5, y: 0.5 }} flat>
+            <View style={styles.liveDotRing}>
+              <View style={styles.liveDotCore} />
+            </View>
+          </Marker>
+        ) : null}
       </MapView>
 
       {/* Floating top card */}
@@ -98,6 +118,7 @@ export function ActiveTripScreen() {
           <Text style={styles.headingSub}>
             ≈ {distance} {t("common.km")} · {trip.truck_plate ?? ""}
           </Text>
+          {trip.status === "in_progress" ? <TrackingBadge tracking={tracking} /> : null}
         </View>
       </View>
 
@@ -146,6 +167,32 @@ export function ActiveTripScreen() {
           </View>
         </View>
       </Modal>
+    </View>
+  );
+}
+
+// Small status chip in the heading card: live / locating / offline+queued.
+function TrackingBadge({ tracking }: { tracking: TripLocationState }) {
+  const { t } = useTranslation();
+  const offline = !tracking.online || tracking.queued > 0;
+
+  let dotColor: string = colors.green;
+  let label = t("trip.live");
+  if (tracking.status === "denied") {
+    dotColor = colors.red;
+    label = t("trip.locationOff");
+  } else if (offline) {
+    dotColor = colors.orange;
+    label = t("trip.offlineQueued", { count: tracking.queued });
+  } else if (tracking.status !== "tracking" || !tracking.current) {
+    dotColor = colors.textFaint;
+    label = t("trip.locating");
+  }
+
+  return (
+    <View style={styles.trackBadge}>
+      <View style={[styles.trackDot, { backgroundColor: dotColor }]} />
+      <Text style={styles.trackText}>{label}</Text>
     </View>
   );
 }
@@ -279,6 +326,28 @@ const styles = StyleSheet.create({
   headingLabel: { fontSize: 11, fontWeight: "700", color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.6 },
   headingDest: { fontSize: 20, fontWeight: "800", color: colors.navy, marginTop: 2 },
   headingSub: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+
+  trackBadge: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
+  trackDot: { width: 8, height: 8, borderRadius: 4 },
+  trackText: { fontSize: 12, fontWeight: "700", color: colors.navy },
+
+  // Live GPS dot on the map (blue core inside a soft ring).
+  liveDotRing: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "rgba(0,48,135,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  liveDotCore: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.blue,
+    borderWidth: 2,
+    borderColor: colors.white,
+  },
 
   sheetContent: { paddingHorizontal: 16, paddingBottom: 40 },
   sheetHandleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },

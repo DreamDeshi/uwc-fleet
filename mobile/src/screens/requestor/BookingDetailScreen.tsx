@@ -6,15 +6,16 @@ import { useTranslation } from "react-i18next";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { BookingsStackParamList } from "../../navigation/types";
-import { useTrip, useCancelTrip } from "../../hooks/queries";
+import { useTrip, useCancelTrip, useTripLatestLocation } from "../../hooks/queries";
 import { apiErrorMessage } from "../../services/api";
 import { colors, radius, shadow } from "../../theme";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
 import { Header } from "../../components/Header";
 import { RouteLine } from "../../components/RouteLine";
+import { LiveTripMap } from "../../components/LiveTripMap";
 import { LoadingState, ErrorState } from "../../components/States";
-import { tripDestination, tripConsigneeName, cargoSummary, ORIGIN_LABEL } from "../../lib/trip";
+import { tripDestination, tripConsigneeName, cargoSummary, tripDestZone, ORIGIN_LABEL } from "../../lib/trip";
 import { formatDateTime, initials as nameInitials } from "../../lib/format";
 import { TripStatus } from "../../types";
 
@@ -40,6 +41,11 @@ export function BookingDetailScreen() {
   const cancelTrip = useCancelTrip();
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Track the truck's latest position while the trip is in transit. The map
+  // below reads the same query (shared by key), so this is a single request.
+  const inTransit = trip?.status === "in_progress";
+  const { data: livePos } = useTripLatestLocation(params.tripId, Boolean(inTransit));
 
   if (isLoading) return <View style={styles.fill}><LoadingState /></View>;
   if (isError || !trip) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
@@ -111,6 +117,19 @@ export function BookingDetailScreen() {
                   <Ionicons name="call" size={20} color={colors.white} />
                 </TouchableOpacity>
               ) : null}
+            </View>
+          </Card>
+        ) : null}
+
+        {/* Live tracking — only while the truck is in transit */}
+        {trip.status === "in_progress" ? (
+          <Card style={{ marginBottom: 12 }}>
+            <View style={styles.detailHead}>
+              <Text style={styles.cardLabel}>{t("bookingDetail.liveLocation")}</Text>
+              <LiveStatus pos={livePos} />
+            </View>
+            <View style={{ marginTop: 12 }}>
+              <LiveTripMap tripId={trip.id} destZone={tripDestZone(trip)} live height={200} />
             </View>
           </Card>
         ) : null}
@@ -203,6 +222,23 @@ export function BookingDetailScreen() {
   );
 }
 
+// Small live/stale/waiting chip for the tracking card header.
+function LiveStatus({ pos }: { pos?: { stale: boolean } | null }) {
+  const { t } = useTranslation();
+  let color: string = colors.textFaint;
+  let label = t("bookingDetail.locWaiting");
+  if (pos) {
+    color = pos.stale ? colors.orange : colors.green;
+    label = pos.stale ? t("bookingDetail.locStale") : t("bookingDetail.locLive");
+  }
+  return (
+    <View style={styles.liveStatus}>
+      <View style={[styles.liveStatusDot, { backgroundColor: color }]} />
+      <Text style={[styles.liveStatusText, { color }]}>{label}</Text>
+    </View>
+  );
+}
+
 function Detail({ k, v }: { k: string; v: string }) {
   return (
     <View style={styles.detailCell}>
@@ -248,6 +284,9 @@ const styles = StyleSheet.create({
   driverPhone: { fontSize: 13, color: colors.blue, marginTop: 3, fontWeight: "600" },
   callBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.green, alignItems: "center", justifyContent: "center" },
   detailHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  liveStatus: { flexDirection: "row", alignItems: "center", gap: 6 },
+  liveStatusDot: { width: 8, height: 8, borderRadius: 4 },
+  liveStatusText: { fontSize: 12, fontWeight: "700" },
   ticketChip: { backgroundColor: colors.blue, paddingHorizontal: 12, paddingVertical: 4, borderRadius: radius.pill },
   ticketChipText: { color: colors.white, fontSize: 12, fontWeight: "700" },
   typeChip: { alignSelf: "flex-start", backgroundColor: colors.tintBlue, paddingHorizontal: 12, paddingVertical: 5, borderRadius: radius.pill, marginTop: 12 },

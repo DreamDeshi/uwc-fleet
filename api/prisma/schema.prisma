@@ -240,6 +240,10 @@ model LocationLog {
   recorded_at DateTime @default(now())
   // GPS source abstracted — phone GPS now, vendor API later.
   // Swap source in POST /locations endpoint only, no schema change needed.
+
+  // Supports "latest fix per trip" (GET /fleet/live) and per-trip history reads
+  // as this table grows by one row per active truck every 30s.
+  @@index([trip_id, recorded_at])
 }
 
 // ── 13. AuditLog ──────────────────────────────────────────────────────

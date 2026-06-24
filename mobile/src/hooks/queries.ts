@@ -49,6 +49,43 @@ export function useTrip(tripId: string) {
   });
 }
 
+// The real road path for a trip (Google Directions, computed server-side).
+// The route only depends on the trip's fixed stops, so it can be cached a while.
+export interface TripRoute {
+  polyline: { latitude: number; longitude: number }[];
+  distance_m: number | null;
+  duration_s: number | null;
+  source: "google" | "straight";
+}
+
+export function useTripRoute(tripId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["trip-route", tripId],
+    queryFn: async () => (await api.get<TripRoute>(`/trips/${tripId}/route`)).data,
+    enabled,
+    staleTime: 1000 * 60 * 30,
+  });
+}
+
+// Latest GPS fix of the truck on this trip (null until the driver pings). Polled
+// while the trip is being tracked so the requestor's mini-map stays current.
+export interface TripLatestLocation {
+  latitude: number;
+  longitude: number;
+  recorded_at: string;
+  stale: boolean;
+}
+
+export function useTripLatestLocation(tripId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["trip-location", tripId],
+    queryFn: async () =>
+      (await api.get<TripLatestLocation | null>(`/trips/${tripId}/location`)).data,
+    enabled,
+    refetchInterval: enabled ? 15_000 : false,
+  });
+}
+
 export function useIncentives() {
   return useQuery({
     queryKey: ["incentives", "mine"],

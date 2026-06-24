@@ -118,6 +118,10 @@
     "completedTitle": "Trip Completed!",
     "incentiveEarned": "Incentive Earned",
     "backToDashboard": "Back to Dashboard",
+    "live": "Live",
+    "locating": "Locating…",
+    "locationOff": "Location off",
+    "offlineQueued": "Offline · {{count}} queued",
     "noTrips": "No trips yet."
   },
   "earnings": {
@@ -207,6 +211,10 @@
     "bannerCancelled": "Booking Cancelled",
     "pendingNotice": "Your request is being reviewed. You'll be notified once a driver is assigned.",
     "assignedDriver": "Assigned Driver",
+    "liveLocation": "Live Location",
+    "locLive": "Live",
+    "locStale": "Signal lost",
+    "locWaiting": "Waiting for driver location…",
     "tripDetails": "Trip Details",
     "dateTime": "Date & Time",
     "cargo": "Cargo",
