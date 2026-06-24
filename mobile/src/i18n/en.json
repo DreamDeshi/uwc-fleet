@@ -81,7 +81,8 @@
     "viewTripDetails": "View Trip Details",
     "viewNavigation": "View Navigation",
     "myTruck": "My Truck",
-    "recentCompleted": "Recent Completed"
+    "recentCompleted": "Recent Completed",
+    "myTrips": "My Trips"
   },
   "trip": {
     "details": "Trip Details",

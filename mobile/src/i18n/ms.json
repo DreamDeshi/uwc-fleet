@@ -81,7 +81,8 @@
     "viewTripDetails": "Lihat Butiran Perjalanan",
     "viewNavigation": "Lihat Navigasi",
     "myTruck": "Trak Saya",
-    "recentCompleted": "Selesai Terkini"
+    "recentCompleted": "Selesai Terkini",
+    "myTrips": "Perjalanan Saya"
   },
   "trip": {
     "details": "Butiran Perjalanan",

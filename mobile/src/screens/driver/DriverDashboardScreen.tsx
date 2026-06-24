@@ -11,8 +11,9 @@ import { useTrips } from "../../hooks/queries";
 import { colors, radius, shadow } from "../../theme";
 import { Card } from "../../components/Card";
 import { StatusBadge } from "../../components/StatusBadge";
+import { TripCard } from "../../components/TripCard";
 import { LoadingState, ErrorState } from "../../components/States";
-import { formatMoney, formatDate, formatTime, dayMonth } from "../../lib/format";
+import { formatMoney, formatDate, formatTime } from "../../lib/format";
 import { tripDestination, cargoSummary, ORIGIN_LABEL } from "../../lib/trip";
 import { Trip } from "../../types";
 
@@ -65,7 +66,6 @@ export function DriverDashboardScreen() {
             </View>
             <Text style={styles.brand}>UWC TRUCKING</Text>
           </View>
-          <Ionicons name="notifications-outline" size={22} color={colors.white} />
         </View>
         <Text style={styles.date}>{formatDate(new Date())}</Text>
         <Text style={styles.greeting}>{t("driver.greeting", { name: firstName(user?.name) })} 👋</Text>
@@ -122,29 +122,23 @@ export function DriverDashboardScreen() {
       {/* This month + recent completed */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t("driver.recentCompleted")}</Text>
-        <Card style={{ marginTop: 12 }}>
-          {recentCompleted.length === 0 ? (
+        {recentCompleted.length === 0 ? (
+          <Card style={{ marginTop: 12 }}>
             <Text style={styles.emptyText}>{t("earnings.noEarnings")}</Text>
-          ) : (
-            recentCompleted.map((tr, i) => (
-              <View
+          </Card>
+        ) : (
+          <View style={{ marginTop: 12 }}>
+            {recentCompleted.map((tr) => (
+              <TripCard
                 key={tr.id}
-                style={[styles.completedRow, i < recentCompleted.length - 1 && styles.divider]}
-              >
-                <View style={styles.checkCircle}>
-                  <Ionicons name="checkmark" size={14} color={colors.green} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.completedRoute}>
-                    {ORIGIN_LABEL} → {tripDestination(tr)}
-                  </Text>
-                  <Text style={styles.completedDate}>{formatDate(tr.pickup_datetime)}</Text>
-                </View>
-                <Text style={styles.completedRm}>{formatMoney(tr.incentive_earned)}</Text>
-              </View>
-            ))
-          )}
-        </Card>
+                trip={tr}
+                meta={`${tr.ticket_number} · ${cargoSummary(tr)}`}
+                showIncentive
+                onPress={() => openDetails(tr.id)}
+              />
+            ))}
+          </View>
+        )}
       </View>
     </ScrollView>
   );
@@ -251,11 +245,4 @@ const styles = StyleSheet.create({
 
   emptyRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   emptyText: { fontSize: 14, color: colors.textMuted },
-
-  completedRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10 },
-  divider: { borderBottomWidth: 1, borderBottomColor: colors.bg },
-  checkCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.tintGreen, alignItems: "center", justifyContent: "center" },
-  completedRoute: { fontSize: 13, fontWeight: "600", color: colors.navy },
-  completedDate: { fontSize: 11, color: colors.textFaint, marginTop: 1 },
-  completedRm: { fontSize: 14, fontWeight: "700", color: colors.green },
 });

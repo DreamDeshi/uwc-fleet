@@ -1,6 +1,10 @@
 import React from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
+import { useNavigation } from "@react-navigation/native";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
+import { DriverTabParamList } from "../../navigation/types";
 import { useIncentives } from "../../hooks/queries";
 import { colors, radius, shadow } from "../../theme";
 import { Header } from "../../components/Header";
@@ -10,7 +14,11 @@ import { formatMoney, formatDate, monthYear } from "../../lib/format";
 
 export function EarningsScreen() {
   const { t } = useTranslation();
+  const navigation = useNavigation<BottomTabNavigationProp<DriverTabParamList>>();
   const { data, isLoading, isError, refetch, isRefetching } = useIncentives();
+
+  const openTrip = (tripId: string) =>
+    navigation.navigate("TripsTab", { screen: "TripDetails", params: { tripId } });
 
   return (
     <View style={styles.fill}>
@@ -40,8 +48,10 @@ export function EarningsScreen() {
           ) : (
             <Card padded={false} style={{ overflow: "hidden" }}>
               {data.trips.map((tr, i) => (
-                <View
+                <TouchableOpacity
                   key={tr.id}
+                  activeOpacity={0.7}
+                  onPress={() => openTrip(tr.id)}
                   style={[styles.row, i < data.trips.length - 1 && styles.divider]}
                 >
                   <View style={{ flex: 1 }}>
@@ -51,7 +61,8 @@ export function EarningsScreen() {
                     </Text>
                   </View>
                   <Text style={styles.rowRm}>{formatMoney(tr.incentive_earned)}</Text>
-                </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textFaint} style={{ marginLeft: 8 }} />
+                </TouchableOpacity>
               ))}
             </Card>
           )}

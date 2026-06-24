@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Linking, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import MapView, { Marker, Polyline } from "react-native-maps";
 import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Ionicons } from "@expo/vector-icons";
@@ -39,7 +39,9 @@ export function ActiveTripScreen() {
   const { data: route } = useTripRoute(params.tripId, Boolean(trip));
 
   const sheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ["32%", "78%"], []);
+  // Open taller by default so the current stop's action button is reachable
+  // without dragging the sheet up (big-touch: drivers act one-handed).
+  const snapPoints = useMemo(() => ["45%", "88%"], []);
   const [error, setError] = useState<string | null>(null);
   const [earned, setEarned] = useState<string | number | null>(null);
 
@@ -52,7 +54,21 @@ export function ActiveTripScreen() {
   const dest = zoneCoord(tripDestZone(trip));
   const region = regionFor(PLANT_ORIGIN, dest);
   const distance = haversineKm(PLANT_ORIGIN, dest);
-  const stops = (trip.stops ?? []).slice().sort((a, b) => a.sequence - b.sequence);
+  // Active (not-yet-delivered) stops float to the top so the stop the driver is
+  // working on — and its action button — is the first thing in the sheet.
+  const stops = (trip.stops ?? []).slice().sort((a, b) => {
+    const ad = a.status === "delivered" ? 1 : 0;
+    const bd = b.status === "delivered" ? 1 : 0;
+    if (ad !== bd) return ad - bd;
+    return a.sequence - b.sequence;
+  });
+
+  // Hand off to Google Maps for real turn-by-turn (drivers won't use in-app nav).
+  const openInMaps = () => {
+    Linking.openURL(
+      `https://www.google.com/maps/dir/?api=1&destination=${dest.latitude},${dest.longitude}&travelmode=driving`
+    );
+  };
 
   const onArrived = async (stop: TripStop) => {
     setError(null);
@@ -126,6 +142,11 @@ export function ActiveTripScreen() {
           </Text>
           {trip.status === "in_progress" ? <TrackingBadge tracking={tracking} /> : null}
         </View>
+        {/* Real turn-by-turn handoff to Google Maps */}
+        <TouchableOpacity style={styles.navBtn} onPress={openInMaps} activeOpacity={0.85}>
+          <Ionicons name="navigate" size={20} color={colors.white} />
+          <Text style={styles.navBtnText}>{t("trip.navigate")}</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Bottom sheet with the stop list + action buttons */}
@@ -308,9 +329,14 @@ function DocCheckbox({
   onToggle: (v: boolean) => void;
 }) {
   return (
-    <TouchableOpacity style={styles.checkRow} onPress={() => onToggle(!checked)} activeOpacity={0.7}>
+    <TouchableOpacity
+      style={styles.checkRow}
+      onPress={() => onToggle(!checked)}
+      activeOpacity={0.7}
+      hitSlop={8}
+    >
       <View style={[styles.checkBox, checked && styles.checkBoxOn]}>
-        {checked ? <Ionicons name="checkmark" size={16} color={colors.white} /> : null}
+        {checked ? <Ionicons name="checkmark" size={18} color={colors.white} /> : null}
       </View>
       <Text style={styles.checkLabel}>{label}</Text>
     </TouchableOpacity>
@@ -343,6 +369,18 @@ const styles = StyleSheet.create({
   headingLabel: { fontSize: 11, fontWeight: "700", color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.6 },
   headingDest: { fontSize: 20, fontWeight: "800", color: colors.navy, marginTop: 2 },
   headingSub: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+
+  navBtn: {
+    backgroundColor: colors.blue,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 64,
+    gap: 2,
+  },
+  navBtnText: { color: colors.white, fontSize: 12, fontWeight: "700" },
 
   trackBadge: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
   trackDot: { width: 8, height: 8, borderRadius: 4 },
@@ -382,8 +420,8 @@ const styles = StyleSheet.create({
   deliveredText: { fontSize: 11, fontWeight: "800", color: colors.green },
 
   gateHint: { fontSize: 12, color: colors.textMuted, marginBottom: 10, lineHeight: 17 },
-  checkRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 },
-  checkBox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
+  checkRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
+  checkBox: { width: 28, height: 28, borderRadius: 8, borderWidth: 2, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
   checkBoxOn: { backgroundColor: colors.green, borderColor: colors.green },
   checkLabel: { flex: 1, fontSize: 13, color: colors.navy, fontWeight: "600" },
 
