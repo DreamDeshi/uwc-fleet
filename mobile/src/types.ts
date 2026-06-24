@@ -80,9 +80,20 @@ export interface TripStop {
   status: StopStatus;
   arrived_at: string | null;
   delivered_at: string | null;
+  pod_photo: string | null;
   do_uploaded: boolean;
   k2_form_ack: boolean;
   consignee?: Consignee;
+}
+
+export type DocumentType = "do_photo" | "k2_form" | "other";
+
+export interface TripDocument {
+  id: string;
+  trip_id: string;
+  type: DocumentType;
+  file_url: string;
+  uploaded_at: string;
 }
 
 export interface Trip {
@@ -103,6 +114,7 @@ export interface Trip {
   route_type?: RouteType;
   stops?: TripStop[];
   cargo_details?: CargoDetail[];
+  documents?: TripDocument[];
 }
 
 export interface IncentiveTrip {

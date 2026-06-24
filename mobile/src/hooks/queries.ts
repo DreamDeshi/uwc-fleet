@@ -166,6 +166,70 @@ export function useUpdateStopDocs() {
   });
 }
 
+// ── Uploads (multipart/form-data) ────────────────────────────────────────
+import { PickedPhoto } from "../lib/photo";
+import { DocumentType } from "../types";
+
+// POD photo for a stop. The API stores the Cloudinary URL on the stop and flips
+// do_uploaded, which satisfies the "Delivered" gate.
+export function useUploadPod() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      tripId,
+      stopId,
+      photo,
+    }: {
+      tripId: string;
+      stopId: string;
+      photo: PickedPhoto;
+    }) => {
+      const form = new FormData();
+      form.append("photo", { uri: photo.uri, name: photo.name, type: photo.type } as any);
+      return (
+        await api.post<Trip>(`/trips/${tripId}/stops/${stopId}/pod`, form, {
+          headers: { "Content-Type": "multipart/form-data" },
+          timeout: 60_000,
+        })
+      ).data;
+    },
+    onSuccess: (trip) => {
+      qc.invalidateQueries({ queryKey: ["trip", trip.id] });
+      qc.invalidateQueries({ queryKey: ["trips"] });
+    },
+  });
+}
+
+// Requestor/admin uploads a DO or invoice against a booking.
+export function useUploadTripDocument() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      tripId,
+      photo,
+      type,
+    }: {
+      tripId: string;
+      photo: PickedPhoto;
+      type: DocumentType;
+    }) => {
+      const form = new FormData();
+      form.append("file", { uri: photo.uri, name: photo.name, type: photo.type } as any);
+      form.append("type", type);
+      return (
+        await api.post<Trip>(`/trips/${tripId}/documents`, form, {
+          headers: { "Content-Type": "multipart/form-data" },
+          timeout: 60_000,
+        })
+      ).data;
+    },
+    onSuccess: (trip) => {
+      qc.invalidateQueries({ queryKey: ["trip", trip.id] });
+      qc.invalidateQueries({ queryKey: ["trips"] });
+    },
+  });
+}
+
 export interface CreateConsigneeInput {
   company_name: string;
   zone_code: string;

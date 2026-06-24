@@ -12,6 +12,8 @@ import {
   isDocumentationComplete,
 } from "../services/incentiveEngine";
 import { PLANT_ORIGIN, zoneCoord, getRoute, type LatLng } from "../lib/geo";
+import { upload } from "../lib/upload";
+import { uploadBuffer } from "../lib/cloudinary";
 
 const router = Router();
 router.use(requireAuth);
@@ -23,6 +25,7 @@ const tripInclude = {
   route_type: true,
   stops: { include: { consignee: true }, orderBy: { sequence: "asc" as const } },
   cargo_details: true,
+  documents: { orderBy: { uploaded_at: "desc" as const } },
 };
 
 // ── Ticket number generation: TKT-YYYYMMDD-NNN, sequential per calendar day ──
@@ -465,6 +468,107 @@ router.patch(
 
       const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
       res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ── POST /trips/:id/stops/:stopId/pod — driver uploads the POD photo ──
+//
+// Multipart upload (field name "photo"). The mobile app captures with the
+// camera (gallery fallback) and compresses to ≤500KB before sending. We push
+// the buffer to Cloudinary, store the URL on the stop, and flip do_uploaded so
+// the "Delivered" gate (isDocumentationComplete) is satisfied.
+router.post(
+  "/:id/stops/:stopId/pod",
+  requireRole("driver"),
+  upload.single("photo"),
+  async (req, res, next) => {
+    try {
+      const { id, stopId } = req.params;
+
+      if (!req.file) {
+        throw new ApiError(400, "NO_FILE", "A photo file is required (field name 'photo').");
+      }
+
+      const trip = await prisma.trip.findUnique({ where: { id }, include: { stops: true } });
+      if (!trip) {
+        throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      }
+      if (trip.driver_id !== req.user!.id) {
+        throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+      }
+      const stop = trip.stops.find((s) => s.id === stopId);
+      if (!stop) {
+        throw new ApiError(400, "STOP_NOT_FOUND", "That stop is not part of this trip.");
+      }
+
+      const url = await uploadBuffer(req.file.buffer, "uwc/pod", {
+        publicId: `${trip.ticket_number}-stop-${stop.sequence}`,
+      });
+
+      await prisma.tripStop.update({
+        where: { id: stopId },
+        data: { pod_photo: url, do_uploaded: true },
+      });
+      await prisma.auditLog.create({
+        data: { user_id: req.user!.id, action: "stop.pod_uploaded", table_name: "TripStop", record_id: stopId },
+      });
+
+      const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
+      res.status(201).json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ── POST /trips/:id/documents — requestor/admin uploads a DO or invoice ──
+//
+// Multipart upload (field name "file") plus a "type" field. Accepts images or
+// PDFs (resource_type "auto" lets Cloudinary store either). The uploaded docs
+// surface on the requestor's BookingDetail screen.
+const documentTypes = ["do_photo", "k2_form", "other"] as const;
+
+router.post(
+  "/:id/documents",
+  requireRole("requestor", "admin"),
+  upload.single("file"),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+
+      if (!req.file) {
+        throw new ApiError(400, "NO_FILE", "A file is required (field name 'file').");
+      }
+
+      const rawType = typeof req.body.type === "string" ? req.body.type : "other";
+      const type = (documentTypes as readonly string[]).includes(rawType)
+        ? (rawType as (typeof documentTypes)[number])
+        : "other";
+
+      const trip = await prisma.trip.findUnique({ where: { id } });
+      if (!trip) {
+        throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      }
+      const isOwner = req.user!.role === "requestor" && trip.requestor_id === req.user!.id;
+      const isAdmin = req.user!.role === "admin";
+      if (!isOwner && !isAdmin) {
+        throw new ApiError(403, "FORBIDDEN", "You do not have permission to add documents to this trip.");
+      }
+
+      const url = await uploadBuffer(req.file.buffer, "uwc/documents", { resourceType: "auto" });
+
+      await prisma.tripDocument.create({
+        data: { trip_id: id, type, file_url: url },
+      });
+      await prisma.auditLog.create({
+        data: { user_id: req.user!.id, action: "trip.document_uploaded", table_name: "TripDocument", record_id: id },
+      });
+
+      const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
+      res.status(201).json(updated);
     } catch (err) {
       next(err);
     }

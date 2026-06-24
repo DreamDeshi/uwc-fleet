@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import { Linking, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, Linking, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import MapView, { Marker, Polyline } from "react-native-maps";
 import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,7 +9,14 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { TripsStackParamList, DriverTabParamList } from "../../navigation/types";
-import { useTrip, useUpdateTripStatus, useUpdateStopDocs, useTripRoute } from "../../hooks/queries";
+import {
+  useTrip,
+  useUpdateTripStatus,
+  useUpdateStopDocs,
+  useTripRoute,
+  useUploadPod,
+} from "../../hooks/queries";
+import { capturePodPhoto } from "../../lib/photo";
 import { useTripLocation, TripLocationState } from "../../hooks/useTripLocation";
 import { useToast } from "../../components/Toast";
 import { apiErrorMessage } from "../../services/api";
@@ -47,6 +54,7 @@ export function ActiveTripScreen() {
 
   const updateStatus = useUpdateTripStatus();
   const updateDocs = useUpdateStopDocs();
+  const uploadPod = useUploadPod();
 
   if (isLoading) return <View style={styles.fill}><LoadingState /></View>;
   if (isError || !trip) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
@@ -84,6 +92,20 @@ export function ActiveTripScreen() {
     setError(null);
     try {
       await updateDocs.mutateAsync({ tripId: trip.id, stopId: stop.id, [field]: value });
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    }
+  };
+
+  // Camera-first POD capture → compress ≤500KB → upload. The API flips
+  // do_uploaded, which (with the K2 ack where applicable) unlocks "Delivered".
+  const onCapturePod = async (stop: TripStop) => {
+    setError(null);
+    try {
+      const photo = await capturePodPhoto();
+      if (!photo) return; // cancelled or permission denied
+      await uploadPod.mutateAsync({ tripId: trip.id, stopId: stop.id, photo });
+      toast(t("trip.podUploaded"), "success");
     } catch (err) {
       setError(apiErrorMessage(err));
     }
@@ -163,8 +185,10 @@ export function ActiveTripScreen() {
               stop={stop}
               index={idx}
               busy={updateStatus.isPending || updateDocs.isPending}
+              uploadingPod={uploadPod.isPending}
               onArrived={() => onArrived(stop)}
               onToggleDoc={(f, v) => toggleDoc(stop, f, v)}
+              onCapturePod={() => onCapturePod(stop)}
               onDelivered={() => onDelivered(stop)}
             />
           ))}
@@ -231,19 +255,24 @@ function StopCard({
   stop,
   index,
   busy,
+  uploadingPod,
   onArrived,
   onToggleDoc,
+  onCapturePod,
   onDelivered,
 }: {
   stop: TripStop;
   index: number;
   busy: boolean;
+  uploadingPod: boolean;
   onArrived: () => void;
   onToggleDoc: (field: "do_uploaded" | "k2_form_ack", value: boolean) => void;
+  onCapturePod: () => void;
   onDelivered: () => void;
 }) {
   const { t } = useTranslation();
   const isK2 = stop.consignee?.zone_code === "K2";
+  // do_uploaded is now driven by the POD photo upload, not a checkbox.
   const docsComplete = stop.do_uploaded && (!isK2 || stop.k2_form_ack);
   // Translated stop-status label (was a raw, untranslated enum like "ARRIVED").
   const statusLabel: Record<string, string> = {
@@ -288,15 +317,36 @@ function StopCard({
         />
       ) : null}
 
-      {/* arrived → documentation gate + Delivered button */}
+      {/* arrived → POD photo gate + Delivered button */}
       {stop.status === "arrived" ? (
         <View style={{ marginTop: 12 }}>
-          <Text style={styles.gateHint}>{t("trip.docGateHint")}</Text>
-          <DocCheckbox
-            label={t("trip.doUploaded")}
-            checked={stop.do_uploaded}
-            onToggle={(v) => onToggleDoc("do_uploaded", v)}
-          />
+          <Text style={styles.gateHint}>{t("trip.podGateHint")}</Text>
+
+          {/* POD photo: capture (camera-first) or show the uploaded shot */}
+          {stop.pod_photo ? (
+            <View style={styles.podRow}>
+              <Image source={{ uri: stop.pod_photo }} style={styles.podThumb} />
+              <View style={{ flex: 1 }}>
+                <View style={styles.podDoneRow}>
+                  <Ionicons name="checkmark-circle" size={16} color={colors.green} />
+                  <Text style={styles.podDoneText}>{t("trip.podUploaded")}</Text>
+                </View>
+                <TouchableOpacity onPress={onCapturePod} hitSlop={8} disabled={uploadingPod}>
+                  <Text style={styles.podRetake}>{t("trip.podRetake")}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <Button
+              title={t("trip.podCapture")}
+              onPress={onCapturePod}
+              loading={uploadingPod}
+              variant="outline"
+              style={{ marginTop: 4 }}
+              icon={<Ionicons name="camera" size={18} color={colors.blue} />}
+            />
+          )}
+
           {isK2 ? (
             <DocCheckbox
               label={t("trip.k2Form")}
@@ -420,6 +470,11 @@ const styles = StyleSheet.create({
   deliveredText: { fontSize: 11, fontWeight: "800", color: colors.green },
 
   gateHint: { fontSize: 12, color: colors.textMuted, marginBottom: 10, lineHeight: 17 },
+  podRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 4 },
+  podThumb: { width: 56, height: 56, borderRadius: radius.md, backgroundColor: colors.bg },
+  podDoneRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  podDoneText: { fontSize: 13, fontWeight: "700", color: colors.green },
+  podRetake: { fontSize: 13, fontWeight: "700", color: colors.blue, marginTop: 4 },
   checkRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
   checkBox: { width: 28, height: 28, borderRadius: 8, borderWidth: 2, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
   checkBoxOn: { backgroundColor: colors.green, borderColor: colors.green },

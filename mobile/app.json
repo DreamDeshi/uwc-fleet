@@ -29,6 +29,13 @@
         {
           "locationWhenInUsePermission": "UWC Trucking uses your location to show the live position of your truck to dispatch while you are on an active delivery."
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "UWC Trucking uses your camera to capture proof-of-delivery photos at each stop.",
+          "photosPermission": "UWC Trucking accesses your photos so you can attach delivery orders and invoices to a booking."
+        }
       ]
     ],
     "extra": {
