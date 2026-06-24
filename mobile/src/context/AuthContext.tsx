@@ -11,7 +11,7 @@ import {
   setTokens,
 } from "../services/api";
 import { registerForPushNotificationsAsync } from "../lib/notifications";
-import { Me } from "../types";
+import { Me, AppLanguage, SUPPORTED_LANGUAGES } from "../types";
 import i18n from "../i18n";
 
 type AuthStatus = "loading" | "authed" | "guest";
@@ -23,7 +23,7 @@ interface AuthContextValue {
   register: (payload: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
-  setLanguage: (lang: "en" | "ms") => Promise<void>;
+  setLanguage: (lang: AppLanguage) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -35,7 +35,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchMe = async () => {
     const res = await api.get<Me>("/users/me");
     setUser(res.data);
-    if (res.data.language_pref === "en" || res.data.language_pref === "ms") {
+    if ((SUPPORTED_LANGUAGES as readonly string[]).includes(res.data.language_pref)) {
       i18n.changeLanguage(res.data.language_pref);
     }
     return res.data;
@@ -121,7 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const setLanguage = async (lang: "en" | "ms") => {
+  const setLanguage = async (lang: AppLanguage) => {
     await i18n.changeLanguage(lang);
     setUser((u) => (u ? { ...u, language_pref: lang } : u));
     try {

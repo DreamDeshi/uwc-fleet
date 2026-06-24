@@ -373,7 +373,7 @@ router.patch(
       const { reason } = req.body;
       const updated = await prisma.trip.update({
         where: { id },
-        data: { status: "rejected" },
+        data: { status: "rejected", rejection_reason: reason ?? null },
         include: tripInclude,
       });
       await prisma.auditLog.create({

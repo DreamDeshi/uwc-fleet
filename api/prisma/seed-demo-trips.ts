@@ -1,23 +1,26 @@
 /**
- * Demo data for the A4 presentation.
+ * Clean demo data for the final review (Phase 9).
  *
- *  1. Removes the junk test bookings (consignees "Among us" / "Yyy") and the
- *     junk consignees themselves.
- *  2. Wipes the demo driver's existing trips + any leftover demo pending trip,
- *     then recreates a clean, professional-looking set:
- *       - a full week of completed deliveries (drives the earnings page + chart)
- *       - one in-progress trip with a fresh GPS fix (live map demo)
- *       - one assigned trip ready to "Start" (driver flow demo)
- *       - one pending trip with no driver (admin dispatch demo)
+ * Wipes ALL existing trips and the junk self-added consignees, then creates
+ * exactly 5 professional-looking demo trips — one of each lifecycle state —
+ * all owned by a realistically-named requestor ("Tan Wei Ming"):
+ *   1. pending       — just submitted, no driver yet (admin dispatch demo)
+ *   2. assigned      — driver assigned, not started (driver "Start Trip" demo)
+ *   3. in_progress   — driver en route, with a fresh GPS fix (live-map demo)
+ *   4. completed     — delivered, incentive calculated (earnings demo)
+ *   5. rejected      — with an admin reason shown to the requestor
  *
+ * All consignees are real companies from the seeded UWC list (no fake names).
  * Idempotent: safe to re-run. Run with:
  *   npx tsx prisma/seed-demo-trips.ts   (from the api/ workspace)
  */
 import { prisma } from "../src/lib/prisma";
 
-const JUNK_NAMES = ["Among us", "Yyy"];
 const DEMO_DRIVER_PHONE = "+60100000101"; // Mohd Azmi B. Che Dol — truck PLX 2406
-const TANK = "PLX 2406";
+const TRUCK = "PLX 2406";
+
+// Self-added test consignees to purge (created_by set, obviously not real).
+const JUNK_CONSIGNEES = ["Among us", "Yyy", "Congolese", "Hahah", "Chemor"];
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const ymd = (d: Date) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
@@ -40,7 +43,7 @@ async function main() {
   let requestor = await prisma.user.findFirst({ where: { role: "requestor" }, orderBy: { created_at: "asc" } });
   if (!requestor) throw new Error("No requestor found — register one in the app first.");
 
-  // Make the requestor look real for the dashboard demo (name + department).
+  // Make the requestor look real for the demo (name + department).
   const warehouse = await prisma.department.findUnique({ where: { name: "Warehouse" } });
   requestor = await prisma.user.update({
     where: { id: requestor.id },
@@ -54,113 +57,104 @@ async function main() {
     return rt.id;
   };
 
-  // One good consignee per zone we deliver to (prefer ones with a phone number
-  // so the driver's tap-to-call button has something to dial).
-  const zonesNeeded = ["A2", "K1", "P1", "K2", "P2", "P3"];
-  const consigneeByZone: Record<string, { id: string; zone_code: string }> = {};
-  for (const z of zonesNeeded) {
+  // Pick one real consignee per zone (prefer one with a phone so the driver's
+  // tap-to-call button has something to dial).
+  const pickConsignee = async (zone: string) => {
     const withPhone = await prisma.consignee.findFirst({
-      where: { zone_code: z, phone: { not: null }, company_name: { notIn: JUNK_NAMES } },
+      where: { zone_code: zone, phone: { not: null }, company_name: { notIn: JUNK_CONSIGNEES } },
       orderBy: { company_name: "asc" },
     });
-    const any = withPhone ?? (await prisma.consignee.findFirst({
-      where: { zone_code: z, company_name: { notIn: JUNK_NAMES } },
+    const c = withPhone ?? (await prisma.consignee.findFirst({
+      where: { zone_code: zone, company_name: { notIn: JUNK_CONSIGNEES } },
       orderBy: { company_name: "asc" },
     }));
-    if (any) consigneeByZone[z] = { id: any.id, zone_code: any.zone_code };
-  }
-  const pickZone = (z: string) => consigneeByZone[z] ?? consigneeByZone["P2"];
+    if (!c) throw new Error(`No clean consignee found in zone ${zone}.`);
+    return c;
+  };
 
-  // ── 1. Remove junk bookings + consignees ────────────────────────────────
-  const junkTrips = await prisma.trip.findMany({
-    where: { stops: { some: { consignee: { company_name: { in: JUNK_NAMES } } } } },
-    select: { id: true },
-  });
-  await deleteTripsByIds(junkTrips.map((t) => t.id));
-  await prisma.consignee.deleteMany({ where: { company_name: { in: JUNK_NAMES } } });
-  console.log(`Removed ${junkTrips.length} junk trip(s) and junk consignees.`);
+  // ── 1. Clean slate: remove every trip + junk consignees ─────────────────
+  const allTrips = await prisma.trip.findMany({ select: { id: true } });
+  await deleteTripsByIds(allTrips.map((t) => t.id));
+  const junk = await prisma.consignee.deleteMany({ where: { company_name: { in: JUNK_CONSIGNEES } } });
+  console.log(`Cleared ${allTrips.length} existing trip(s) and ${junk.count} junk consignee(s).`);
 
-  // ── 2. Clear prior demo trips (idempotent) ──────────────────────────────
-  const oldDriverTrips = await prisma.trip.findMany({ where: { driver_id: driver.id }, select: { id: true } });
-  await deleteTripsByIds(oldDriverTrips.map((t) => t.id));
-  const oldPending = await prisma.trip.findMany({
-    where: { requestor_id: requestor.id, driver_id: null, status: "pending" },
-    select: { id: true },
-  });
-  await deleteTripsByIds(oldPending.map((t) => t.id));
-  console.log(`Cleared ${oldDriverTrips.length} prior driver trip(s) + ${oldPending.length} pending.`);
-
-  // ── 3. Build the demo week ──────────────────────────────────────────────
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const at = (daysFromToday: number, hour: number) => {
-    const d = new Date(today);
-    d.setDate(d.getDate() + daysFromToday);
+  // ── 2. Build the 5 demo trips ───────────────────────────────────────────
+  const now = new Date();
+  const at = (daysFromNow: number, hour: number) => {
+    const d = new Date(now);
+    d.setDate(d.getDate() + daysFromNow);
     d.setHours(hour, 0, 0, 0);
     return d;
   };
 
-  type Spec = {
-    offset: number; hour: number; zone: string; route: string;
-    pallets: number; size: string; amount: number | null;
-    status: "completed" | "in_progress" | "assigned" | "pending";
-    withDriver: boolean;
-  };
-
-  const completed = (offset: number, hour: number, zone: string, route: string, pallets: number, size: string, amount: number): Spec =>
-    ({ offset, hour, zone, route, pallets, size, amount, status: "completed", withDriver: true });
-
-  const specs: Spec[] = [
-    // This week — Mon 22 .. Wed 24 (today), two deliveries a day.
-    completed(-2, 9, "A2", "Customer Delivery", 6, "4×8", 88),
-    completed(-2, 14, "P2", "Supplier Delivery", 4, "4×4", 22),
-    completed(-1, 8, "K1", "Customer Delivery", 5, "3×4", 44),
-    completed(-1, 15, "P1", "Customer Delivery", 8, "4×4", 55),
-    completed(0, 8, "K2", "Inter-Plant Delivery", 10, "4×8", 66),
-    completed(0, 11, "P3", "Supplier Delivery", 3, "2×2", 39),
-    // Last week — adds depth to the breakdown list + monthly totals.
-    completed(-7, 9, "A2", "Customer Delivery", 6, "4×8", 80),
-    completed(-6, 10, "K1", "Supplier Delivery", 4, "3×4", 45),
-    completed(-5, 13, "P1", "Customer Delivery", 7, "4×4", 60),
-    // Live + flow demos.
-    { offset: 0, hour: 16, zone: "K1", route: "Customer Delivery", pallets: 6, size: "4×4", amount: null, status: "in_progress", withDriver: true },
-    { offset: 1, hour: 9, zone: "P1", route: "Customer Delivery", pallets: 5, size: "3×4", amount: null, status: "assigned", withDriver: true },
-    { offset: 1, hour: 11, zone: "P3", route: "Supplier Delivery", pallets: 4, size: "4×4", amount: null, status: "pending", withDriver: false },
-  ];
-
-  // Per-date ticket counter for realistic, unique TKT-YYYYMMDD-NNN numbers.
   const seqByDate: Record<string, number> = {};
   const nextTicket = (d: Date) => {
     const key = ymd(d);
-    seqByDate[key] = (seqByDate[key] ?? 800) + 1;
+    seqByDate[key] = (seqByDate[key] ?? 100) + 1;
     return `TKT-${key}-${seqByDate[key]}`;
   };
+
+  type Spec = {
+    when: Date;
+    zone: string;
+    route: string;
+    pallets: number;
+    size: string;
+    status: "pending" | "assigned" | "in_progress" | "completed" | "rejected";
+    withDriver: boolean;
+    incentive?: number;
+    rejectionReason?: string;
+  };
+
+  const specs: Spec[] = [
+    // 1. Pending — submitted this morning, awaiting admin dispatch.
+    { when: at(0, 9), zone: "P1", route: "Customer Delivery", pallets: 6, size: "4×4", status: "pending", withDriver: false },
+    // 2. Assigned — driver assigned for this afternoon, not yet started.
+    { when: at(0, 14), zone: "K1", route: "Supplier Delivery", pallets: 5, size: "3×4", status: "assigned", withDriver: true },
+    // 3. In progress — driver currently en route (live map demo).
+    { when: at(0, 8), zone: "P2", route: "Inter-Plant Delivery", pallets: 8, size: "4×4", status: "in_progress", withDriver: true },
+    // 4. Completed — delivered yesterday, first trip of the day to Ipoh (A2):
+    //    6 pts − 2 (PLX 2406 deduction) = 4 pts × RM 11 weekday = RM 44.
+    { when: at(-1, 9), zone: "A2", route: "Customer Delivery", pallets: 10, size: "4×8", status: "completed", withDriver: true, incentive: 44 },
+    // 5. Rejected — with a clear admin reason.
+    {
+      when: at(0, 16),
+      zone: "K2",
+      route: "Supplier Delivery",
+      pallets: 12,
+      size: "4×8",
+      status: "rejected",
+      withDriver: false,
+      rejectionReason: "No 30ft truck available for this time slot. Please rebook for tomorrow morning.",
+    },
+  ];
 
   let inProgressTripId: string | null = null;
 
   for (const s of specs) {
-    const when = at(s.offset, s.hour);
-    const c = pickZone(s.zone);
+    const c = await pickConsignee(s.zone);
     const isK2 = c.zone_code === "K2";
+    const stopStatus =
+      s.status === "completed" ? "delivered" : s.status === "in_progress" ? "arrived" : "pending";
 
-    const stopStatus = s.status === "completed" ? "delivered" : s.status === "in_progress" ? "arrived" : "pending";
     const trip = await prisma.trip.create({
       data: {
-        ticket_number: nextTicket(when),
+        ticket_number: nextTicket(s.when),
         requestor_id: requestor.id,
         driver_id: s.withDriver ? driver.id : null,
-        truck_plate: s.withDriver ? TANK : null,
+        truck_plate: s.withDriver ? TRUCK : null,
         route_type_id: routeId(s.route),
         status: s.status,
-        pickup_datetime: when,
-        incentive_earned: s.amount != null ? s.amount.toFixed(2) : null,
+        pickup_datetime: s.when,
+        incentive_earned: s.incentive != null ? s.incentive.toFixed(2) : null,
+        rejection_reason: s.rejectionReason ?? null,
         stops: {
           create: [{
             sequence: 1,
             consignee_id: c.id,
             status: stopStatus,
-            arrived_at: stopStatus === "delivered" || stopStatus === "arrived" ? new Date(when.getTime() + 60 * 60 * 1000) : null,
-            delivered_at: stopStatus === "delivered" ? new Date(when.getTime() + 2 * 60 * 60 * 1000) : null,
+            arrived_at: stopStatus === "delivered" || stopStatus === "arrived" ? new Date(s.when.getTime() + 60 * 60 * 1000) : null,
+            delivered_at: stopStatus === "delivered" ? new Date(s.when.getTime() + 2 * 60 * 60 * 1000) : null,
             do_uploaded: stopStatus === "delivered",
             k2_form_ack: stopStatus === "delivered" && isK2,
           }],
@@ -171,22 +165,22 @@ async function main() {
     if (s.status === "in_progress") inProgressTripId = trip.id;
   }
 
-  // Fresh GPS fix for the in-progress trip so the live map shows the truck
-  // en route (not "stale"). A point roughly between the plant and Kulim.
+  // Fresh GPS fix for the in-progress trip so the live map shows the truck en
+  // route (not "stale"). A point between the plant and the Juru/Perai area.
   if (inProgressTripId) {
     await prisma.locationLog.create({
       data: {
         trip_id: inProgressTripId,
         driver_id: driver.id,
-        latitude: "5.4200000",
-        longitude: "100.5000000",
+        latitude: "5.4100000",
+        longitude: "100.4200000",
         recorded_at: new Date(),
       },
     });
   }
 
-  console.log(`Created ${specs.length} demo trips (${specs.filter((s) => s.status === "completed").length} completed).`);
-  console.log("Demo data ready for the presentation.");
+  console.log(`Created ${specs.length} clean demo trips (pending, assigned, in_progress, completed, rejected).`);
+  console.log("Demo data ready.");
 }
 
 main().catch((e) => { console.error(e); process.exit(1); }).finally(() => prisma.$disconnect());

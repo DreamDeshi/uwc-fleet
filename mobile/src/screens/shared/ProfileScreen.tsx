@@ -8,13 +8,21 @@ import { Header } from "../../components/Header";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
 import { initials } from "../../lib/format";
+import { AppLanguage } from "../../types";
 
 export function ProfileScreen() {
   const { t, i18n } = useTranslation();
   const { user, logout, setLanguage } = useAuth();
   const [confirmLogout, setConfirmLogout] = useState(false);
 
-  const lang = i18n.language === "ms" ? "ms" : "en";
+  const lang: AppLanguage = (["en", "ms", "zh"] as const).includes(i18n.language as AppLanguage)
+    ? (i18n.language as AppLanguage)
+    : "en";
+  const langLabels: Record<AppLanguage, string> = {
+    en: t("profile.english"),
+    ms: t("profile.malay"),
+    zh: t("profile.chinese"),
+  };
 
   const rows: { label: string; value: string; icon: keyof typeof Ionicons.glyphMap }[] = [
     { label: t("profile.role"), value: user?.role ?? "—", icon: "person-outline" },
@@ -57,7 +65,7 @@ export function ProfileScreen() {
         {/* Language picker (EN / BM) */}
         <Text style={styles.sectionTitle}>{t("profile.language")}</Text>
         <View style={styles.langRow}>
-          {(["en", "ms"] as const).map((l) => {
+          {(["en", "ms", "zh"] as const).map((l) => {
             const active = lang === l;
             return (
               <TouchableOpacity
@@ -66,7 +74,7 @@ export function ProfileScreen() {
                 onPress={() => setLanguage(l)}
               >
                 <Text style={[styles.langText, active && { color: colors.blue }]}>
-                  {l === "en" ? t("profile.english") : t("profile.malay")}
+                  {langLabels[l]}
                 </Text>
                 {active ? <Ionicons name="checkmark-circle" size={18} color={colors.blue} /> : null}
               </TouchableOpacity>

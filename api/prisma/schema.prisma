@@ -161,6 +161,8 @@ model Trip {
   pickup_datetime  DateTime
   incentive_earned Decimal?   @db.Decimal(10, 2)
   is_external      Boolean    @default(false)
+  // Admin's reason when a booking is rejected — shown to the requestor.
+  rejection_reason String?
   // Set once admins have been pinged about a 15-min-old pending order, so the
   // background alert job notifies them exactly once per trip.
   pending_alert_sent Boolean  @default(false)
