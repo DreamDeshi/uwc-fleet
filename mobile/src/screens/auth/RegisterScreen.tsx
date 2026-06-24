@@ -54,7 +54,7 @@ export function RegisterScreen({ navigation }: Props) {
 
   const onSubmit = async () => {
     setError(null);
-    if (password.length < 6) return setError(t("register.passwordPlaceholder"));
+    if (password.length < 6) return setError(t("register.passwordTooShort"));
     if (password !== confirm) return setError(t("register.passwordMismatch"));
     setLoading(true);
     try {

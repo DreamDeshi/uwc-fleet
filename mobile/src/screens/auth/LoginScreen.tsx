@@ -37,7 +37,7 @@ export function LoginScreen({ navigation }: Props) {
     setError(null);
     const digits = localPhone.replace(/\D/g, "");
     if (!digits || !password) {
-      setError(t("common.errorGeneric"));
+      setError(t("login.fillFields"));
       return;
     }
     setLoading(true);

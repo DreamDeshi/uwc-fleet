@@ -63,7 +63,7 @@ export function BookingListScreen() {
           keyExtractor={(tr) => tr.id}
           contentContainerStyle={{ padding: 16, paddingTop: 4, flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
-          ListEmptyComponent={<EmptyState message={t("requestor.noBookings")} icon="cube-outline" />}
+          ListEmptyComponent={<EmptyState message={t("history.empty")} icon="cube-outline" />}
           renderItem={({ item }) => (
             <BookingRow trip={item} onPress={() => navigation.navigate("BookingDetail", { tripId: item.id })} />
           )}

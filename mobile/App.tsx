@@ -8,6 +8,7 @@ import { StatusBar } from "expo-status-bar";
 import "./src/i18n"; // initialise i18next before any screen renders
 import { queryClient } from "./src/lib/queryClient";
 import { AuthProvider } from "./src/context/AuthContext";
+import { ToastProvider } from "./src/components/Toast";
 import { RootNavigator } from "./src/navigation/RootNavigator";
 
 export default function App() {
@@ -16,8 +17,10 @@ export default function App() {
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-            <StatusBar style="light" />
-            <RootNavigator />
+            <ToastProvider>
+              <StatusBar style="light" />
+              <RootNavigator />
+            </ToastProvider>
           </AuthProvider>
         </QueryClientProvider>
       </SafeAreaProvider>

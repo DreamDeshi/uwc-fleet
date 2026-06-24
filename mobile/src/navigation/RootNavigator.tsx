@@ -29,10 +29,8 @@ export function RootNavigator() {
       ) : (
         // Admin uses the web dashboard (Phase 4) — show a friendly note here.
         <View style={styles.adminFill}>
-          <Text style={styles.adminTitle}>Admin Dashboard</Text>
-          <Text style={styles.adminBody}>
-            Admin tools live in the web dashboard. Please sign in there.
-          </Text>
+          <Text style={styles.adminTitle}>{t("admin.webOnlyTitle")}</Text>
+          <Text style={styles.adminBody}>{t("admin.webOnlyBody")}</Text>
           <Button title={t("profile.logout")} onPress={logout} variant="outline" style={{ marginTop: 20 }} />
         </View>
       )}

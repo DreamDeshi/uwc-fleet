@@ -8,8 +8,9 @@ export const colors = {
   navy: "#1A1F5E", // headings
   bg: "#f4f6fb", // app background
   green: "#3DAA35", // success / completed
-  red: "#E53935", // error / cancelled
-  orange: "#F97316", // warning
+  red: "#E53935", // error / rejected
+  orange: "#F97316", // warning / assigned
+  grey: "#64748b", // neutral / cancelled
   white: "#ffffff",
   // greys
   text: "#1A1F5E",
@@ -23,16 +24,18 @@ export const colors = {
   tintYellow: "#FFF8E1",
 } as const;
 
-// Status → color mapping used across trip/booking badges.
-// Maps every TripStatus from the API plus the UI-only "in_progress" pulse.
+// Status → color mapping used across trip/booking badges. Every status gets a
+// DISTINCT swatch so they're tellable apart at a glance in sunlight (audit fix):
+//   pending=yellow(wait) · approved=pale-blue · assigned=orange(go) ·
+//   in_progress=blue(moving) · completed=green(done) · rejected=red · cancelled=grey
 export const statusColors: Record<string, { bg: string; fg: string }> = {
-  pending: { bg: colors.yellow, fg: colors.blue },
+  pending: { bg: colors.yellow, fg: colors.navy },
   approved: { bg: colors.tintBlue, fg: colors.blue },
-  assigned: { bg: colors.yellow, fg: colors.blue },
-  in_progress: { bg: colors.green, fg: colors.white },
+  assigned: { bg: colors.orange, fg: colors.white },
+  in_progress: { bg: colors.blue, fg: colors.white },
   completed: { bg: colors.green, fg: colors.white },
   rejected: { bg: colors.red, fg: colors.white },
-  cancelled: { bg: colors.red, fg: colors.white },
+  cancelled: { bg: colors.grey, fg: colors.white },
 };
 
 export const spacing = {

@@ -24,6 +24,7 @@
     "password": "Password",
     "passwordPlaceholder": "Enter your password",
     "forgot": "Forgot Password?",
+    "fillFields": "Please enter your phone number and password.",
     "signIn": "Sign In",
     "createAccount": "Create Account",
     "footer": "UWC Berhad © 2026"
@@ -53,6 +54,7 @@
     "create": "Create Account",
     "haveAccount": "Already have an account?",
     "passwordMismatch": "Passwords do not match.",
+    "passwordTooShort": "Password must be at least 6 characters.",
     "nameRequired": "Please enter your full name.",
     "phoneRequired": "Please enter your phone number.",
     "successTitle": "Account Created!",
@@ -122,6 +124,11 @@
     "locating": "Locating…",
     "locationOff": "Location off",
     "offlineQueued": "Offline · {{count}} queued",
+    "stopPending": "Pending",
+    "stopArrived": "Arrived",
+    "stopDelivered": "Delivered",
+    "toastArrived": "Marked as arrived.",
+    "toastDelivered": "Stop delivered.",
     "noTrips": "No trips yet."
   },
   "earnings": {
@@ -200,7 +207,9 @@
     "contactPerson": "Contact Person",
     "phone": "Phone",
     "area": "Area",
-    "addConsigneeBtn": "Add Consignee"
+    "addConsigneeBtn": "Add Consignee",
+    "consigneeRequired": "Company name and delivery zone are required.",
+    "consigneeAdded": "Consignee added."
   },
   "bookingDetail": {
     "title": "Booking Details",
@@ -230,7 +239,8 @@
     "cancelConfirmTitle": "Cancel this request?",
     "cancelConfirmBody": "This action cannot be undone.",
     "keepIt": "Keep It",
-    "yesCancel": "Yes, Cancel"
+    "yesCancel": "Yes, Cancel",
+    "cancelledToast": "Booking cancelled."
   },
   "history": {
     "title": "Trip History",
@@ -239,5 +249,9 @@
     "active": "Active",
     "tripsCount": "{{count}} Trips",
     "empty": "No trips to show."
+  },
+  "admin": {
+    "webOnlyTitle": "Admin Dashboard",
+    "webOnlyBody": "Admin tools live in the web dashboard. Please sign in there."
   }
 }
