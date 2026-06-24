@@ -8,6 +8,7 @@ import { Button } from "./Button";
 import { OptionsModal } from "./OptionsModal";
 import { useCreateConsignee } from "../hooks/queries";
 import { apiErrorMessage } from "../services/api";
+import { useToast } from "./Toast";
 import { Consignee } from "../types";
 
 // The 7 UWC zones (Development Brief §4). Used here and in the booking form.
@@ -31,6 +32,7 @@ export function NewConsigneeModal({
   onCreated: (c: Consignee) => void;
 }) {
   const { t } = useTranslation();
+  const toast = useToast();
   const createConsignee = useCreateConsignee();
   const [company, setCompany] = useState("");
   const [zone, setZone] = useState<string | undefined>();
@@ -47,7 +49,7 @@ export function NewConsigneeModal({
   const submit = async () => {
     setError(null);
     if (!company.trim() || !zone) {
-      setError(t("booking.companyName"));
+      setError(t("booking.consigneeRequired"));
       return;
     }
     try {
@@ -66,6 +68,7 @@ export function NewConsigneeModal({
 
   const onCreatedDone = (c: Consignee) => {
     onCreated(c);
+    toast(t("booking.consigneeAdded"), "success");
     reset();
     onClose();
   };

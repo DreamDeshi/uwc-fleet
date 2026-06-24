@@ -6,19 +6,7 @@ import { colors, radius, shadow } from "../../theme";
 import { Header } from "../../components/Header";
 import { Card } from "../../components/Card";
 import { LoadingState, ErrorState, EmptyState } from "../../components/States";
-import { formatMoney, formatDate } from "../../lib/format";
-
-const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
-
-function monthLabel(ym: string): string {
-  // ym = "YYYY-MM"
-  const [y, m] = ym.split("-").map(Number);
-  if (!y || !m) return ym;
-  return `${MONTH_NAMES[m - 1]} ${y}`;
-}
+import { formatMoney, formatDate, monthYear } from "../../lib/format";
 
 export function EarningsScreen() {
   const { t } = useTranslation();
@@ -38,7 +26,7 @@ export function EarningsScreen() {
         >
           {/* Gradient-style summary card */}
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryMonth}>{monthLabel(data.summary.month)}</Text>
+            <Text style={styles.summaryMonth}>{monthYear(data.summary.month)}</Text>
             <Text style={styles.summaryAmount}>{formatMoney(data.summary.total)}</Text>
             <Text style={styles.summaryMeta}>
               {t("earnings.tripsCount", { count: data.summary.trip_count })}

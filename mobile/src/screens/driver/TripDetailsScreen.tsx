@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Linking,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -41,7 +42,7 @@ export function TripDetailsScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<Rt>();
-  const { data: trip, isLoading, isError, refetch } = useTrip(params.tripId);
+  const { data: trip, isLoading, isError, refetch, isRefetching } = useTrip(params.tripId);
   const startTrip = useUpdateTripStatus();
   const [error, setError] = React.useState<string | null>(null);
 
@@ -62,7 +63,10 @@ export function TripDetailsScreen() {
 
   return (
     <View style={styles.fill}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 32 }}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+      >
         {/* Map header */}
         <View>
           {/* Route preview before the trip starts — no live dot yet (live={false}) */}

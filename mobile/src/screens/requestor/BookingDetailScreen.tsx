@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
@@ -7,6 +7,7 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { BookingsStackParamList } from "../../navigation/types";
 import { useTrip, useCancelTrip, useTripLatestLocation } from "../../hooks/queries";
+import { useToast } from "../../components/Toast";
 import { apiErrorMessage } from "../../services/api";
 import { colors, radius, shadow } from "../../theme";
 import { Card } from "../../components/Card";
@@ -37,8 +38,9 @@ export function BookingDetailScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<Rt>();
-  const { data: trip, isLoading, isError, refetch } = useTrip(params.tripId);
+  const { data: trip, isLoading, isError, refetch, isRefetching } = useTrip(params.tripId);
   const cancelTrip = useCancelTrip();
+  const toast = useToast();
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,6 +76,7 @@ export function BookingDetailScreen() {
     try {
       await cancelTrip.mutateAsync(trip.id);
       setConfirm(false);
+      toast(t("bookingDetail.cancelledToast"), "success");
     } catch (e) {
       setError(apiErrorMessage(e));
       setConfirm(false);
@@ -90,7 +93,10 @@ export function BookingDetailScreen() {
         <Text style={[styles.bannerText, { color: banner.fg }]}>{banner.text(t)}</Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+      <ScrollView
+        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+      >
         {/* Pending notice */}
         {trip.status === "pending" ? (
           <View style={styles.notice}>

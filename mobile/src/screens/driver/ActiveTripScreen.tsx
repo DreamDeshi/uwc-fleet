@@ -7,9 +7,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { TripsStackParamList } from "../../navigation/types";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
+import { TripsStackParamList, DriverTabParamList } from "../../navigation/types";
 import { useTrip, useUpdateTripStatus, useUpdateStopDocs, useTripRoute } from "../../hooks/queries";
 import { useTripLocation, TripLocationState } from "../../hooks/useTripLocation";
+import { useToast } from "../../components/Toast";
 import { apiErrorMessage } from "../../services/api";
 import { colors, radius, shadow } from "../../theme";
 import { Button } from "../../components/Button";
@@ -26,6 +28,7 @@ export function ActiveTripScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
+  const toast = useToast();
   const { params } = useRoute<Rt>();
   const { data: trip, isLoading, isError, refetch } = useTrip(params.tripId);
 
@@ -55,6 +58,7 @@ export function ActiveTripScreen() {
     setError(null);
     try {
       await updateStatus.mutateAsync({ tripId: trip.id, action: "arrived", stop_id: stop.id });
+      toast(t("trip.toastArrived"), "success");
     } catch (err) {
       setError(apiErrorMessage(err));
     }
@@ -79,6 +83,8 @@ export function ActiveTripScreen() {
       });
       if (updated.status === "completed") {
         setEarned(updated.incentive_earned);
+      } else {
+        toast(t("trip.toastDelivered"), "success");
       }
     } catch (err) {
       setError(apiErrorMessage(err));
@@ -160,7 +166,10 @@ export function ActiveTripScreen() {
               title={t("trip.backToDashboard")}
               onPress={() => {
                 setEarned(null);
+                // Reset the Trips stack, then switch to the Home (Dashboard) tab
+                // so the button actually lands where its label says.
                 navigation.popToTop();
+                navigation.getParent<BottomTabNavigationProp<DriverTabParamList>>()?.navigate("Home");
               }}
               style={{ alignSelf: "stretch", marginTop: 20 }}
             />
@@ -215,6 +224,12 @@ function StopCard({
   const { t } = useTranslation();
   const isK2 = stop.consignee?.zone_code === "K2";
   const docsComplete = stop.do_uploaded && (!isK2 || stop.k2_form_ack);
+  // Translated stop-status label (was a raw, untranslated enum like "ARRIVED").
+  const statusLabel: Record<string, string> = {
+    pending: t("trip.stopPending"),
+    arrived: t("trip.stopArrived"),
+    delivered: t("trip.stopDelivered"),
+  };
 
   return (
     <View style={styles.stopCard}>
@@ -234,7 +249,9 @@ function StopCard({
             <Text style={styles.deliveredText}>{t("trip.markDelivered")}</Text>
           </View>
         ) : (
-          <Text style={styles.stopStatus}>{stop.status.toUpperCase()}</Text>
+          <Text style={styles.stopStatus}>
+            {(statusLabel[stop.status] ?? stop.status).toUpperCase()}
+          </Text>
         )}
       </View>
 

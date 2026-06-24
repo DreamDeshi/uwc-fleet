@@ -24,6 +24,7 @@
     "password": "Kata Laluan",
     "passwordPlaceholder": "Masukkan kata laluan anda",
     "forgot": "Lupa Kata Laluan?",
+    "fillFields": "Sila masukkan nombor telefon dan kata laluan anda.",
     "signIn": "Log Masuk",
     "createAccount": "Cipta Akaun",
     "footer": "UWC Berhad © 2026"
@@ -53,6 +54,7 @@
     "create": "Cipta Akaun",
     "haveAccount": "Sudah ada akaun?",
     "passwordMismatch": "Kata laluan tidak sepadan.",
+    "passwordTooShort": "Kata laluan mesti sekurang-kurangnya 6 aksara.",
     "nameRequired": "Sila masukkan nama penuh anda.",
     "phoneRequired": "Sila masukkan nombor telefon anda.",
     "successTitle": "Akaun Dicipta!",
@@ -122,6 +124,11 @@
     "locating": "Mencari lokasi…",
     "locationOff": "Lokasi dimatikan",
     "offlineQueued": "Luar talian · {{count}} menunggu",
+    "stopPending": "Menunggu",
+    "stopArrived": "Tiba",
+    "stopDelivered": "Dihantar",
+    "toastArrived": "Ditanda sebagai tiba.",
+    "toastDelivered": "Hentian dihantar.",
     "noTrips": "Belum ada perjalanan."
   },
   "earnings": {
@@ -200,7 +207,9 @@
     "contactPerson": "Orang untuk Dihubungi",
     "phone": "Telefon",
     "area": "Kawasan",
-    "addConsigneeBtn": "Tambah Penerima"
+    "addConsigneeBtn": "Tambah Penerima",
+    "consigneeRequired": "Nama syarikat dan zon penghantaran diperlukan.",
+    "consigneeAdded": "Penerima ditambah."
   },
   "bookingDetail": {
     "title": "Butiran Tempahan",
@@ -230,7 +239,8 @@
     "cancelConfirmTitle": "Batalkan permintaan ini?",
     "cancelConfirmBody": "Tindakan ini tidak boleh dibatalkan.",
     "keepIt": "Kekalkan",
-    "yesCancel": "Ya, Batalkan"
+    "yesCancel": "Ya, Batalkan",
+    "cancelledToast": "Tempahan dibatalkan."
   },
   "history": {
     "title": "Sejarah Perjalanan",
@@ -239,5 +249,9 @@
     "active": "Aktif",
     "tripsCount": "{{count}} Perjalanan",
     "empty": "Tiada perjalanan untuk dipaparkan."
+  },
+  "admin": {
+    "webOnlyTitle": "Papan Pemuka Admin",
+    "webOnlyBody": "Alat admin berada di papan pemuka web. Sila log masuk di sana."
   }
 }
