@@ -27,6 +27,27 @@ export function zoneCoord(zoneCode?: string | null): LatLng {
   return { latitude: 5.4, longitude: 100.4 }; // fallback: somewhere over Penang mainland
 }
 
+// Great-circle distance in km. Used to estimate trip distance from zone
+// centroids when we don't have a Google road distance (no API key / fallback).
+export function haversineKm(a: LatLng, b: LatLng): number {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// Rough round-trip distance for a delivery to `zoneCode` (plant → zone → plant).
+// An estimate for the driver's earnings summary, not a billing figure.
+export function estimateTripDistanceKm(zoneCode?: string | null): number {
+  const oneWay = haversineKm(PLANT_ORIGIN, zoneCoord(zoneCode));
+  return Math.round(oneWay * 2);
+}
+
 export interface RouteResult {
   polyline: LatLng[];
   distance_m: number | null;

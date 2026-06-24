@@ -93,6 +93,7 @@
     "truck": "Truck",
     "cargo": "Cargo",
     "incentive": "Incentive",
+    "call": "Call",
     "documents": "Documents",
     "startTrip": "Start Trip",
     "openMap": "Open Map & Navigate",
@@ -138,7 +139,13 @@
     "tripsCount": "{{count}} trips",
     "breakdown": "Trip Breakdown",
     "noEarnings": "No completed trips yet.",
-    "points": "pts"
+    "points": "pts",
+    "thisWeek": "This Week",
+    "totalDistance": "Total Distance",
+    "tripsCompleted": "Trips Done",
+    "avgPerTrip": "Avg / Trip",
+    "km": "km",
+    "noChartData": "No earnings logged this week yet."
   },
   "profile": {
     "title": "Profile",
