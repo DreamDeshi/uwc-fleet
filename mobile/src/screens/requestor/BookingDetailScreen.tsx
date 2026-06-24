@@ -1,12 +1,14 @@
 import React, { useState } from "react";
-import { Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RequestorStackParamList } from "../../navigation/types";
-import { useTrip, useCancelTrip, useTripLatestLocation } from "../../hooks/queries";
+import { useTrip, useCancelTrip, useTripLatestLocation, useUploadTripDocument } from "../../hooks/queries";
+import { pickDocumentImage } from "../../lib/photo";
+import { TripDocument } from "../../types";
 import { useToast } from "../../components/Toast";
 import { apiErrorMessage } from "../../services/api";
 import { colors, radius, shadow } from "../../theme";
@@ -40,6 +42,7 @@ export function BookingDetailScreen() {
   const { params } = useRoute<Rt>();
   const { data: trip, isLoading, isError, refetch, isRefetching } = useTrip(params.tripId);
   const cancelTrip = useCancelTrip();
+  const uploadDoc = useUploadTripDocument();
   const toast = useToast();
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +85,20 @@ export function BookingDetailScreen() {
       setConfirm(false);
     }
   };
+
+  const onUploadDoc = async () => {
+    setError(null);
+    try {
+      const photo = await pickDocumentImage();
+      if (!photo) return; // cancelled or permission denied
+      await uploadDoc.mutateAsync({ tripId: trip.id, photo, type: "other" });
+      toast(t("bookingDetail.docUploaded"), "success");
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    }
+  };
+
+  const documents = trip.documents ?? [];
 
   return (
     <View style={styles.fill}>
@@ -161,6 +178,34 @@ export function BookingDetailScreen() {
             <Detail k={t("bookingDetail.cargo")} v={cargoSummary(trip)} />
             <Detail k={t("bookingDetail.consignee")} v={tripDestination(trip)} />
           </View>
+        </Card>
+
+        {/* Documents — DO / invoice upload + uploaded files */}
+        <Card style={{ marginBottom: 12 }}>
+          <View style={styles.detailHead}>
+            <Text style={styles.cardLabel}>{t("bookingDetail.documents")}</Text>
+            <TouchableOpacity
+              style={styles.uploadBtn}
+              onPress={onUploadDoc}
+              disabled={uploadDoc.isPending}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="cloud-upload-outline" size={16} color={colors.blue} />
+              <Text style={styles.uploadBtnText}>
+                {uploadDoc.isPending ? t("bookingDetail.docUploading") : t("bookingDetail.docUpload")}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {documents.length === 0 ? (
+            <Text style={styles.docEmpty}>{t("bookingDetail.docEmpty")}</Text>
+          ) : (
+            <View style={{ marginTop: 12, gap: 10 }}>
+              {documents.map((doc) => (
+                <DocumentRow key={doc.id} doc={doc} />
+              ))}
+            </View>
+          )}
         </Card>
 
         {/* Timeline */}
@@ -245,6 +290,38 @@ function LiveStatus({ pos }: { pos?: { stale: boolean } | null }) {
   );
 }
 
+// One uploaded document: thumbnail (images) or file icon (PDF), label, and a
+// tap-to-open that hands the Cloudinary URL to the system browser/viewer.
+function DocumentRow({ doc }: { doc: TripDocument }) {
+  const { t } = useTranslation();
+  const isImage = /\.(jpe?g|png|webp|heic|gif)$/i.test(doc.file_url);
+  const typeLabel: Record<string, string> = {
+    do_photo: t("bookingDetail.docTypeDO"),
+    k2_form: t("bookingDetail.docTypeK2"),
+    other: t("bookingDetail.docTypeOther"),
+  };
+  return (
+    <TouchableOpacity
+      style={styles.docRow}
+      onPress={() => Linking.openURL(doc.file_url)}
+      activeOpacity={0.8}
+    >
+      {isImage ? (
+        <Image source={{ uri: doc.file_url }} style={styles.docThumb} />
+      ) : (
+        <View style={[styles.docThumb, styles.docIcon]}>
+          <Ionicons name="document-text" size={22} color={colors.blue} />
+        </View>
+      )}
+      <View style={{ flex: 1 }}>
+        <Text style={styles.docName}>{typeLabel[doc.type] ?? t("bookingDetail.docTypeOther")}</Text>
+        <Text style={styles.docDate}>{formatDateTime(doc.uploaded_at)}</Text>
+      </View>
+      <Ionicons name="open-outline" size={18} color={colors.blue} />
+    </TouchableOpacity>
+  );
+}
+
 function Detail({ k, v }: { k: string; v: string }) {
   return (
     <View style={styles.detailCell}>
@@ -290,6 +367,14 @@ const styles = StyleSheet.create({
   driverPhone: { fontSize: 13, color: colors.blue, marginTop: 3, fontWeight: "600" },
   callBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.green, alignItems: "center", justifyContent: "center" },
   detailHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  uploadBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.tintBlue, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill },
+  uploadBtnText: { color: colors.blue, fontSize: 12, fontWeight: "700" },
+  docEmpty: { fontSize: 13, color: colors.textFaint, marginTop: 10 },
+  docRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: colors.bg, borderRadius: radius.md, padding: 10 },
+  docThumb: { width: 44, height: 44, borderRadius: radius.sm, backgroundColor: colors.tintBlue },
+  docIcon: { alignItems: "center", justifyContent: "center" },
+  docName: { fontSize: 14, fontWeight: "700", color: colors.navy },
+  docDate: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
   liveStatus: { flexDirection: "row", alignItems: "center", gap: 6 },
   liveStatusDot: { width: 8, height: 8, borderRadius: 4 },
   liveStatusText: { fontSize: 12, fontWeight: "700" },
