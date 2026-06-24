@@ -10,6 +10,8 @@ import { TrucksPage } from "@/pages/TrucksPage";
 import { IncentivesPage } from "@/pages/IncentivesPage";
 import { ApprovalsPage } from "@/pages/ApprovalsPage";
 import { ReportsPage } from "@/pages/ReportsPage";
+import { MobileLitePage } from "@/pages/MobileLitePage";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 function FullScreenLoader() {
   return (
@@ -38,6 +40,7 @@ function FullScreenLoader() {
 
 export default function App() {
   const { status } = useAuth();
+  const isMobile = useIsMobile();
 
   if (status === "loading") return <FullScreenLoader />;
 
@@ -46,6 +49,18 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
+
+  // On a phone, the desktop dashboard is unusable — route admins to the touch
+  // "lite" screen (dispatch + approvals). Desktop keeps the full app, with /m
+  // reachable for previewing the mobile view.
+  if (isMobile) {
+    return (
+      <Routes>
+        <Route path="/m" element={<MobileLitePage />} />
+        <Route path="*" element={<Navigate to="/m" replace />} />
       </Routes>
     );
   }
@@ -61,6 +76,7 @@ export default function App() {
         <Route path="/approvals" element={<ApprovalsPage />} />
         <Route path="/reports" element={<ReportsPage />} />
       </Route>
+      <Route path="/m" element={<MobileLitePage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
