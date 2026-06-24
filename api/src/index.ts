@@ -13,6 +13,8 @@ import incentivesRoutes from "./routes/incentives";
 import trucksRoutes from "./routes/trucks";
 import ratesRoutes from "./routes/rates";
 import reportsRoutes from "./routes/reports";
+import locationsRoutes from "./routes/locations";
+import fleetRoutes from "./routes/fleet";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -49,6 +51,8 @@ app.use("/api/v1/incentives", incentivesRoutes);
 app.use("/api/v1/trucks", trucksRoutes);
 app.use("/api/v1/rates", ratesRoutes);
 app.use("/api/v1/reports", reportsRoutes);
+app.use("/api/v1/locations", locationsRoutes);
+app.use("/api/v1/fleet", fleetRoutes);
 
 app.use(errorHandler);
 

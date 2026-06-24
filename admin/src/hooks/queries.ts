@@ -5,6 +5,7 @@ import type {
   DashboardKpis,
   DestinationRate,
   DriverPerf,
+  LivePosition,
   MonthlyRow,
   Trip,
   Truck,
@@ -30,6 +31,15 @@ export function useTrucks() {
   return useQuery({
     queryKey: ["trucks"],
     queryFn: async () => (await api.get<Truck[]>("/trucks")).data,
+  });
+}
+
+// Live truck GPS positions — polled every 15s so the fleet map stays current.
+export function useFleetLive() {
+  return useQuery({
+    queryKey: ["fleet", "live"],
+    queryFn: async () => (await api.get<LivePosition[]>("/fleet/live")).data,
+    refetchInterval: 15_000,
   });
 }
 

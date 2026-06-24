@@ -118,6 +118,10 @@
     "completedTitle": "Perjalanan Selesai!",
     "incentiveEarned": "Insentif Diperoleh",
     "backToDashboard": "Kembali ke Papan Pemuka",
+    "live": "Langsung",
+    "locating": "Mencari lokasi…",
+    "locationOff": "Lokasi dimatikan",
+    "offlineQueued": "Luar talian · {{count}} menunggu",
     "noTrips": "Belum ada perjalanan."
   },
   "earnings": {
@@ -207,6 +211,10 @@
     "bannerCancelled": "Tempahan Dibatalkan",
     "pendingNotice": "Permintaan anda sedang disemak. Anda akan dimaklumkan setelah pemandu ditugaskan.",
     "assignedDriver": "Pemandu Ditugaskan",
+    "liveLocation": "Lokasi Langsung",
+    "locLive": "Langsung",
+    "locStale": "Isyarat hilang",
+    "locWaiting": "Menunggu lokasi pemandu…",
     "tripDetails": "Butiran Perjalanan",
     "dateTime": "Tarikh & Masa",
     "cargo": "Kargo",

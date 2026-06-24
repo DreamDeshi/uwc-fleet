@@ -22,7 +22,15 @@
         "backgroundColor": "#003087"
       }
     },
-    "plugins": ["expo-localization"],
+    "plugins": [
+      "expo-localization",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "UWC Trucking uses your location to show the live position of your truck to dispatch while you are on an active delivery."
+        }
+      ]
+    ],
     "extra": {
       "//": "Set apiUrl to your machine's LAN IP when running on a physical phone via Expo Go. localhost only works on the iOS simulator.",
       "apiUrl": "http://192.168.100.154:3000"

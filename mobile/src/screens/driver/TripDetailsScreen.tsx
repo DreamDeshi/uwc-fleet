@@ -20,7 +20,7 @@ import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
 import { RouteLine } from "../../components/RouteLine";
-import { TripMap } from "../../components/TripMap";
+import { LiveTripMap } from "../../components/LiveTripMap";
 import { LoadingState, ErrorState } from "../../components/States";
 import { formatMoney, formatDate, formatTime } from "../../lib/format";
 import {
@@ -65,7 +65,8 @@ export function TripDetailsScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
         {/* Map header */}
         <View>
-          <TripMap destZone={tripDestZone(trip)} height={240} />
+          {/* Route preview before the trip starts — no live dot yet (live={false}) */}
+          <LiveTripMap tripId={trip.id} destZone={tripDestZone(trip)} live={false} height={240} />
           <TouchableOpacity
             style={[styles.backBtn, { top: insets.top + 8 }]}
             onPress={() => navigation.goBack()}

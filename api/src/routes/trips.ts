@@ -11,6 +11,7 @@ import {
   getTripDayEnd,
   isDocumentationComplete,
 } from "../services/incentiveEngine";
+import { PLANT_ORIGIN, zoneCoord, getRoute, type LatLng } from "../lib/geo";
 
 const router = Router();
 router.use(requireAuth);
@@ -151,6 +152,98 @@ router.get("/:id", async (req, res, next) => {
     }
 
     res.json(trip);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /trips/:id/route — real road polyline (Google Directions, server-side) ──
+//
+// Keeps GOOGLE_MAPS_API_KEY on the server (never shipped to the app). Routes
+// UWC plant → each stop's zone centroid in sequence. Falls back to a straight
+// line when Google isn't configured, so the map always renders something.
+router.get("/:id/route", async (req, res, next) => {
+  try {
+    const trip = await prisma.trip.findUnique({
+      where: { id: req.params.id },
+      include: {
+        stops: {
+          include: { consignee: { select: { zone_code: true } } },
+          orderBy: { sequence: "asc" },
+        },
+      },
+    });
+    if (!trip) {
+      throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+    }
+
+    const isOwner = req.user!.role === "requestor" && trip.requestor_id === req.user!.id;
+    const isDriver = req.user!.role === "driver" && trip.driver_id === req.user!.id;
+    const isAdmin = req.user!.role === "admin";
+    if (!isOwner && !isDriver && !isAdmin) {
+      throw new ApiError(403, "FORBIDDEN", "You do not have permission to view this trip.");
+    }
+
+    // Each stop's zone centroid, in order, dropping consecutive duplicates so a
+    // multi-stop trip within one zone doesn't send a pointless waypoint.
+    const stopCoords: LatLng[] = [];
+    for (const stop of trip.stops) {
+      const c = zoneCoord(stop.consignee.zone_code);
+      const prev = stopCoords[stopCoords.length - 1];
+      if (!prev || prev.latitude !== c.latitude || prev.longitude !== c.longitude) {
+        stopCoords.push(c);
+      }
+    }
+
+    const destination = stopCoords[stopCoords.length - 1] ?? zoneCoord(null);
+    const waypoints = stopCoords.slice(0, -1);
+    const route = await getRoute(PLANT_ORIGIN, destination, waypoints);
+
+    res.json(route);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /trips/:id/location — latest GPS fix for this trip (owner/driver/admin) ──
+//
+// Lets the requestor track their own delivery without exposing the whole fleet
+// (GET /fleet/live is admin-only). Returns null when the driver hasn't pinged.
+const LOCATION_STALE_AFTER_MS = 3 * 60 * 1000;
+
+router.get("/:id/location", async (req, res, next) => {
+  try {
+    const trip = await prisma.trip.findUnique({
+      where: { id: req.params.id },
+      select: { requestor_id: true, driver_id: true },
+    });
+    if (!trip) {
+      throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+    }
+
+    const isOwner = req.user!.role === "requestor" && trip.requestor_id === req.user!.id;
+    const isDriver = req.user!.role === "driver" && trip.driver_id === req.user!.id;
+    const isAdmin = req.user!.role === "admin";
+    if (!isOwner && !isDriver && !isAdmin) {
+      throw new ApiError(403, "FORBIDDEN", "You do not have permission to view this trip.");
+    }
+
+    const last = await prisma.locationLog.findFirst({
+      where: { trip_id: req.params.id },
+      orderBy: { recorded_at: "desc" },
+      select: { latitude: true, longitude: true, recorded_at: true },
+    });
+    if (!last) {
+      res.json(null);
+      return;
+    }
+
+    res.json({
+      latitude: Number(last.latitude),
+      longitude: Number(last.longitude),
+      recorded_at: last.recorded_at,
+      stale: Date.now() - last.recorded_at.getTime() > LOCATION_STALE_AFTER_MS,
+    });
   } catch (err) {
     next(err);
   }
