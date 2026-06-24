@@ -97,6 +97,7 @@ export interface Trip {
   pickup_datetime: string;
   incentive_earned: string | null;
   is_external: boolean;
+  rejection_reason: string | null;
   created_at: string;
   stops: TripStop[];
   cargo_details: CargoDetail[];
