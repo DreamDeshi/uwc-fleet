@@ -20,6 +20,11 @@ import { startPendingTripAlerts } from "./services/pendingTripAlerts";
 
 const app = express();
 
+// Railway terminates TLS at its proxy and forwards X-Forwarded-For. Trust the
+// single proxy hop so express-rate-limit keys on the real client IP (and to
+// silence its ERR_ERL_UNEXPECTED_X_FORWARDED_FOR validation error).
+app.set("trust proxy", 1);
+
 app.use(helmet());
 app.use(
   cors({
