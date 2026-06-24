@@ -63,7 +63,10 @@ export function BookingDetailScreen() {
   const timeline = isCancelled
     ? [
         { label: t("bookingDetail.tlSubmitted"), done: true },
-        { label: t("bookingDetail.tlCancelled"), cancelled: true },
+        {
+          label: trip.status === "rejected" ? t("bookingDetail.tlRejected") : t("bookingDetail.tlCancelled"),
+          cancelled: true,
+        },
       ]
     : [
         { label: t("bookingDetail.tlSubmitted"), done: true },
@@ -119,6 +122,19 @@ export function BookingDetailScreen() {
           <View style={styles.notice}>
             <Ionicons name="information-circle-outline" size={18} color="#d97706" />
             <Text style={styles.noticeText}>{t("bookingDetail.pendingNotice")}</Text>
+          </View>
+        ) : null}
+
+        {/* Rejection reason — shown when an admin rejected the booking */}
+        {trip.status === "rejected" ? (
+          <View style={styles.rejectNotice}>
+            <Ionicons name="close-circle-outline" size={18} color={colors.red} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rejectTitle}>{t("bookingDetail.rejectionReason")}</Text>
+              <Text style={styles.rejectText}>
+                {trip.rejection_reason?.trim() || t("bookingDetail.rejectionNoReason")}
+              </Text>
+            </View>
           </View>
         ) : null}
 
@@ -347,6 +363,8 @@ function bannerFor(status: TripStatus): {
       return { bg: colors.blue, fg: colors.white, icon: "navigate", text: (t) => t("bookingDetail.bannerInProgress") };
     case "completed":
       return { bg: colors.green, fg: colors.white, icon: "checkmark-done", text: (t) => t("bookingDetail.bannerCompleted") };
+    case "rejected":
+      return { bg: colors.red, fg: colors.white, icon: "close-circle", text: (t) => t("bookingDetail.bannerRejected") };
     default:
       return { bg: colors.red, fg: colors.white, icon: "close-circle", text: (t) => t("bookingDetail.bannerCancelled") };
   }
@@ -358,6 +376,9 @@ const styles = StyleSheet.create({
   bannerText: { fontSize: 14, fontWeight: "700" },
   notice: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.tintYellow, borderRadius: radius.md, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: "#FFE082" },
   noticeText: { flex: 1, fontSize: 13, fontWeight: "600", color: "#92400e" },
+  rejectNotice: { flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: "#fef2f2", borderRadius: radius.md, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: "#fecaca" },
+  rejectTitle: { fontSize: 11, fontWeight: "700", color: colors.red, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 },
+  rejectText: { fontSize: 13, fontWeight: "600", color: "#991b1b", lineHeight: 18 },
   cardLabel: { fontSize: 12, fontWeight: "700", color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.6 },
   driverRow: { flexDirection: "row", alignItems: "center", marginTop: 10 },
   driverAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.yellow, marginRight: 12 },

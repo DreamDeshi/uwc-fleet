@@ -1,7 +1,11 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import type { ApiErrorShape, LoginResponse } from "@/types";
 
-const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3000";
+// VITE_API_URL wins when set; otherwise production builds target the deployed
+// Railway API and dev builds hit the local server. Baked in at build time.
+const API_URL =
+  (import.meta.env.VITE_API_URL as string | undefined) ??
+  (import.meta.env.PROD ? "https://uwc-api-production.up.railway.app" : "http://localhost:3000");
 
 const ACCESS_KEY = "uwc.admin.accessToken";
 const REFRESH_KEY = "uwc.admin.refreshToken";

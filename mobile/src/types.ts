@@ -5,6 +5,10 @@
 export type Role = "admin" | "driver" | "requestor";
 export type UserStatus = "pending_approval" | "active" | "disabled";
 
+// UI languages: English, Bahasa Malaysia, Simplified Chinese.
+export const SUPPORTED_LANGUAGES = ["en", "ms", "zh"] as const;
+export type AppLanguage = (typeof SUPPORTED_LANGUAGES)[number];
+
 export type TripStatus =
   | "pending"
   | "approved"
@@ -107,6 +111,7 @@ export interface Trip {
   pickup_datetime: string;
   incentive_earned: string | number | null;
   is_external: boolean;
+  rejection_reason?: string | null;
   created_at: string;
   requestor?: { id: string; name: string; phone: string };
   driver?: { id: string; name: string; phone: string } | null;

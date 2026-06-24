@@ -28,11 +28,13 @@ const app = express();
 app.set("trust proxy", 1);
 
 app.use(helmet());
-app.use(
-  cors({
-    origin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
-  })
-);
+// CORS_ORIGIN may be a comma-separated allowlist (e.g. local admin +
+// the deployed admin domain). Falls back to the local Vite dev origin.
+const corsOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:5173")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+app.use(cors({ origin: corsOrigins }));
 app.use(
   rateLimit({
     windowMs: 60 * 1000,
