@@ -47,6 +47,11 @@ enum DocumentType {
   other
 }
 
+enum DispatchMode {
+  manual
+  auto
+}
+
 // ── 1. User ──────────────────────────────────────────────────────────
 
 model User {
@@ -284,6 +289,17 @@ model ExternalForwarder {
   booking_date DateTime
   rate         Decimal  @db.Decimal(10, 2)
   cargo_size   String
+}
+
+// ── 17. AppSetting ────────────────────────────────────────────────────
+//
+// Single-row table holding system-wide settings. The fixed id "singleton"
+// guarantees one row: every read/write upserts against it. Currently just the
+// dispatch mode (manual vs fully-automatic, Mr. Teh's requirement).
+model AppSetting {
+  id            String       @id @default("singleton")
+  dispatch_mode DispatchMode @default(manual)
+  updated_at    DateTime     @updatedAt
 }
 
 // ── 16. FuelLog ───────────────────────────────────────────────────────

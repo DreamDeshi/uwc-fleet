@@ -15,6 +15,8 @@ import ratesRoutes from "./routes/rates";
 import reportsRoutes from "./routes/reports";
 import locationsRoutes from "./routes/locations";
 import fleetRoutes from "./routes/fleet";
+import settingsRoutes from "./routes/settings";
+import dispatchRoutes from "./routes/dispatch";
 import { errorHandler } from "./middleware/errorHandler";
 import { startPendingTripAlerts } from "./services/pendingTripAlerts";
 
@@ -59,6 +61,8 @@ app.use("/api/v1/rates", ratesRoutes);
 app.use("/api/v1/reports", reportsRoutes);
 app.use("/api/v1/locations", locationsRoutes);
 app.use("/api/v1/fleet", fleetRoutes);
+app.use("/api/v1/settings", settingsRoutes);
+app.use("/api/v1/dispatch", dispatchRoutes);
 
 app.use(errorHandler);
 
