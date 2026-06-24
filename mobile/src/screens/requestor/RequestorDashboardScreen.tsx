@@ -3,9 +3,10 @@ import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } 
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, type CompositeNavigationProp } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
-import { RequestorTabParamList } from "../../navigation/types";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { BookingFilter, RequestorStackParamList, RequestorTabParamList } from "../../navigation/types";
 import { useAuth } from "../../context/AuthContext";
 import { useTrips } from "../../hooks/queries";
 import { colors, radius, shadow } from "../../theme";
@@ -17,7 +18,18 @@ import { tripDestination, ORIGIN_LABEL } from "../../lib/trip";
 import { initials } from "../../lib/format";
 import { Trip } from "../../types";
 
-type Nav = BottomTabNavigationProp<RequestorTabParamList>;
+// Home tab, but it also pushes BookingDetail onto the parent requestor stack.
+type Nav = CompositeNavigationProp<
+  BottomTabNavigationProp<RequestorTabParamList, "Home">,
+  NativeStackNavigationProp<RequestorStackParamList>
+>;
+
+// Greeting that matches the time of day (mirrors the driver dashboard warmth).
+function greetingKey(hour: number): "goodMorning" | "goodAfternoon" | "goodEvening" {
+  if (hour < 12) return "goodMorning";
+  if (hour < 18) return "goodAfternoon";
+  return "goodEvening";
+}
 
 export function RequestorDashboardScreen() {
   const { t } = useTranslation();
@@ -44,8 +56,9 @@ export function RequestorDashboardScreen() {
     return { active, pending, recent, stats };
   }, [trips]);
 
-  const openDetail = (tripId: string) =>
-    navigation.navigate("BookingsTab", { screen: "BookingDetail", params: { tripId } });
+  const openDetail = (tripId: string) => navigation.navigate("BookingDetail", { tripId });
+  const openBookings = (filter: BookingFilter) => navigation.navigate("BookingsTab", { filter });
+  const greeting = t(`requestor.${greetingKey(new Date().getHours())}`);
 
   if (isLoading) return <View style={styles.fill}><LoadingState /></View>;
   if (isError) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
@@ -59,9 +72,15 @@ export function RequestorDashboardScreen() {
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.headerTop}>
-          <View>
-            <Text style={styles.hi}>{t("requestor.greeting", { name: user?.name ?? "" })}</Text>
-            <Text style={styles.dept}>{user?.department?.name ?? ""}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.greetingTime}>{greeting} 👋</Text>
+            <Text style={styles.hi}>{user?.name ?? ""}</Text>
+            {user?.department?.name ? (
+              <View style={styles.deptRow}>
+                <Ionicons name="business-outline" size={12} color="rgba(255,255,255,0.65)" />
+                <Text style={styles.dept}>{user.department.name}</Text>
+              </View>
+            ) : null}
           </View>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{initials(user?.name ?? "")}</Text>
@@ -151,9 +170,9 @@ export function RequestorDashboardScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t("requestor.thisMonth")}</Text>
         <View style={styles.statRow}>
-          <StatBox value={stats.total} label={t("history.all")} color={colors.blue} bg={colors.tintBlue} />
-          <StatBox value={stats.completed} label={t("history.completed")} color={colors.green} bg={colors.tintGreen} />
-          <StatBox value={stats.pending} label={t("requestor.pendingApproval")} color="#d97706" bg={colors.tintYellow} />
+          <StatBox value={stats.total} label={t("history.all")} color={colors.blue} bg={colors.tintBlue} onPress={() => openBookings("all")} />
+          <StatBox value={stats.completed} label={t("history.completed")} color={colors.green} bg={colors.tintGreen} onPress={() => openBookings("completed")} />
+          <StatBox value={stats.pending} label={t("requestor.pendingApproval")} color="#d97706" bg={colors.tintYellow} onPress={() => openBookings("active")} />
         </View>
       </View>
 
@@ -186,12 +205,12 @@ export function RequestorDashboardScreen() {
   );
 }
 
-function StatBox({ value, label, color, bg }: { value: number; label: string; color: string; bg: string }) {
+function StatBox({ value, label, color, bg, onPress }: { value: number; label: string; color: string; bg: string; onPress: () => void }) {
   return (
-    <View style={[styles.statBox, { backgroundColor: bg }]}>
+    <TouchableOpacity style={[styles.statBox, { backgroundColor: bg }]} activeOpacity={0.8} onPress={onPress}>
       <Text style={[styles.statValue, { color }]}>{value}</Text>
       <Text style={[styles.statLabel, { color }]} numberOfLines={1}>{label}</Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -199,8 +218,10 @@ const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
   header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 16 },
   headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
-  hi: { color: colors.white, fontSize: 18, fontWeight: "800" },
-  dept: { color: "rgba(255,255,255,0.55)", fontSize: 13, marginTop: 2 },
+  greetingTime: { color: "rgba(255,255,255,0.75)", fontSize: 13, fontWeight: "600" },
+  hi: { color: colors.white, fontSize: 20, fontWeight: "800", marginTop: 2 },
+  deptRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 3 },
+  dept: { color: "rgba(255,255,255,0.65)", fontSize: 13 },
   avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
   avatarText: { color: colors.white, fontSize: 13, fontWeight: "700" },
   cta: { backgroundColor: colors.white, borderRadius: radius.lg, padding: 14, flexDirection: "row", alignItems: "center", gap: 14, ...shadow.floating, transform: [{ translateY: 14 }] },

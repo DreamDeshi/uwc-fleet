@@ -32,6 +32,11 @@ type Nav = BottomTabNavigationProp<RequestorTabParamList>;
 const STEPS = ["stepWhere", "stepWhat", "stepConfirm"] as const;
 const PALLET_SIZES = ["4×4", "3×4", "4×8", "5×10", "2×2"];
 
+// Soft cap: the largest truck (PLX 2406) holds 16 pallets. We don't hard-block —
+// admin picks the actual truck and can split a load — but we warn past this so
+// the requestor knows a big order may need more than one truck.
+const LARGEST_TRUCK_PALLETS = 16;
+
 export function BookingFormScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -566,6 +571,14 @@ function StepWhat({
             <Ionicons name="cube" size={16} color={colors.blue} />
             <Text style={styles.totalPillText}>{t("booking.totalPallets", { count: totalPallets })}</Text>
           </View>
+          {totalPallets > LARGEST_TRUCK_PALLETS ? (
+            <View style={styles.warnNote}>
+              <Ionicons name="warning-outline" size={18} color="#b45309" />
+              <Text style={styles.warnNoteText}>
+                {t("booking.largeLoadWarning", { count: totalPallets })}
+              </Text>
+            </View>
+          ) : null}
         </>
       )}
 
@@ -600,6 +613,12 @@ function StepWhat({
           />
         </>
       )}
+
+      {/* Admin makes the final truck call, so reassure the requestor here. */}
+      <View style={styles.cargoNote}>
+        <Ionicons name="information-circle-outline" size={18} color={colors.blue} />
+        <Text style={styles.cargoNoteText}>{t("booking.truckConfirmNote")}</Text>
+      </View>
     </View>
   );
 }
@@ -771,6 +790,10 @@ const styles = StyleSheet.create({
   stepVal: { fontSize: 16, fontWeight: "800", color: colors.navy, minWidth: 24, textAlign: "center" },
   totalPill: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.tintBlue, borderRadius: radius.sm, padding: 12, marginTop: 10 },
   totalPillText: { fontSize: 12, fontWeight: "700", color: colors.blue },
+  warnNote: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.tintYellow, borderRadius: radius.sm, padding: 12, marginTop: 10, borderWidth: 1, borderColor: "#FCD34D" },
+  warnNoteText: { flex: 1, fontSize: 12, fontWeight: "600", color: "#92400e", lineHeight: 17 },
+  cargoNote: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.tintBlue, borderRadius: radius.md, padding: 12, marginTop: 20 },
+  cargoNoteText: { flex: 1, fontSize: 12, fontWeight: "600", color: colors.blue, lineHeight: 17 },
   textarea: { minHeight: 90, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, padding: 14, fontSize: 14, color: colors.navy, backgroundColor: colors.white, textAlignVertical: "top" },
 
   confirmCard: { backgroundColor: colors.white, borderRadius: radius.md, padding: 16, marginBottom: 12, borderWidth: 1.5, borderColor: colors.borderLight },

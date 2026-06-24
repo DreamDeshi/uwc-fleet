@@ -155,6 +155,9 @@
   },
   "requestor": {
     "greeting": "Hai, {{name}}",
+    "goodMorning": "Selamat pagi",
+    "goodAfternoon": "Selamat tengah hari",
+    "goodEvening": "Selamat petang",
     "whereTo": "Ke mana anda perlu penghantaran?",
     "tapToBook": "Ketik untuk menempah trak",
     "activeTrip": "Perjalanan Aktif",
@@ -212,7 +215,9 @@
     "consigneeRequired": "Nama syarikat dan zon penghantaran diperlukan.",
     "consigneeAdded": "Penerima ditambah.",
     "rebookLast": "Tempah semula perjalanan terakhir",
-    "recentConsignees": "Terkini"
+    "recentConsignees": "Terkini",
+    "truckConfirmNote": "Admin akan mengesahkan ketersediaan trak berdasarkan saiz kargo anda.",
+    "largeLoadWarning": "Itu muatan yang besar ({{count}} palet). Admin mungkin membahagikannya kepada lebih daripada satu trak."
   },
   "bookingDetail": {
     "title": "Butiran Tempahan",

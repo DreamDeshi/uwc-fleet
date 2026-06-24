@@ -6,7 +6,7 @@ import { RequestorTabParamList } from "./types";
 import { colors } from "../theme";
 import { RequestorDashboardScreen } from "../screens/requestor/RequestorDashboardScreen";
 import { BookingFormScreen } from "../screens/requestor/BookingFormScreen";
-import { BookingsStack } from "./BookingsStack";
+import { BookingListScreen } from "../screens/requestor/BookingListScreen";
 import { ProfileScreen } from "../screens/shared/ProfileScreen";
 
 const Tab = createBottomTabNavigator<RequestorTabParamList>();
@@ -43,7 +43,7 @@ export function RequestorTabs() {
       />
       <Tab.Screen
         name="BookingsTab"
-        component={BookingsStack}
+        component={BookingListScreen}
         options={{
           title: t("tabs.bookings"),
           tabBarIcon: ({ color, size }) => <Ionicons name="list" size={size} color={color} />,
