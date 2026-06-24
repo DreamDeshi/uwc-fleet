@@ -64,6 +64,36 @@ export function useMonthly() {
   });
 }
 
+export function useDispatchMode() {
+  return useQuery({
+    queryKey: ["settings", "dispatch-mode"],
+    queryFn: async () =>
+      (await api.get<{ dispatch_mode: "manual" | "auto" }>("/settings/dispatch-mode")).data
+        .dispatch_mode,
+  });
+}
+
+export function useSetDispatchMode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (mode: "manual" | "auto") =>
+      (await api.patch<{ dispatch_mode: "manual" | "auto" }>("/settings/dispatch-mode", {
+        dispatch_mode: mode,
+      })).data.dispatch_mode,
+    // Optimistically flip the toggle, roll back on error.
+    onMutate: async (mode) => {
+      await qc.cancelQueries({ queryKey: ["settings", "dispatch-mode"] });
+      const prev = qc.getQueryData<"manual" | "auto">(["settings", "dispatch-mode"]);
+      qc.setQueryData(["settings", "dispatch-mode"], mode);
+      return { prev };
+    },
+    onError: (_err, _mode, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["settings", "dispatch-mode"], ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["settings", "dispatch-mode"] }),
+  });
+}
+
 export function usePendingUsers() {
   return useQuery({
     queryKey: ["users", "pending_approval"],

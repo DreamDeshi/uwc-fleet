@@ -1,0 +1,297 @@
+/**
+ * Auto-dispatch engine — Development Brief Section 4.
+ *
+ * The core selection logic (`selectTruck`) and the return-trip helper
+ * (`enRouteZones`) are PURE — no DB, no Date.now() — so they can be unit
+ * tested directly (see tests/dispatch.test.ts). `autoDispatchTrip` is the
+ * thin DB orchestration layer that gathers candidates, runs the pure engine,
+ * writes the assignment, and notifies the driver.
+ *
+ * Algorithm: Best-Fit Decreasing bin-packing.
+ *   Rule A — single order: assign to the smallest available truck that fits.
+ *   Rule B — consolidation: combine onto a truck already serving the same zone
+ *            if current load + new order ≤ max capacity.
+ *   Driver priority zones (truck.priority_zones) are preferred over adjacent
+ *   coverage; zone adjacency lets a P2 driver pick up a K1 order when no K1
+ *   driver is free. Hard constraint: never exceed a truck's max_pallets.
+ */
+import { prisma } from "../lib/prisma";
+import { sendPushNotifications } from "../lib/pushNotifications";
+
+// ── Pure engine types ─────────────────────────────────────────────────
+
+export interface DispatchOrder {
+  pallets: number;
+  zone: string | null; // primary destination zone (first stop)
+}
+
+export interface TruckCandidate {
+  plate: string;
+  driverId: string;
+  maxPallets: number;
+  currentLoad: number; // pallets already committed to active trips
+  coverageZones: string[]; // truck.priority_zones = its driver's coverage
+  activeZones: string[]; // destination zones of this truck's active trips
+}
+
+export interface TruckSelection {
+  plate: string;
+  driverId: string;
+  reason: string;
+}
+
+/**
+ * Pick the best truck for one order, or null if none fits.
+ *
+ * A truck is a candidate when it has spare capacity for the order AND is not
+ * already out serving a *different* zone (a truck mid-delivery to zone X is
+ * unavailable; one already heading to the order's own zone can consolidate).
+ *
+ * Among candidates we rank by tier (consolidation > covers zone > adjacent >
+ * any), then Best-Fit Decreasing: prefer the smallest truck that fits so large
+ * trucks stay free for large orders, breaking ties by tightest remaining space.
+ */
+export function selectTruck(
+  order: DispatchOrder,
+  candidates: TruckCandidate[],
+  adjacency: Record<string, string[]>
+): TruckSelection | null {
+  const zone = order.zone;
+  const adjacentToOrder = (zone && adjacency[zone]) || [];
+
+  const fitting = candidates.filter((c) => {
+    const remaining = c.maxPallets - c.currentLoad;
+    if (remaining < order.pallets) return false; // hard overload prevention
+    const busyElsewhere = c.activeZones.length > 0 && !c.activeZones.every((z) => z === zone);
+    return !busyElsewhere;
+  });
+  if (fitting.length === 0) return null;
+
+  const scored = fitting.map((c) => {
+    const remaining = c.maxPallets - c.currentLoad;
+    const consolidates = zone != null && c.currentLoad > 0 && c.activeZones.includes(zone);
+    const covers = zone != null && c.coverageZones.includes(zone);
+    const adjacent = c.coverageZones.some((z) => adjacentToOrder.includes(z));
+    const tier = consolidates ? 0 : covers ? 1 : adjacent ? 2 : 3;
+    return { c, remaining, tier };
+  });
+
+  scored.sort((a, b) => {
+    if (a.tier !== b.tier) return a.tier - b.tier;
+    if (a.c.maxPallets !== b.c.maxPallets) return a.c.maxPallets - b.c.maxPallets; // smallest truck that fits
+    if (a.remaining !== b.remaining) return a.remaining - b.remaining; // tightest fit
+    return a.c.plate.localeCompare(b.c.plate); // deterministic tie-break
+  });
+
+  const best = scored[0];
+  const why =
+    best.tier === 0
+      ? `consolidated onto a truck already serving ${zone}`
+      : best.tier === 1
+        ? `driver covers zone ${zone}`
+        : best.tier === 2
+          ? `adjacent-zone driver for ${zone}`
+          : `next available truck for ${zone ?? "destination"}`;
+  return {
+    plate: best.c.plate,
+    driverId: best.c.driverId,
+    reason: `${why}; fits ${order.pallets}/${best.c.maxPallets} pallets`,
+  };
+}
+
+// Zones a truck passes through on the way to/back from `zone`, so the engine
+// can offer pending en-route orders to the same driver (Brief: P2→A2 passes
+// through A1). Kept explicit and small; confirm the full corridor with UWC.
+const EN_ROUTE: Record<string, string[]> = {
+  A2: ["A1"], // Ipoh run passes Taiping — offer A1 pickups on the return leg
+  A1: ["A2"], // a Taiping run can continue down the same southern corridor
+};
+
+export function enRouteZones(zone: string | null): string[] {
+  if (!zone) return [];
+  return EN_ROUTE[zone] ?? [];
+}
+
+// ── DB helpers ─────────────────────────────────────────────────────────
+
+const ACTIVE_TRIP_STATUSES = ["assigned", "in_progress"] as const;
+
+function orderPallets(cargo: { quantity: number }[]): number {
+  return cargo.reduce((sum, c) => sum + c.quantity, 0);
+}
+
+function primaryZone(stops: { consignee: { zone_code: string } }[]): string | null {
+  return stops[0]?.consignee.zone_code ?? null;
+}
+
+/** Resolve an actor for the audit log when dispatch runs without a logged-in user. */
+async function systemActorId(preferred?: string): Promise<string | null> {
+  if (preferred) return preferred;
+  const admin = await prisma.user.findFirst({
+    where: { role: "admin", status: "active" },
+    select: { id: true },
+  });
+  return admin?.id ?? null;
+}
+
+export interface DispatchResult {
+  assigned: boolean;
+  reason: string;
+  trip?: Awaited<ReturnType<typeof loadTripWithRelations>>;
+  assignment?: TruckSelection;
+  returnTripOffers?: { id: string; ticket_number: string; zone: string | null }[];
+}
+
+function loadTripWithRelations(id: string) {
+  return prisma.trip.findUnique({
+    where: { id },
+    include: {
+      requestor: { select: { id: true, name: true, phone: true } },
+      driver: { select: { id: true, name: true, phone: true } },
+      truck: true,
+      route_type: true,
+      stops: { include: { consignee: true }, orderBy: { sequence: "asc" } },
+      cargo_details: true,
+      documents: { orderBy: { uploaded_at: "desc" } },
+    },
+  });
+}
+
+/**
+ * Run the engine for one pending trip and assign the best driver+truck.
+ *
+ * Best-effort and idempotent-ish: returns `{ assigned:false }` (never throws on
+ * "no truck") so callers — the endpoint, the post-create hook, and the 15-min
+ * timeout sweep — can all use it safely. `actorId` is the admin who triggered
+ * it (endpoint); background callers omit it and the audit log falls back to the
+ * bootstrap admin.
+ */
+export async function autoDispatchTrip(tripId: string, actorId?: string): Promise<DispatchResult> {
+  const trip = await prisma.trip.findUnique({
+    where: { id: tripId },
+    include: {
+      cargo_details: { select: { quantity: true } },
+      stops: { orderBy: { sequence: "asc" }, select: { consignee: { select: { zone_code: true } } } },
+    },
+  });
+  if (!trip) return { assigned: false, reason: "Trip not found." };
+  if (trip.status !== "pending") return { assigned: false, reason: "Trip is not pending." };
+
+  const order: DispatchOrder = {
+    pallets: orderPallets(trip.cargo_details),
+    zone: primaryZone(trip.stops),
+  };
+
+  // Available trucks: marked available, with an active driver.
+  const trucks = await prisma.truck.findMany({
+    where: { is_available: true, driver: { is: { status: "active" } } },
+    include: {
+      driver: { select: { id: true } },
+      trips: {
+        where: { status: { in: [...ACTIVE_TRIP_STATUSES] }, id: { not: tripId } },
+        select: {
+          cargo_details: { select: { quantity: true } },
+          stops: {
+            orderBy: { sequence: "asc" },
+            take: 1,
+            select: { consignee: { select: { zone_code: true } } },
+          },
+        },
+      },
+    },
+  });
+
+  const candidates: TruckCandidate[] = trucks
+    .filter((t) => t.driver) // safety: driver relation present
+    .map((t) => ({
+      plate: t.plate,
+      driverId: t.driver!.id,
+      maxPallets: t.max_pallets,
+      currentLoad: t.trips.reduce((sum, tr) => sum + orderPallets(tr.cargo_details), 0),
+      coverageZones: t.priority_zones,
+      activeZones: t.trips
+        .map((tr) => tr.stops[0]?.consignee.zone_code)
+        .filter((z): z is string => Boolean(z)),
+    }));
+
+  const zoneRows = await prisma.zone.findMany({
+    select: { code: true, adjacentTo: { select: { code: true } } },
+  });
+  const adjacency: Record<string, string[]> = Object.fromEntries(
+    zoneRows.map((z) => [z.code, z.adjacentTo.map((a) => a.code)])
+  );
+
+  const selection = selectTruck(order, candidates, adjacency);
+  if (!selection) {
+    return { assigned: false, reason: "No available truck has capacity for this order." };
+  }
+
+  await prisma.trip.update({
+    where: { id: tripId },
+    data: {
+      driver_id: selection.driverId,
+      truck_plate: selection.plate,
+      status: "assigned",
+      pending_alert_sent: true, // it's handled now; don't ping admins about it
+    },
+  });
+
+  const actor = await systemActorId(actorId);
+  if (actor) {
+    await prisma.auditLog.create({
+      data: {
+        user_id: actor,
+        action: "trip.auto_dispatched",
+        table_name: "Trip",
+        record_id: tripId,
+      },
+    });
+  }
+
+  const updated = await loadTripWithRelations(tripId);
+
+  // Notify the assigned driver (best-effort, never blocks).
+  const driverDevice = await prisma.user.findUnique({
+    where: { id: selection.driverId },
+    select: { expo_push_token: true },
+  });
+  const destLabel =
+    updated?.stops[0]?.consignee.area ||
+    updated?.stops[0]?.consignee.company_name ||
+    order.zone ||
+    "destination";
+  await sendPushNotifications([driverDevice?.expo_push_token], {
+    title: "New trip assigned",
+    body: `New trip assigned: ${destLabel}`,
+    data: { type: "trip_assigned", tripId },
+  });
+
+  // Return-trip matching: pending orders en-route to the assigned zone, offered
+  // to the same driver (not auto-assigned — the admin/driver decides).
+  const enRoute = enRouteZones(order.zone);
+  const returnTripOffers =
+    enRoute.length > 0
+      ? (
+          await prisma.trip.findMany({
+            where: {
+              status: "pending",
+              id: { not: tripId },
+              stops: { some: { consignee: { zone_code: { in: enRoute } } } },
+            },
+            select: {
+              id: true,
+              ticket_number: true,
+              stops: { orderBy: { sequence: "asc" }, take: 1, select: { consignee: { select: { zone_code: true } } } },
+            },
+          })
+        ).map((t) => ({ id: t.id, ticket_number: t.ticket_number, zone: t.stops[0]?.consignee.zone_code ?? null }))
+      : [];
+
+  return {
+    assigned: true,
+    reason: selection.reason,
+    trip: updated,
+    assignment: selection,
+    returnTripOffers,
+  };
+}

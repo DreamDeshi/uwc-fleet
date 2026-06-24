@@ -15,6 +15,8 @@ import { PLANT_ORIGIN, zoneCoord, getRoute, type LatLng } from "../lib/geo";
 import { upload } from "../lib/upload";
 import { uploadBuffer } from "../lib/cloudinary";
 import { sendPushNotifications } from "../lib/pushNotifications";
+import { getDispatchMode } from "../lib/settings";
+import { autoDispatchTrip } from "../services/dispatchEngine";
 
 const router = Router();
 router.use(requireAuth);
@@ -121,7 +123,23 @@ router.post(
         data: { user_id: req.user!.id, action: "trip.created", table_name: "Trip", record_id: trip.id },
       });
 
-      res.status(201).json(trip);
+      // Fully-automatic mode: run the dispatch engine immediately so the booking
+      // is assigned the moment it's submitted. Best-effort — if no truck fits the
+      // trip simply stays pending (the 15-min sweep retries), so a dispatch
+      // failure must never break the booking itself.
+      let result = trip;
+      try {
+        if ((await getDispatchMode()) === "auto") {
+          const dispatch = await autoDispatchTrip(trip.id);
+          if (dispatch.assigned && dispatch.trip) {
+            result = dispatch.trip;
+          }
+        }
+      } catch (err) {
+        console.error("Auto-dispatch on create failed:", err);
+      }
+
+      res.status(201).json(result);
     } catch (err) {
       next(err);
     }

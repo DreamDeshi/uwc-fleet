@@ -1,0 +1,129 @@
+import { describe, it, expect } from "vitest";
+import {
+  selectTruck,
+  enRouteZones,
+  type TruckCandidate,
+} from "../src/services/dispatchEngine";
+
+// Adjacency from the seed (Mr. Teh's email): P2↔K1, P2↔A1.
+const ADJACENCY: Record<string, string[]> = {
+  P1: [],
+  P2: ["K1", "A1"],
+  P3: [],
+  K1: ["P2"],
+  K2: [],
+  A1: ["P2"],
+  A2: [],
+};
+
+// Real fleet capacities (Brief Section 2).
+function truck(over: Partial<TruckCandidate> & { plate: string; maxPallets: number }): TruckCandidate {
+  return {
+    driverId: `drv-${over.plate}`,
+    currentLoad: 0,
+    coverageZones: [],
+    activeZones: [],
+    ...over,
+  };
+}
+
+describe("selectTruck — Best-Fit Decreasing (Rule A)", () => {
+  it("picks the smallest truck that fits so big trucks stay free", () => {
+    const candidates = [
+      truck({ plate: "PLX 2406", maxPallets: 16, coverageZones: ["K1"] }),
+      truck({ plate: "PRJ 5292", maxPallets: 8, coverageZones: ["K1"] }),
+      truck({ plate: "PRH 5292", maxPallets: 2, coverageZones: ["K1"] }),
+    ];
+    const sel = selectTruck({ pallets: 5, zone: "K1" }, candidates, ADJACENCY);
+    expect(sel?.plate).toBe("PRJ 5292"); // 2 too small, 8 is smallest that fits 5
+  });
+
+  it("returns null when no truck can fit the order (hard overload prevention)", () => {
+    const candidates = [
+      truck({ plate: "PRH 5292", maxPallets: 2, coverageZones: ["P2"] }),
+      truck({ plate: "4 Wheel", maxPallets: 2, coverageZones: ["P2"] }),
+    ];
+    expect(selectTruck({ pallets: 5, zone: "P2" }, candidates, ADJACENCY)).toBeNull();
+  });
+
+  it("never exceeds max_pallets even by one", () => {
+    const candidates = [truck({ plate: "PRJ 5292", maxPallets: 8, coverageZones: ["K1"] })];
+    expect(selectTruck({ pallets: 8, zone: "K1" }, candidates, ADJACENCY)?.plate).toBe("PRJ 5292");
+    expect(selectTruck({ pallets: 9, zone: "K1" }, candidates, ADJACENCY)).toBeNull();
+  });
+});
+
+describe("selectTruck — driver priority zones", () => {
+  it("prefers a driver whose coverage includes the order zone over one who doesn't", () => {
+    const candidates = [
+      truck({ plate: "PND 1888", maxPallets: 14, coverageZones: ["P1", "P2", "P3", "K1", "K2"] }),
+      truck({ plate: "PLX 2406", maxPallets: 16, coverageZones: ["A1", "A2", "P1", "P2"] }),
+    ];
+    // Order to A2 — only PLX2406 covers A2, so it wins despite being larger.
+    const sel = selectTruck({ pallets: 6, zone: "A2" }, candidates, ADJACENCY);
+    expect(sel?.plate).toBe("PLX 2406");
+  });
+
+  it("falls back to an adjacent-zone driver when no driver covers the zone", () => {
+    // No K1-coverage driver free; a P2 driver is adjacent to K1.
+    const candidates = [
+      truck({ plate: "PLX 2406", maxPallets: 16, coverageZones: ["P2"] }), // P2 adjacent to K1
+      truck({ plate: "PQL 5292", maxPallets: 8, coverageZones: ["P3"] }), // P3 not adjacent
+    ];
+    const sel = selectTruck({ pallets: 4, zone: "K1" }, candidates, ADJACENCY);
+    expect(sel?.plate).toBe("PLX 2406");
+  });
+
+  it("still assigns the smallest fitting truck when nobody covers or is adjacent", () => {
+    const candidates = [
+      truck({ plate: "PND 1888", maxPallets: 14, coverageZones: ["P3"] }),
+      truck({ plate: "PQL 5292", maxPallets: 8, coverageZones: ["P3"] }),
+    ];
+    const sel = selectTruck({ pallets: 4, zone: "K2" }, candidates, ADJACENCY);
+    expect(sel?.plate).toBe("PQL 5292"); // smaller of the two non-matching trucks
+  });
+});
+
+describe("selectTruck — consolidation (Rule B)", () => {
+  it("consolidates onto a truck already serving the same zone if capacity allows", () => {
+    const candidates = [
+      // Already carrying 4 pallets to K1, room for 4 more (8 max).
+      truck({ plate: "PRJ 5292", maxPallets: 8, currentLoad: 4, coverageZones: ["K1"], activeZones: ["K1"] }),
+      // Idle truck that also covers K1.
+      truck({ plate: "PQL 5292", maxPallets: 8, coverageZones: ["K1"] }),
+    ];
+    const sel = selectTruck({ pallets: 3, zone: "K1" }, candidates, ADJACENCY);
+    expect(sel?.plate).toBe("PRJ 5292"); // consolidation tier beats the idle truck
+  });
+
+  it("does not consolidate past capacity — falls to the idle truck", () => {
+    const candidates = [
+      truck({ plate: "PRJ 5292", maxPallets: 8, currentLoad: 6, coverageZones: ["K1"], activeZones: ["K1"] }),
+      truck({ plate: "PQL 5292", maxPallets: 8, coverageZones: ["K1"] }),
+    ];
+    // 6 + 4 = 10 > 8, so PRJ can't take it; idle PQL does.
+    const sel = selectTruck({ pallets: 4, zone: "K1" }, candidates, ADJACENCY);
+    expect(sel?.plate).toBe("PQL 5292");
+  });
+
+  it("treats a truck busy with a different zone as unavailable", () => {
+    const candidates = [
+      // Out delivering to A2 — must not be handed a K1 order.
+      truck({ plate: "PLX 2406", maxPallets: 16, currentLoad: 5, coverageZones: ["K1"], activeZones: ["A2"] }),
+      truck({ plate: "PRJ 5292", maxPallets: 8, coverageZones: ["K1"] }),
+    ];
+    const sel = selectTruck({ pallets: 3, zone: "K1" }, candidates, ADJACENCY);
+    expect(sel?.plate).toBe("PRJ 5292");
+  });
+});
+
+describe("enRouteZones — return-trip matching", () => {
+  it("offers A1 (Taiping) pickups on an A2 (Ipoh) run", () => {
+    expect(enRouteZones("A2")).toEqual(["A1"]);
+  });
+
+  it("returns nothing for zones with no corridor", () => {
+    expect(enRouteZones("P1")).toEqual([]);
+    expect(enRouteZones(null)).toEqual([]);
+  });
+});

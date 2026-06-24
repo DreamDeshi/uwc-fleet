@@ -1,31 +1,16 @@
-import { useEffect, useState } from "react";
+import { useDispatchMode as useDispatchModeQuery, useSetDispatchMode } from "@/hooks/queries";
 
-// Manual vs Fully-Automatic dispatch (Mr. Teh's requirement). This is a UI-only
-// toggle for now — the auto-dispatch bin-packing engine lands in Phase 5. The
-// choice is persisted so it stays consistent between the Dashboard and Trips.
+// Manual vs Fully-Automatic dispatch (Mr. Teh's requirement). Backed by the API
+// (GET/PATCH /settings/dispatch-mode) so the mode is shared across all admins
+// and actually drives the auto-dispatch engine — not just this browser.
 export type DispatchMode = "manual" | "auto";
 
-const KEY = "uwc.admin.dispatchMode";
-
-export function useDispatchMode(): [DispatchMode, (m: DispatchMode) => void] {
-  const [mode, setMode] = useState<DispatchMode>(
-    () => (localStorage.getItem(KEY) as DispatchMode) || "manual"
-  );
-
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === KEY && e.newValue) setMode(e.newValue as DispatchMode);
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-
-  const update = (m: DispatchMode) => {
-    setMode(m);
-    localStorage.setItem(KEY, m);
-    // notify same-tab listeners (storage event only fires cross-tab)
-    window.dispatchEvent(new StorageEvent("storage", { key: KEY, newValue: m }));
-  };
-
-  return [mode, update];
+// Keeps the original [mode, setMode] tuple shape so DispatchToggle is unchanged.
+// `pending` lets the UI disable the control while a switch is in flight.
+export function useDispatchMode(): [DispatchMode, (m: DispatchMode) => void, boolean] {
+  const query = useDispatchModeQuery();
+  const mutation = useSetDispatchMode();
+  const mode: DispatchMode = query.data ?? "manual";
+  const setMode = (m: DispatchMode) => mutation.mutate(m);
+  return [mode, setMode, query.isLoading || mutation.isPending];
 }
