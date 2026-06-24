@@ -140,3 +140,9 @@ export async function registerRequest(payload: RegisterPayload) {
   const res = await api.post("/auth/register", payload);
   return res.data;
 }
+
+// Register/clear this device's Expo push token on the server. Best-effort —
+// callers swallow errors so notifications never block auth.
+export async function savePushToken(token: string | null) {
+  await api.patch("/users/push-token", { expo_push_token: token });
+}

@@ -59,6 +59,7 @@ model User {
   role                Role
   status              UserStatus @default(pending_approval)
   language_pref       String     @default("en") // en | ms | zh
+  expo_push_token     String? // Expo push token for this user's current device
   department_id       String?
   department          Department? @relation(fields: [department_id], references: [id])
   assigned_truck_plate String?    @unique // drivers only — 1 driver : 1 truck
@@ -155,6 +156,9 @@ model Trip {
   pickup_datetime  DateTime
   incentive_earned Decimal?   @db.Decimal(10, 2)
   is_external      Boolean    @default(false)
+  // Set once admins have been pinged about a 15-min-old pending order, so the
+  // background alert job notifies them exactly once per trip.
+  pending_alert_sent Boolean  @default(false)
   created_at       DateTime   @default(now())
 
   stops               TripStop[]

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../context/AuthContext";
+import { usePushNotificationListeners } from "../hooks/usePushNotifications";
 import { LoadingState } from "../components/States";
 import { Button } from "../components/Button";
 import { colors } from "../theme";
@@ -13,6 +14,7 @@ import { RequestorStack } from "./RequestorStack";
 export function RootNavigator() {
   const { status, user, logout } = useAuth();
   const { t } = useTranslation();
+  usePushNotificationListeners();
 
   return (
     <NavigationContainer>
