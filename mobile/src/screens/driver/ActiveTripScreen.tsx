@@ -24,6 +24,8 @@ import { colors, radius, shadow } from "../../theme";
 import { Button } from "../../components/Button";
 import { LoadingState, ErrorState } from "../../components/States";
 import { PLANT_ORIGIN, regionFor, zoneCoord, haversineKm } from "../../lib/geo";
+import { mapsEnabled } from "../../lib/maps";
+import { MapPlaceholder } from "../../components/MapPlaceholder";
 import { tripDestination, tripDestZone } from "../../lib/trip";
 import { formatMoney } from "../../lib/format";
 import { TripStop } from "../../types";
@@ -131,25 +133,30 @@ export function ActiveTripScreen() {
 
   return (
     <View style={styles.fill}>
-      {/* Full-screen map (the hero) */}
-      <MapView style={StyleSheet.absoluteFill} initialRegion={region}>
-        <Marker coordinate={PLANT_ORIGIN} title="UWC Batu Kawan" pinColor={colors.blue} />
-        <Marker coordinate={dest} title={tripDestination(trip)} pinColor={colors.red} />
-        {/* Real road path from Google Directions; straight line until it loads */}
-        <Polyline
-          coordinates={route?.polyline?.length ? route.polyline : [PLANT_ORIGIN, dest]}
-          strokeColor={colors.blue}
-          strokeWidth={5}
-        />
-        {/* Live "you are here" dot from this phone's GPS */}
-        {tracking.current ? (
-          <Marker coordinate={tracking.current} anchor={{ x: 0.5, y: 0.5 }} flat>
-            <View style={styles.liveDotRing}>
-              <View style={styles.liveDotCore} />
-            </View>
-          </Marker>
-        ) : null}
-      </MapView>
+      {/* Full-screen map (the hero) — falls back to a placeholder when no
+          Google Maps API key is configured, since MapView would crash. */}
+      {mapsEnabled ? (
+        <MapView style={StyleSheet.absoluteFill} initialRegion={region}>
+          <Marker coordinate={PLANT_ORIGIN} title="UWC Batu Kawan" pinColor={colors.blue} />
+          <Marker coordinate={dest} title={tripDestination(trip)} pinColor={colors.red} />
+          {/* Real road path from Google Directions; straight line until it loads */}
+          <Polyline
+            coordinates={route?.polyline?.length ? route.polyline : [PLANT_ORIGIN, dest]}
+            strokeColor={colors.blue}
+            strokeWidth={5}
+          />
+          {/* Live "you are here" dot from this phone's GPS */}
+          {tracking.current ? (
+            <Marker coordinate={tracking.current} anchor={{ x: 0.5, y: 0.5 }} flat>
+              <View style={styles.liveDotRing}>
+                <View style={styles.liveDotCore} />
+              </View>
+            </Marker>
+          ) : null}
+        </MapView>
+      ) : (
+        <MapPlaceholder style={StyleSheet.absoluteFill} />
+      )}
 
       {/* Floating top card */}
       <View style={[styles.topCard, { top: insets.top + 8 }]}>

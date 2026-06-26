@@ -11,7 +11,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#003087"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "my.uwc.fleet"
@@ -20,6 +22,16 @@
       "package": "my.uwc.fleet",
       "adaptiveIcon": {
         "backgroundColor": "#003087"
+      },
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": ""
+        }
       }
     },
     "plugins": [
@@ -46,7 +58,10 @@
     ],
     "extra": {
       "//": "Production API on Railway. For local dev against your machine, set this to your LAN IP, e.g. http://192.168.100.154:3000 (localhost only works on the iOS simulator).",
-      "apiUrl": "https://uwc-api-production.up.railway.app"
+      "apiUrl": "https://uwc-api-production.up.railway.app",
+      "eas": {
+        "projectId": "6cb19185-a273-4dad-9993-bc3ef859cc17"
+      }
     }
   }
 }
