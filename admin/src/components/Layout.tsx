@@ -1,9 +1,11 @@
+import { Suspense } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { colors, radius } from "@/theme";
 import { useAuth } from "@/context/AuthContext";
 import { usePendingUsers, useDashboard } from "@/hooks/queries";
 import { formatFullDate, initials } from "@/lib/format";
+import { FullScreenLoader } from "@/components/FullScreenLoader";
 
 interface NavItem {
   to: string;
@@ -320,7 +322,9 @@ export function Layout() {
         </header>
 
         <main style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }}>
-          <Outlet />
+          <Suspense fallback={<FullScreenLoader />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>

@@ -1,8 +1,11 @@
+import { lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDashboard, useDrivers, useFleetLive, useTrips, useTrucks } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
 import { Card, KpiCard, Loading, ErrorState, ProgressBar, TripStatusBadge, SectionTitle, Pill, EmptyState } from "@/components/ui";
-import { FleetMap } from "@/components/FleetMap";
+// FleetMap pulls in Leaflet (~150 KB). It sits below the fold on the dashboard,
+// so we load it as its own chunk and let the KPIs paint first.
+const FleetMap = lazy(() => import("@/components/FleetMap").then((m) => ({ default: m.FleetMap })));
 import { LoadCapacityBar } from "@/components/LoadCapacityBar";
 import { DispatchToggle } from "@/components/DispatchToggle";
 import { relativeExpiry } from "@/lib/format";
@@ -132,7 +135,15 @@ export function DashboardPage() {
             </div>
           </div>
           <div style={{ flex: 1, minHeight: 400 }}>
-            <FleetMap trucks={truckList} live={live.data ?? []} />
+            <Suspense
+              fallback={
+                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: colors.textMuted, fontSize: 13 }}>
+                  Loading map…
+                </div>
+              }
+            >
+              <FleetMap trucks={truckList} live={live.data ?? []} />
+            </Suspense>
           </div>
         </Card>
 
