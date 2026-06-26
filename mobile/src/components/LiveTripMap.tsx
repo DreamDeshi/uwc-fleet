@@ -3,6 +3,8 @@ import { StyleSheet, View } from "react-native";
 import MapView, { Marker, Polyline } from "react-native-maps";
 import { colors } from "../theme";
 import { PLANT_ORIGIN, regionFor, zoneCoord } from "../lib/geo";
+import { mapsEnabled } from "../lib/maps";
+import { MapPlaceholder } from "./MapPlaceholder";
 import { useTripRoute, useTripLatestLocation } from "../hooks/queries";
 
 // Live overview map for tracking a trip: UWC plant → destination drawn with the
@@ -25,6 +27,10 @@ export function LiveTripMap({
   const region = regionFor(PLANT_ORIGIN, dest);
   const { data: route } = useTripRoute(tripId, true);
   const { data: pos } = useTripLatestLocation(tripId, live);
+
+  if (!mapsEnabled) {
+    return <MapPlaceholder style={[styles.wrap, { height }]} />;
+  }
 
   return (
     <View style={[styles.wrap, { height }]}>
