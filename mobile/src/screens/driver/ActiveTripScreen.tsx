@@ -1,6 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
 import { Image, Linking, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import MapView, { Marker, Polyline } from "react-native-maps";
 import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,8 +23,7 @@ import { colors, radius, shadow } from "../../theme";
 import { Button } from "../../components/Button";
 import { LoadingState, ErrorState } from "../../components/States";
 import { PLANT_ORIGIN, regionFor, zoneCoord, haversineKm } from "../../lib/geo";
-import { mapsEnabled } from "../../lib/maps";
-import { MapPlaceholder } from "../../components/MapPlaceholder";
+import { ActiveTripMap } from "../../components/ActiveTripMap";
 import { tripDestination, tripDestZone } from "../../lib/trip";
 import { formatMoney } from "../../lib/format";
 import { TripStop } from "../../types";
@@ -133,30 +131,15 @@ export function ActiveTripScreen() {
 
   return (
     <View style={styles.fill}>
-      {/* Full-screen map (the hero) — falls back to a placeholder when no
-          Google Maps API key is configured, since MapView would crash. */}
-      {mapsEnabled ? (
-        <MapView style={StyleSheet.absoluteFill} initialRegion={region}>
-          <Marker coordinate={PLANT_ORIGIN} title="UWC Batu Kawan" pinColor={colors.blue} />
-          <Marker coordinate={dest} title={tripDestination(trip)} pinColor={colors.red} />
-          {/* Real road path from Google Directions; straight line until it loads */}
-          <Polyline
-            coordinates={route?.polyline?.length ? route.polyline : [PLANT_ORIGIN, dest]}
-            strokeColor={colors.blue}
-            strokeWidth={5}
-          />
-          {/* Live "you are here" dot from this phone's GPS */}
-          {tracking.current ? (
-            <Marker coordinate={tracking.current} anchor={{ x: 0.5, y: 0.5 }} flat>
-              <View style={styles.liveDotRing}>
-                <View style={styles.liveDotCore} />
-              </View>
-            </Marker>
-          ) : null}
-        </MapView>
-      ) : (
-        <MapPlaceholder style={StyleSheet.absoluteFill} />
-      )}
+      {/* Full-screen map (the hero). Native renders react-native-maps; the web
+          build swaps in a placeholder via ActiveTripMap.web.tsx. */}
+      <ActiveTripMap
+        region={region}
+        dest={dest}
+        destLabel={tripDestination(trip)}
+        polyline={route?.polyline}
+        current={tracking.current}
+      />
 
       {/* Floating top card */}
       <View style={[styles.topCard, { top: insets.top + 8 }]}>
@@ -442,24 +425,6 @@ const styles = StyleSheet.create({
   trackBadge: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
   trackDot: { width: 8, height: 8, borderRadius: 4 },
   trackText: { fontSize: 12, fontWeight: "700", color: colors.navy },
-
-  // Live GPS dot on the map (blue core inside a soft ring).
-  liveDotRing: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: "rgba(0,48,135,0.18)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  liveDotCore: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: colors.blue,
-    borderWidth: 2,
-    borderColor: colors.white,
-  },
 
   sheetContent: { paddingHorizontal: 16, paddingBottom: 40 },
   sheetHandleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
