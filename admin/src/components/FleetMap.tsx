@@ -1,5 +1,6 @@
 import { Circle, MapContainer, Marker, TileLayer, Tooltip } from "react-leaflet";
 import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES, truckPosition } from "@/lib/zones";
 import { colors } from "@/theme";
 import type { LivePosition, Truck } from "@/types";

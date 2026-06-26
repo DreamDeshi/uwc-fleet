@@ -1,42 +1,28 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { colors } from "@/theme";
 import { Layout } from "@/components/Layout";
-import { LoginPage } from "@/pages/LoginPage";
-import { DashboardPage } from "@/pages/DashboardPage";
-import { TripsPage } from "@/pages/TripsPage";
-import { DriversPage } from "@/pages/DriversPage";
-import { TrucksPage } from "@/pages/TrucksPage";
-import { IncentivesPage } from "@/pages/IncentivesPage";
-import { ApprovalsPage } from "@/pages/ApprovalsPage";
-import { ReportsPage } from "@/pages/ReportsPage";
-import { MobileLitePage } from "@/pages/MobileLitePage";
+import { FullScreenLoader } from "@/components/FullScreenLoader";
 import { useIsMobile } from "@/hooks/useIsMobile";
 
-function FullScreenLoader() {
-  return (
-    <div
-      style={{
-        height: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: colors.bg,
-      }}
-    >
-      <div
-        style={{
-          width: 36,
-          height: 36,
-          border: `3px solid ${colors.border}`,
-          borderTopColor: colors.blue,
-          borderRadius: "50%",
-          animation: "uwc-spin 0.8s linear infinite",
-        }}
-      />
-    </div>
-  );
-}
+// Route-level code splitting: each page (and its heavy deps — Leaflet on the
+// dashboard, Recharts on reports) ships as its own chunk loaded on navigation,
+// instead of one ~890 KB bundle on first paint. Pages use named exports, so we
+// map them onto `default` for React.lazy.
+const lazyPage = <T extends Record<string, React.ComponentType<unknown>>>(
+  loader: () => Promise<T>,
+  name: keyof T
+) => lazy(() => loader().then((m) => ({ default: m[name] })));
+
+const LoginPage = lazyPage(() => import("@/pages/LoginPage"), "LoginPage");
+const DashboardPage = lazyPage(() => import("@/pages/DashboardPage"), "DashboardPage");
+const TripsPage = lazyPage(() => import("@/pages/TripsPage"), "TripsPage");
+const DriversPage = lazyPage(() => import("@/pages/DriversPage"), "DriversPage");
+const TrucksPage = lazyPage(() => import("@/pages/TrucksPage"), "TrucksPage");
+const IncentivesPage = lazyPage(() => import("@/pages/IncentivesPage"), "IncentivesPage");
+const ApprovalsPage = lazyPage(() => import("@/pages/ApprovalsPage"), "ApprovalsPage");
+const ReportsPage = lazyPage(() => import("@/pages/ReportsPage"), "ReportsPage");
+const MobileLitePage = lazyPage(() => import("@/pages/MobileLitePage"), "MobileLitePage");
 
 export default function App() {
   const { status } = useAuth();
@@ -46,10 +32,12 @@ export default function App() {
 
   if (status === "guest") {
     return (
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
+      <Suspense fallback={<FullScreenLoader />}>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Suspense>
     );
   }
 
@@ -58,13 +46,18 @@ export default function App() {
   // reachable for previewing the mobile view.
   if (isMobile) {
     return (
-      <Routes>
-        <Route path="/m" element={<MobileLitePage />} />
-        <Route path="*" element={<Navigate to="/m" replace />} />
-      </Routes>
+      <Suspense fallback={<FullScreenLoader />}>
+        <Routes>
+          <Route path="/m" element={<MobileLitePage />} />
+          <Route path="*" element={<Navigate to="/m" replace />} />
+        </Routes>
+      </Suspense>
     );
   }
 
+  // Authenticated desktop app. Each page chunk loads on navigation; the Suspense
+  // boundary lives inside Layout (around the Outlet) so the sidebar stays put
+  // while a page streams in. The /m preview route gets its own boundary.
   return (
     <Routes>
       <Route element={<Layout />}>
@@ -76,7 +69,14 @@ export default function App() {
         <Route path="/approvals" element={<ApprovalsPage />} />
         <Route path="/reports" element={<ReportsPage />} />
       </Route>
-      <Route path="/m" element={<MobileLitePage />} />
+      <Route
+        path="/m"
+        element={
+          <Suspense fallback={<FullScreenLoader />}>
+            <MobileLitePage />
+          </Suspense>
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
