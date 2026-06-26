@@ -2,7 +2,6 @@ import React, { useMemo } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { CartesianChart, Bar } from "victory-native";
 import { useTranslation } from "react-i18next";
 import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
@@ -11,6 +10,7 @@ import { useIncentives } from "../../hooks/queries";
 import { colors, radius, shadow } from "../../theme";
 import { Header } from "../../components/Header";
 import { Card } from "../../components/Card";
+import { WeeklyEarningsChart } from "../../components/WeeklyEarningsChart";
 import { LoadingState, ErrorState, EmptyState } from "../../components/States";
 import { formatMoney, formatDate, monthYear } from "../../lib/format";
 
@@ -88,25 +88,7 @@ export function EarningsScreen() {
             <Text style={styles.cardTitle}>{t("earnings.thisWeek")}</Text>
             {hasWeekData ? (
               <>
-                <View style={styles.chartBox}>
-                  <CartesianChart
-                    data={week}
-                    xKey="x"
-                    yKeys={["amount"]}
-                    domain={{ y: [0, weekMax * 1.25] }}
-                    domainPadding={{ left: 22, right: 22, top: 12 }}
-                  >
-                    {({ points, chartBounds }) => (
-                      <Bar
-                        points={points.amount}
-                        chartBounds={chartBounds}
-                        color={colors.blue}
-                        innerPadding={0.4}
-                        roundedCorners={{ topLeft: 6, topRight: 6 }}
-                      />
-                    )}
-                  </CartesianChart>
-                </View>
+                <WeeklyEarningsChart data={week} weekMax={weekMax} />
                 <View style={styles.weekLabels}>
                   {week.map((d) => (
                     <Text key={d.x} style={styles.weekDay}>{d.label}</Text>
@@ -212,7 +194,6 @@ const styles = StyleSheet.create({
   summaryMeta: { color: "rgba(255,255,255,0.8)", fontSize: 13, marginTop: 4 },
 
   cardTitle: { fontSize: 14, fontWeight: "700", color: colors.navy, marginBottom: 12 },
-  chartBox: { height: 170 },
   weekLabels: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 18, marginTop: 6 },
   weekDay: { flex: 1, textAlign: "center", fontSize: 11, fontWeight: "700", color: colors.textFaint },
   chartEmpty: { fontSize: 13, color: colors.textMuted, paddingVertical: 24, textAlign: "center" },
