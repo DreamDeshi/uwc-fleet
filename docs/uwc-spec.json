@@ -19,7 +19,7 @@
       "destination_points are the first-trip-of-day point values per destination (the yellow 'trip incentive point' row).",
       "trucks[].priority_zones is the coverage of the truck's assigned driver (see driver_assignments, the primary source). '4 Wheel' has no driver in the workbook, so it has no priority zones.",
       "cargo.pallet_sizes[].factor is the agreed 4x4-equivalent capacity convention (mirrors api/src/lib/pallets.ts); the workbook lists the pallet sizes but not the factors.",
-      "Kuala Lumpur has destination points (8) but no zone code. Johor & Selangor appear only in the REQUESTOR destination dropdown — they have no points or zone code in this workbook and are intentionally NOT included here (they were added separately as long-haul extensions outside the spec)."
+      "Kuala Lumpur has destination points (8) but no zone code. Johor & Selangor appear only in the REQUESTOR destination dropdown — they have no points or zone code in the workbook, so they are kept OUT of the authoritative datasets above and live in the separate 'extensions' block at the end of this file."
     ]
   },
 
@@ -104,5 +104,17 @@
     { "name": "Driver 4",      "employee_no": "D004", "department": "Marketing", "truck": "PQL 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
     { "name": "Driver 5", "employee_no": "D005", "department": "Marketing", "truck": "PPE 1804", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
     { "name": "Driver 6",                "employee_no": "D006", "department": "Marketing", "truck": "PRH 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2", "A1", "A2"], "priority_zones_raw": "ALL",            "notes": "If A1 & A2 with less than 2 pallets of 4x4, give the priority." }
-  ]
+  ],
+
+  "extensions": {
+    "_note": "ADDITIONS BEYOND THE ORIGINAL SPEC WORKBOOK — not authoritative spec data. Johor & Selangor are listed as destinations in the REQUESTOR INTERFACE dropdown but carry no zone code or incentive points in the workbook. They were added as long-haul destinations (8 points each, matching Kuala Lumpur). Kept separate from the datasets above so the boundary between the spec and our own additions stays clear and diffable.",
+    "zones": [
+      { "code": "JH", "coverage_area": "Johor" },
+      { "code": "SL", "coverage_area": "Selangor" }
+    ],
+    "destination_points": [
+      { "zone_code": "JH", "location_name": "Johor", "points": 8 },
+      { "zone_code": "SL", "location_name": "Selangor", "points": 8 }
+    ]
+  }
 }
