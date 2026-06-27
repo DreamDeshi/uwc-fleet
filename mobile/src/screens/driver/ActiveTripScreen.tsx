@@ -25,7 +25,7 @@ import { LoadingState, ErrorState } from "../../components/States";
 import { PLANT_ORIGIN, regionFor, zoneCoord, haversineKm } from "../../lib/geo";
 import { ActiveTripMap } from "../../components/ActiveTripMap";
 import { tripDestination, tripDestZone } from "../../lib/trip";
-import { formatMoney } from "../../lib/format";
+import { formatMoney, formatDateTime } from "../../lib/format";
 import { TripStop } from "../../types";
 
 type Nav = NativeStackNavigationProp<TripsStackParamList, "ActiveTrip">;
@@ -187,6 +187,37 @@ export function ActiveTripScreen() {
               onDelivered={() => onDelivered(stop)}
             />
           ))}
+
+          {/* Requestor-uploaded documents (DO / invoice) — reference during
+              delivery. Tapping opens the Cloudinary file in the browser. */}
+          {trip.documents && trip.documents.length > 0 ? (
+            <View style={styles.docSection}>
+              <Text style={styles.docSectionTitle}>{t("trip.documents")}</Text>
+              {trip.documents.map((doc) => (
+                <TouchableOpacity
+                  key={doc.id}
+                  style={styles.docRow}
+                  onPress={() => Linking.openURL(doc.file_url)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="document-text-outline" size={20} color={colors.blue} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.docName}>
+                      {t(
+                        doc.type === "do_photo"
+                          ? "bookingDetail.docTypeDO"
+                          : doc.type === "k2_form"
+                            ? "bookingDetail.docTypeK2"
+                            : "bookingDetail.docTypeOther"
+                      )}
+                    </Text>
+                    <Text style={styles.docDate}>{formatDateTime(doc.uploaded_at)}</Text>
+                  </View>
+                  <Ionicons name="open-outline" size={18} color={colors.blue} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </BottomSheetScrollView>
@@ -456,6 +487,12 @@ const styles = StyleSheet.create({
   checkBox: { width: 28, height: 28, borderRadius: 8, borderWidth: 2, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
   checkBoxOn: { backgroundColor: colors.green, borderColor: colors.green },
   checkLabel: { flex: 1, fontSize: 13, color: colors.navy, fontWeight: "600" },
+
+  docSection: { marginTop: 4, marginBottom: 8 },
+  docSectionTitle: { fontSize: 13, fontWeight: "800", color: colors.navy, marginBottom: 10 },
+  docRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: colors.white, borderRadius: radius.md, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: colors.borderLight },
+  docName: { fontSize: 14, fontWeight: "700", color: colors.navy },
+  docDate: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
 
   error: { color: colors.red, fontSize: 13, fontWeight: "600", marginTop: 8 },
 
