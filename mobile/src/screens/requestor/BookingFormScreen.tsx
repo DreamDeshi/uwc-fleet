@@ -46,6 +46,12 @@ const PALLET_SIZES = ["4×4", "3×4", "4×8", "5×10", "2×2"];
 // the requestor knows a big order may need more than one truck.
 const LARGEST_TRUCK_PALLETS = 16;
 
+// Recent-consignee chips truncate long company names so they don't overflow the
+// chip; the full name still shows once the consignee is selected as a stop.
+const RECENT_CHIP_MAX_CHARS = 25;
+const truncateName = (name: string) =>
+  name.length > RECENT_CHIP_MAX_CHARS ? `${name.slice(0, RECENT_CHIP_MAX_CHARS)}…` : name;
+
 export function BookingFormScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -484,7 +490,7 @@ function StepWhere({
               <TouchableOpacity key={c.id} style={styles.recentChip} onPress={() => addStop(c)}>
                 <Ionicons name="add" size={14} color={colors.blue} />
                 <Text style={styles.recentChipText} numberOfLines={1}>
-                  {c.company_name}
+                  {truncateName(c.company_name)}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -511,6 +517,7 @@ function StepWhere({
       ))}
 
       {/* Search */}
+      <Text style={styles.searchFromLabel}>{t("booking.searchFrom")}</Text>
       <View style={styles.searchBox}>
         <Ionicons name="search" size={18} color={colors.textFaint} />
         <TextInput
@@ -544,9 +551,10 @@ function StepWhere({
         <Text style={styles.searchHint}>{t("booking.searchMinHint", { count: CONSIGNEE_SEARCH_MIN })}</Text>
       ) : null}
 
+      {/* Last-resort manual entry — subtle, below the search results. */}
       <TouchableOpacity style={styles.addNew} onPress={() => setNewOpen(true)}>
-        <Ionicons name="add" size={18} color={colors.blue} />
-        <Text style={styles.addNewText}>{stops.length > 0 ? t("booking.addStop") : t("booking.addNewConsignee")}</Text>
+        <Ionicons name="create-outline" size={14} color={colors.textMuted} />
+        <Text style={styles.addNewText}>{t("booking.addManually")}</Text>
       </TouchableOpacity>
 
       <NewConsigneeModal visible={newOpen} onClose={() => setNewOpen(false)} onCreated={addStop} />
@@ -856,8 +864,9 @@ const styles = StyleSheet.create({
   resultArea: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
   noResult: { padding: 14, fontSize: 13, color: colors.textMuted },
   searchHint: { paddingHorizontal: 4, paddingTop: 8, fontSize: 12, color: colors.textFaint },
-  addNew: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 12, paddingVertical: 12, borderRadius: radius.md, borderWidth: 1.5, borderStyle: "dashed", borderColor: colors.blue },
-  addNewText: { fontSize: 14, fontWeight: "700", color: colors.blue },
+  searchFromLabel: { paddingHorizontal: 4, marginBottom: 6, fontSize: 11.5, color: colors.textFaint },
+  addNew: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 14, paddingVertical: 8 },
+  addNewText: { fontSize: 12.5, fontWeight: "600", color: colors.textMuted },
 
   cargoTabs: { flexDirection: "row", gap: 8, marginBottom: 20 },
   cargoTab: { flex: 1, height: 44, borderRadius: radius.md, borderWidth: 2, borderColor: colors.border, backgroundColor: colors.white, alignItems: "center", justifyContent: "center" },
