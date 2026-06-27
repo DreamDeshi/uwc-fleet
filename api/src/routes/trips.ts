@@ -17,6 +17,7 @@ import { uploadBuffer } from "../lib/cloudinary";
 import { sendPushNotifications } from "../lib/pushNotifications";
 import { getDispatchMode } from "../lib/settings";
 import { autoDispatchTrip } from "../services/dispatchEngine";
+import { palletEquivalents } from "../lib/pallets";
 
 const router = Router();
 router.use(requireAuth);
@@ -319,13 +320,16 @@ router.patch(
       // must respect the same hard capacity limit as the auto engine. Reject if
       // the truck's current active load plus this order would exceed max_pallets.
       const [orderCargo, truck] = await Promise.all([
-        prisma.cargoDetail.findMany({ where: { trip_id: id }, select: { quantity: true } }),
+        prisma.cargoDetail.findMany({
+          where: { trip_id: id },
+          select: { pallet_type: true, quantity: true },
+        }),
         prisma.truck.findUnique({
           where: { plate: truck_plate },
           include: {
             trips: {
               where: { status: { in: ["assigned", "in_progress"] }, id: { not: id } },
-              select: { cargo_details: { select: { quantity: true } } },
+              select: { cargo_details: { select: { pallet_type: true, quantity: true } } },
             },
           },
         }),
@@ -333,9 +337,9 @@ router.patch(
       if (!truck) {
         throw new ApiError(404, "TRUCK_NOT_FOUND", "Truck not found.");
       }
-      const orderPallets = orderCargo.reduce((sum, c) => sum + c.quantity, 0);
+      const orderPallets = palletEquivalents(orderCargo);
       const currentLoad = truck.trips.reduce(
-        (sum, t) => sum + t.cargo_details.reduce((s, c) => s + c.quantity, 0),
+        (sum, t) => sum + palletEquivalents(t.cargo_details),
         0
       );
       if (currentLoad + orderPallets > truck.max_pallets) {

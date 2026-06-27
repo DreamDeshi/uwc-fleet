@@ -6,6 +6,7 @@ import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { getTripDayStart, getTripDayEnd } from "../services/incentiveEngine";
+import { palletEquivalents } from "../lib/pallets";
 
 const router = Router();
 router.use(requireAuth, requireRole("admin"));
@@ -35,7 +36,7 @@ router.get("/", async (_req, res, next) => {
           select: {
             id: true,
             status: true,
-            cargo_details: { select: { quantity: true } },
+            cargo_details: { select: { pallet_type: true, quantity: true } },
             stops: {
               orderBy: { sequence: "asc" },
               select: { consignee: { select: { area: true, zone_code: true } } },
@@ -55,9 +56,9 @@ router.get("/", async (_req, res, next) => {
     );
 
     const payload = trucks.map((t) => {
-      // Current load = pallets on any active (assigned/in_progress) trip.
+      // Current load = 4×4-pallet-equivalents on any active trip.
       const activeLoad = t.trips.reduce(
-        (sum, trip) => sum + trip.cargo_details.reduce((s, c) => s + c.quantity, 0),
+        (sum, trip) => sum + palletEquivalents(trip.cargo_details),
         0
       );
       const inProgress = t.trips.find((trip) => trip.status === "in_progress");
