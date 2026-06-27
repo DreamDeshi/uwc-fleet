@@ -14,7 +14,13 @@ import { useTranslation } from "react-i18next";
 import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { RequestorTabParamList } from "../../navigation/types";
-import { useRouteTypes, useConsignees, useCreateTrip, useTrips } from "../../hooks/queries";
+import {
+  useRouteTypes,
+  useConsignees,
+  useCreateTrip,
+  useTrips,
+  useUploadTripDocument,
+} from "../../hooks/queries";
 import { apiErrorMessage } from "../../services/api";
 import { colors, radius, shadow } from "../../theme";
 import { Button } from "../../components/Button";
@@ -22,6 +28,8 @@ import { FieldLabel, PressableField } from "../../components/Field";
 import { OptionsModal } from "../../components/OptionsModal";
 import { NewConsigneeModal } from "../../components/NewConsigneeModal";
 import { LoadingState } from "../../components/States";
+import { useToast } from "../../components/Toast";
+import { pickDocumentImage, PickedPhoto } from "../../lib/photo";
 import { formatDate, formatTime } from "../../lib/format";
 import { Consignee, Trip } from "../../types";
 
@@ -45,6 +53,8 @@ export function BookingFormScreen() {
   const { data: routeTypes = [], isLoading: rtLoading } = useRouteTypes();
   const { data: trips = [] } = useTrips();
   const createTrip = useCreateTrip();
+  const uploadDoc = useUploadTripDocument();
+  const toast = useToast();
 
   // Most recent booking drives "Rebook last trip"; its consignees (plus those of
   // earlier trips) become 1-tap "recent" chips so a requestor rarely has to type.
@@ -84,6 +94,12 @@ export function BookingFormScreen() {
 
   const [error, setError] = useState<string | null>(null);
   const [ticket, setTicket] = useState<string | null>(null);
+
+  // Documents (DO / invoice) attached on the review screen. The trip doesn't
+  // exist yet, so we hold the picked files here and upload them right after the
+  // trip is created (see onNext).
+  const [docs, setDocs] = useState<PickedPhoto[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
   const pickupDate = useMemo(() => {
     const d = new Date();
@@ -129,8 +145,22 @@ export function BookingFormScreen() {
     setRemarks("");
     setDayOffset(0);
     setHour(9);
+    setDocs([]);
     setError(null);
   };
+
+  const onAddDoc = async () => {
+    setError(null);
+    try {
+      const photo = await pickDocumentImage();
+      if (!photo) return; // cancelled or permission denied
+      setDocs((prev) => [...prev, photo]);
+    } catch (e) {
+      toast(apiErrorMessage(e), "error");
+    }
+  };
+
+  const onRemoveDoc = (index: number) => setDocs((prev) => prev.filter((_, i) => i !== index));
 
   // "Rebook last trip" — copy route type, stops and cargo from a past trip and
   // jump straight to Confirm (date/time keep today's defaults).
@@ -189,6 +219,7 @@ export function BookingFormScreen() {
       return;
     }
     // Submit
+    setSubmitting(true);
     try {
       const trip = await createTrip.mutateAsync({
         route_type_id: routeTypeId!,
@@ -196,9 +227,23 @@ export function BookingFormScreen() {
         stops: stops.map((c) => ({ consignee_id: c.id })),
         cargo_details: buildCargo(),
       });
+      // Upload any documents attached on the review screen against the new trip.
+      // A failed upload must not hide the (already created) booking — flag it and
+      // let the requestor add it later from the booking details.
+      let docFailed = false;
+      for (const photo of docs) {
+        try {
+          await uploadDoc.mutateAsync({ tripId: trip.id, photo, type: "other" });
+        } catch {
+          docFailed = true;
+        }
+      }
       setTicket(trip.ticket_number);
+      if (docFailed) toast(t("booking.docUploadPartial"), "error");
     } catch (e) {
       setError(apiErrorMessage(e));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -288,6 +333,10 @@ export function BookingFormScreen() {
             onPickDate={() => setDayOpen(true)}
             onPickTime={() => setTimeOpen(true)}
             onEditStep={setStep}
+            docs={docs}
+            onAddDoc={onAddDoc}
+            onRemoveDoc={onRemoveDoc}
+            uploadingDoc={uploadDoc.isPending}
           />
         )}
 
@@ -303,7 +352,7 @@ export function BookingFormScreen() {
           <Button
             title={isLastStep ? t("booking.submit") : t("common.next")}
             onPress={onNext}
-            loading={createTrip.isPending}
+            loading={submitting}
             variant={isLastStep ? "accent" : "primary"}
             style={{ flex: step > 0 ? 2 : 1 }}
             icon={
@@ -634,6 +683,10 @@ function StepConfirm({
   onPickDate,
   onPickTime,
   onEditStep,
+  docs,
+  onAddDoc,
+  onRemoveDoc,
+  uploadingDoc,
 }: {
   routeTypeName?: string;
   stops: Consignee[];
@@ -644,6 +697,10 @@ function StepConfirm({
   onPickDate: () => void;
   onPickTime: () => void;
   onEditStep: (s: number) => void;
+  docs: PickedPhoto[];
+  onAddDoc: () => void;
+  onRemoveDoc: (index: number) => void;
+  uploadingDoc: boolean;
 }) {
   const { t } = useTranslation();
   const Section = ({ title, editStep, children }: { title: string; editStep: number; children: React.ReactNode }) => (
@@ -707,6 +764,30 @@ function StepConfirm({
           multiline
           style={styles.textarea}
         />
+      </View>
+
+      {/* Documents — attach DO / invoice before submitting (optional). Uploaded
+          once the booking is created; can also be added later from details. */}
+      <View style={styles.confirmCard}>
+        <Text style={[styles.confirmTitle, { marginBottom: 6 }]}>{t("booking.documents")}</Text>
+        <Text style={styles.docHint}>{t("booking.documentsHint")}</Text>
+
+        {docs.map((d, i) => (
+          <View key={`${d.uri}-${i}`} style={styles.docAttachRow}>
+            <Ionicons name="document-text-outline" size={18} color={colors.blue} />
+            <Text style={styles.docAttachName} numberOfLines={1}>
+              {d.name}
+            </Text>
+            <TouchableOpacity onPress={() => onRemoveDoc(i)} hitSlop={10} disabled={uploadingDoc}>
+              <Ionicons name="close-circle" size={20} color={colors.textFaint} />
+            </TouchableOpacity>
+          </View>
+        ))}
+
+        <TouchableOpacity style={styles.addNew} onPress={onAddDoc} disabled={uploadingDoc}>
+          <Ionicons name="cloud-upload-outline" size={18} color={colors.blue} />
+          <Text style={styles.addNewText}>{t("booking.attachDocument")}</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -805,6 +886,9 @@ const styles = StyleSheet.create({
   confirmVal: { fontSize: 13, fontWeight: "600", color: colors.navy, flex: 1, textAlign: "right", marginLeft: 12 },
   reviewHint: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.tintBlue, borderRadius: radius.md, padding: 14, marginBottom: 16 },
   reviewHintText: { flex: 1, fontSize: 12, fontWeight: "600", color: colors.blue },
+  docHint: { fontSize: 12, color: colors.textMuted, lineHeight: 17, marginBottom: 12 },
+  docAttachRow: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.bg, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8 },
+  docAttachName: { flex: 1, fontSize: 13, fontWeight: "600", color: colors.navy },
 
   error: { color: colors.red, fontSize: 13, fontWeight: "600", marginTop: 14 },
   bottom: { paddingHorizontal: 16, paddingTop: 12, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.borderLight },

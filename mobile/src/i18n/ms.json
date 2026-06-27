@@ -229,7 +229,11 @@
     "rebookLast": "Tempah semula perjalanan terakhir",
     "recentConsignees": "Terkini",
     "truckConfirmNote": "Admin akan mengesahkan ketersediaan trak berdasarkan saiz kargo anda.",
-    "largeLoadWarning": "Itu muatan yang besar ({{count}} palet). Admin mungkin membahagikannya kepada lebih daripada satu trak."
+    "largeLoadWarning": "Itu muatan yang besar ({{count}} palet). Admin mungkin membahagikannya kepada lebih daripada satu trak.",
+    "documents": "Dokumen (Pilihan)",
+    "documentsHint": "Lampirkan DO atau invois anda sekarang, atau muat naik kemudian dari butiran tempahan.",
+    "attachDocument": "Lampirkan dokumen",
+    "docUploadPartial": "Tempahan dibuat, tetapi dokumen gagal dimuat naik. Anda boleh tambah dari butiran tempahan."
   },
   "bookingDetail": {
     "title": "Butiran Tempahan",
