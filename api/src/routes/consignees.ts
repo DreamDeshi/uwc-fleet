@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
 import { validateBody } from "../middleware/validate";
@@ -16,63 +17,122 @@ const RESULT_LIMIT = 10;
 // what was typed. Below this we just return the alphabetical head of the list.
 const MIN_SEARCH_LEN = 2;
 
+// Normalise for matching: lowercase and drop everything that isn't a letter or
+// digit (dots, dashes, brackets, spaces, "&", etc.). This makes the search
+// punctuation- and spacing-insensitive, so "ace" and "ace engineering" both hit
+// "A.C.E ENGINEERING SDN BHD". The same expression runs on the DB column inside
+// the raw query below so both sides are compared in the same normalised form.
+const PG_NORMALISE_REGEX = "[^a-z0-9]";
+function normalise(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// Strip the "SDN BHD" / "BHD" company suffix for display only — the full legal
+// name stays in the database; this just declutters the search list. Never
+// returns empty (falls back to the original if the name was only the suffix).
+function stripCompanySuffix(name: string): string {
+  const cleaned = name
+    .replace(/\bsdn\.?\s*bhd\.?/gi, " ")
+    .replace(/\bbhd\.?/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/[\s,]+$/, "")
+    .trim();
+  return cleaned.length > 0 ? cleaned : name;
+}
+
+interface ConsigneeRow {
+  id: string;
+  company_name: string;
+  vendor_code: string | null;
+  contact_person: string | null;
+  phone: string | null;
+  area: string | null;
+  state: string | null;
+  zone_code: string;
+  zone_name: string | null;
+}
+
 router.get("/", async (req, res, next) => {
   try {
-    const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    const rawSearch = typeof req.query.search === "string" ? req.query.search.trim() : "";
     const zone = typeof req.query.zone === "string" ? req.query.zone : undefined;
-    const searching = search.length >= MIN_SEARCH_LEN;
+    const ns = normalise(rawSearch);
+    // Only search once there are 2+ real characters AND something survives
+    // normalisation (typing just "--" shouldn't match the whole directory).
+    const searching = rawSearch.length >= MIN_SEARCH_LEN && ns.length > 0;
 
-    const consignees = await prisma.consignee.findMany({
-      where: {
-        is_active: true,
-        ...(zone ? { zone_code: zone } : {}),
-        ...(searching
-          ? {
-              // Case-insensitive CONTAINS across name, contact and address fields
-              // so partial matches anywhere hit (e.g. "pen" → "PENANG PORT").
-              OR: [
-                { company_name: { contains: search, mode: "insensitive" } },
-                { contact_person: { contains: search, mode: "insensitive" } },
-                { address_1: { contains: search, mode: "insensitive" } },
-                { address_2: { contains: search, mode: "insensitive" } },
-                { area: { contains: search, mode: "insensitive" } },
-                { vendor_code: { contains: search, mode: "insensitive" } },
-              ],
-            }
-          : {}),
-      },
-      select: {
-        id: true,
-        company_name: true,
-        vendor_code: true,
-        contact_person: true,
-        phone: true,
-        area: true,
-        state: true,
-        zone_code: true,
-        zone: { select: { code: true, name: true } },
-      },
-      orderBy: { company_name: "asc" },
-      // When searching, pull a wider candidate pool so the relevance sort below
-      // has something to rank before we trim to RESULT_LIMIT.
-      take: searching ? 50 : RESULT_LIMIT,
-    });
+    let rows: ConsigneeRow[];
 
-    // Rank by relevance: company names that START WITH the query first, then
-    // names that merely contain it, then matches found only on a secondary
-    // field (contact/address/area/vendor). Alphabetical within each tier.
     if (searching) {
-      const q = search.toLowerCase();
-      const tier = (c: (typeof consignees)[number]) => {
-        const name = c.company_name.toLowerCase();
-        if (name.startsWith(q)) return 0;
-        if (name.includes(q)) return 1;
-        return 2;
-      };
-      consignees.sort((a, b) => tier(a) - tier(b) || a.company_name.localeCompare(b.company_name));
+      const like = `%${ns}%`;
+      const prefix = `${ns}%`;
+      // Match the normalised search against the normalised company name, area,
+      // STATE, address lines, contact and vendor code. Rank in SQL: company
+      // names that start with the query first, then ones that contain it, then
+      // matches found only on another field. Alphabetical within each tier.
+      const nameNorm = Prisma.sql`regexp_replace(lower(c.company_name), ${PG_NORMALISE_REGEX}, '', 'g')`;
+      const fieldNorm = (col: Prisma.Sql) =>
+        Prisma.sql`regexp_replace(lower(coalesce(${col}, '')), ${PG_NORMALISE_REGEX}, '', 'g')`;
+      rows = await prisma.$queryRaw<ConsigneeRow[]>(Prisma.sql`
+        SELECT c.id, c.company_name, c.vendor_code, c.contact_person, c.phone,
+               c.area, c.state, c.zone_code, z.name AS zone_name
+        FROM "Consignee" c
+        LEFT JOIN "Zone" z ON z.code = c.zone_code
+        WHERE c.is_active = true
+          ${zone ? Prisma.sql`AND c.zone_code = ${zone}` : Prisma.empty}
+          AND (
+            ${nameNorm} LIKE ${like}
+            OR ${fieldNorm(Prisma.sql`c.area`)} LIKE ${like}
+            OR ${fieldNorm(Prisma.sql`c.state`)} LIKE ${like}
+            OR ${fieldNorm(Prisma.sql`c.address_1`)} LIKE ${like}
+            OR ${fieldNorm(Prisma.sql`c.address_2`)} LIKE ${like}
+            OR ${fieldNorm(Prisma.sql`c.contact_person`)} LIKE ${like}
+            OR ${fieldNorm(Prisma.sql`c.vendor_code`)} LIKE ${like}
+          )
+        ORDER BY
+          CASE
+            WHEN ${nameNorm} LIKE ${prefix} THEN 0
+            WHEN ${nameNorm} LIKE ${like} THEN 1
+            ELSE 2
+          END,
+          c.company_name ASC
+        LIMIT ${RESULT_LIMIT}
+      `);
+    } else {
+      const head = await prisma.consignee.findMany({
+        where: { is_active: true, ...(zone ? { zone_code: zone } : {}) },
+        select: {
+          id: true,
+          company_name: true,
+          vendor_code: true,
+          contact_person: true,
+          phone: true,
+          area: true,
+          state: true,
+          zone_code: true,
+          zone: { select: { name: true } },
+        },
+        orderBy: { company_name: "asc" },
+        take: RESULT_LIMIT,
+      });
+      rows = head.map((c) => ({ ...c, zone_name: c.zone?.name ?? null }));
     }
 
-    res.json(consignees.slice(0, RESULT_LIMIT));
+    // Strip the company suffix for display; keep the same response shape the
+    // mobile app expects (zone as { code, name }).
+    res.json(
+      rows.map((r) => ({
+        id: r.id,
+        company_name: stripCompanySuffix(r.company_name),
+        vendor_code: r.vendor_code,
+        contact_person: r.contact_person,
+        phone: r.phone,
+        area: r.area,
+        state: r.state,
+        zone_code: r.zone_code,
+        zone: r.zone_name ? { code: r.zone_code, name: r.zone_name } : null,
+      }))
+    );
   } catch (err) {
     next(err);
   }
