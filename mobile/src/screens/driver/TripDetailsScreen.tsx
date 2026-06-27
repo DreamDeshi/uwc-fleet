@@ -30,6 +30,7 @@ import {
   tripConsigneeName,
   cargoSummary,
   totalPallets,
+  estimateIncentive,
   firstStop,
   ORIGIN_LABEL,
 } from "../../lib/trip";
@@ -50,6 +51,17 @@ export function TripDetailsScreen() {
   if (isError || !trip) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
 
   const consignee = firstStop(trip)?.consignee;
+
+  // Show the real incentive once it's finalised (set on completion); before
+  // that, show an estimate (destination points × truck rate) marked "Estimated".
+  const finalized = trip.incentive_earned !== null && trip.incentive_earned !== undefined;
+  const estimate = finalized ? null : estimateIncentive(trip);
+  const incentiveValue = finalized
+    ? formatMoney(trip.incentive_earned)
+    : estimate !== null
+      ? formatMoney(estimate)
+      : formatMoney(trip.incentive_earned);
+  const incentiveSub = !finalized && estimate !== null ? t("trip.estimated") : undefined;
 
   const onStart = async () => {
     setError(null);
@@ -109,7 +121,7 @@ export function TripDetailsScreen() {
           <View style={styles.infoRow}>
             <InfoCard icon="calendar-outline" label={t("booking.pickupDate")} value={formatDate(trip.pickup_datetime)} sub={formatTime(trip.pickup_datetime)} />
             <InfoCard icon="cube-outline" label={t("trip.cargo")} value={`${totalPallets(trip)}`} sub={t("booking.pallet")} />
-            <InfoCard icon="cash-outline" label={t("trip.incentive")} value={formatMoney(trip.incentive_earned)} valueColor={colors.green} />
+            <InfoCard icon="cash-outline" label={t("trip.incentive")} value={incentiveValue} sub={incentiveSub} valueColor={colors.green} />
           </View>
 
           {/* Consignee */}

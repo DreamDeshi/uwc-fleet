@@ -53,6 +53,45 @@ function palletFactor(palletType: string): number {
   return 1;
 }
 
+// ── Estimated incentive (pre-completion display only) ──────────────────────
+// Destination points per zone (spec INTERNAL LORRY RATE / DestinationRate seed).
+// Mirrored on the client purely to ESTIMATE a trip's incentive before it's
+// finalised — the real figure is computed server-side by the incentive engine
+// and stored on the trip. If admin edits a zone's points this can drift, which
+// is acceptable for an estimate.
+const ZONE_POINTS: Record<string, number> = {
+  P1: 3, P2: 1, P3: 3, K1: 3, K2: 4, A1: 5, A2: 6, JH: 8, SL: 8,
+};
+
+// Off-peak = Saturday/Sunday, or a weekday at/after 18:00. Mirrors the server's
+// incentiveEngine.isOffPeak (default 6pm cutoff).
+function isOffPeak(date: Date): boolean {
+  const day = date.getDay();
+  if (day === 0 || day === 6) return true;
+  return date.getHours() >= 18;
+}
+
+// Estimated incentive shown before a trip is completed: the destination's points
+// × the truck's entitled-claim rate (off-peak rate when the pickup falls on a
+// weekend / after 6pm), matching the engine's first-trip-of-day case. The final
+// amount may differ (a later trip of the day earns fewer points, or completion
+// tips into off-peak), so the UI labels this "Estimated". Uses the last stop's
+// zone, the same one the engine finalises on. Returns null when it can't tell.
+export function estimateIncentive(trip: Trip): number | null {
+  const truck = trip.truck;
+  if (!truck) return null;
+  const stops = [...(trip.stops ?? [])].sort((a, b) => a.sequence - b.sequence);
+  const destZone = stops[stops.length - 1]?.consignee?.zone_code;
+  const points = destZone ? ZONE_POINTS[destZone] : undefined;
+  if (points == null) return null;
+  const rateRaw = isOffPeak(new Date(trip.pickup_datetime))
+    ? truck.entitled_claim_offpeak
+    : truck.entitled_claim_weekday;
+  const rate = Number(rateRaw);
+  if (rateRaw == null || !Number.isFinite(rate)) return null;
+  return points * rate;
+}
+
 export function totalPallets(trip: Trip): number {
   const total = (trip.cargo_details ?? []).reduce(
     (sum, c) => sum + palletFactor(c.pallet_type) * (c.quantity || 0),
