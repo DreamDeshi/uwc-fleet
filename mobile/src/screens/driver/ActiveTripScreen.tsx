@@ -107,7 +107,12 @@ export function ActiveTripScreen() {
       await uploadPod.mutateAsync({ tripId: trip.id, stopId: stop.id, photo });
       toast(t("trip.podUploaded"), "success");
     } catch (err) {
-      setError(apiErrorMessage(err));
+      const msg = apiErrorMessage(err);
+      setError(msg);
+      // Also surface via the toast overlay — the inline error sits inside the
+      // bottom sheet, which is often collapsed, so on web it looked like nothing
+      // happened after the photo was picked.
+      toast(msg, "error");
     }
   };
 
