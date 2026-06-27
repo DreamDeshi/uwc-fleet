@@ -10,19 +10,31 @@ const router = Router();
 router.use(requireAuth);
 
 // ── GET /consignees?search=&zone= — search the consignee directory ──────
+const RESULT_LIMIT = 10;
+// Require 2+ chars before filtering — a single letter matches almost every
+// consignee in a small directory, so the result list looked identical no matter
+// what was typed. Below this we just return the alphabetical head of the list.
+const MIN_SEARCH_LEN = 2;
+
 router.get("/", async (req, res, next) => {
   try {
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
     const zone = typeof req.query.zone === "string" ? req.query.zone : undefined;
+    const searching = search.length >= MIN_SEARCH_LEN;
 
     const consignees = await prisma.consignee.findMany({
       where: {
         is_active: true,
         ...(zone ? { zone_code: zone } : {}),
-        ...(search
+        ...(searching
           ? {
+              // Case-insensitive CONTAINS across name, contact and address fields
+              // so partial matches anywhere hit (e.g. "pen" → "PENANG PORT").
               OR: [
                 { company_name: { contains: search, mode: "insensitive" } },
+                { contact_person: { contains: search, mode: "insensitive" } },
+                { address_1: { contains: search, mode: "insensitive" } },
+                { address_2: { contains: search, mode: "insensitive" } },
                 { area: { contains: search, mode: "insensitive" } },
                 { vendor_code: { contains: search, mode: "insensitive" } },
               ],
@@ -41,9 +53,26 @@ router.get("/", async (req, res, next) => {
         zone: { select: { code: true, name: true } },
       },
       orderBy: { company_name: "asc" },
-      take: 50,
+      // When searching, pull a wider candidate pool so the relevance sort below
+      // has something to rank before we trim to RESULT_LIMIT.
+      take: searching ? 50 : RESULT_LIMIT,
     });
-    res.json(consignees);
+
+    // Rank by relevance: company names that START WITH the query first, then
+    // names that merely contain it, then matches found only on a secondary
+    // field (contact/address/area/vendor). Alphabetical within each tier.
+    if (searching) {
+      const q = search.toLowerCase();
+      const tier = (c: (typeof consignees)[number]) => {
+        const name = c.company_name.toLowerCase();
+        if (name.startsWith(q)) return 0;
+        if (name.includes(q)) return 1;
+        return 2;
+      };
+      consignees.sort((a, b) => tier(a) - tier(b) || a.company_name.localeCompare(b.company_name));
+    }
+
+    res.json(consignees.slice(0, RESULT_LIMIT));
   } catch (err) {
     next(err);
   }
