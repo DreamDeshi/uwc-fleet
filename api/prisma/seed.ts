@@ -96,6 +96,11 @@ const ZONES = [
   { code: "K2", name: "Sungai Petani / Kuala Ketil" },
   { code: "A1", name: "Taiping" },
   { code: "A2", name: "Ipoh" },
+  // Long-haul destinations (spec REQUESTOR INTERFACE) — far south, not adjacent
+  // to the northern operating cluster. KL is modelled as a zone-less destination
+  // rate below; Johor & Selangor are full zones so consignees can sit in them.
+  { code: "JH", name: "Johor" },
+  { code: "SL", name: "Selangor" },
 ];
 
 // Section 2 destination points table — first-trip-of-day points per destination
@@ -109,6 +114,8 @@ const DESTINATION_RATES = [
   { zone_code: "A1", location_name: "Taiping", points: 5 },
   { zone_code: "A2", location_name: "Ipoh", points: 6 },
   { zone_code: null, location_name: "Kuala Lumpur", points: 8 },
+  { zone_code: "JH", location_name: "Johor", points: 8 },
+  { zone_code: "SL", location_name: "Selangor", points: 8 },
 ];
 
 // Zone adjacency rules from Mr. Teh's email (Section 4)

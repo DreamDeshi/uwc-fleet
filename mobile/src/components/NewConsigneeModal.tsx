@@ -11,7 +11,8 @@ import { apiErrorMessage } from "../services/api";
 import { useToast } from "./Toast";
 import { Consignee } from "../types";
 
-// The 7 UWC zones (Development Brief §4). Used here and in the booking form.
+// UWC zones (Development Brief §4 + long-haul Johor/Selangor per spec REQUESTOR
+// INTERFACE). Used here and in the booking form.
 export const ZONES: { code: string; name: string }[] = [
   { code: "P1", name: "Penang Island" },
   { code: "P2", name: "Juru & Perai" },
@@ -20,6 +21,8 @@ export const ZONES: { code: string; name: string }[] = [
   { code: "K2", name: "Sungai Petani / Kuala Ketil" },
   { code: "A1", name: "Taiping" },
   { code: "A2", name: "Ipoh" },
+  { code: "JH", name: "Johor" },
+  { code: "SL", name: "Selangor" },
 ];
 
 export function NewConsigneeModal({
