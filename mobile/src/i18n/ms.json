@@ -56,6 +56,8 @@
     "passwordMismatch": "Kata laluan tidak sepadan.",
     "passwordTooShort": "Kata laluan mesti sekurang-kurangnya 6 aksara.",
     "nameRequired": "Sila masukkan nama penuh anda.",
+    "employeeRequired": "Sila masukkan nombor pekerja anda.",
+    "departmentRequired": "Sila pilih jabatan anda.",
     "phoneRequired": "Sila masukkan nombor telefon anda.",
     "successTitle": "Akaun Dicipta!",
     "pendingMessage": "Akaun anda menunggu kelulusan admin. Anda boleh log masuk setelah admin mengaktifkannya.",

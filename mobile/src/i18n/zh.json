@@ -56,6 +56,8 @@
     "passwordMismatch": "两次输入的密码不一致。",
     "passwordTooShort": "密码必须至少为 6 个字符。",
     "nameRequired": "请输入您的全名。",
+    "employeeRequired": "请输入您的员工编号。",
+    "departmentRequired": "请选择您的部门。",
     "phoneRequired": "请输入您的电话号码。",
     "successTitle": "账户已创建！",
     "pendingMessage": "您的账户正在等待管理员批准。管理员激活后，您即可登录。",

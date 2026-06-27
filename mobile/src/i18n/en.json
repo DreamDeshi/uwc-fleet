@@ -56,6 +56,8 @@
     "passwordMismatch": "Passwords do not match.",
     "passwordTooShort": "Password must be at least 6 characters.",
     "nameRequired": "Please enter your full name.",
+    "employeeRequired": "Please enter your employee number.",
+    "departmentRequired": "Please select your department.",
     "phoneRequired": "Please enter your phone number.",
     "successTitle": "Account Created!",
     "pendingMessage": "Your account is awaiting admin approval. You'll be able to sign in once an admin activates it.",
