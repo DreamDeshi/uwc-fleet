@@ -22,8 +22,10 @@ const registerSchema = z.object({
   phone: z.string().min(8, "Phone number is too short"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   name: z.string().min(1, "Name is required"),
-  employee_number: z.string().optional(),
-  department_id: z.string().optional(),
+  // Spec REQUESTOR INTERFACE: every user must supply department + employee
+  // number before they can register.
+  employee_number: z.string().min(1, "Employee number is required"),
+  department_id: z.string().min(1, "Department is required"),
   role: z.enum(["driver", "requestor"]),
 });
 
@@ -34,6 +36,11 @@ router.post("/register", validateBody(registerSchema), async (req, res, next) =>
     const existing = await prisma.user.findUnique({ where: { phone } });
     if (existing) {
       throw new ApiError(409, "PHONE_ALREADY_REGISTERED", "An account with this phone number already exists.");
+    }
+
+    const department = await prisma.department.findUnique({ where: { id: department_id } });
+    if (!department) {
+      throw new ApiError(400, "DEPARTMENT_NOT_FOUND", "Selected department does not exist.");
     }
 
     const password_hash = await bcrypt.hash(password, BCRYPT_COST);

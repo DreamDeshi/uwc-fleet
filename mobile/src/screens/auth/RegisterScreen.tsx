@@ -48,6 +48,8 @@ export function RegisterScreen({ navigation }: Props) {
   const goNext = () => {
     setError(null);
     if (!name.trim()) return setError(t("register.nameRequired"));
+    if (!employeeNumber.trim()) return setError(t("register.employeeRequired"));
+    if (!departmentId) return setError(t("register.departmentRequired"));
     if (!localPhone.replace(/\D/g, "")) return setError(t("register.phoneRequired"));
     setStep(1);
   };
@@ -62,7 +64,7 @@ export function RegisterScreen({ navigation }: Props) {
         phone: `+60${localPhone.replace(/\D/g, "")}`,
         password,
         name: name.trim(),
-        employee_number: employeeNumber.trim() || undefined,
+        employee_number: employeeNumber.trim(),
         department_id: departmentId,
         role,
       });
