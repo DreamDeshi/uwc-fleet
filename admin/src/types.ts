@@ -76,6 +76,16 @@ export interface RouteType {
   name: string;
 }
 
+export type DocumentType = "do_photo" | "k2_form" | "other";
+
+export interface TripDocument {
+  id: string;
+  trip_id: string;
+  type: DocumentType;
+  file_url: string;
+  uploaded_at: string;
+}
+
 export interface TripParty {
   id: string;
   name: string;
@@ -101,6 +111,7 @@ export interface Trip {
   created_at: string;
   stops: TripStop[];
   cargo_details: CargoDetail[];
+  documents?: TripDocument[];
 }
 
 export interface TruckAlert {

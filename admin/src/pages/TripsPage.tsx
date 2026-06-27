@@ -227,6 +227,9 @@ function TripDetail({ trip, onDone }: { trip: Trip; onDone: () => void }) {
         </div>
       </div>
 
+      {/* Documents (DO / invoice uploaded by the requestor) */}
+      <DocumentsSection trip={trip} />
+
       {/* Status-specific body */}
       {trip.status === "pending" && <DispatchPanel trip={trip} onDone={onDone} />}
       {(trip.status === "assigned" || trip.status === "in_progress" || trip.status === "approved") && (
@@ -244,6 +247,56 @@ function TripDetail({ trip, onDone }: { trip: Trip; onDone: () => void }) {
         </div>
       )}
     </Card>
+  );
+}
+
+// ── Documents (uploaded DO / invoice) ─────────────────────────────────
+const DOC_TYPE_LABEL: Record<string, string> = {
+  do_photo: "Delivery Order",
+  k2_form: "K2 Customs Form",
+  other: "Document",
+};
+
+function DocumentsSection({ trip }: { trip: Trip }) {
+  const docs = trip.documents ?? [];
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: colors.textMuted, marginBottom: 8 }}>
+        Documents
+      </div>
+      {docs.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: colors.textFaint, padding: "8px 10px", background: colors.panel, borderRadius: radius.sm }}>
+          No documents uploaded.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {docs.map((d) => (
+            <a
+              key={d.id}
+              href={d.file_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                fontSize: 13,
+                padding: "8px 10px",
+                background: colors.panel,
+                borderRadius: radius.sm,
+                textDecoration: "none",
+                color: colors.text,
+              }}
+            >
+              <span style={{ fontSize: 16 }}>📄</span>
+              <span style={{ flex: 1, fontWeight: 600 }}>{DOC_TYPE_LABEL[d.type] ?? "Document"}</span>
+              <span style={{ fontSize: 11, color: colors.textMuted }}>{formatDateTime(d.uploaded_at)}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: colors.blue }}>View ↗</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
