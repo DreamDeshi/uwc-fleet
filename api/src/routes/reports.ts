@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { getTripDayStart, getTripDayEnd } from "../services/incentiveEngine";
+import { palletEquivalents } from "../lib/pallets";
 
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
@@ -127,7 +128,7 @@ router.get("/drivers", async (_req, res, next) => {
             status: true,
             incentive_earned: true,
             pickup_datetime: true,
-            cargo_details: { select: { quantity: true } },
+            cargo_details: { select: { pallet_type: true, quantity: true } },
             stops: {
               orderBy: { sequence: "asc" },
               take: 1,
@@ -143,9 +144,9 @@ router.get("/drivers", async (_req, res, next) => {
         (t) => t.status === "assigned" || t.status === "in_progress"
       );
       const active = activeTrips[0];
-      // Pallets already committed to this driver's truck (active trips).
+      // 4×4-pallet-equivalents already committed to this driver's truck.
       const currentLoad = activeTrips.reduce(
-        (sum, t) => sum + t.cargo_details.reduce((s, c) => s + c.quantity, 0),
+        (sum, t) => sum + palletEquivalents(t.cargo_details),
         0
       );
       const monthTrips = d.trips_driven.filter(

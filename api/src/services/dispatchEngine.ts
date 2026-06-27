@@ -17,6 +17,7 @@
  */
 import { prisma } from "../lib/prisma";
 import { sendPushNotifications } from "../lib/pushNotifications";
+import { palletEquivalents } from "../lib/pallets";
 
 // ── Pure engine types ─────────────────────────────────────────────────
 
@@ -116,8 +117,9 @@ export function enRouteZones(zone: string | null): string[] {
 
 const ACTIVE_TRIP_STATUSES = ["assigned", "in_progress"] as const;
 
-function orderPallets(cargo: { quantity: number }[]): number {
-  return cargo.reduce((sum, c) => sum + c.quantity, 0);
+// 4×4-pallet-equivalent load for a set of cargo lines (see lib/pallets).
+function orderPallets(cargo: { pallet_type: string; quantity: number }[]): number {
+  return palletEquivalents(cargo);
 }
 
 function primaryZone(stops: { consignee: { zone_code: string } }[]): string | null {
@@ -170,7 +172,7 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
     include: {
-      cargo_details: { select: { quantity: true } },
+      cargo_details: { select: { pallet_type: true, quantity: true } },
       stops: { orderBy: { sequence: "asc" }, select: { consignee: { select: { zone_code: true } } } },
     },
   });
@@ -190,7 +192,7 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
       trips: {
         where: { status: { in: [...ACTIVE_TRIP_STATUSES] }, id: { not: tripId } },
         select: {
-          cargo_details: { select: { quantity: true } },
+          cargo_details: { select: { pallet_type: true, quantity: true } },
           stops: {
             orderBy: { sequence: "asc" },
             take: 1,
