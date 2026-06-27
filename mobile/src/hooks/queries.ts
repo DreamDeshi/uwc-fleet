@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
 import {
@@ -170,6 +171,25 @@ export function useUpdateStopDocs() {
 import { PickedPhoto } from "../lib/photo";
 import { DocumentType } from "../types";
 
+// React Native and the browser build a multipart body differently:
+//   • Native: FormData accepts a { uri, name, type } object and RN streams the
+//     file off disk; the request must carry an explicit multipart Content-Type.
+//   • Web: that object would serialize to the string "[object Object]" (no file
+//     bytes), so we fetch the uri into a real Blob/File and append that, and we
+//     must NOT set Content-Type — the browser adds it with the required boundary.
+async function appendPhoto(form: FormData, field: string, photo: PickedPhoto) {
+  if (Platform.OS === "web") {
+    const blob = await (await fetch(photo.uri)).blob();
+    form.append(field, new File([blob], photo.name, { type: photo.type }));
+  } else {
+    form.append(field, { uri: photo.uri, name: photo.name, type: photo.type } as any);
+  }
+}
+
+// Native needs the explicit multipart header; web must omit it so the browser
+// can append the boundary itself.
+const UPLOAD_HEADERS = Platform.OS === "web" ? undefined : { "Content-Type": "multipart/form-data" };
+
 // POD photo for a stop. The API stores the Cloudinary URL on the stop and flips
 // do_uploaded, which satisfies the "Delivered" gate.
 export function useUploadPod() {
@@ -185,10 +205,10 @@ export function useUploadPod() {
       photo: PickedPhoto;
     }) => {
       const form = new FormData();
-      form.append("photo", { uri: photo.uri, name: photo.name, type: photo.type } as any);
+      await appendPhoto(form, "photo", photo);
       return (
         await api.post<Trip>(`/trips/${tripId}/stops/${stopId}/pod`, form, {
-          headers: { "Content-Type": "multipart/form-data" },
+          headers: UPLOAD_HEADERS,
           timeout: 60_000,
         })
       ).data;
@@ -214,11 +234,11 @@ export function useUploadTripDocument() {
       type: DocumentType;
     }) => {
       const form = new FormData();
-      form.append("file", { uri: photo.uri, name: photo.name, type: photo.type } as any);
+      await appendPhoto(form, "file", photo);
       form.append("type", type);
       return (
         await api.post<Trip>(`/trips/${tripId}/documents`, form, {
-          headers: { "Content-Type": "multipart/form-data" },
+          headers: UPLOAD_HEADERS,
           timeout: 60_000,
         })
       ).data;
