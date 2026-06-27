@@ -129,9 +129,12 @@ function DispatchCard({ trip, drivers }: { trip: Trip; drivers: DriverPerf[] }) 
   const pallets = totalPallets(trip);
 
   // Available drivers (have a truck, off a trip), fitting ones first.
+  const remainingFor = (d: DriverPerf) =>
+    d.assigned_truck ? d.assigned_truck.max_pallets - d.current_load : 0;
+  // Available drivers (have a truck, off a trip), those with room first.
   const available = drivers
     .filter((d) => d.status === "available" && d.assigned_truck)
-    .sort((a, b) => Number(b.assigned_truck!.max_pallets >= pallets) - Number(a.assigned_truck!.max_pallets >= pallets));
+    .sort((a, b) => Number(remainingFor(b) >= pallets) - Number(remainingFor(a) >= pallets));
 
   const assign = async (driverId: string, plate: string) => {
     setError(null);
@@ -186,7 +189,7 @@ function DispatchCard({ trip, drivers }: { trip: Trip; drivers: DriverPerf[] }) 
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {available.map((d) => {
-                const fits = d.assigned_truck!.max_pallets >= pallets;
+                const fits = remainingFor(d) >= pallets;
                 return (
                   <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <Avatar name={d.name} size={34} />
@@ -195,7 +198,7 @@ function DispatchCard({ trip, drivers }: { trip: Trip; drivers: DriverPerf[] }) 
                         {d.name}
                       </div>
                       <div style={{ fontSize: 11.5, color: colors.textMuted }}>
-                        {d.assigned_truck!.plate} · {d.assigned_truck!.max_pallets}p
+                        {d.assigned_truck!.plate} · {d.current_load}/{d.assigned_truck!.max_pallets}p
                       </div>
                     </div>
                     <Button
@@ -204,7 +207,7 @@ function DispatchCard({ trip, drivers }: { trip: Trip; drivers: DriverPerf[] }) 
                       disabled={!fits || busy}
                       onClick={() => assign(d.id, d.assigned_truck!.plate)}
                     >
-                      {fits ? "Assign" : "Too small"}
+                      {fits ? "Assign" : d.current_load > 0 ? "No room" : "Too small"}
                     </Button>
                   </div>
                 );

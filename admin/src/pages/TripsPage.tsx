@@ -384,7 +384,8 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {(drivers.data ?? []).map((d) => {
                 const available = d.status === "available" && d.assigned_truck;
-                const fits = d.assigned_truck ? d.assigned_truck.max_pallets >= pallets : false;
+                const remaining = d.assigned_truck ? d.assigned_truck.max_pallets - d.current_load : 0;
+                const fits = d.assigned_truck ? remaining >= pallets : false;
                 return (
                   <div
                     key={d.id}
@@ -401,7 +402,9 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
                       <div style={{ overflow: "hidden" }}>
                         <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>{d.name}</div>
                         <div style={{ fontSize: 11, color: colors.textMuted }}>
-                          {d.assigned_truck ? `${d.assigned_truck.plate} · ${d.assigned_truck.max_pallets}p` : "No truck"}
+                          {d.assigned_truck
+                            ? `${d.assigned_truck.plate} · ${d.current_load}/${d.assigned_truck.max_pallets}p`
+                            : "No truck"}
                         </div>
                       </div>
                     </div>
@@ -413,7 +416,7 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
                         disabled={!fits || approve.isPending}
                         onClick={() => assign(d.id, d.assigned_truck!.plate)}
                       >
-                        {fits ? "Assign" : "Too small"}
+                        {fits ? "Assign" : d.current_load > 0 ? "No room" : "Too small"}
                       </Button>
                     ) : (
                       <div style={{ fontSize: 11.5, color: colors.textMuted, textAlign: "center", padding: "7px 0" }}>
