@@ -12,11 +12,22 @@
  * values are not rewritten when a later trip is delivered.
  */
 
-// TODO confirm with Mr. Teh: off-peak cutoff is 6pm or 9pm (brief Section 3, open question 1).
-export const OFFPEAK_CUTOFF_HOUR = 18;
+// Reads an hour-of-day (0–23) from an env var, falling back to `fallback`
+// if the var is unset or not a valid integer in range.
+function hourFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 && n <= 23 ? n : fallback;
+}
 
-// TODO confirm with Mr. Teh: daily trip counter reset time — midnight or 7am (open question 2).
-export const DAILY_RESET_HOUR = 0;
+// Off-peak cutoff (brief Section 3, open question 1 — was 6pm/9pm placeholder).
+// Override with OFFPEAK_CUTOFF_HOUR in the API env; defaults to 18 (6pm).
+export const OFFPEAK_CUTOFF_HOUR = hourFromEnv("OFFPEAK_CUTOFF_HOUR", 18);
+
+// Daily trip-counter reset hour (open question 2 — midnight vs 7am placeholder).
+// Override with DAILY_RESET_HOUR in the API env; defaults to 0 (midnight).
+export const DAILY_RESET_HOUR = hourFromEnv("DAILY_RESET_HOUR", 0);
 
 /**
  * Weekday rates apply Mon-Fri before the off-peak cutoff.
