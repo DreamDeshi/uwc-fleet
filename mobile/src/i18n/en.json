@@ -194,6 +194,7 @@
     "searchConsignee": "Search company name…",
     "addNewConsignee": "+ Add new consignee",
     "noConsigneeFound": "No consignee found. Add a new one below.",
+    "searchMinHint": "Type at least {{count}} characters to search.",
     "cargoType": "Cargo Type",
     "pallet": "Pallet",
     "carton": "Carton",
