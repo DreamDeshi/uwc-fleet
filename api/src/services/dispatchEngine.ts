@@ -15,9 +15,12 @@
  *   coverage; zone adjacency lets a P2 driver pick up a K1 order when no K1
  *   driver is free. Hard constraint: never exceed a truck's max_pallets.
  */
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { sendPushNotifications } from "../lib/pushNotifications";
 import { palletEquivalents } from "../lib/pallets";
+import { isSerializationConflict } from "../lib/prismaErrors";
+import { claimPendingTrip } from "./tripAssignment";
 
 // ── Pure engine types ─────────────────────────────────────────────────
 
@@ -184,70 +187,99 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
     zone: primaryZone(trip.stops),
   };
 
-  // Available trucks: marked available, with an active driver.
-  const trucks = await prisma.truck.findMany({
-    where: { is_available: true, driver: { is: { status: "active" } } },
-    include: {
-      driver: { select: { id: true } },
-      trips: {
-        where: { status: { in: [...ACTIVE_TRIP_STATUSES] }, id: { not: tripId } },
-        select: {
-          cargo_details: { select: { pallet_type: true, quantity: true } },
-          stops: {
-            orderBy: { sequence: "asc" },
-            take: 1,
-            select: { consignee: { select: { zone_code: true } } },
+  const actor = await systemActorId(actorId);
+
+  // Gather candidates, pick a truck, and claim the trip atomically under
+  // Serializable isolation so two concurrent dispatches (e.g. the 15-min sweep
+  // racing a manual approve, or two sweeps) can't double-assign the same trip or
+  // overfill a truck. Reading each truck's live load inside the transaction lets
+  // Postgres detect the read-write conflict and abort one with P2034; the
+  // status-guarded claim makes the same-trip case deterministic (loser → raced).
+  let selection: TruckSelection | null = null;
+  let raced = false;
+  try {
+    const outcome = await prisma.$transaction(
+      async (tx) => {
+        const trucks = await tx.truck.findMany({
+          where: { is_available: true, driver: { is: { status: "active" } } },
+          include: {
+            driver: { select: { id: true } },
+            trips: {
+              where: { status: { in: [...ACTIVE_TRIP_STATUSES] }, id: { not: tripId } },
+              select: {
+                cargo_details: { select: { pallet_type: true, quantity: true } },
+                stops: {
+                  orderBy: { sequence: "asc" },
+                  take: 1,
+                  select: { consignee: { select: { zone_code: true } } },
+                },
+              },
+            },
           },
-        },
+        });
+
+        const candidates: TruckCandidate[] = trucks
+          .filter((t) => t.driver) // safety: driver relation present
+          .map((t) => ({
+            plate: t.plate,
+            driverId: t.driver!.id,
+            maxPallets: t.max_pallets,
+            currentLoad: t.trips.reduce((sum, tr) => sum + orderPallets(tr.cargo_details), 0),
+            coverageZones: t.priority_zones,
+            activeZones: t.trips
+              .map((tr) => tr.stops[0]?.consignee.zone_code)
+              .filter((z): z is string => Boolean(z)),
+          }));
+
+        const zoneRows = await tx.zone.findMany({
+          select: { code: true, adjacentTo: { select: { code: true } } },
+        });
+        const adjacency: Record<string, string[]> = Object.fromEntries(
+          zoneRows.map((z) => [z.code, z.adjacentTo.map((a) => a.code)])
+        );
+
+        const sel = selectTruck(order, candidates, adjacency);
+        if (!sel) return { sel: null as TruckSelection | null, raced: false };
+
+        // Status-guarded claim: a concurrent dispatch that already assigned this
+        // trip leaves us with count 0 → we lost the race.
+        const won = await claimPendingTrip(tx, tripId, {
+          driver_id: sel.driverId,
+          truck_plate: sel.plate,
+          pending_alert_sent: true, // it's handled now; don't ping admins about it
+        });
+        if (!won) return { sel: null as TruckSelection | null, raced: true };
+
+        if (actor) {
+          await tx.auditLog.create({
+            data: {
+              user_id: actor,
+              action: "trip.auto_dispatched",
+              table_name: "Trip",
+              record_id: tripId,
+            },
+          });
+        }
+        return { sel, raced: false };
       },
-    },
-  });
-
-  const candidates: TruckCandidate[] = trucks
-    .filter((t) => t.driver) // safety: driver relation present
-    .map((t) => ({
-      plate: t.plate,
-      driverId: t.driver!.id,
-      maxPallets: t.max_pallets,
-      currentLoad: t.trips.reduce((sum, tr) => sum + orderPallets(tr.cargo_details), 0),
-      coverageZones: t.priority_zones,
-      activeZones: t.trips
-        .map((tr) => tr.stops[0]?.consignee.zone_code)
-        .filter((z): z is string => Boolean(z)),
-    }));
-
-  const zoneRows = await prisma.zone.findMany({
-    select: { code: true, adjacentTo: { select: { code: true } } },
-  });
-  const adjacency: Record<string, string[]> = Object.fromEntries(
-    zoneRows.map((z) => [z.code, z.adjacentTo.map((a) => a.code)])
-  );
-
-  const selection = selectTruck(order, candidates, adjacency);
-  if (!selection) {
-    return { assigned: false, reason: "No available truck has capacity for this order." };
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+    selection = outcome.sel;
+    raced = outcome.raced;
+  } catch (err) {
+    if (isSerializationConflict(err)) {
+      // Lost a write-conflict with a concurrent dispatch. Best-effort: leave the
+      // trip pending so the other writer (or the 15-min sweep) handles it.
+      return { assigned: false, reason: "Concurrent dispatch in progress; will retry." };
+    }
+    throw err;
   }
 
-  await prisma.trip.update({
-    where: { id: tripId },
-    data: {
-      driver_id: selection.driverId,
-      truck_plate: selection.plate,
-      status: "assigned",
-      pending_alert_sent: true, // it's handled now; don't ping admins about it
-    },
-  });
-
-  const actor = await systemActorId(actorId);
-  if (actor) {
-    await prisma.auditLog.create({
-      data: {
-        user_id: actor,
-        action: "trip.auto_dispatched",
-        table_name: "Trip",
-        record_id: tripId,
-      },
-    });
+  if (raced) {
+    return { assigned: false, reason: "Trip was already assigned by a concurrent dispatch." };
+  }
+  if (!selection) {
+    return { assigned: false, reason: "No available truck has capacity for this order." };
   }
 
   const updated = await loadTripWithRelations(tripId);

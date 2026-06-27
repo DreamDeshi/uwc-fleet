@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
+import { isSerializationConflict } from "../lib/prismaErrors";
+import { claimPendingTripOrThrow } from "../services/tripAssignment";
 import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
@@ -316,49 +319,70 @@ router.patch(
         );
       }
 
-      // Overload prevention (spec AUTO DISPATCH LOGIC §4.2): manual assignment
-      // must respect the same hard capacity limit as the auto engine. Reject if
-      // the truck's current active load plus this order would exceed max_pallets.
-      const [orderCargo, truck] = await Promise.all([
-        prisma.cargoDetail.findMany({
-          where: { trip_id: id },
-          select: { pallet_type: true, quantity: true },
-        }),
-        prisma.truck.findUnique({
-          where: { plate: truck_plate },
-          include: {
-            trips: {
-              where: { status: { in: ["assigned", "in_progress"] }, id: { not: id } },
-              select: { cargo_details: { select: { pallet_type: true, quantity: true } } },
-            },
+      // Overload prevention + assignment, done atomically under Serializable
+      // isolation so two admins (or the background sweep) can't double-assign a
+      // driver/truck or slip past the capacity limit via a check-then-write race
+      // (spec AUTO DISPATCH LOGIC §4.2). Inside the transaction we re-read the
+      // truck's live load, re-check capacity, then claim the trip with a
+      // status-guarded conditional update — only the writer that still sees it
+      // pending wins. Concurrent conflicting writers abort with P2034 → 409.
+      let updated;
+      try {
+        updated = await prisma.$transaction(
+          async (tx) => {
+            const orderCargo = await tx.cargoDetail.findMany({
+              where: { trip_id: id },
+              select: { pallet_type: true, quantity: true },
+            });
+            const truck = await tx.truck.findUnique({
+              where: { plate: truck_plate },
+              include: {
+                trips: {
+                  where: { status: { in: ["assigned", "in_progress"] }, id: { not: id } },
+                  select: { cargo_details: { select: { pallet_type: true, quantity: true } } },
+                },
+              },
+            });
+            if (!truck) {
+              throw new ApiError(404, "TRUCK_NOT_FOUND", "Truck not found.");
+            }
+            const orderPallets = palletEquivalents(orderCargo);
+            const currentLoad = truck.trips.reduce(
+              (sum, t) => sum + palletEquivalents(t.cargo_details),
+              0
+            );
+            if (currentLoad + orderPallets > truck.max_pallets) {
+              throw new ApiError(
+                400,
+                "TRUCK_OVERLOADED",
+                `Truck ${truck_plate} holds ${truck.max_pallets} pallets and already carries ${currentLoad}. This order of ${orderPallets} would total ${currentLoad + orderPallets}.`
+              );
+            }
+
+            // Atomic claim: throws 409 CONCURRENT_ASSIGNMENT if no longer pending.
+            await claimPendingTripOrThrow(tx, id, { driver_id, truck_plate });
+
+            await tx.auditLog.create({
+              data: { user_id: req.user!.id, action: "trip.approved", table_name: "Trip", record_id: id },
+            });
+
+            return tx.trip.findUnique({ where: { id }, include: tripInclude });
           },
-        }),
-      ]);
-      if (!truck) {
-        throw new ApiError(404, "TRUCK_NOT_FOUND", "Truck not found.");
-      }
-      const orderPallets = palletEquivalents(orderCargo);
-      const currentLoad = truck.trips.reduce(
-        (sum, t) => sum + palletEquivalents(t.cargo_details),
-        0
-      );
-      if (currentLoad + orderPallets > truck.max_pallets) {
-        throw new ApiError(
-          400,
-          "TRUCK_OVERLOADED",
-          `Truck ${truck_plate} holds ${truck.max_pallets} pallets and already carries ${currentLoad}. This order of ${orderPallets} would total ${currentLoad + orderPallets}.`
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
         );
+      } catch (err) {
+        if (isSerializationConflict(err)) {
+          throw new ApiError(
+            409,
+            "CONCURRENT_ASSIGNMENT",
+            "This booking is being assigned by someone else. Please try again."
+          );
+        }
+        throw err;
       }
-
-      const updated = await prisma.trip.update({
-        where: { id },
-        data: { driver_id, truck_plate, status: "assigned" },
-        include: tripInclude,
-      });
-
-      await prisma.auditLog.create({
-        data: { user_id: req.user!.id, action: "trip.approved", table_name: "Trip", record_id: id },
-      });
+      if (!updated) {
+        throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      }
 
       // Notify the driver (new assignment) and the requestor (approved). Tokens
       // are fetched fresh; sends are best-effort and never block the response.
