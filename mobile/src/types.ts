@@ -115,7 +115,15 @@ export interface Trip {
   created_at: string;
   requestor?: { id: string; name: string; phone: string };
   driver?: { id: string; name: string; phone: string } | null;
-  truck?: { plate: string; type: string; max_pallets: number } | null;
+  truck?: {
+    plate: string;
+    type: string;
+    max_pallets: number;
+    // Present on the trip detail payload (API returns the full truck); used to
+    // estimate incentive before the trip is finalised. Decimal → string|number.
+    entitled_claim_weekday?: string | number;
+    entitled_claim_offpeak?: string | number;
+  } | null;
   route_type?: RouteType;
   stops?: TripStop[];
   cargo_details?: CargoDetail[];
