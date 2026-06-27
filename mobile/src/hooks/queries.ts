@@ -26,11 +26,20 @@ export function useRouteTypes() {
   });
 }
 
+// Minimum chars before we hit the API — a single letter matches almost the
+// whole directory, so searching only kicks in at 2+ characters.
+export const CONSIGNEE_SEARCH_MIN = 2;
+
 export function useConsignees(search: string) {
+  const q = search.trim();
+  const enabled = q.length >= CONSIGNEE_SEARCH_MIN;
   return useQuery({
-    queryKey: ["consignees", search],
+    queryKey: ["consignees", q],
+    // Always send the typed value as ?search=<q> (never empty/null) so the API
+    // actually filters; the `enabled` gate keeps us from firing below the min.
     queryFn: async () =>
-      (await api.get<Consignee[]>("/consignees", { params: search ? { search } : {} })).data,
+      (await api.get<Consignee[]>("/consignees", { params: { search: q } })).data,
+    enabled,
     staleTime: 1000 * 30,
   });
 }

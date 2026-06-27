@@ -20,6 +20,7 @@ import {
   useCreateTrip,
   useTrips,
   useUploadTripDocument,
+  CONSIGNEE_SEARCH_MIN,
 } from "../../hooks/queries";
 import { apiErrorMessage } from "../../services/api";
 import { colors, radius, shadow } from "../../theme";
@@ -522,9 +523,9 @@ function StepWhere({
         {isFetching ? <Ionicons name="ellipsis-horizontal" size={18} color={colors.textFaint} /> : null}
       </View>
 
-      {search.length > 0 ? (
+      {search.trim().length >= CONSIGNEE_SEARCH_MIN ? (
         <View style={styles.results}>
-          {results.slice(0, 8).map((c) => (
+          {results.slice(0, 10).map((c) => (
             <TouchableOpacity key={c.id} style={styles.resultRow} onPress={() => addStop(c)}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.resultName}>{c.company_name}</Text>
@@ -539,6 +540,8 @@ function StepWhere({
             <Text style={styles.noResult}>{t("booking.noConsigneeFound")}</Text>
           ) : null}
         </View>
+      ) : search.trim().length > 0 ? (
+        <Text style={styles.searchHint}>{t("booking.searchMinHint", { count: CONSIGNEE_SEARCH_MIN })}</Text>
       ) : null}
 
       <TouchableOpacity style={styles.addNew} onPress={() => setNewOpen(true)}>
@@ -852,6 +855,7 @@ const styles = StyleSheet.create({
   resultName: { fontSize: 14, fontWeight: "600", color: colors.navy },
   resultArea: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
   noResult: { padding: 14, fontSize: 13, color: colors.textMuted },
+  searchHint: { paddingHorizontal: 4, paddingTop: 8, fontSize: 12, color: colors.textFaint },
   addNew: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 12, paddingVertical: 12, borderRadius: radius.md, borderWidth: 1.5, borderStyle: "dashed", borderColor: colors.blue },
   addNewText: { fontSize: 14, fontWeight: "700", color: colors.blue },
 

@@ -194,6 +194,7 @@
     "searchConsignee": "搜索公司名称…",
     "addNewConsignee": "+ 添加新收货人",
     "noConsigneeFound": "未找到收货人。请在下方添加新的。",
+    "searchMinHint": "请输入至少 {{count}} 个字符进行搜索。",
     "cargoType": "货物类型",
     "pallet": "托盘",
     "carton": "纸箱",

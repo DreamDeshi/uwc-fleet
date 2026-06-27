@@ -194,6 +194,7 @@
     "searchConsignee": "Cari nama syarikat…",
     "addNewConsignee": "+ Tambah penerima baru",
     "noConsigneeFound": "Tiada penerima dijumpai. Tambah yang baru di bawah.",
+    "searchMinHint": "Taip sekurang-kurangnya {{count}} aksara untuk mencari.",
     "cargoType": "Jenis Kargo",
     "pallet": "Palet",
     "carton": "Kotak",
