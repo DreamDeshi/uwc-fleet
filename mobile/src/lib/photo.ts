@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import { File } from "expo-file-system";
@@ -43,8 +44,7 @@ export async function capturePodPhoto(): Promise<PickedPhoto | null> {
 
   if (result.canceled || !result.assets?.length) return null;
 
-  const compressedUri = await compressToLimit(result.assets[0].uri);
-  return { uri: compressedUri, name: "pod.jpg", type: "image/jpeg" };
+  return finalizePhoto(result.assets[0], "pod.jpg");
 }
 
 /** Pick a document (image) for a booking — DO / invoice from the gallery. */
@@ -59,8 +59,28 @@ export async function pickDocumentImage(): Promise<PickedPhoto | null> {
   });
   if (result.canceled || !result.assets?.length) return null;
 
-  const compressedUri = await compressToLimit(result.assets[0].uri);
-  return { uri: compressedUri, name: "document.jpg", type: "image/jpeg" };
+  return finalizePhoto(result.assets[0], "document.jpg");
+}
+
+// Turn a picked asset into the { uri, name, type } the upload hook expects.
+// On native we compress first (drivers on weak rural data). On web we skip it:
+// expo-image-manipulator and expo-file-system are unreliable in the browser, and
+// skipping was the cause of the "photo picked but nothing happens" web bug — the
+// picked file goes straight to FormData, where queries.appendPhoto fetches the
+// uri into a real Blob.
+async function finalizePhoto(
+  asset: ImagePicker.ImagePickerAsset,
+  fallbackName: string
+): Promise<PickedPhoto> {
+  if (Platform.OS === "web") {
+    return {
+      uri: asset.uri,
+      name: asset.fileName ?? fallbackName,
+      type: asset.mimeType ?? "image/jpeg",
+    };
+  }
+  const compressedUri = await compressToLimit(asset.uri);
+  return { uri: compressedUri, name: fallbackName, type: "image/jpeg" };
 }
 
 // Resize then step down JPEG quality until the file is under the limit. Most
