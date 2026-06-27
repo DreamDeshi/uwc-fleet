@@ -1,4 +1,6 @@
+import type { NextFunction, Request, Response } from "express";
 import { Router } from "express";
+import { timingSafeEqual } from "crypto";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
@@ -7,7 +9,39 @@ import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 
 const router = Router();
-router.use(requireAuth, requireRole("driver"));
+
+// Constant-time string compare so the API key check can't be timing-probed.
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && timingSafeEqual(ab, bb);
+}
+
+// Auth for POST /locations: accept EITHER a driver's JWT (the phone-GPS path) OR
+// the static GPS vendor API key (GPS_VENDOR_API_KEY) in the Authorization: Bearer
+// header — the hardware-GPS path. The key lets the third-party GPS devices post
+// without a user account. If the bearer token isn't the vendor key we fall back
+// to the normal driver-JWT guard, so existing behaviour is unchanged.
+function driverOrVendorAuth(req: Request, res: Response, next: NextFunction) {
+  const header = req.headers.authorization;
+  const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
+  const vendorKey = process.env.GPS_VENDOR_API_KEY;
+
+  if (vendorKey && token && safeEqual(token, vendorKey)) {
+    req.gpsVendor = true;
+    next();
+    return;
+  }
+
+  // Not the vendor key — require a valid driver JWT (requireAuth → requireRole).
+  requireAuth(req, res, (err?: unknown) => {
+    if (err) {
+      next(err);
+      return;
+    }
+    requireRole("driver")(req, res, next);
+  });
+}
 
 // A single GPS reading. `recorded_at` is optional so that points which were
 // queued offline keep their ORIGINAL capture time when they're finally flushed.
@@ -28,7 +62,30 @@ const bodySchema = z.object({
 //
 // GPS source is abstracted behind this single endpoint (Brief §12): phone GPS
 // today, a vendor API later — only this handler changes, no schema/app rewrite.
-router.post("/", validateBody(bodySchema), async (req, res, next) => {
+router.post(
+  "/",
+  driverOrVendorAuth,
+  // The GPS vendor key is now accepted at the auth layer, but ingesting the
+  // vendor's payload ({ truckId, latitude, longitude, timestamp }) and mapping
+  // truckId → truck → active trip is a separate task that isn't built yet. Reject
+  // vendor-authed requests clearly (rather than fall into the driver-only logic
+  // below, which needs req.user). A valid key returns 501 — NOT 401 — so the
+  // vendor can confirm their key works while we finish the ingestion path.
+  (req, res, next) => {
+    if (req.gpsVendor) {
+      next(
+        new ApiError(
+          501,
+          "NOT_IMPLEMENTED",
+          "GPS vendor API key accepted, but device location ingestion is not implemented yet."
+        )
+      );
+      return;
+    }
+    next();
+  },
+  validateBody(bodySchema),
+  async (req, res, next) => {
   try {
     const driverId = req.user!.id;
     const { points } = req.body as z.infer<typeof bodySchema>;
