@@ -1,16 +1,19 @@
 /**
- * Seeds the database with everything Phase 1 needs to test auth end-to-end
- * and everything later phases will need to test trips/incentives:
- *   - 15 departments
- *   - 7 zones + destination point rates + adjacency
- *   - 6 route types
- *   - 7 trucks (real plates/rates from the Development Brief Section 2)
- *   - 6 drivers (real names, employee numbers, truck assignments)
+ * Seeds the database from the authoritative spec extract (docs/uwc-spec.json)
+ * plus a few seed-only test fixtures that are NOT spec data:
+ *   - departments, zones, destination points, route types, trucks and driver
+ *     assignments all come from docs/uwc-spec.json (single source of truth)
+ *   - driver phone numbers, truck document-expiry dates and zone adjacency are
+ *     test/demo fixtures defined here (the workbook doesn't carry them)
  *   - 1 bootstrap admin account
  *   - All real consignees from the UWC Excel ("CONSIGNEE and CONSIGNOR" sheet)
  *
+ * To change a truck rate, a destination's points, a driver, etc., edit
+ * docs/uwc-spec.json — never hardcode those values here again.
+ *
  * Run with: npm run seed --workspace=api
  */
+import fs from "fs";
 import path from "path";
 import bcrypt from "bcrypt";
 import * as xlsx from "xlsx";
@@ -19,132 +22,88 @@ import { prisma } from "../src/lib/prisma";
 const BCRYPT_COST = 10;
 const SEED_PASSWORD = "Password123"; // placeholder — change after first login
 
-// Driver phone numbers are not in the brief; these are placeholders for
-// testing only. Replace with real numbers once UWC provides them.
-const DRIVERS = [
-  {
-    name: "Mohd Azmi B. Che Dol",
-    employee_number: "H593",
-    phone: "+60100000101",
-    truck_plate: "PLX 2406",
-    priority_zones: ["A1", "A2", "P1", "P2"],
-  },
-  {
-    name: "Mohd Shahar B. Abdul Razak",
-    employee_number: "H3428",
-    phone: "+60100000102",
-    truck_plate: "PND 1888",
-    // ALL except A1 & A2 — assign A1/A2 only if PLX2406 unavailable (dispatch-time rule, not stored here)
-    priority_zones: ["P1", "P2", "P3", "K1", "K2"],
-  },
-  {
-    name: "Amirudin Hj Abu Bakar",
-    employee_number: "H3158",
-    phone: "+60100000103",
-    truck_plate: "PRJ 5292",
-    priority_zones: ["P1", "P2", "P3", "K1", "K2"],
-  },
-  {
-    name: "Mohamad Fitri B. Yahya",
-    employee_number: "CW022",
-    phone: "+60100000104",
-    truck_plate: "PQL 5292",
-    priority_zones: ["P1", "P2", "P3", "K1", "K2"],
-  },
-  {
-    name: "Muhamad Zulkhairi Bin Yusuf",
-    employee_number: "H5359",
-    phone: "+60100000105",
-    truck_plate: "PPE 1804",
-    priority_zones: ["P1", "P2", "P3", "K1", "K2"],
-  },
-  {
-    name: "Khoo Jie Yie",
-    employee_number: "H5158",
-    phone: "+60100000106",
-    truck_plate: "PRH 5292",
-    // ALL zones — A1/A2 only if <2 pallets of 4x4 (dispatch-time rule, not stored here)
-    priority_zones: ["P1", "P2", "P3", "K1", "K2", "A1", "A2"],
-  },
-];
+// ── Authoritative spec data (docs/uwc-spec.json) ───────────────────────────
+interface UwcSpec {
+  trucks: {
+    plate: string;
+    type: string;
+    max_pallets: number;
+    weekday_rate: number;
+    offpeak_rate: number;
+    daily_deduction: number;
+    priority_zones: string[];
+  }[];
+  zones: { code: string; coverage_area: string }[];
+  destination_points: { zone_code: string | null; location_name: string; points: number }[];
+  route_types: string[];
+  cargo: {
+    cargo_types: string[];
+    pallet_sizes: { size: string; factor: number }[];
+    non_pallet: { type: string; factor: number; note: string }[];
+  };
+  departments: string[];
+  driver_assignments: {
+    name: string;
+    employee_no: string;
+    department: string;
+    truck: string;
+    priority_zones: string[];
+    priority_zones_raw: string;
+    notes: string | null;
+  }[];
+}
 
-// expiry dates seed the document-expiry alert feature: a few fall within the
-// 30-day window so the admin dashboard demonstrably flags them. priority_zones
-// place each truck on the fleet map (we have no live GPS — see Section 12).
-const TRUCKS = [
-  { plate: "PLX 2406", type: "10t 30ft", max_pallets: 16, weekday: "11", offpeak: "13", deduction: 2, zones: ["P2"], insurance: "2026-12-15", permit: "2026-11-01", roadtax: "2026-07-10" },
-  { plate: "PND 1888", type: "10t 30ft", max_pallets: 14, weekday: "11", offpeak: "13", deduction: 2, zones: ["P1"], insurance: "2026-07-05", permit: "2027-01-20", roadtax: "2026-10-01" },
-  { plate: "PRJ 5292", type: "5t 17.5ft", max_pallets: 8, weekday: "10", offpeak: "10", deduction: 3, zones: ["K1"], insurance: "2026-09-01", permit: "2026-07-18", roadtax: "2026-12-01" },
-  { plate: "PQL 5292", type: "5t 17.5ft", max_pallets: 8, weekday: "10", offpeak: "10", deduction: 3, zones: ["P3"], insurance: "2027-02-01", permit: "2027-01-10", roadtax: "2026-11-20" },
-  { plate: "PPE 1804", type: "5t 17.5ft", max_pallets: 8, weekday: "10", offpeak: "12", deduction: 3, zones: ["K2"], insurance: "2027-03-15", permit: "2026-12-05", roadtax: "2027-01-08" },
-  { plate: "PRH 5292", type: "1t", max_pallets: 2, weekday: "9", offpeak: "9", deduction: 2, zones: ["P2"], insurance: "2027-01-01", permit: "2026-12-20", roadtax: "2027-02-10" },
-  { plate: "4 Wheel", type: "Generic", max_pallets: 2, weekday: "11", offpeak: "11", deduction: 2, zones: ["P1"], insurance: "2027-04-01", permit: "2027-03-01", roadtax: "2027-02-15" }, // TODO: real plate unknown, confirm with UWC
-];
+const SPEC_PATH = path.resolve(__dirname, "../../docs/uwc-spec.json");
+const spec: UwcSpec = JSON.parse(fs.readFileSync(SPEC_PATH, "utf-8"));
 
-const DEPARTMENTS = [
-  "Sheet Metal", "Assembly", "Painting", "Machining", "Warehouse",
-  "Quality Assurance", "Product Development", "Human Resources", "Marketing",
-  "Maintenance", "Industrial Engineering", "Info Technology", "Planning",
-  "Purchasing", "Finance",
-];
+// ── Seed-only test fixtures (NOT spec data) ────────────────────────────────
 
-const ZONES = [
-  { code: "P1", name: "Penang Island" },
-  { code: "P2", name: "Juru & Perai (SPS, SPT)" },
-  { code: "P3", name: "Tasek Gelugor (SPU)" },
-  { code: "K1", name: "Kulim" },
-  { code: "K2", name: "Sungai Petani / Kuala Ketil" },
-  { code: "A1", name: "Taiping" },
-  { code: "A2", name: "Ipoh" },
-  // Long-haul destinations (spec REQUESTOR INTERFACE) — far south, not adjacent
-  // to the northern operating cluster. KL is modelled as a zone-less destination
-  // rate below; Johor & Selangor are full zones so consignees can sit in them.
-  { code: "JH", name: "Johor" },
-  { code: "SL", name: "Selangor" },
-];
+// Driver phone numbers are not in the spec; placeholders for testing only.
+// Keyed by employee number so they bind to the spec's driver_assignments.
+const DRIVER_PHONES: Record<string, string> = {
+  H593: "+60100000101",
+  H3428: "+60100000102",
+  H3158: "+60100000103",
+  CW022: "+60100000104",
+  H5359: "+60100000105",
+  H5158: "+60100000106",
+};
 
-// Section 2 destination points table — first-trip-of-day points per destination
-const DESTINATION_RATES = [
-  { zone_code: "P2", location_name: "Juru & Perai (SPS, SPT)", points: 1 },
-  { zone_code: "K1", location_name: "Kulim", points: 3 },
-  { zone_code: "P1", location_name: "Penang Island", points: 3 },
-  { zone_code: "P3", location_name: "Tasek Gelugor (SPU)", points: 3 },
-  { zone_code: "K2", location_name: "Kuala Ketil", points: 4 },
-  { zone_code: "K2", location_name: "Sungai Petani", points: 4 },
-  { zone_code: "A1", location_name: "Taiping", points: 5 },
-  { zone_code: "A2", location_name: "Ipoh", points: 6 },
-  { zone_code: null, location_name: "Kuala Lumpur", points: 8 },
-  { zone_code: "JH", location_name: "Johor", points: 8 },
-  { zone_code: "SL", location_name: "Selangor", points: 8 },
-];
+// Document-expiry dates seed the doc-expiry alert feature: a few fall within the
+// 30-day window so the admin dashboard demonstrably flags them. Demo fixtures,
+// not spec data. Keyed by plate.
+const TRUCK_EXPIRY: Record<string, { insurance: string; permit: string; roadtax: string }> = {
+  "PLX 2406": { insurance: "2026-12-15", permit: "2026-11-01", roadtax: "2026-07-10" },
+  "PND 1888": { insurance: "2026-07-05", permit: "2027-01-20", roadtax: "2026-10-01" },
+  "PRJ 5292": { insurance: "2026-09-01", permit: "2026-07-18", roadtax: "2026-12-01" },
+  "PQL 5292": { insurance: "2027-02-01", permit: "2027-01-10", roadtax: "2026-11-20" },
+  "PPE 1804": { insurance: "2027-03-15", permit: "2026-12-05", roadtax: "2027-01-08" },
+  "PRH 5292": { insurance: "2027-01-01", permit: "2026-12-20", roadtax: "2027-02-10" },
+  "4 Wheel": { insurance: "2027-04-01", permit: "2027-03-01", roadtax: "2027-02-15" },
+};
 
-// Zone adjacency rules from Mr. Teh's email (Section 4)
+// Zone adjacency rules from Mr. Teh's email (not in the spec workbook).
 const ZONE_ADJACENCY: [string, string][] = [
   ["P2", "K1"], // P2 and K1 are adjacent
   ["P2", "A1"], // P2 -> A2 route passes through A1
 ];
 
-const ROUTE_TYPES = [
-  "Customer Delivery",
-  "Supplier Delivery",
-  "Inter-Plant Delivery",
-  "Customer Return",
-  "Supplier Return",
-  "Inter-Plant Return",
-];
-
 async function seedDepartments() {
-  for (const name of DEPARTMENTS) {
+  for (const name of spec.departments) {
     await prisma.department.upsert({ where: { name }, update: {}, create: { name } });
   }
-  console.log(`Seeded ${DEPARTMENTS.length} departments.`);
+  console.log(`Seeded ${spec.departments.length} departments.`);
 }
 
 async function seedZones() {
-  for (const zone of ZONES) {
-    await prisma.zone.upsert({ where: { code: zone.code }, update: { name: zone.name }, create: zone });
+  for (const zone of spec.zones) {
+    await prisma.zone.upsert({
+      where: { code: zone.code },
+      update: { name: zone.coverage_area },
+      create: { code: zone.code, name: zone.coverage_area },
+    });
   }
-  for (const rate of DESTINATION_RATES) {
+  for (const rate of spec.destination_points) {
     const exists = await prisma.destinationRate.findFirst({
       where: { location_name: rate.location_name },
     });
@@ -153,70 +112,79 @@ async function seedZones() {
     }
   }
   for (const [a, b] of ZONE_ADJACENCY) {
-    await prisma.zone.update({
-      where: { code: a },
-      data: { adjacentTo: { connect: { code: b } } },
-    });
-    await prisma.zone.update({
-      where: { code: b },
-      data: { adjacentTo: { connect: { code: a } } },
-    });
+    await prisma.zone.update({ where: { code: a }, data: { adjacentTo: { connect: { code: b } } } });
+    await prisma.zone.update({ where: { code: b }, data: { adjacentTo: { connect: { code: a } } } });
   }
-  console.log(`Seeded ${ZONES.length} zones, ${DESTINATION_RATES.length} destination rates, ${ZONE_ADJACENCY.length} adjacency pairs.`);
+  console.log(
+    `Seeded ${spec.zones.length} zones, ${spec.destination_points.length} destination rates, ${ZONE_ADJACENCY.length} adjacency pairs.`
+  );
 }
 
 async function seedRouteTypes() {
-  for (const name of ROUTE_TYPES) {
+  for (const name of spec.route_types) {
     await prisma.routeType.upsert({ where: { name }, update: {}, create: { name } });
   }
-  console.log(`Seeded ${ROUTE_TYPES.length} route types.`);
+  console.log(`Seeded ${spec.route_types.length} route types.`);
 }
 
 async function seedTrucks() {
-  for (const t of TRUCKS) {
+  for (const t of spec.trucks) {
+    const expiry = TRUCK_EXPIRY[t.plate];
     // priority_zones is owned by seedDrivers (driver coverage zones), so it is
     // set only on create here and not overwritten on re-seed of existing rows.
     const syncFields = {
       type: t.type,
       max_pallets: t.max_pallets,
-      entitled_claim_weekday: t.weekday,
-      entitled_claim_offpeak: t.offpeak,
-      daily_deduction_points: t.deduction,
-      insurance_expiry: new Date(t.insurance),
-      permit_expiry: new Date(t.permit),
-      road_tax_expiry: new Date(t.roadtax),
+      entitled_claim_weekday: t.weekday_rate,
+      entitled_claim_offpeak: t.offpeak_rate,
+      daily_deduction_points: t.daily_deduction,
+      ...(expiry
+        ? {
+            insurance_expiry: new Date(expiry.insurance),
+            permit_expiry: new Date(expiry.permit),
+            road_tax_expiry: new Date(expiry.roadtax),
+          }
+        : {}),
     };
     await prisma.truck.upsert({
       where: { plate: t.plate },
-      update: syncFields, // keep rates/expiries in sync with the brief on re-seed
-      create: { plate: t.plate, priority_zones: t.zones, ...syncFields },
+      update: syncFields, // keep rates/expiries in sync with the spec on re-seed
+      create: { plate: t.plate, priority_zones: t.priority_zones, ...syncFields },
     });
   }
-  console.log(`Seeded ${TRUCKS.length} trucks.`);
+  console.log(`Seeded ${spec.trucks.length} trucks.`);
 }
 
 async function seedDrivers() {
-  for (const d of DRIVERS) {
+  for (const d of spec.driver_assignments) {
+    const phone = DRIVER_PHONES[d.employee_no];
+    if (!phone) {
+      console.warn(`No seed phone for driver ${d.employee_no} (${d.name}) — skipping.`);
+      continue;
+    }
+    const department = await prisma.department.findUnique({ where: { name: d.department } });
     const password_hash = await bcrypt.hash(SEED_PASSWORD, BCRYPT_COST);
     await prisma.user.upsert({
-      where: { phone: d.phone },
+      where: { phone },
       update: {},
       create: {
-        phone: d.phone,
+        phone,
         password_hash,
         name: d.name,
-        employee_number: d.employee_number,
+        employee_number: d.employee_no,
         role: "driver",
         status: "active",
-        assigned_truck_plate: d.truck_plate,
+        assigned_truck_plate: d.truck,
+        department_id: department?.id,
       },
     });
+    // Driver coverage zones are the authority for the truck's priority_zones.
     await prisma.truck.update({
-      where: { plate: d.truck_plate },
+      where: { plate: d.truck },
       data: { priority_zones: d.priority_zones },
     });
   }
-  console.log(`Seeded ${DRIVERS.length} drivers (password: ${SEED_PASSWORD}).`);
+  console.log(`Seeded ${spec.driver_assignments.length} drivers (password: ${SEED_PASSWORD}).`);
 }
 
 async function seedAdmin() {
@@ -284,6 +252,13 @@ async function seedConsignees() {
 }
 
 async function main() {
+  // Cargo sizes / 4×4-equivalent factors live in spec.cargo but have no DB table
+  // of their own — they're consumed in code (api/src/lib/pallets.ts). Logged here
+  // so the spec import is complete and visible.
+  console.log(
+    `Spec cargo: ${spec.cargo.pallet_sizes.map((p) => p.size).join(", ")} (4×4-equivalent factors in api/src/lib/pallets.ts).`
+  );
+
   await seedDepartments();
   await seedZones();
   await seedRouteTypes();
