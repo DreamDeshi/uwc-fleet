@@ -184,8 +184,8 @@ import { DocumentType } from "../types";
 //   • Native: FormData accepts a { uri, name, type } object and RN streams the
 //     file off disk; the request must carry an explicit multipart Content-Type.
 //   • Web: that object would serialize to the string "[object Object]" (no file
-//     bytes), so we fetch the uri into a real Blob/File and append that, and we
-//     must NOT set Content-Type — the browser adds it with the required boundary.
+//     bytes), so we fetch the uri into a real Blob/File and append that. The
+//     boundary is handled by UPLOAD_HEADERS below (see the note there).
 async function appendPhoto(form: FormData, field: string, photo: PickedPhoto) {
   if (Platform.OS === "web") {
     const blob = await (await fetch(photo.uri)).blob();
@@ -195,9 +195,14 @@ async function appendPhoto(form: FormData, field: string, photo: PickedPhoto) {
   }
 }
 
-// Native needs the explicit multipart header; web must omit it so the browser
-// can append the boundary itself.
-const UPLOAD_HEADERS = Platform.OS === "web" ? undefined : { "Content-Type": "multipart/form-data" };
+// Set multipart on BOTH platforms. The axios instance defaults Content-Type to
+// application/json (services/api.ts); if we leave it on an upload, axios 1.x sees
+// FormData + a JSON content-type and serializes the form to JSON, dropping the
+// file bytes — which is why web uploads silently failed. Overriding to
+// multipart/form-data prevents that: on native RN fills in the boundary, and on
+// web axios's XHR adapter strips this header for a FormData body so the browser
+// regenerates it with the correct boundary.
+const UPLOAD_HEADERS = { "Content-Type": "multipart/form-data" };
 
 // POD photo for a stop. The API stores the Cloudinary URL on the stop and flips
 // do_uploaded, which satisfies the "Delivered" gate.
