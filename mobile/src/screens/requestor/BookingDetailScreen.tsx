@@ -97,7 +97,9 @@ export function BookingDetailScreen() {
       await uploadDoc.mutateAsync({ tripId: trip.id, photo, type: "other" });
       toast(t("bookingDetail.docUploaded"), "success");
     } catch (e) {
-      setError(apiErrorMessage(e));
+      const msg = apiErrorMessage(e);
+      setError(msg);
+      toast(msg, "error");
     }
   };
 
