@@ -163,6 +163,7 @@ export interface DriverPerf {
   account_status: UserStatus;
   status: DriverStatus;
   assigned_truck: { plate: string; max_pallets: number } | null;
+  current_load: number; // pallets already on this driver's truck (active trips)
   trips_total: number;
   trips_this_month: number;
   trips_today: number;

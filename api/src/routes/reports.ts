@@ -127,6 +127,7 @@ router.get("/drivers", async (_req, res, next) => {
             status: true,
             incentive_earned: true,
             pickup_datetime: true,
+            cargo_details: { select: { quantity: true } },
             stops: {
               orderBy: { sequence: "asc" },
               take: 1,
@@ -138,8 +139,14 @@ router.get("/drivers", async (_req, res, next) => {
     });
 
     const payload = drivers.map((d) => {
-      const active = d.trips_driven.find(
+      const activeTrips = d.trips_driven.filter(
         (t) => t.status === "assigned" || t.status === "in_progress"
+      );
+      const active = activeTrips[0];
+      // Pallets already committed to this driver's truck (active trips).
+      const currentLoad = activeTrips.reduce(
+        (sum, t) => sum + t.cargo_details.reduce((s, c) => s + c.quantity, 0),
+        0
       );
       const monthTrips = d.trips_driven.filter(
         (t) => t.status === "completed" && new Date(t.pickup_datetime) >= monthStart
@@ -171,6 +178,7 @@ router.get("/drivers", async (_req, res, next) => {
         account_status: d.status,
         status: derivedStatus,
         assigned_truck: d.assigned_truck,
+        current_load: currentLoad,
         trips_total: d.trips_driven.filter((t) => t.status === "completed").length,
         trips_this_month: monthTrips.length,
         trips_today: tripsToday,

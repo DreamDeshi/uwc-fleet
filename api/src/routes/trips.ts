@@ -315,6 +315,37 @@ router.patch(
         );
       }
 
+      // Overload prevention (spec AUTO DISPATCH LOGIC §4.2): manual assignment
+      // must respect the same hard capacity limit as the auto engine. Reject if
+      // the truck's current active load plus this order would exceed max_pallets.
+      const [orderCargo, truck] = await Promise.all([
+        prisma.cargoDetail.findMany({ where: { trip_id: id }, select: { quantity: true } }),
+        prisma.truck.findUnique({
+          where: { plate: truck_plate },
+          include: {
+            trips: {
+              where: { status: { in: ["assigned", "in_progress"] }, id: { not: id } },
+              select: { cargo_details: { select: { quantity: true } } },
+            },
+          },
+        }),
+      ]);
+      if (!truck) {
+        throw new ApiError(404, "TRUCK_NOT_FOUND", "Truck not found.");
+      }
+      const orderPallets = orderCargo.reduce((sum, c) => sum + c.quantity, 0);
+      const currentLoad = truck.trips.reduce(
+        (sum, t) => sum + t.cargo_details.reduce((s, c) => s + c.quantity, 0),
+        0
+      );
+      if (currentLoad + orderPallets > truck.max_pallets) {
+        throw new ApiError(
+          400,
+          "TRUCK_OVERLOADED",
+          `Truck ${truck_plate} holds ${truck.max_pallets} pallets and already carries ${currentLoad}. This order of ${orderPallets} would total ${currentLoad + orderPallets}.`
+        );
+      }
+
       const updated = await prisma.trip.update({
         where: { id },
         data: { driver_id, truck_plate, status: "assigned" },
