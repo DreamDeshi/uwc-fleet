@@ -198,9 +198,11 @@ function InfoCard({
     <View style={styles.infoCard}>
       <Ionicons name={icon} size={20} color={colors.blue} />
       <Text style={styles.infoLabel} numberOfLines={1}>{label}</Text>
+      {/* Wrap to 2 lines: adjustsFontSizeToFit is a no-op on react-native-web,
+          so a long date like "27 Jun 2026" was being truncated to "27 Jun 20…". */}
       <Text
         style={[styles.infoValue, valueColor ? { color: valueColor } : null]}
-        numberOfLines={1}
+        numberOfLines={2}
         adjustsFontSizeToFit
       >
         {value}
