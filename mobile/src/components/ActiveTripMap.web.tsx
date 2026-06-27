@@ -18,7 +18,7 @@ export function ActiveTripMap(_props: {
   return (
     <MapPlaceholder
       style={StyleSheet.absoluteFill}
-      label="Live map is available in the mobile app"
+      label="Map view requires the native app install"
     />
   );
 }

@@ -17,7 +17,7 @@ export function LiveTripMap({
   return (
     <MapPlaceholder
       style={[styles.wrap, { height }]}
-      label="Live map is available in the mobile app"
+      label="Map view requires the native app install"
     />
   );
 }
