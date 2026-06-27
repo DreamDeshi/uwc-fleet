@@ -1,0 +1,108 @@
+{
+  "_meta": {
+    "source_file": "References/TRUCK BOOKING SYSTEM (YS).xlsx",
+    "description": "Authoritative UWC truck-booking reference data extracted from the spec workbook. Single source of truth for database seeding, code, and validation. The .xlsx remains the original source document — keep both in sync.",
+    "extracted_from_sheets": [
+      "INTERNAL LORRY RATE",
+      "AUTO DISPATCH LOGIC",
+      "REQUESTOR INTERFACE",
+      "DEPARTMENT LIST"
+    ],
+    "operating_window": {
+      "start": "07:00",
+      "end": "18:00",
+      "note": "Weekday operating hours (AUTO DISPATCH LOGIC). Off-peak rates apply on public holidays, Saturday/Sunday, and weekdays after 18:00 (INTERNAL LORRY RATE)."
+    },
+    "incentive_formula": "incentive_RM = (accumulated_daily_trip_incentive_points - daily_deduction) x rate_per_point. Worked examples in the workbook: PLX 2406 assigned to Kulim earns 11 x 3 = RM 33; a driver accumulating 20 points in a day nets 20 - 2 = 18 points.",
+    "notes": [
+      "Truck rate_per_point is the 'Entitled Claim per point' column; weekday vs off-peak differ for PPE 1804 (10 vs 12), PLX 2406 and PND 1888 (11 vs 13). Others are equal across both.",
+      "destination_points are the first-trip-of-day point values per destination (the yellow 'trip incentive point' row).",
+      "trucks[].priority_zones is the coverage of the truck's assigned driver (see driver_assignments, the primary source). '4 Wheel' has no driver in the workbook, so it has no priority zones.",
+      "cargo.pallet_sizes[].factor is the agreed 4x4-equivalent capacity convention (mirrors api/src/lib/pallets.ts); the workbook lists the pallet sizes but not the factors.",
+      "Kuala Lumpur has destination points (8) but no zone code. Johor & Selangor appear only in the REQUESTOR destination dropdown — they have no points or zone code in this workbook and are intentionally NOT included here (they were added separately as long-haul extensions outside the spec)."
+    ]
+  },
+
+  "trucks": [
+    { "plate": "PLX 2406", "type": "10t-30ft",  "max_pallets": 16, "weekday_rate": 11, "offpeak_rate": 13, "daily_deduction": 2, "priority_zones": ["A1", "A2", "P1", "P2"] },
+    { "plate": "PND 1888", "type": "10t-30ft",  "max_pallets": 14, "weekday_rate": 11, "offpeak_rate": 13, "daily_deduction": 2, "priority_zones": ["P1", "P2", "P3", "K1", "K2"] },
+    { "plate": "PRJ 5292", "type": "5t-17.5ft", "max_pallets": 8,  "weekday_rate": 10, "offpeak_rate": 10, "daily_deduction": 3, "priority_zones": ["P1", "P2", "P3", "K1", "K2"] },
+    { "plate": "PQL 5292", "type": "5t-17.5ft", "max_pallets": 8,  "weekday_rate": 10, "offpeak_rate": 10, "daily_deduction": 3, "priority_zones": ["P1", "P2", "P3", "K1", "K2"] },
+    { "plate": "PPE 1804", "type": "5t-17.5ft", "max_pallets": 8,  "weekday_rate": 10, "offpeak_rate": 12, "daily_deduction": 3, "priority_zones": ["P1", "P2", "P3", "K1", "K2"] },
+    { "plate": "PRH 5292", "type": "1t",        "max_pallets": 2,  "weekday_rate": 9,  "offpeak_rate": 9,  "daily_deduction": 2, "priority_zones": ["P1", "P2", "P3", "K1", "K2", "A1", "A2"] },
+    { "plate": "4 Wheel",  "type": "Generic",   "max_pallets": 2,  "weekday_rate": 11, "offpeak_rate": 11, "daily_deduction": 2, "priority_zones": [] }
+  ],
+
+  "zones": [
+    { "code": "P1", "coverage_area": "Penang (Penang Island)" },
+    { "code": "P2", "coverage_area": "Juru & Perai" },
+    { "code": "P3", "coverage_area": "Tasek Gelugor" },
+    { "code": "K1", "coverage_area": "Kulim" },
+    { "code": "K2", "coverage_area": "Sungai Petani / Kuala Ketil" },
+    { "code": "A1", "coverage_area": "Taiping" },
+    { "code": "A2", "coverage_area": "Ipoh" }
+  ],
+
+  "destination_points": [
+    { "zone_code": "P2", "location_name": "Juru & Perai",   "points": 1 },
+    { "zone_code": "K1", "location_name": "Kulim",          "points": 3 },
+    { "zone_code": "P1", "location_name": "Penang",         "points": 3 },
+    { "zone_code": "P3", "location_name": "Tasek Gelugor",  "points": 3 },
+    { "zone_code": "K2", "location_name": "Kuala Ketil",    "points": 4 },
+    { "zone_code": "K2", "location_name": "Sungai Petani",  "points": 4 },
+    { "zone_code": "A1", "location_name": "Taiping",        "points": 5 },
+    { "zone_code": "A2", "location_name": "Ipoh",           "points": 6 },
+    { "zone_code": null, "location_name": "Kuala Lumpur",   "points": 8 }
+  ],
+
+  "route_types": [
+    "Customer Delivery",
+    "Supplier Delivery",
+    "Inter-Plant Delivery",
+    "Supplier Return",
+    "Customer Return",
+    "Inter-Plant Return"
+  ],
+
+  "cargo": {
+    "cargo_types": ["Pallet", "Carton", "Others"],
+    "pallet_sizes": [
+      { "size": "4×4",  "factor": 1 },
+      { "size": "3×4",  "factor": 0.75 },
+      { "size": "4×8",  "factor": 2 },
+      { "size": "5×10", "factor": 3.125 },
+      { "size": "2×2",  "factor": 0.25 }
+    ],
+    "non_pallet": [
+      { "type": "carton", "factor": 0, "note": "Counted as a quantity of cartons; does not occupy a 4x4 pallet slot." },
+      { "type": "custom", "factor": 0, "note": "Free-form 'Others' size described in the remark; admin judges capacity." }
+    ]
+  },
+
+  "departments": [
+    "Sheet Metal",
+    "Assembly",
+    "Painting",
+    "Machining",
+    "Warehouse",
+    "Quality Assurance",
+    "Product Development",
+    "Human Resources",
+    "Marketing",
+    "Maintenance",
+    "Industrial Engineering",
+    "Info Technology",
+    "Planning",
+    "Purchasing",
+    "Finance"
+  ],
+
+  "driver_assignments": [
+    { "name": "Mohd Azmi B. Che Dol",        "employee_no": "H593",  "department": "Marketing", "truck": "PLX 2406", "priority_zones": ["A1", "A2", "P1", "P2"],             "priority_zones_raw": "A1,A2,P1,P2",        "notes": null },
+    { "name": "Mohd Shahar B. Abdul Razak",  "employee_no": "H3428", "department": "Marketing", "truck": "PND 1888", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": "Assign A1 & A2 if PLX 2406 is not available." },
+    { "name": "Amirudin Hj Abu Bakar",       "employee_no": "H3158", "department": "Marketing", "truck": "PRJ 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
+    { "name": "Mohamad Fitri B. Yahya",      "employee_no": "CW022", "department": "Marketing", "truck": "PQL 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
+    { "name": "Muhamad Zulkhairi Bin Yusuf", "employee_no": "H5359", "department": "Marketing", "truck": "PPE 1804", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
+    { "name": "Khoo Jie Yie",                "employee_no": "H5158", "department": "Marketing", "truck": "PRH 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2", "A1", "A2"], "priority_zones_raw": "ALL",            "notes": "If A1 & A2 with less than 2 pallets of 4x4, give the priority." }
+  ]
+}
