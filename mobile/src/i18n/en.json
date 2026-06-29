@@ -69,7 +69,8 @@
     "earnings": "Earnings",
     "profile": "Profile",
     "newBooking": "New Booking",
-    "bookings": "Bookings"
+    "bookings": "Bookings",
+    "analytics": "Insights"
   },
   "driver": {
     "greeting": "Hi, {{name}}",
@@ -202,6 +203,31 @@
     "thisMonth": "This Month",
     "noBookings": "No bookings yet. Tap above to make your first booking.",
     "track": "Track"
+  },
+  "analytics": {
+    "title": "Insights",
+    "subtitle": "Your delivery activity",
+    "monthlyActivity": "Monthly Activity",
+    "monthlyActivitySub": "Trips booked over the last 6 months",
+    "statusBreakdown": "Status Breakdown",
+    "topDestinations": "Top Destinations",
+    "cargoHistory": "Cargo History",
+    "totalPallets": "Total Pallets",
+    "bySize": "By Pallet Size",
+    "avgApproval": "Avg Approval Time",
+    "avgApprovalSub": "Booking to driver assignment",
+    "hours": "hrs",
+    "trips": "trips",
+    "pallets": "pallets",
+    "noData": "No data yet",
+    "noDataHint": "Once you've made some bookings, your delivery insights will appear here.",
+    "noDestinations": "No destinations yet.",
+    "noCargo": "No cargo recorded yet.",
+    "statusCompleted": "Completed",
+    "statusPending": "Pending",
+    "statusAssigned": "Assigned",
+    "statusInProgress": "In Progress",
+    "statusCancelled": "Cancelled"
   },
   "booking": {
     "newRequest": "New Trip Request",

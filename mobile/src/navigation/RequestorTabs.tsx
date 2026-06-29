@@ -17,6 +17,7 @@ const TAB_BAR_STYLE = {
 import { RequestorDashboardScreen } from "../screens/requestor/RequestorDashboardScreen";
 import { BookingFormScreen } from "../screens/requestor/BookingFormScreen";
 import { BookingListScreen } from "../screens/requestor/BookingListScreen";
+import { AnalyticsScreen } from "../screens/requestor/AnalyticsScreen";
 import { ProfileScreen } from "../screens/shared/ProfileScreen";
 
 const Tab = createBottomTabNavigator<RequestorTabParamList>();
@@ -57,6 +58,14 @@ export function RequestorTabs() {
         options={{
           title: t("tabs.bookings"),
           tabBarIcon: ({ color, size }) => <Ionicons name="list" size={size} color={color} />,
+        }}
+      />
+      <Tab.Screen
+        name="Analytics"
+        component={AnalyticsScreen}
+        options={{
+          title: t("tabs.analytics"),
+          tabBarIcon: ({ color, size }) => <Ionicons name="stats-chart" size={size} color={color} />,
         }}
       />
       <Tab.Screen
