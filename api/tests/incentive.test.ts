@@ -5,24 +5,66 @@ import {
   isDocumentationComplete,
   calculateIncentiveAmount,
   calculateDeliveryIncentive,
+  getTripDayStart,
+  getTripDayEnd,
 } from "../src/services/incentiveEngine";
 
 // Mohd Azmi's truck (PLX 2406): weekday RM11, off-peak RM13, deduction 2 pts.
 const PLX2406 = { daily_deduction_points: 2, entitled_claim_weekday: 11, entitled_claim_offpeak: 13 };
 
-describe("isOffPeak", () => {
-  it("treats Mon-Fri before 6pm as weekday", () => {
-    expect(isOffPeak(new Date("2026-06-22T10:00:00"))).toBe(false); // Monday 10am
+// All dates below are written as explicit UTC instants (…Z); the comment gives
+// the Malaysia-time (UTC+8) wall clock the engine actually evaluates against.
+// This keeps the tests deterministic on any runner, including a UTC CI host.
+describe("isOffPeak — evaluated in Malaysia time (UTC+8)", () => {
+  it("treats Mon-Fri before 6pm MYT as weekday", () => {
+    expect(isOffPeak(new Date("2026-06-24T03:00:00Z"))).toBe(false); // Wed 11am MYT
   });
 
-  it("treats Mon-Fri at/after 6pm as off-peak", () => {
-    expect(isOffPeak(new Date("2026-06-22T18:00:00"))).toBe(true); // Monday 6pm
-    expect(isOffPeak(new Date("2026-06-22T23:00:00"))).toBe(true); // Monday 11pm
+  it("treats Mon-Fri at/after 6pm MYT as off-peak", () => {
+    expect(isOffPeak(new Date("2026-06-24T10:30:00Z"))).toBe(true); // Wed 6:30pm MYT
+    expect(isOffPeak(new Date("2026-06-24T15:00:00Z"))).toBe(true); // Wed 11pm MYT
   });
 
-  it("treats Saturday and Sunday as off-peak regardless of time", () => {
-    expect(isOffPeak(new Date("2026-06-20T09:00:00"))).toBe(true); // Saturday morning
-    expect(isOffPeak(new Date("2026-06-21T09:00:00"))).toBe(true); // Sunday morning
+  it("treats Saturday and Sunday (MYT) as off-peak regardless of time", () => {
+    expect(isOffPeak(new Date("2026-06-20T01:00:00Z"))).toBe(true); // Sat 9am MYT
+    expect(isOffPeak(new Date("2026-06-21T01:00:00Z"))).toBe(true); // Sun 9am MYT
+  });
+
+  it("uses MYT not server UTC: 10:30 UTC on a weekday is 6:30pm MYT → off-peak", () => {
+    // On the old (UTC-host) code this read as 10:30am and wrongly billed weekday.
+    expect(isOffPeak(new Date("2026-06-24T10:30:00Z"))).toBe(true);
+  });
+});
+
+describe("isOffPeak — public holidays use the off-peak table (Fix 3)", () => {
+  it("treats a weekday public holiday at noon as off-peak", () => {
+    // 2026-05-01 (Labour Day) is a Friday; noon MYT = 04:00 UTC.
+    expect(isOffPeak(new Date("2026-05-01T04:00:00Z"))).toBe(true);
+  });
+
+  it("a normal (non-holiday) weekday at the same time is NOT off-peak", () => {
+    expect(isOffPeak(new Date("2026-06-24T04:00:00Z"))).toBe(false); // Wed noon MYT
+  });
+});
+
+describe("getTripDayStart / getTripDayEnd — trip-day binning in MYT (Fix 2)", () => {
+  it("bins 00:30 and 23:30 of the same MYT day into the same trip-day", () => {
+    const early = new Date("2026-06-21T16:30:00Z"); // 2026-06-22 00:30 MYT
+    const late = new Date("2026-06-22T15:30:00Z"); // 2026-06-22 23:30 MYT
+    expect(getTripDayStart(early).getTime()).toBe(getTripDayStart(late).getTime());
+  });
+
+  it("puts 23:30 MYT and 00:30 MYT the next day into different trip-days", () => {
+    const lateNight = new Date("2026-06-22T15:30:00Z"); // 2026-06-22 23:30 MYT
+    const afterMidnight = new Date("2026-06-22T16:30:00Z"); // 2026-06-23 00:30 MYT
+    expect(getTripDayStart(lateNight).getTime()).not.toBe(getTripDayStart(afterMidnight).getTime());
+  });
+
+  it("returns midnight MYT (16:00 UTC previous day) as the start, end = +24h", () => {
+    const t = new Date("2026-06-22T15:30:00Z"); // 2026-06-22 23:30 MYT
+    const start = getTripDayStart(t);
+    expect(start.toISOString()).toBe("2026-06-21T16:00:00.000Z"); // 2026-06-22 00:00 MYT
+    expect(getTripDayEnd(t).getTime() - start.getTime()).toBe(24 * 60 * 60 * 1000);
   });
 });
 
@@ -67,7 +109,7 @@ describe("calculateDeliveryIncentive — full worked example from the brief", ()
   // Mohd Azmi, PLX 2406, weekday.
   // Trip 1: Ipoh (A2) = 6 pts. Trip 2: Kulim = 1 pt (not first). Trip 3: Penang = 1 pt (not first).
   // Total = 8 pts - 2 (deduction) = 6 pts. Incentive = 6 x RM11 = RM66.
-  const weekdayMorning = new Date("2026-06-22T09:00:00"); // Monday
+  const weekdayMorning = new Date("2026-06-22T01:00:00Z"); // Monday 9am MYT
 
   it("trip 1 of the day earns full destination points", () => {
     const result = calculateDeliveryIncentive({
@@ -115,7 +157,7 @@ describe("calculateDeliveryIncentive — full worked example from the brief", ()
 
   it("uses the off-peak rate when the trip's pickup time is after the cutoff", () => {
     const result = calculateDeliveryIncentive({
-      pickupDateTime: new Date("2026-06-22T19:00:00"), // Monday 7pm — after 6pm cutoff
+      pickupDateTime: new Date("2026-06-22T11:00:00Z"), // Monday 7pm MYT — after 6pm cutoff
       destinationPoints: 6,
       completedTripsTodayBeforeThis: 0,
       firstTripPointsToday: null,
@@ -137,5 +179,52 @@ describe("calculateDeliveryIncentive — full worked example from the brief", ()
     });
     expect(result.totalPointsToday).toBe(4);
     expect(result.incentiveAmount).toBe(10); // (4 - 3) x 10
+  });
+});
+
+describe("calculateDeliveryIncentive — per-trip marginal incentiveThisTrip (Fix 1)", () => {
+  // Same worked example: Ipoh (6) → Kulim (1) → Penang (1), PLX 2406, weekday.
+  // incentive_earned now stores the MARGINAL value, so the three stored values
+  // must SUM to the correct day total (66) instead of the inflated running
+  // cumulative (44 + 55 + 66 = 165).
+  const weekdayMorning = new Date("2026-06-22T01:00:00Z"); // Monday 9am MYT
+
+  it("marginals sum to the day total and equal the final cumulative", () => {
+    const trip1 = calculateDeliveryIncentive({
+      pickupDateTime: weekdayMorning,
+      destinationPoints: 6, // Ipoh
+      completedTripsTodayBeforeThis: 0,
+      firstTripPointsToday: null,
+      truck: PLX2406,
+    });
+    const trip2 = calculateDeliveryIncentive({
+      pickupDateTime: weekdayMorning,
+      destinationPoints: 3, // ignored — not the first trip
+      completedTripsTodayBeforeThis: 1,
+      firstTripPointsToday: 6,
+      truck: PLX2406,
+    });
+    const trip3 = calculateDeliveryIncentive({
+      pickupDateTime: weekdayMorning,
+      destinationPoints: 3, // ignored — not the first trip
+      completedTripsTodayBeforeThis: 2,
+      firstTripPointsToday: 6,
+      truck: PLX2406,
+    });
+
+    // Trip 1 absorbs the whole-day deduction (44); each later trip adds 1 pt × RM11.
+    expect(trip1.incentiveThisTrip).toBe(44);
+    expect(trip2.incentiveThisTrip).toBe(11);
+    expect(trip3.incentiveThisTrip).toBe(11);
+
+    const sumOfMarginals =
+      trip1.incentiveThisTrip + trip2.incentiveThisTrip + trip3.incentiveThisTrip;
+    expect(sumOfMarginals).toBe(66); // the correct day total
+    expect(sumOfMarginals).toBe(trip3.incentiveAmount); // == the old cumulative on the last trip
+
+    // The cumulative field is preserved unchanged so existing callers/tests still pass.
+    expect(trip1.incentiveAmount).toBe(44);
+    expect(trip2.incentiveAmount).toBe(55);
+    expect(trip3.incentiveAmount).toBe(66);
   });
 });
