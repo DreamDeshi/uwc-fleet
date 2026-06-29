@@ -200,7 +200,7 @@ function TruckCard({ truck: t }: { truck: Truck }) {
       {/* Stats */}
       <div style={{ display: "flex", border: `1px solid ${colors.divider}`, borderRadius: radius.md, overflow: "hidden", marginBottom: 12 }}>
         <Mini label="Trips Today" value={String(t.trips_today)} />
-        <Mini label="Driver" value={t.driver?.name?.split(" ")[0] ?? "None"} divider />
+        <Mini label="Driver" value={t.driver?.name ?? "None"} divider wrap />
         <Mini label="Zone" value={t.priority_zones[0] ?? "—"} divider />
       </div>
 
@@ -244,10 +244,16 @@ function DocRow({ label, date, alert }: { label: string; date: string | null; al
   );
 }
 
-function Mini({ label, value, divider }: { label: string; value: string; divider?: boolean }) {
+function Mini({ label, value, divider, wrap }: { label: string; value: string; divider?: boolean; wrap?: boolean }) {
+  // Long values (e.g. a full driver name) wrap onto multiple lines so the whole
+  // name stays readable in this narrow cell; numeric stats keep to one ellipsised
+  // line. The title attribute surfaces the full value on hover either way.
+  const valueStyle: React.CSSProperties = wrap
+    ? { overflowWrap: "break-word", wordBreak: "break-word" }
+    : { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
   return (
-    <div style={{ flex: 1, padding: "9px 10px", borderLeft: divider ? `1px solid ${colors.divider}` : undefined, textAlign: "center" }}>
-      <div style={{ fontSize: 13.5, fontWeight: 700, color: colors.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
+    <div style={{ flex: 1, minWidth: 0, padding: "9px 10px", borderLeft: divider ? `1px solid ${colors.divider}` : undefined, textAlign: "center" }}>
+      <div title={value} style={{ fontSize: 13.5, fontWeight: 700, color: colors.text, ...valueStyle }}>{value}</div>
       <div style={{ fontSize: 10, color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>{label}</div>
     </div>
   );
