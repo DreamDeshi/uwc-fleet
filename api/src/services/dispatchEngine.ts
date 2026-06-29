@@ -44,6 +44,48 @@ export interface TruckSelection {
   reason: string;
 }
 
+// ── A1/A2 (Taiping/Ipoh) driver-priority rules — INTERNAL LORRY RATE sheet ──
+// These two zones are NOT open to the whole fleet: the sheet names exactly who
+// may serve them. Encoded here as plate constants so the rules read literally.
+const A1_A2_ZONES = ["A1", "A2"];
+const PRIMARY_A1_A2_PLATE = "PLX 2406"; // Mohd Driver 1 — the primary A1/A2 driver
+const BACKUP_A1_A2_PLATE = "PND 1888"; // Mohd Driver 2 — only if PLX 2406 unavailable
+const SMALL_LOAD_A1_A2_PLATE = "PRH 5292"; // Driver 6 — only for orders under 2 pallets
+const KHOO_MAX_A1_A2_PALLETS = 2; // Driver 6 may take A1/A2 only when pallets < this
+
+/**
+ * Narrow the fitting trucks to those *allowed* to serve this order's zone.
+ *
+ * For any zone other than A1/A2 the set is returned unchanged. For A1 (Taiping)
+ * or A2 (Ipoh) the INTERNAL LORRY RATE sheet's priority applies:
+ *   1. Mohd Driver 1 / PLX 2406 is the primary driver — whenever he fits and is
+ *      available he is the ONLY eligible truck (nobody else takes A1/A2 while
+ *      Driver 1 is free).
+ *   2. If PLX 2406 is unavailable (busy elsewhere or not in the pool), the
+ *      backups are Mohd Driver 2 / PND 1888 (any size) and Driver 6 / PRH 5292, but
+ *      Driver 6 only for orders strictly under 2 pallets (a 2-pallet A1/A2 order
+ *      must not go to Driver 6 even though PRH could physically hold 2).
+ *   3. Every other truck (the 17.5ft lorries) is never eligible for A1/A2.
+ *
+ * "PLX available" is derived purely from the passed candidates (it appears in
+ * the fitting set) — no DB lookup — so a busy or absent PLX both open the
+ * backups, while an idle, fitting PLX locks A1/A2 to him.
+ */
+function filterA1A2Eligible(order: DispatchOrder, fitting: TruckCandidate[]): TruckCandidate[] {
+  if (order.zone == null || !A1_A2_ZONES.includes(order.zone)) return fitting;
+
+  const plxAvailable = fitting.some((c) => c.plate === PRIMARY_A1_A2_PLATE);
+  if (plxAvailable) {
+    return fitting.filter((c) => c.plate === PRIMARY_A1_A2_PLATE);
+  }
+
+  return fitting.filter((c) => {
+    if (c.plate === BACKUP_A1_A2_PLATE) return true; // Driver 2 backs up A1/A2, any size
+    if (c.plate === SMALL_LOAD_A1_A2_PLATE) return order.pallets < KHOO_MAX_A1_A2_PALLETS; // Driver 6: <2 pallets only
+    return false; // 17.5ft lorries never serve A1/A2
+  });
+}
+
 /**
  * Pick the best truck for one order, or null if none fits.
  *
@@ -51,9 +93,11 @@ export interface TruckSelection {
  * already out serving a *different* zone (a truck mid-delivery to zone X is
  * unavailable; one already heading to the order's own zone can consolidate).
  *
- * Among candidates we rank by tier (consolidation > covers zone > adjacent >
- * any), then Best-Fit Decreasing: prefer the smallest truck that fits so large
- * trucks stay free for large orders, breaking ties by tightest remaining space.
+ * A1/A2 orders are first narrowed to the drivers the INTERNAL LORRY RATE sheet
+ * permits (see filterA1A2Eligible). Among the remaining candidates we rank by
+ * tier (consolidation > covers zone > adjacent > any), then Best-Fit
+ * Decreasing: prefer the smallest truck that fits so large trucks stay free for
+ * large orders, breaking ties by tightest remaining space.
  */
 export function selectTruck(
   order: DispatchOrder,
@@ -63,12 +107,15 @@ export function selectTruck(
   const zone = order.zone;
   const adjacentToOrder = (zone && adjacency[zone]) || [];
 
-  const fitting = candidates.filter((c) => {
+  const fittingAll = candidates.filter((c) => {
     const remaining = c.maxPallets - c.currentLoad;
     if (remaining < order.pallets) return false; // hard overload prevention
     const busyElsewhere = c.activeZones.length > 0 && !c.activeZones.every((z) => z === zone);
     return !busyElsewhere;
   });
+
+  // Apply the A1/A2 driver-priority gate BEFORE tier/Best-Fit ranking.
+  const fitting = filterA1A2Eligible(order, fittingAll);
   if (fitting.length === 0) return null;
 
   const scored = fitting.map((c) => {

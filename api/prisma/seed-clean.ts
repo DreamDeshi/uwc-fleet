@@ -1,55 +1,71 @@
 /**
  * Clean reset — back to a blank operational slate.
  *
- * Wipes ALL trips (and their stops, cargo, documents, external forwarders and
- * GPS logs) and ALL test/registered user accounts, while keeping the base
- * reference data (trucks, zones, destination rates, departments, route types,
- * consignees) and the seeded login accounts.
+ * Wipes ALL trips (and their stops, cargo, documents, external forwarders,
+ * GPS logs and trip-related audit logs) and EVERY non-seeded user account,
+ * while keeping the base reference data (trucks, zones, destination rates,
+ * departments, route types, consignees).
  *
- * KEPT: the accounts the main seed creates — the bootstrap admin and the 6
- * fleet drivers (by phone) — plus every admin account (admins can't be
- * self-registered, so they're always intentional and never treated as test
- * data; this also guards against locking yourself out).
+ * KEPT: a strict allowlist of exactly 8 seeded accounts (by phone) — the
+ * bootstrap admin, the 6 fleet drivers, and the test requestor. Any account
+ * whose phone is NOT on the allowlist is deleted, including stray admins or
+ * requestors registered during testing. The allowlist includes the bootstrap
+ * admin, so admin access is always preserved.
  *
- * DELETED: every other user. In practice that's all requestors and any other
- * self-registered accounts — so after a reset, UWC staff register fresh.
+ * DELETED: every other user — all test-registered requestors/drivers/admins —
+ * so after a reset only the 8 seeded logins remain.
  *
  * Idempotent and safe to run anytime, including against prod: it only deletes
- * trips + non-seeded users, never base data, and clears each deleted user's
- * dependent rows first so foreign keys never block it. Re-running on an
+ * trips + non-allowlisted users, never base data, and clears each deleted
+ * user's dependent rows first so foreign keys never block it. Re-running on an
  * already-clean DB is a no-op.
  *
  * Run with: npx tsx prisma/seed-clean.ts   (from the api/ workspace)
  */
 import { prisma } from "../src/lib/prisma";
 
-// Accounts created by seed.ts — never deleted. Keep in sync with seed.ts if the
-// seeded admin/driver phone numbers ever change.
+// Allowlist: the ONLY user accounts kept. Every other user is deleted. Keep in
+// sync with seed.ts if the seeded admin/driver/requestor phone numbers change.
 const SEEDED_PHONES = [
   "+60100000001", // bootstrap admin (UWC Admin)
-  "+60100000101", // Driver 1      — PLX 2406
-  "+60100000102", // Driver 2 — PND 1888
-  "+60100000103", // Driver 3      — PRJ 5292
-  "+60100000104", // Driver 4     — PQL 5292
+  "+60100000101", // Driver 1        — PLX 2406
+  "+60100000102", // Driver 2  — PND 1888
+  "+60100000103", // Driver 3       — PRJ 5292
+  "+60100000104", // Driver 4      — PQL 5292
   "+60100000105", // Driver 5 — PPE 1804
-  "+60100000106", // Driver 6               — PRH 5292
+  "+60100000106", // Driver 6                — PRH 5292
+  "+60199990001", // test requestor
 ];
 
 async function main() {
+  // ── 0. Before counts (so the wipe is visibly verifiable) ────────────────
+  const before = {
+    trips: await prisma.trip.count(),
+    users: await prisma.user.count(),
+  };
+  console.log(`Before: ${before.trips} trip(s), ${before.users} user(s).`);
+
   // ── 1. Wipe all trips + their children (FK order: children first) ───────
-  const tripCount = await prisma.trip.count();
   await prisma.locationLog.deleteMany({});
   await prisma.tripDocument.deleteMany({});
   await prisma.externalForwarder.deleteMany({});
   await prisma.cargoDetail.deleteMany({});
   await prisma.tripStop.deleteMany({});
   const delTrips = await prisma.trip.deleteMany({});
-  console.log(`Deleted ${delTrips.count} trip(s) and all their child records.`);
+  // Trip-related audit-log rows (Trip / TripStop actions) — these reference no
+  // Trip FK (record_id is a plain string) so they outlive the trip wipe; clear
+  // them too for a truly blank slate. Audit logs about other tables are kept.
+  const delTripAudits = await prisma.auditLog.deleteMany({
+    where: { table_name: { in: ["Trip", "TripStop"] } },
+  });
+  console.log(
+    `Deleted ${delTrips.count} trip(s) + all child records, and ${delTripAudits.count} trip-related audit-log row(s).`
+  );
 
-  // ── 2. Delete every non-seeded user ─────────────────────────────────────
-  // Protect the seeded base accounts (by phone) and all admins.
+  // ── 2. Delete every user NOT on the seeded allowlist ─────────────────────
+  // Strict allowlist: keep ONLY the 8 seeded phones; everything else goes.
   const keep = await prisma.user.findMany({
-    where: { OR: [{ phone: { in: SEEDED_PHONES } }, { role: "admin" }] },
+    where: { phone: { in: SEEDED_PHONES } },
     select: { id: true },
   });
   const keepIds = keep.map((u) => u.id);
@@ -80,8 +96,10 @@ async function main() {
   }
 
   // ── 3. Confirm the clean state ───────────────────────────────────────────
+  const remainingUsers = await prisma.user.count();
   const summary = {
     trips: await prisma.trip.count(),
+    users: remainingUsers,
     admins: await prisma.user.count({ where: { role: "admin" } }),
     drivers: await prisma.user.count({ where: { role: "driver" } }),
     requestors: await prisma.user.count({ where: { role: "requestor" } }),
@@ -92,7 +110,12 @@ async function main() {
     routeTypes: await prisma.routeType.count(),
     consignees: await prisma.consignee.count(),
   };
-  console.log(`\nClean state (started with ${tripCount} trips):`, summary);
+  console.log(`\nClean state (before: ${before.trips} trips, ${before.users} users):`, summary);
+  console.log(
+    remainingUsers === SEEDED_PHONES.length
+      ? `✓ Exactly the ${SEEDED_PHONES.length} seeded accounts remain.`
+      : `⚠ Expected ${SEEDED_PHONES.length} seeded accounts but ${remainingUsers} remain — check the allowlist.`
+  );
 }
 
 main()
