@@ -117,6 +117,59 @@ describe("selectTruck — consolidation (Rule B)", () => {
   });
 });
 
+describe("selectTruck — A1/A2 driver-priority (INTERNAL LORRY RATE sheet)", () => {
+  // Real coverage zones from the sheet. Khoo/PRH covers ALL zones but is gated
+  // to <2 pallets on A1/A2; the 17.5ft lorries never serve A1/A2.
+  const plx = (over: Partial<TruckCandidate> = {}) =>
+    truck({ plate: "PLX 2406", maxPallets: 16, coverageZones: ["A1", "A2", "P1", "P2"], ...over });
+  const pnd = (over: Partial<TruckCandidate> = {}) =>
+    truck({ plate: "PND 1888", maxPallets: 14, coverageZones: ["P1", "P2", "P3", "K1", "K2"], ...over });
+  const prh = (over: Partial<TruckCandidate> = {}) =>
+    truck({ plate: "PRH 5292", maxPallets: 2, coverageZones: ["P1", "P2", "P3", "K1", "K2", "A1", "A2"], ...over });
+  const prj = (over: Partial<TruckCandidate> = {}) =>
+    truck({ plate: "PRJ 5292", maxPallets: 8, coverageZones: ["P1", "P2", "P3", "K1", "K2"], ...over });
+
+  it("A1: picks PLX 2406 (Azmi) over Khoo even for a 1-pallet load", () => {
+    const sel = selectTruck({ pallets: 1, zone: "A1" }, [plx(), prh(), prj()], ADJACENCY);
+    expect(sel?.plate).toBe("PLX 2406");
+  });
+
+  it("A1: when PLX is absent, a 1-pallet order may go to Khoo/PRH (smallest fit)", () => {
+    const sel = selectTruck({ pallets: 1, zone: "A1" }, [pnd(), prh(), prj()], ADJACENCY);
+    expect(sel?.plate).toBe("PRH 5292");
+  });
+
+  it("A2: when PLX is absent, a 2-pallet order excludes Khoo and falls to PND (Shahar)", () => {
+    const sel = selectTruck({ pallets: 2, zone: "A2" }, [pnd(), prh(), prj()], ADJACENCY);
+    expect(sel?.plate).toBe("PND 1888");
+  });
+
+  it("A2: when PLX is available, PND (Shahar) is excluded — PLX wins", () => {
+    const sel = selectTruck({ pallets: 6, zone: "A2" }, [plx(), pnd()], ADJACENCY);
+    expect(sel?.plate).toBe("PLX 2406");
+  });
+
+  it("treats a busy PLX as unavailable, opening A1/A2 to the backups", () => {
+    // PLX is out on a P2 run → not available; PND backs up the A2 order.
+    const sel = selectTruck(
+      { pallets: 2, zone: "A2" },
+      [plx({ currentLoad: 5, activeZones: ["P2"] }), pnd()],
+      ADJACENCY
+    );
+    expect(sel?.plate).toBe("PND 1888");
+  });
+
+  it("never auto-assigns A1/A2 to a 17.5ft lorry — returns null if only those are free", () => {
+    const sel = selectTruck({ pallets: 4, zone: "A1" }, [prj()], ADJACENCY);
+    expect(sel).toBeNull();
+  });
+
+  it("leaves non-A1/A2 (P2) behaviour unchanged: smallest fitting coverage truck", () => {
+    const sel = selectTruck({ pallets: 3, zone: "P2" }, [pnd(), prj(), prh()], ADJACENCY);
+    expect(sel?.plate).toBe("PRJ 5292"); // PRH(2) too small for 3; PRJ(8) < PND(14)
+  });
+});
+
 describe("enRouteZones — return-trip matching", () => {
   it("offers A1 (Taiping) pickups on an A2 (Ipoh) run", () => {
     expect(enRouteZones("A2")).toEqual(["A1"]);
