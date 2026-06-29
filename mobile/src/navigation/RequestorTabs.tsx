@@ -1,9 +1,19 @@
 import React from "react";
+import { Platform } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { RequestorTabParamList } from "./types";
 import { colors } from "../theme";
+
+// On web there's no safe-area inset and RN-Web under-reserves vertical space for
+// the label row, so the labels were clipped. Give the bar more height + bottom
+// padding on web; native keeps the original compact sizing.
+const TAB_BAR_STYLE = {
+  height: Platform.OS === "web" ? 72 : 60,
+  paddingTop: 6,
+  paddingBottom: Platform.OS === "web" ? 16 : 8,
+} as const;
 import { RequestorDashboardScreen } from "../screens/requestor/RequestorDashboardScreen";
 import { BookingFormScreen } from "../screens/requestor/BookingFormScreen";
 import { BookingListScreen } from "../screens/requestor/BookingListScreen";
@@ -20,7 +30,7 @@ export function RequestorTabs() {
         tabBarActiveTintColor: colors.blue,
         tabBarInactiveTintColor: "#999",
         tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
-        tabBarStyle: { height: 60, paddingBottom: 8, paddingTop: 6 },
+        tabBarStyle: TAB_BAR_STYLE,
       }}
     >
       <Tab.Screen

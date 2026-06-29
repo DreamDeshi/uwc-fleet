@@ -75,6 +75,9 @@ async function buildDriverPerformance() {
     name: driver.name,
     employee_number: driver.employee_number,
     truck_plate: driver.assigned_truck_plate,
+    // Lets the dashboard distinguish "scored 0" from "no completed trips yet"
+    // (a fresh driver shouldn't render a red 0.0 badge).
+    total_completed: stats.totalCompleted,
     ...computeScore(stats, maxPoints),
   }));
 }
