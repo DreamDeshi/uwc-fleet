@@ -167,7 +167,23 @@
     "phone": "Phone",
     "role": "Role",
     "logout": "Log Out",
-    "logoutConfirm": "Log out of your account?"
+    "logoutConfirm": "Log out of your account?",
+    "logFuel": "Log Fuel"
+  },
+  "fuel": {
+    "title": "Log Fuel Fill-up",
+    "truck": "Truck",
+    "litres": "Litres",
+    "litresPlaceholder": "e.g. 120.5",
+    "cost": "Cost (RM)",
+    "costPlaceholder": "e.g. 380.00",
+    "odometer": "Odometer (km)",
+    "odometerPlaceholder": "e.g. 152340",
+    "submit": "Save Log",
+    "noTruck": "You have no assigned truck. Ask your admin to assign one before logging fuel.",
+    "invalid": "Enter a positive number for litres, cost, and odometer.",
+    "saved": "Fuel log saved.",
+    "error": "Could not save the fuel log."
   },
   "requestor": {
     "greeting": "Hi, {{name}}",

@@ -7,6 +7,10 @@ import { colors, radius, shadow } from "../../theme";
 import { Header } from "../../components/Header";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
+import { TextField } from "../../components/Field";
+import { useToast } from "../../components/Toast";
+import { useLogFuel } from "../../hooks/queries";
+import { apiErrorMessage } from "../../services/api";
 import { initials } from "../../lib/format";
 import { AppLanguage } from "../../types";
 
@@ -14,6 +18,7 @@ export function ProfileScreen() {
   const { t, i18n } = useTranslation();
   const { user, logout, setLanguage } = useAuth();
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [fuelOpen, setFuelOpen] = useState(false);
 
   const lang: AppLanguage = (["en", "ms", "zh"] as const).includes(i18n.language as AppLanguage)
     ? (i18n.language as AppLanguage)
@@ -62,6 +67,17 @@ export function ProfileScreen() {
           ))}
         </Card>
 
+        {/* Fuel logging (drivers only) */}
+        {user?.role === "driver" ? (
+          <Button
+            title={t("profile.logFuel")}
+            variant="outline"
+            onPress={() => setFuelOpen(true)}
+            style={{ marginTop: 16 }}
+            icon={<MaterialCommunityIcons name="gas-station" size={18} color={colors.blue} />}
+          />
+        ) : null}
+
         {/* Language picker (EN / BM) */}
         <Text style={styles.sectionTitle}>{t("profile.language")}</Text>
         <View style={styles.langRow}>
@@ -102,7 +118,118 @@ export function ProfileScreen() {
           </View>
         </View>
       </Modal>
+
+      <LogFuelModal
+        visible={fuelOpen}
+        onClose={() => setFuelOpen(false)}
+        truckPlate={user?.assigned_truck?.plate ?? null}
+        truckLabel={
+          user?.assigned_truck
+            ? `${user.assigned_truck.plate} · ${user.assigned_truck.type}`
+            : null
+        }
+      />
     </View>
+  );
+}
+
+// Driver fuel fill-up form. The truck is fixed to the driver's assigned truck.
+function LogFuelModal({
+  visible,
+  onClose,
+  truckPlate,
+  truckLabel,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  truckPlate: string | null;
+  truckLabel: string | null;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const logFuel = useLogFuel();
+  const [litres, setLitres] = useState("");
+  const [cost, setCost] = useState("");
+  const [odometer, setOdometer] = useState("");
+
+  const submit = () => {
+    if (!truckPlate) {
+      toast(t("fuel.noTruck"), "error");
+      return;
+    }
+    const litresN = Number(litres);
+    const costN = Number(cost);
+    const odoN = Number(odometer);
+    if (!(litresN > 0) || !(costN > 0) || !(odoN > 0)) {
+      toast(t("fuel.invalid"), "error");
+      return;
+    }
+    logFuel.mutate(
+      { plate: truckPlate, litres: litresN, cost_rm: costN, odometer_km: odoN },
+      {
+        onSuccess: () => {
+          setLitres("");
+          setCost("");
+          setOdometer("");
+          onClose();
+          toast(t("fuel.saved"), "success");
+        },
+        onError: (err) => toast(apiErrorMessage(err, t("fuel.error")), "error"),
+      }
+    );
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.backdrop}>
+        <View style={styles.modal}>
+          <Text style={styles.modalTitle}>{t("fuel.title")}</Text>
+
+          <View style={styles.truckBox}>
+            <MaterialCommunityIcons name="truck" size={16} color={colors.blue} />
+            <Text style={styles.truckBoxText}>{truckLabel ?? t("fuel.noTruck")}</Text>
+          </View>
+
+          <View style={{ marginTop: 16 }}>
+            <TextField
+              label={t("fuel.litres")}
+              keyboardType="decimal-pad"
+              value={litres}
+              onChangeText={setLitres}
+              placeholder={t("fuel.litresPlaceholder")}
+              leftIcon="water-outline"
+            />
+            <TextField
+              label={t("fuel.cost")}
+              keyboardType="decimal-pad"
+              value={cost}
+              onChangeText={setCost}
+              placeholder={t("fuel.costPlaceholder")}
+              leftIcon="cash-outline"
+            />
+            <TextField
+              label={t("fuel.odometer")}
+              keyboardType="number-pad"
+              value={odometer}
+              onChangeText={setOdometer}
+              placeholder={t("fuel.odometerPlaceholder")}
+              leftIcon="speedometer-outline"
+            />
+          </View>
+
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+            <Button title={t("common.cancel")} variant="outline" onPress={onClose} style={{ flex: 1 }} />
+            <Button
+              title={t("fuel.submit")}
+              onPress={submit}
+              loading={logFuel.isPending}
+              disabled={!truckPlate}
+              style={{ flex: 1 }}
+            />
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -125,4 +252,6 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center", padding: 24 },
   modal: { backgroundColor: colors.white, borderRadius: 20, padding: 24, width: "100%" },
   modalTitle: { fontSize: 17, fontWeight: "800", color: colors.navy, textAlign: "center" },
+  truckBox: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 16, backgroundColor: colors.tintBlue, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12 },
+  truckBoxText: { color: colors.blue, fontSize: 14, fontWeight: "700" },
 });

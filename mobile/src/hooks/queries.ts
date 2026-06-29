@@ -281,3 +281,19 @@ export function useCreateConsignee() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["consignees"] }),
   });
 }
+
+// ── Fuel logging (FR-CT5) ────────────────────────────────────────────────
+// Drivers log fill-ups against their own assigned truck from the Profile screen.
+export interface LogFuelInput {
+  plate: string;
+  litres: number;
+  cost_rm: number;
+  odometer_km: number;
+}
+
+export function useLogFuel() {
+  return useMutation({
+    mutationFn: async ({ plate, ...body }: LogFuelInput) =>
+      (await api.post(`/trucks/${encodeURIComponent(plate)}/fuel`, body)).data,
+  });
+}

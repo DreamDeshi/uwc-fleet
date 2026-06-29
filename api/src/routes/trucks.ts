@@ -9,7 +9,7 @@ import { getTripDayStart, getTripDayEnd } from "../services/incentiveEngine";
 import { palletEquivalents } from "../lib/pallets";
 
 const router = Router();
-router.use(requireAuth, requireRole("admin"));
+router.use(requireAuth);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ALERT_WINDOW_DAYS = 30;
@@ -18,6 +18,175 @@ const ALERT_WINDOW_DAYS = 30;
 // against the Malaysia-time calendar day so "expires today" is consistent for
 // admins regardless of where the server runs.
 const MYT_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+// ── Fuel cost tracking (FR-CT5) ──────────────────────────────────────────
+// POST is mounted BEFORE the admin-only guard below because drivers also log
+// fill-ups (a driver may only log against their own assigned truck).
+
+const fuelSchema = z.object({
+  litres: z.number().positive("Litres must be a positive number."),
+  cost_rm: z.number().positive("Cost (RM) must be a positive number."),
+  odometer_km: z.number().positive("Odometer (km) must be a positive number."),
+  // Optional ISO timestamp; defaults to "now". Date-only strings (the admin
+  // form sends YYYY-MM-DD) are accepted too.
+  logged_at: z
+    .string()
+    .refine((s) => !Number.isNaN(Date.parse(s)), "logged_at must be a valid date.")
+    .optional(),
+});
+
+// Decimal columns serialise as strings — coerce to numbers for the client.
+function serializeFuelLog(log: {
+  id: string;
+  truck_plate: string;
+  liters: unknown;
+  cost: unknown;
+  odometer: number | null;
+  logged_at: Date;
+  driver?: { name: string } | null;
+}) {
+  return {
+    id: log.id,
+    truck_plate: log.truck_plate,
+    liters: Number(log.liters),
+    cost: Number(log.cost),
+    odometer: log.odometer,
+    logged_at: log.logged_at,
+    driver: log.driver ?? null,
+  };
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+// Roll a set of fuel logs up into the FR-CT5 summary figures. total_km_covered
+// is the odometer span (max − min) across logs that recorded an odometer; the
+// per-litre / per-km rates are null when their denominator is zero.
+function summariseFuel(logs: { liters: unknown; cost: unknown; odometer: number | null }[]) {
+  const total_litres = round2(logs.reduce((s, l) => s + Number(l.liters), 0));
+  const total_cost_rm = round2(logs.reduce((s, l) => s + Number(l.cost), 0));
+  const odos = logs.map((l) => l.odometer).filter((o): o is number => o != null);
+  const total_km_covered = odos.length >= 2 ? Math.max(...odos) - Math.min(...odos) : 0;
+  return {
+    log_count: logs.length,
+    total_litres,
+    total_cost_rm,
+    avg_cost_per_litre: total_litres > 0 ? round2(total_cost_rm / total_litres) : null,
+    total_km_covered,
+    cost_per_km: total_km_covered > 0 ? round2(total_cost_rm / total_km_covered) : null,
+  };
+}
+
+// [start, end) UTC instants bounding the current Malaysia-time calendar month.
+function currentMytMonthBounds(now: Date): { start: Date; end: Date } {
+  const myt = new Date(now.getTime() + MYT_OFFSET_MS);
+  const y = myt.getUTCFullYear();
+  const m = myt.getUTCMonth();
+  return {
+    start: new Date(Date.UTC(y, m, 1) - MYT_OFFSET_MS),
+    end: new Date(Date.UTC(y, m + 1, 1) - MYT_OFFSET_MS),
+  };
+}
+
+// POST /trucks/:plate/fuel — log a fuel fill-up (admin, or the truck's driver).
+router.post(
+  "/:plate/fuel",
+  requireRole("admin", "driver"),
+  validateBody(fuelSchema),
+  async (req, res, next) => {
+    try {
+      const { plate } = req.params;
+      const { litres, cost_rm, odometer_km, logged_at } = req.body;
+
+      const truck = await prisma.truck.findUnique({ where: { plate }, select: { plate: true } });
+      if (!truck) {
+        throw new ApiError(404, "TRUCK_NOT_FOUND", "Truck not found.");
+      }
+
+      // A driver may only log fuel against the truck assigned to them.
+      if (req.user!.role === "driver") {
+        const me = await prisma.user.findUnique({
+          where: { id: req.user!.id },
+          select: { assigned_truck_plate: true },
+        });
+        if (me?.assigned_truck_plate !== plate) {
+          throw new ApiError(403, "FORBIDDEN", "You can only log fuel for your assigned truck.");
+        }
+      }
+
+      const log = await prisma.fuelLog.create({
+        data: {
+          truck_plate: plate,
+          driver_id: req.user!.id,
+          liters: litres,
+          cost: cost_rm,
+          odometer: Math.round(odometer_km),
+          logged_at: logged_at ? new Date(logged_at) : new Date(),
+        },
+      });
+
+      res.status(201).json(serializeFuelLog(log));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// Everything below is admin-only.
+router.use(requireRole("admin"));
+
+// GET /trucks/fuel/summary — current-month (MYT) fuel spend, one row per truck.
+// Declared before "/:plate/fuel" so "fuel" isn't captured as a :plate.
+router.get("/fuel/summary", async (_req, res, next) => {
+  try {
+    const { start, end } = currentMytMonthBounds(new Date());
+    const trucks = await prisma.truck.findMany({
+      orderBy: { plate: "asc" },
+      select: {
+        plate: true,
+        type: true,
+        fuel_logs: {
+          where: { logged_at: { gte: start, lt: end } },
+          select: { liters: true, cost: true, odometer: true },
+        },
+      },
+    });
+
+    res.json(
+      trucks.map((t) => ({ plate: t.plate, type: t.type, ...summariseFuel(t.fuel_logs) }))
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /trucks/:plate/fuel — all fuel logs for a truck (newest first) + summary.
+router.get("/:plate/fuel", async (req, res, next) => {
+  try {
+    const { plate } = req.params;
+    const truck = await prisma.truck.findUnique({ where: { plate }, select: { plate: true } });
+    if (!truck) {
+      throw new ApiError(404, "TRUCK_NOT_FOUND", "Truck not found.");
+    }
+
+    const logs = await prisma.fuelLog.findMany({
+      where: { truck_plate: plate },
+      orderBy: { logged_at: "desc" },
+      select: {
+        id: true,
+        truck_plate: true,
+        liters: true,
+        cost: true,
+        odometer: true,
+        logged_at: true,
+        driver: { select: { name: true } },
+      },
+    });
+
+    res.json({ logs: logs.map(serializeFuelLog), summary: summariseFuel(logs) });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Midnight (00:00) MYT of the calendar day `instant` falls on, as a UTC instant.
 function mytMidnight(instant: Date): Date {
