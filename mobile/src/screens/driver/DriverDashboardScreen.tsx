@@ -14,7 +14,7 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { TripCard } from "../../components/TripCard";
 import { LoadingState, ErrorState } from "../../components/States";
 import { formatMoney, formatDate, formatTime } from "../../lib/format";
-import { tripDestination, cargoSummary, ORIGIN_LABEL } from "../../lib/trip";
+import { tripDestination, cargoSummary, estimateIncentive, ORIGIN_LABEL } from "../../lib/trip";
 import { Trip } from "../../types";
 
 type Nav = BottomTabNavigationProp<DriverTabParamList>;
@@ -146,6 +146,17 @@ export function DriverDashboardScreen() {
 
 function AssignmentCard({ trip, onPress }: { trip: Trip; onPress: () => void }) {
   const { t } = useTranslation();
+  // The real incentive_earned is only set on completion (null/0 while the trip is
+  // assigned or in progress). Until then show an estimate, marked "Est.", matching
+  // TripDetailsScreen — never a bare RM 0 on an active assignment.
+  const finalized = trip.incentive_earned !== null && trip.incentive_earned !== undefined;
+  const estimate = finalized ? null : estimateIncentive(trip);
+  const rmValue = finalized
+    ? formatMoney(trip.incentive_earned)
+    : estimate !== null
+      ? formatMoney(estimate)
+      : formatMoney(trip.incentive_earned);
+  const showEst = !finalized && estimate !== null;
   return (
     <View style={styles.assignCard}>
       <View style={styles.assignHead}>
@@ -164,7 +175,10 @@ function AssignmentCard({ trip, onPress }: { trip: Trip; onPress: () => void }) 
         <Text style={styles.assignPlaceTo}>{tripDestination(trip)}</Text>
         <View style={styles.assignFooter}>
           <Text style={styles.assignCargo}>{cargoSummary(trip)}</Text>
-          <Text style={styles.assignRm}>{formatMoney(trip.incentive_earned)}</Text>
+          <View style={styles.assignRmWrap}>
+            {showEst ? <Text style={styles.assignEst}>{t("trip.est")}</Text> : null}
+            <Text style={styles.assignRm}>{rmValue}</Text>
+          </View>
         </View>
         <TouchableOpacity style={styles.detailBtn} onPress={onPress}>
           <Text style={styles.detailBtnText}>{t("driver.viewTripDetails")}</Text>
@@ -230,6 +244,8 @@ const styles = StyleSheet.create({
   assignPlaceTo: { fontSize: 13, fontWeight: "600", color: colors.navy, marginTop: 6 },
   assignFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 12 },
   assignCargo: { fontSize: 12, color: colors.textMuted },
+  assignRmWrap: { flexDirection: "row", alignItems: "center", gap: 6 },
+  assignEst: { fontSize: 10, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5 },
   assignRm: { backgroundColor: colors.yellow, color: colors.navy, fontSize: 13, fontWeight: "800", paddingHorizontal: 14, paddingVertical: 4, borderRadius: radius.pill, overflow: "hidden" },
   detailBtn: {
     marginTop: 12,
