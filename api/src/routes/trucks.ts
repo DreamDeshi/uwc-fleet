@@ -355,8 +355,8 @@ router.get("/alerts", async (_req, res, next) => {
 // ── PATCH /trucks/:plate/rates — edit incentive claim rates (audit-logged) ──
 const rateSchema = z
   .object({
-    entitled_claim_weekday: z.number().nonnegative().optional(),
-    entitled_claim_offpeak: z.number().nonnegative().optional(),
+    entitled_claim_weekday: z.number().positive().optional(),
+    entitled_claim_offpeak: z.number().positive().optional(),
     daily_deduction_points: z.number().int().nonnegative().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, "At least one rate field is required.");
@@ -370,6 +370,23 @@ router.patch("/:plate/rates", validateBody(rateSchema), async (req, res, next) =
     }
 
     const { entitled_claim_weekday, entitled_claim_offpeak, daily_deduction_points } = req.body;
+
+    // Record the old → new of each field that actually changed. AuditLog has no
+    // free-text column, so the change summary is encoded into `action` behind a
+    // stable "rate.updated" prefix (greppable; no schema change). Only future
+    // trips are affected — the engine reads these values at finalization time and
+    // completed trips keep their stored incentive_earned.
+    const changes: string[] = [];
+    if (entitled_claim_weekday !== undefined && Number(truck.entitled_claim_weekday) !== entitled_claim_weekday) {
+      changes.push(`weekday ${Number(truck.entitled_claim_weekday).toFixed(2)}→${entitled_claim_weekday.toFixed(2)}`);
+    }
+    if (entitled_claim_offpeak !== undefined && Number(truck.entitled_claim_offpeak) !== entitled_claim_offpeak) {
+      changes.push(`offpeak ${Number(truck.entitled_claim_offpeak).toFixed(2)}→${entitled_claim_offpeak.toFixed(2)}`);
+    }
+    if (daily_deduction_points !== undefined && truck.daily_deduction_points !== daily_deduction_points) {
+      changes.push(`deduction ${truck.daily_deduction_points}→${daily_deduction_points}`);
+    }
+
     const updated = await prisma.truck.update({
       where: { plate },
       data: {
@@ -382,7 +399,7 @@ router.patch("/:plate/rates", validateBody(rateSchema), async (req, res, next) =
     await prisma.auditLog.create({
       data: {
         user_id: req.user!.id,
-        action: "truck.rates_updated",
+        action: changes.length ? `rate.updated ${changes.join(", ")}` : "rate.updated",
         table_name: "Truck",
         record_id: plate,
       },
