@@ -84,26 +84,24 @@ describe("selectTruck — driver priority zones", () => {
   });
 });
 
-describe("selectTruck — consolidation (Rule B)", () => {
-  it("consolidates onto a truck already serving the same zone if capacity allows", () => {
+describe("selectTruck — one active trip per driver (no consolidation onto a busy driver)", () => {
+  it("does NOT stack a second order onto a truck already serving the same zone — idle truck wins", () => {
     const candidates = [
-      // Already carrying 4 pallets to K1, room for 4 more (8 max).
+      // Already carrying 4 pallets to K1 with room for 4 more — but it's busy, so
+      // under the one-active-trip rule it is no longer a candidate.
       truck({ plate: "PRJ 5292", maxPallets: 8, currentLoad: 4, coverageZones: ["K1"], activeZones: ["K1"] }),
       // Idle truck that also covers K1.
       truck({ plate: "PQL 5292", maxPallets: 8, coverageZones: ["K1"] }),
     ];
     const sel = selectTruck({ pallets: 3, zone: "K1" }, candidates, ADJACENCY);
-    expect(sel?.plate).toBe("PRJ 5292"); // consolidation tier beats the idle truck
+    expect(sel?.plate).toBe("PQL 5292"); // the busy same-zone truck is excluded
   });
 
-  it("does not consolidate past capacity — falls to the idle truck", () => {
+  it("returns null when the only fitting truck is already on an active trip", () => {
     const candidates = [
-      truck({ plate: "PRJ 5292", maxPallets: 8, currentLoad: 6, coverageZones: ["K1"], activeZones: ["K1"] }),
-      truck({ plate: "PQL 5292", maxPallets: 8, coverageZones: ["K1"] }),
+      truck({ plate: "PRJ 5292", maxPallets: 8, currentLoad: 4, coverageZones: ["K1"], activeZones: ["K1"] }),
     ];
-    // 6 + 4 = 10 > 8, so PRJ can't take it; idle PQL does.
-    const sel = selectTruck({ pallets: 4, zone: "K1" }, candidates, ADJACENCY);
-    expect(sel?.plate).toBe("PQL 5292");
+    expect(selectTruck({ pallets: 3, zone: "K1" }, candidates, ADJACENCY)).toBeNull();
   });
 
   it("treats a truck busy with a different zone as unavailable", () => {
@@ -154,6 +152,18 @@ describe("selectTruck — A1/A2 driver-priority (INTERNAL LORRY RATE sheet)", ()
     const sel = selectTruck(
       { pallets: 2, zone: "A2" },
       [plx({ currentLoad: 5, activeZones: ["P2"] }), pnd()],
+      ADJACENCY
+    );
+    expect(sel?.plate).toBe("PND 1888");
+  });
+
+  it("excludes PLX when it is already on an active A2 trip (no same-zone stacking) — falls to PND", () => {
+    // PLX is mid-delivery to A2 (currentLoad > 0). Even though the new order is
+    // also A2, the one-active-trip rule bars consolidation onto a busy driver, so
+    // the order backs up to PND rather than re-picking the in_progress PLX 2406.
+    const sel = selectTruck(
+      { pallets: 2, zone: "A2" },
+      [plx({ currentLoad: 5, activeZones: ["A2"] }), pnd()],
       ADJACENCY
     );
     expect(sel?.plate).toBe("PND 1888");
