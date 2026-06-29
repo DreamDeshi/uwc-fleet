@@ -1,0 +1,21 @@
+{
+  "name": "uwc-fleet-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright end-to-end tests for the UWC Fleet mobile web app and admin dashboard.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:requestor": "playwright test requestor",
+    "test:admin": "playwright test admin",
+    "test:driver": "playwright test driver",
+    "report": "playwright show-report",
+    "install:browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3"
+  }
+}
