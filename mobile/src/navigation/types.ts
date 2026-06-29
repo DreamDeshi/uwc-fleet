@@ -28,6 +28,7 @@ export type RequestorTabParamList = {
   // Optional `filter` lets the dashboard's stat cards deep-link the Bookings
   // list straight to All / Active / Completed.
   BookingsTab: { filter?: BookingFilter } | undefined;
+  Analytics: undefined;
   Profile: undefined;
 };
 

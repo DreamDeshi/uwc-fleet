@@ -103,6 +103,28 @@ export function useIncentives() {
   });
 }
 
+// ── Requestor analytics (FR-RS1-5) — scoped to the logged-in requestor ──────
+export interface RequestorAnalytics {
+  monthly_activity: { month: string; count: number }[]; // last 6 MYT months
+  status_breakdown: {
+    completed: number;
+    pending: number;
+    assigned: number;
+    in_progress: number;
+    cancelled: number;
+  };
+  top_destinations: { name: string; count: number }[];
+  cargo_history: { total_pallets: number; by_size: { size: string; count: number }[] };
+  avg_approval_time_hours: number | null;
+}
+
+export function useMyAnalytics() {
+  return useQuery({
+    queryKey: ["analytics", "mine"],
+    queryFn: async () => (await api.get<RequestorAnalytics>("/analytics/mine")).data,
+  });
+}
+
 // ── Mutations ────────────────────────────────────────────────────────────
 export interface CreateTripInput {
   route_type_id: string;
