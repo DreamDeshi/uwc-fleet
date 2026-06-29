@@ -9,8 +9,10 @@
  *
  * Algorithm: Best-Fit Decreasing bin-packing.
  *   Rule A — single order: assign to the smallest available truck that fits.
- *   Rule B — consolidation: combine onto a truck already serving the same zone
- *            if current load + new order ≤ max capacity.
+ *   One-active-trip-per-driver: a driver already out on an assigned/in_progress
+ *            trip is never a candidate — not even for same-zone consolidation.
+ *            (Stacking a second order onto a busy driver caused the in_progress
+ *            PLX 2406 to keep being re-picked.)
  *   Driver priority zones (truck.priority_zones) are preferred over adjacent
  *   coverage; zone adjacency lets a P2 driver pick up a K1 order when no K1
  *   driver is free. Hard constraint: never exceed a truck's max_pallets.
@@ -89,15 +91,17 @@ function filterA1A2Eligible(order: DispatchOrder, fitting: TruckCandidate[]): Tr
 /**
  * Pick the best truck for one order, or null if none fits.
  *
- * A truck is a candidate when it has spare capacity for the order AND is not
- * already out serving a *different* zone (a truck mid-delivery to zone X is
- * unavailable; one already heading to the order's own zone can consolidate).
+ * A truck is a candidate when its driver has NO active trip and it has spare
+ * capacity for the order. One active trip per driver is a hard rule: a truck
+ * already out on a trip — even one heading to the order's own zone — is never a
+ * candidate. (Previously a same-zone truck could consolidate a second order,
+ * which kept handing new trips to a driver who was already rolling.)
  *
  * A1/A2 orders are first narrowed to the drivers the INTERNAL LORRY RATE sheet
  * permits (see filterA1A2Eligible). Among the remaining candidates we rank by
- * tier (consolidation > covers zone > adjacent > any), then Best-Fit
- * Decreasing: prefer the smallest truck that fits so large trucks stay free for
- * large orders, breaking ties by tightest remaining space.
+ * tier (covers zone > adjacent > any), then Best-Fit Decreasing: prefer the
+ * smallest truck that fits so large trucks stay free for large orders, breaking
+ * ties by tightest remaining space.
  */
 export function selectTruck(
   order: DispatchOrder,
@@ -108,10 +112,12 @@ export function selectTruck(
   const adjacentToOrder = (zone && adjacency[zone]) || [];
 
   const fittingAll = candidates.filter((c) => {
+    // One active trip per driver: a truck already on an active trip (any load or
+    // destination) is out of the running — no consolidation onto a busy driver.
+    if (c.currentLoad > 0 || c.activeZones.length > 0) return false;
     const remaining = c.maxPallets - c.currentLoad;
     if (remaining < order.pallets) return false; // hard overload prevention
-    const busyElsewhere = c.activeZones.length > 0 && !c.activeZones.every((z) => z === zone);
-    return !busyElsewhere;
+    return true;
   });
 
   // Apply the A1/A2 driver-priority gate BEFORE tier/Best-Fit ranking.
@@ -120,10 +126,9 @@ export function selectTruck(
 
   const scored = fitting.map((c) => {
     const remaining = c.maxPallets - c.currentLoad;
-    const consolidates = zone != null && c.currentLoad > 0 && c.activeZones.includes(zone);
     const covers = zone != null && c.coverageZones.includes(zone);
     const adjacent = c.coverageZones.some((z) => adjacentToOrder.includes(z));
-    const tier = consolidates ? 0 : covers ? 1 : adjacent ? 2 : 3;
+    const tier = covers ? 0 : adjacent ? 1 : 2;
     return { c, remaining, tier };
   });
 
@@ -137,12 +142,10 @@ export function selectTruck(
   const best = scored[0];
   const why =
     best.tier === 0
-      ? `consolidated onto a truck already serving ${zone}`
+      ? `driver covers zone ${zone}`
       : best.tier === 1
-        ? `driver covers zone ${zone}`
-        : best.tier === 2
-          ? `adjacent-zone driver for ${zone}`
-          : `next available truck for ${zone ?? "destination"}`;
+        ? `adjacent-zone driver for ${zone}`
+        : `next available truck for ${zone ?? "destination"}`;
   return {
     plate: best.c.plate,
     driverId: best.c.driverId,
@@ -248,7 +251,18 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
     const outcome = await prisma.$transaction(
       async (tx) => {
         const trucks = await tx.truck.findMany({
-          where: { is_available: true, driver: { is: { status: "active" } } },
+          // One active trip per driver: exclude any truck whose driver is already
+          // out on an assigned/in_progress trip, so a busy driver is never handed
+          // a second order (this is what kept re-picking the in_progress PLX 2406).
+          where: {
+            is_available: true,
+            driver: {
+              is: {
+                status: "active",
+                trips_driven: { none: { status: { in: [...ACTIVE_TRIP_STATUSES] } } },
+              },
+            },
+          },
           include: {
             driver: { select: { id: true } },
             trips: {

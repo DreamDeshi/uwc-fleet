@@ -359,6 +359,20 @@ router.patch(
               );
             }
 
+            // One active trip per driver: refuse to assign a driver who is already
+            // out on an assigned/in_progress trip. Checked inside the txn so two
+            // concurrent approves can't both slip a second trip onto the driver.
+            const driverActiveTrips = await tx.trip.count({
+              where: {
+                driver_id,
+                status: { in: ["assigned", "in_progress"] },
+                id: { not: id },
+              },
+            });
+            if (driverActiveTrips > 0) {
+              throw new ApiError(409, "DRIVER_BUSY", "This driver already has an active trip.");
+            }
+
             // Atomic claim: throws 409 CONCURRENT_ASSIGNMENT if no longer pending.
             await claimPendingTripOrThrow(tx, id, { driver_id, truck_plate });
 
