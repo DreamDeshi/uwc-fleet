@@ -26,21 +26,27 @@ export function DriverDashboardScreen() {
   const { user } = useAuth();
   const { data: trips, isLoading, isError, refetch, isRefetching } = useTrips();
 
-  const { active, todays, recentCompleted, assignedToday } = useMemo(() => {
+  const { active, assigned, recentCompleted, assignedToday } = useMemo(() => {
     const list = trips ?? [];
+    const byPickupAsc = (a: Trip, b: Trip) =>
+      +new Date(a.pickup_datetime) - +new Date(b.pickup_datetime);
     const active = list.find((tr) => tr.status === "in_progress");
-    const upcoming = list
-      .filter((tr) => tr.status === "assigned" || tr.status === "in_progress")
-      .sort((a, b) => +new Date(a.pickup_datetime) - +new Date(b.pickup_datetime));
+    // ALL assigned trips, earliest pickup first, so the driver sees the full
+    // workload (not just the first). The in_progress trip, if any, is pinned
+    // separately above as the Active Trip card.
+    const assigned = list.filter((tr) => tr.status === "assigned").sort(byPickupAsc);
     const todayStr = new Date().toDateString();
-    const assignedToday = upcoming.filter(
-      (tr) => new Date(tr.pickup_datetime).toDateString() === todayStr
+    // Greeting count = today's workload: assigned + the active in_progress trip.
+    const assignedToday = list.filter(
+      (tr) =>
+        (tr.status === "assigned" || tr.status === "in_progress") &&
+        new Date(tr.pickup_datetime).toDateString() === todayStr
     ).length;
     const recentCompleted = list
       .filter((tr) => tr.status === "completed")
       .sort((a, b) => +new Date(b.pickup_datetime) - +new Date(a.pickup_datetime))
       .slice(0, 3);
-    return { active, todays: upcoming[0], recentCompleted, assignedToday };
+    return { active, assigned, recentCompleted, assignedToday };
   }, [trips]);
 
   const openDetails = (tripId: string) =>
@@ -102,22 +108,38 @@ export function DriverDashboardScreen() {
         </View>
       ) : null}
 
-      {/* Today's assignment */}
-      <View style={styles.section}>
-        <View style={styles.sectionHead}>
-          <Text style={styles.sectionTitle}>{t("driver.todaysAssignment")}</Text>
+      {/* Today's assignments — every assigned trip, earliest pickup first.
+          The first is highlighted as "Next up"; the rest sit under an Upcoming
+          divider. When a trip is already in progress (pinned above) and nothing
+          else is assigned, the section is omitted. */}
+      {assigned.length > 0 ? (
+        <View style={styles.section}>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionTitle}>{t("driver.todaysAssignments")}</Text>
+            <View style={styles.countPill}>
+              <Text style={styles.countText}>{assigned.length}</Text>
+            </View>
+          </View>
+          {assigned.map((tr, i) => (
+            <React.Fragment key={tr.id}>
+              {i === 1 ? <Text style={styles.upcomingLabel}>{t("driver.upcoming")}</Text> : null}
+              <AssignmentCard trip={tr} isNext={i === 0} onPress={() => openDetails(tr.id)} />
+            </React.Fragment>
+          ))}
         </View>
-        {todays ? (
-          <AssignmentCard trip={todays} onPress={() => openDetails(todays.id)} />
-        ) : (
+      ) : !active ? (
+        <View style={styles.section}>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionTitle}>{t("driver.todaysAssignments")}</Text>
+          </View>
           <Card>
             <View style={styles.emptyRow}>
               <Ionicons name="cafe-outline" size={22} color={colors.textFaint} />
               <Text style={styles.emptyText}>{t("driver.noTripsToday")}</Text>
             </View>
           </Card>
-        )}
-      </View>
+        </View>
+      ) : null}
 
       {/* This month + recent completed */}
       <View style={styles.section}>
@@ -144,7 +166,15 @@ export function DriverDashboardScreen() {
   );
 }
 
-function AssignmentCard({ trip, onPress }: { trip: Trip; onPress: () => void }) {
+function AssignmentCard({
+  trip,
+  onPress,
+  isNext,
+}: {
+  trip: Trip;
+  onPress: () => void;
+  isNext?: boolean;
+}) {
   const { t } = useTranslation();
   // The real incentive_earned is only set on completion (null/0 while the trip is
   // assigned or in progress). Until then show an estimate, marked "Est.", matching
@@ -158,9 +188,14 @@ function AssignmentCard({ trip, onPress }: { trip: Trip; onPress: () => void }) 
       : formatMoney(trip.incentive_earned);
   const showEst = !finalized && estimate !== null;
   return (
-    <View style={styles.assignCard}>
+    <View style={[styles.assignCard, isNext && styles.assignCardNext]}>
       <View style={styles.assignHead}>
         <StatusBadge status={trip.status} small />
+        {isNext ? (
+          <View style={styles.nextTag}>
+            <Text style={styles.nextTagText}>{t("driver.next")}</Text>
+          </View>
+        ) : null}
         {trip.truck_plate ? <Text style={styles.assignPlate}>{trip.truck_plate}</Text> : null}
         <Text style={styles.assignType}>{trip.route_type?.name}</Text>
       </View>
@@ -212,6 +247,9 @@ const styles = StyleSheet.create({
   section: { paddingHorizontal: 16, paddingTop: 16 },
   sectionHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
+  countPill: { backgroundColor: colors.yellow, paddingHorizontal: 10, paddingVertical: 2, borderRadius: radius.pill },
+  countText: { color: colors.navy, fontSize: 12, fontWeight: "800" },
+  upcomingLabel: { fontSize: 11, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 16, marginBottom: -4 },
 
   activeCard: { backgroundColor: colors.blueDark, borderRadius: radius.xl, padding: 18, ...shadow.card },
   activeTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 },
@@ -235,7 +273,10 @@ const styles = StyleSheet.create({
   viewNavText: { color: colors.blue, fontSize: 14, fontWeight: "700" },
 
   assignCard: { backgroundColor: colors.white, borderRadius: radius.lg, overflow: "hidden", marginTop: 12, ...shadow.card },
+  assignCardNext: { borderWidth: 2, borderColor: colors.yellow },
   assignHead: { backgroundColor: colors.blue, paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 8 },
+  nextTag: { backgroundColor: colors.yellow, paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill },
+  nextTagText: { color: colors.navy, fontSize: 9, fontWeight: "800", letterSpacing: 0.5, textTransform: "uppercase" },
   assignPlate: { backgroundColor: "rgba(255,255,255,0.15)", color: colors.white, fontSize: 11, fontWeight: "600", paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.pill },
   assignType: { marginLeft: "auto", color: colors.yellow, fontSize: 10, fontWeight: "700" },
   assignBody: { padding: 14 },
