@@ -120,6 +120,23 @@ export interface TruckAlert {
   daysLeft: number;
 }
 
+// FR-MT1 — document-expiry alerts (GET /trucks/alerts).
+export type ExpiryStatus = "expired" | "expiring_soon" | "ok";
+
+export interface DocExpiry {
+  expiry_date: string | null;
+  days_until_expiry: number | null;
+  status: ExpiryStatus;
+}
+
+export interface TruckExpiryAlert {
+  plate: string;
+  type: string;
+  insurance: DocExpiry;
+  permit: DocExpiry;
+  road_tax: DocExpiry;
+}
+
 export interface Truck {
   plate: string;
   type: string;

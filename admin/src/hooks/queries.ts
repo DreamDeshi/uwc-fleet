@@ -9,6 +9,7 @@ import type {
   MonthlyRow,
   Trip,
   Truck,
+  TruckExpiryAlert,
 } from "@/types";
 
 // ── Queries ──────────────────────────────────────────────────────────
@@ -31,6 +32,16 @@ export function useTrucks() {
   return useQuery({
     queryKey: ["trucks"],
     queryFn: async () => (await api.get<Truck[]>("/trucks")).data,
+  });
+}
+
+// FR-MT1 — trucks with an expired or soon-to-expire document. Polled so the nav
+// badge and alerts panel stay current without a manual refresh.
+export function useTruckAlerts() {
+  return useQuery({
+    queryKey: ["trucks", "alerts"],
+    queryFn: async () => (await api.get<TruckExpiryAlert[]>("/trucks/alerts")).data,
+    refetchInterval: 60_000,
   });
 }
 

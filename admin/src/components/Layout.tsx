@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { colors, radius } from "@/theme";
 import { useAuth } from "@/context/AuthContext";
-import { usePendingUsers, useDashboard } from "@/hooks/queries";
+import { usePendingUsers, useDashboard, useTruckAlerts } from "@/hooks/queries";
 import { formatFullDate, initials } from "@/lib/format";
 import { FullScreenLoader } from "@/components/FullScreenLoader";
 
@@ -103,10 +103,12 @@ export function Layout() {
   const location = useLocation();
   const pending = usePendingUsers();
   const dashboard = useDashboard();
+  const truckAlerts = useTruckAlerts();
 
   const page = pageTitles[location.pathname] ?? { title: "Dashboard", subtitle: "" };
   const pendingCount = pending.data?.length ?? 0;
   const alertCount = dashboard.data?.alerts ?? 0;
+  const truckAlertCount = truckAlerts.data?.length ?? 0;
 
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
@@ -195,6 +197,22 @@ export function Layout() {
                       }}
                     >
                       {pendingCount}
+                    </span>
+                  )}
+                  {item.to === "/trucks" && truckAlertCount > 0 && (
+                    <span
+                      title={`${truckAlertCount} truck${truckAlertCount === 1 ? "" : "s"} with expiring or expired documents`}
+                      style={{
+                        marginLeft: "auto",
+                        background: colors.red,
+                        color: "#fff",
+                        borderRadius: radius.pill,
+                        fontSize: 11,
+                        fontWeight: 800,
+                        padding: "1px 7px",
+                      }}
+                    >
+                      {truckAlertCount}
                     </span>
                   )}
                 </div>
