@@ -150,15 +150,70 @@ router.post(
   }
 );
 
-// ── GET /trips — role-scoped list ────────────────────────────────────────
+// ── GET /trips — role-scoped list, with optional admin search/filters ─────
+// All query params are optional. When none are passed the result is identical
+// to the unfiltered list; any present params narrow it ON TOP of the role-based
+// scoping (admins see all, drivers/requestors only their own).
+const TRIP_STATUSES = [
+  "pending",
+  "approved",
+  "rejected",
+  "assigned",
+  "in_progress",
+  "completed",
+  "cancelled",
+] as const;
+
 router.get("/", async (req, res, next) => {
   try {
-    const where =
+    const roleWhere: Prisma.TripWhereInput =
       req.user!.role === "admin"
         ? {}
         : req.user!.role === "driver"
           ? { driver_id: req.user!.id }
           : { requestor_id: req.user!.id };
+
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const status = typeof req.query.status === "string" ? req.query.status : "";
+    const driverId = typeof req.query.driver_id === "string" ? req.query.driver_id : "";
+    const zone = typeof req.query.zone === "string" ? req.query.zone : "";
+    const dateFrom = typeof req.query.date_from === "string" ? req.query.date_from : "";
+    const dateTo = typeof req.query.date_to === "string" ? req.query.date_to : "";
+
+    const filters: Prisma.TripWhereInput[] = [];
+
+    if (status && (TRIP_STATUSES as readonly string[]).includes(status)) {
+      filters.push({ status: status as Prisma.TripWhereInput["status"] });
+    }
+    if (driverId) filters.push({ driver_id: driverId });
+    // Zone matches any stop whose consignee sits in that zone.
+    if (zone) filters.push({ stops: { some: { consignee: { zone_code: zone } } } });
+
+    // Pickup-date range (inclusive). date_to is stretched to end-of-day so the
+    // whole "to" date is covered. Invalid dates are ignored rather than erroring.
+    const range: Prisma.DateTimeFilter = {};
+    const from = dateFrom ? new Date(dateFrom) : null;
+    const to = dateTo ? new Date(dateTo) : null;
+    if (from && !isNaN(+from)) range.gte = from;
+    if (to && !isNaN(+to)) {
+      to.setHours(23, 59, 59, 999);
+      range.lte = to;
+    }
+    if (range.gte || range.lte) filters.push({ pickup_datetime: range });
+
+    // Free-text: ticket number or any stop's consignee company name.
+    if (q) {
+      filters.push({
+        OR: [
+          { ticket_number: { contains: q, mode: "insensitive" } },
+          { stops: { some: { consignee: { company_name: { contains: q, mode: "insensitive" } } } } },
+        ],
+      });
+    }
+
+    const where: Prisma.TripWhereInput = filters.length
+      ? { AND: [roleWhere, ...filters] }
+      : roleWhere;
 
     const trips = await prisma.trip.findMany({
       where,

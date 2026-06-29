@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   useApproveTrip,
   useAssignExternal,
@@ -18,6 +18,8 @@ import {
   Loading,
   Pill,
   ProgressBar,
+  SearchInput,
+  SegmentedFilter,
   TripStatusBadge,
 } from "@/components/ui";
 import { DispatchToggle } from "@/components/DispatchToggle";
@@ -42,9 +44,67 @@ const GROUP_META: Record<string, { label: string; dot: string }> = {
   cancelled: { label: "Cancelled / Rejected", dot: "#9ca3af" },
 };
 
+// The 7 fixed delivery zones (Zone model @id codes).
+const ZONES = ["P1", "P2", "P3", "K1", "K2", "A1", "A2"];
+
+const STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "All" },
+  { value: "pending", label: "Pending" },
+  { value: "assigned", label: "Assigned" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "completed", label: "Completed" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
+// Native select / date input styled to match the shared Input/SearchInput look.
+const controlStyle: React.CSSProperties = {
+  padding: "9px 12px",
+  borderRadius: radius.md,
+  border: `1px solid ${colors.border}`,
+  fontSize: 14,
+  outline: "none",
+  color: colors.text,
+  background: colors.card,
+};
+
 export function TripsPage() {
-  const trips = useTrips();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Filters. The free-text box is debounced (300ms) so we don't hit the API on
+  // every keystroke; the rest apply immediately.
+  const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  const [status, setStatus] = useState("");
+  const [driverId, setDriverId] = useState("");
+  const [zone, setZone] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedQ(q), 300);
+    return () => clearTimeout(id);
+  }, [q]);
+
+  const trips = useTrips({
+    q: debouncedQ,
+    status,
+    driver_id: driverId,
+    zone,
+    date_from: dateFrom,
+    date_to: dateTo,
+  });
+  const drivers = useDrivers();
+
+  const hasFilters = !!(q || status || driverId || zone || dateFrom || dateTo);
+  const clearFilters = () => {
+    setQ("");
+    setDebouncedQ("");
+    setStatus("");
+    setDriverId("");
+    setZone("");
+    setDateFrom("");
+    setDateTo("");
+  };
 
   const grouped = useMemo(() => {
     const g: Record<string, Trip[]> = { pending: [], active: [], completed: [], cancelled: [] };
@@ -62,7 +122,42 @@ export function TripsPage() {
     <div style={{ display: "flex", flexDirection: "column", gap: 16, height: "calc(100vh - 150px)" }}>
       <Card pad={12} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
         <DispatchToggle />
-        <span style={{ fontSize: 12.5, color: colors.textMuted }}>{all.length} total trips</span>
+      </Card>
+
+      {/* ── Search + filters ── */}
+      <Card pad={12} style={{ display: "flex", flexDirection: "column", gap: 12, flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <SearchInput value={q} onChange={setQ} placeholder="Search ticket # or consignee…" />
+          <select value={driverId} onChange={(e) => setDriverId(e.target.value)} style={controlStyle}>
+            <option value="">All drivers</option>
+            {(drivers.data ?? []).map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+          <select value={zone} onChange={(e) => setZone(e.target.value)} style={controlStyle}>
+            <option value="">All zones</option>
+            {ZONES.map((z) => (
+              <option key={z} value={z}>{z}</option>
+            ))}
+          </select>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12, color: colors.textMuted }}>From</span>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={controlStyle} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12, color: colors.textMuted }}>To</span>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={controlStyle} />
+          </div>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 12.5, color: colors.textMuted }}>
+              {all.length} result{all.length === 1 ? "" : "s"}
+            </span>
+            {hasFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button>
+            )}
+          </div>
+        </div>
+        <SegmentedFilter options={STATUS_OPTIONS} value={status} onChange={setStatus} />
       </Card>
 
       <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16, flex: 1, minHeight: 0 }}>
@@ -90,7 +185,9 @@ export function TripsPage() {
               </div>
             );
           })}
-          {all.length === 0 && <EmptyState message="No trips yet." />}
+          {all.length === 0 && (
+            <EmptyState message={hasFilters ? "No trips match these filters." : "No trips yet."} />
+          )}
         </div>
 
         {/* ── Right: detail / dispatch ── */}

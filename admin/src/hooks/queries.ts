@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/services/api";
 import type {
   AdminUser,
@@ -26,10 +26,28 @@ export function useDashboard() {
   });
 }
 
-export function useTrips() {
+// Optional admin search/filters for GET /trips. Omitted/empty fields are not
+// sent, so `useTrips()` with no args behaves exactly as before.
+export interface TripFilters {
+  q?: string;
+  status?: string;
+  driver_id?: string;
+  zone?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+export function useTrips(filters: TripFilters = {}) {
+  const params: Record<string, string> = {};
+  for (const [k, v] of Object.entries(filters)) if (v) params[k] = v;
   return useQuery({
-    queryKey: ["trips"],
-    queryFn: async () => (await api.get<Trip[]>("/trips")).data,
+    // Params are part of the key so each filter combination caches separately;
+    // invalidating ["trips"] still matches all of them by prefix.
+    queryKey: ["trips", params],
+    queryFn: async () => (await api.get<Trip[]>("/trips", { params })).data,
+    // Keep showing the prior results while a new filter combination loads, so the
+    // board and the filter bar don't blank out / lose focus on each keystroke.
+    placeholderData: keepPreviousData,
   });
 }
 
