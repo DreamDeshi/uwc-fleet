@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   Modal,
   ScrollView,
@@ -585,8 +585,22 @@ function StepWhat({
   totalPallets: number;
 }) {
   const { t } = useTranslation();
+  // On react-native-web a single tap on a TouchableOpacity can synthesize several
+  // press events (~ms apart), so one press on "+" landed 0→3. Drop any repeat
+  // within 60ms — well under a human re-tap (>100ms), so fast deliberate tapping
+  // still counts. Combined with the functional setState below (no stale closure),
+  // each real press moves the count by exactly one.
+  const lastTapRef = useRef(0);
+  const oncePerTap = (fn: () => void) => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 60) return;
+    lastTapRef.current = now;
+    fn();
+  };
   const updateQty = (i: number, delta: number) =>
-    setPalletQtys((prev) => prev.map((q, idx) => (idx === i ? Math.max(0, q + delta) : q)));
+    oncePerTap(() =>
+      setPalletQtys((prev) => prev.map((q, idx) => (idx === i ? Math.max(0, q + delta) : q)))
+    );
 
   return (
     <View>
@@ -648,11 +662,11 @@ function StepWhat({
           <View style={[styles.palletRow, { backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md }]}>
             <Text style={styles.palletSize}>{t("booking.carton")}</Text>
             <View style={styles.stepper}>
-              <TouchableOpacity style={styles.stepBtnMinus} onPress={() => setCartonQty((q) => Math.max(0, q - 1))}>
+              <TouchableOpacity style={styles.stepBtnMinus} onPress={() => oncePerTap(() => setCartonQty((q) => Math.max(0, q - 1)))}>
                 <Text style={styles.stepBtnMinusText}>−</Text>
               </TouchableOpacity>
               <Text style={styles.stepVal}>{cartonQty}</Text>
-              <TouchableOpacity style={styles.stepBtnPlus} onPress={() => setCartonQty((q) => q + 1)}>
+              <TouchableOpacity style={styles.stepBtnPlus} onPress={() => oncePerTap(() => setCartonQty((q) => q + 1))}>
                 <Text style={styles.stepBtnPlusText}>+</Text>
               </TouchableOpacity>
             </View>
