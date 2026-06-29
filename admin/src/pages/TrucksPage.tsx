@@ -3,6 +3,7 @@ import { useTrucks, useTruckAlerts } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
 import { Avatar, Card, EmptyState, ErrorState, Loading, Pill, SearchInput, SegmentedFilter } from "@/components/ui";
 import { LoadCapacityBar } from "@/components/LoadCapacityBar";
+import { FuelPanel } from "@/components/FuelPanel";
 import { formatDate, formatMoney, relativeExpiry } from "@/lib/format";
 import type { DocExpiry, ExpiryStatus, Truck, TruckAlert, TruckExpiryAlert } from "@/types";
 
@@ -14,8 +15,11 @@ const STATUS_META: Record<string, { label: string; bg: string; fg: string }> = {
 
 type Filter = "all" | "active" | "idle" | "maintenance";
 
+type Tab = "fleet" | "fuel";
+
 export function TrucksPage() {
   const trucks = useTrucks();
+  const [tab, setTab] = useState<Tab>("fleet");
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
 
@@ -29,11 +33,7 @@ export function TrucksPage() {
     };
   }, [trucks.data]);
 
-  if (trucks.isLoading) return <Loading />;
-  if (trucks.isError) return <ErrorState message="Could not load trucks." onRetry={() => trucks.refetch()} />;
-
   const list = trucks.data ?? [];
-
   const filtered = list
     .filter((t) => filter === "all" || t.status === filter)
     .filter((t) => {
@@ -44,30 +44,49 @@ export function TrucksPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <AlertsPanel />
+      <SegmentedFilter<Tab>
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "fleet", label: "Fleet" },
+          { value: "fuel", label: "Fuel" },
+        ]}
+      />
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-        <SegmentedFilter<Filter>
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: "all", label: "All", count: counts.all },
-            { value: "active", label: "Active", count: counts.active },
-            { value: "idle", label: "Idle", count: counts.idle },
-            { value: "maintenance", label: "Maintenance", count: counts.maintenance },
-          ]}
-        />
-        <SearchInput value={search} onChange={setSearch} placeholder="Search trucks…" />
-      </div>
-
-      {filtered.length === 0 ? (
-        <Card><EmptyState message="No trucks match this filter." /></Card>
+      {tab === "fuel" ? (
+        <FuelPanel />
+      ) : trucks.isLoading ? (
+        <Loading />
+      ) : trucks.isError ? (
+        <ErrorState message="Could not load trucks." onRetry={() => trucks.refetch()} />
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
-          {filtered.map((t) => (
-            <TruckCard key={t.plate} truck={t} />
-          ))}
-        </div>
+        <>
+          <AlertsPanel />
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <SegmentedFilter<Filter>
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { value: "all", label: "All", count: counts.all },
+                { value: "active", label: "Active", count: counts.active },
+                { value: "idle", label: "Idle", count: counts.idle },
+                { value: "maintenance", label: "Maintenance", count: counts.maintenance },
+              ]}
+            />
+            <SearchInput value={search} onChange={setSearch} placeholder="Search trucks…" />
+          </div>
+
+          {filtered.length === 0 ? (
+            <Card><EmptyState message="No trucks match this filter." /></Card>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
+              {filtered.map((t) => (
+                <TruckCard key={t.plate} truck={t} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

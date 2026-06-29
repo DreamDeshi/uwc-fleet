@@ -6,11 +6,14 @@ import type {
   DestinationRate,
   DriverPerf,
   DriverPerformance,
+  FuelLog,
   LivePosition,
   MonthlyRow,
   Trip,
   Truck,
   TruckExpiryAlert,
+  TruckFuelLogs,
+  TruckFuelSummary,
 } from "@/types";
 
 // ── Queries ──────────────────────────────────────────────────────────
@@ -68,6 +71,44 @@ export function useDriverPerformance() {
     queryKey: ["drivers", "performance"],
     queryFn: async () =>
       (await api.get<DriverPerformance[]>("/users/drivers/performance")).data,
+  });
+}
+
+// FR-CT5 — this month's fuel spend per truck (Fuel tab overview table).
+export function useFuelSummary() {
+  return useQuery({
+    queryKey: ["trucks", "fuel", "summary"],
+    queryFn: async () => (await api.get<TruckFuelSummary[]>("/trucks/fuel/summary")).data,
+  });
+}
+
+// All fuel logs for one truck — only fetched when a row is expanded.
+export function useTruckFuel(plate: string | null) {
+  return useQuery({
+    queryKey: ["trucks", "fuel", plate],
+    queryFn: async () =>
+      (await api.get<TruckFuelLogs>(`/trucks/${encodeURIComponent(plate!)}/fuel`)).data,
+    enabled: plate !== null,
+  });
+}
+
+export interface LogFuelInput {
+  plate: string;
+  litres: number;
+  cost_rm: number;
+  odometer_km: number;
+  logged_at?: string;
+}
+
+export function useLogFuel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ plate, ...body }: LogFuelInput) =>
+      (await api.post<FuelLog>(`/trucks/${encodeURIComponent(plate)}/fuel`, body)).data,
+    onSuccess: (_log, vars) => {
+      qc.invalidateQueries({ queryKey: ["trucks", "fuel", "summary"] });
+      qc.invalidateQueries({ queryKey: ["trucks", "fuel", vars.plate] });
+    },
   });
 }
 

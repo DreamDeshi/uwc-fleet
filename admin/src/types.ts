@@ -215,6 +215,38 @@ export interface DashboardKpis {
   alerts: number;
 }
 
+// FR-CT5 — fuel cost tracking.
+export interface FuelLog {
+  id: string;
+  truck_plate: string;
+  liters: number;
+  cost: number;
+  odometer: number | null;
+  logged_at: string;
+  driver: { name: string } | null;
+}
+
+export interface FuelSummary {
+  log_count: number;
+  total_litres: number;
+  total_cost_rm: number;
+  avg_cost_per_litre: number | null;
+  total_km_covered: number;
+  cost_per_km: number | null;
+}
+
+// One row of GET /trucks/fuel/summary (this month, per truck).
+export interface TruckFuelSummary extends FuelSummary {
+  plate: string;
+  type: string;
+}
+
+// GET /trucks/:plate/fuel — all logs for a truck plus its all-time summary.
+export interface TruckFuelLogs {
+  logs: FuelLog[];
+  summary: FuelSummary;
+}
+
 export interface DestinationRate {
   id: string;
   zone_code: string | null;
