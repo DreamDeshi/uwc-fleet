@@ -1,10 +1,21 @@
-import { useState } from "react";
-import { useDestinationRates, useTrucks, useUpdateDestinationRate, useUpdateTruckRates } from "@/hooks/queries";
+import { useMemo, useState } from "react";
+import { useDestinationRates, useRateAudit, useTrucks, useUpdateDestinationRate, useUpdateTruckRates } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
 import { Button, Card, ErrorState, Input, Loading, Modal, Pill, SectionTitle } from "@/components/ui";
-import { formatMoney } from "@/lib/format";
+import { formatDate, formatMoney } from "@/lib/format";
 import { apiErrorMessage } from "@/services/api";
-import type { DestinationRate, Truck } from "@/types";
+import type { DestinationRate, RateAuditEntry, Truck } from "@/types";
+
+// Small muted "last updated by X on DATE" line, shown under a row when the audit
+// log has a record for it. Kept compact so it never crowds the rate values.
+function UpdatedNote({ entry }: { entry?: RateAuditEntry }) {
+  if (!entry) return null;
+  return (
+    <div style={{ fontSize: 11, color: colors.textFaint, marginTop: 3 }}>
+      Updated by {entry.user_name} · {formatDate(entry.timestamp)}
+    </div>
+  );
+}
 
 type Tab = "trucks" | "destinations" | "formula";
 
@@ -48,7 +59,14 @@ export function IncentivesPage() {
 // ── Truck claim rates ─────────────────────────────────────────────────
 function TruckRatesTab() {
   const trucks = useTrucks();
+  const audit = useRateAudit();
   const [editing, setEditing] = useState<Truck | null>(null);
+
+  const auditByPlate = useMemo(() => {
+    const m = new Map<string, RateAuditEntry>();
+    for (const a of audit.data ?? []) if (a.table_name === "Truck") m.set(a.record_id, a);
+    return m;
+  }, [audit.data]);
 
   if (trucks.isLoading) return <Loading />;
   if (trucks.isError) return <ErrorState message="Could not load trucks." onRetry={() => trucks.refetch()} />;
@@ -69,7 +87,10 @@ function TruckRatesTab() {
         <tbody>
           {trucks.data!.map((t, i) => (
             <tr key={t.plate} style={{ background: i % 2 ? colors.blueTint : "transparent" }}>
-              <td style={{ ...tdStyle, fontWeight: 700 }}>{t.plate}</td>
+              <td style={{ ...tdStyle, fontWeight: 700 }}>
+                {t.plate}
+                <UpdatedNote entry={auditByPlate.get(t.plate)} />
+              </td>
               <td style={tdStyle}>{t.type}</td>
               <td style={tdStyle}>{t.max_pallets} pallets</td>
               <td style={tdStyle}><Pill bg={colors.blueTint} fg={colors.blue}>{formatMoney(t.entitled_claim_weekday)}</Pill></td>
@@ -135,7 +156,14 @@ function tier(points: number) {
 
 function DestinationPointsTab() {
   const rates = useDestinationRates();
+  const audit = useRateAudit();
   const [editing, setEditing] = useState<DestinationRate | null>(null);
+
+  const auditById = useMemo(() => {
+    const m = new Map<string, RateAuditEntry>();
+    for (const a of audit.data ?? []) if (a.table_name === "DestinationRate") m.set(a.record_id, a);
+    return m;
+  }, [audit.data]);
 
   if (rates.isLoading) return <Loading />;
   if (rates.isError) return <ErrorState message="Could not load destination rates." onRetry={() => rates.refetch()} />;
@@ -156,7 +184,10 @@ function DestinationPointsTab() {
             const ti = tier(r.points);
             return (
               <tr key={r.id} style={{ background: i % 2 ? colors.blueTint : "transparent" }}>
-                <td style={{ ...tdStyle, fontWeight: 600 }}>{r.location_name}</td>
+                <td style={{ ...tdStyle, fontWeight: 600 }}>
+                  {r.location_name}
+                  <UpdatedNote entry={auditById.get(r.id)} />
+                </td>
                 <td style={tdStyle}>{r.zone_code ?? "—"}</td>
                 <td style={{ ...tdStyle, minWidth: 160 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

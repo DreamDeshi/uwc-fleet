@@ -9,6 +9,7 @@ import type {
   FuelLog,
   LivePosition,
   MonthlyRow,
+  RateAuditEntry,
   Trip,
   Truck,
   TruckExpiryAlert,
@@ -119,6 +120,14 @@ export function useDestinationRates() {
   });
 }
 
+// Latest "who changed what" per truck / destination, for the last-updated note.
+export function useRateAudit() {
+  return useQuery({
+    queryKey: ["rates", "audit"],
+    queryFn: async () => (await api.get<RateAuditEntry[]>("/rates/audit")).data,
+  });
+}
+
 export function useMonthly() {
   return useQuery({
     queryKey: ["reports", "monthly"],
@@ -220,7 +229,7 @@ export function useCancelTrip() {
 }
 
 export function useUpdateTruckRates() {
-  const invalidate = useInvalidate([["trucks"]]);
+  const invalidate = useInvalidate([["trucks"], ["rates", "audit"]]);
   return useMutation({
     mutationFn: async (v: {
       plate: string;
@@ -236,7 +245,7 @@ export function useUpdateTruckRates() {
 }
 
 export function useUpdateDestinationRate() {
-  const invalidate = useInvalidate([["rates", "destinations"]]);
+  const invalidate = useInvalidate([["rates", "destinations"], ["rates", "audit"]]);
   return useMutation({
     mutationFn: async (v: { id: string; points: number }) =>
       (await api.patch<DestinationRate>(`/rates/destinations/${v.id}`, { points: v.points })).data,

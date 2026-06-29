@@ -256,6 +256,16 @@ export interface DestinationRate {
   zone: { code: string; name: string } | null;
 }
 
+// Latest rate-change audit entry per record (GET /rates/audit) — drives the
+// "last updated by X on DATE" note on the Incentive Rates page.
+export interface RateAuditEntry {
+  table_name: "Truck" | "DestinationRate";
+  record_id: string; // truck plate, or destination rate id
+  user_name: string;
+  timestamp: string; // ISO
+  action: string;
+}
+
 export interface MonthlyRow {
   month: string;
   label: string;
