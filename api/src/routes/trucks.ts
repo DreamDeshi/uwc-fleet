@@ -14,10 +14,32 @@ router.use(requireAuth, requireRole("admin"));
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ALERT_WINDOW_DAYS = 30;
 
-// Days from now until `date`. Negative means already expired.
+// Malaysia is UTC+8 year-round (no daylight saving). Expiry alerts are reckoned
+// against the Malaysia-time calendar day so "expires today" is consistent for
+// admins regardless of where the server runs.
+const MYT_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+// Midnight (00:00) MYT of the calendar day `instant` falls on, as a UTC instant.
+function mytMidnight(instant: Date): Date {
+  const myt = new Date(instant.getTime() + MYT_OFFSET_MS);
+  const utcMidnight = Date.UTC(myt.getUTCFullYear(), myt.getUTCMonth(), myt.getUTCDate());
+  return new Date(utcMidnight - MYT_OFFSET_MS);
+}
+
+// Whole MYT calendar days from today until `date`. Negative means already
+// expired; 0 means it expires today. Compared at MYT midnight so the time of
+// day stored on the expiry never skews the count.
 function daysUntil(date: Date | null, now: Date): number | null {
   if (!date) return null;
-  return Math.ceil((date.getTime() - now.getTime()) / DAY_MS);
+  return Math.round((mytMidnight(date).getTime() - mytMidnight(now).getTime()) / DAY_MS);
+}
+
+type ExpiryStatus = "expired" | "expiring_soon" | "ok";
+
+function expiryStatus(daysLeft: number): ExpiryStatus {
+  if (daysLeft < 0) return "expired";
+  if (daysLeft <= ALERT_WINDOW_DAYS) return "expiring_soon";
+  return "ok";
 }
 
 // ── GET /trucks — full fleet with driver, live load, doc-expiry alerts ──
@@ -104,6 +126,56 @@ router.get("/", async (_req, res, next) => {
         alerts,
       };
     });
+
+    res.json(payload);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /trucks/alerts — maintenance & document-expiry alerts (FR-MT1) ──
+//
+// Returns every truck with at least one of insurance / permit / road tax that is
+// already expired or expiring within 30 days (Malaysia time). Each document
+// reports its expiry date, whole days until expiry (negative = expired) and a
+// status the dashboard colour-codes.
+router.get("/alerts", async (_req, res, next) => {
+  try {
+    const now = new Date();
+    const trucks = await prisma.truck.findMany({
+      orderBy: { plate: "asc" },
+      select: {
+        plate: true,
+        type: true,
+        insurance_expiry: true,
+        permit_expiry: true,
+        road_tax_expiry: true,
+      },
+    });
+
+    const describe = (expiry: Date | null) => {
+      const daysLeft = daysUntil(expiry, now);
+      return {
+        expiry_date: expiry,
+        days_until_expiry: daysLeft,
+        status: daysLeft === null ? ("ok" as ExpiryStatus) : expiryStatus(daysLeft),
+      };
+    };
+
+    const payload = trucks
+      .map((t) => ({
+        plate: t.plate,
+        type: t.type,
+        insurance: describe(t.insurance_expiry),
+        permit: describe(t.permit_expiry),
+        road_tax: describe(t.road_tax_expiry),
+      }))
+      .filter(
+        (t) =>
+          t.insurance.status !== "ok" ||
+          t.permit.status !== "ok" ||
+          t.road_tax.status !== "ok"
+      );
 
     res.json(payload);
   } catch (err) {
