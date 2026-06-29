@@ -115,6 +115,10 @@ async function main() {
     { when: at(0, 8), zone: "P2", route: "Inter-Plant Delivery", pallets: 8, size: "4×4", status: "in_progress", withDriver: true },
     // 4. Completed — delivered yesterday, first trip of the day to Ipoh (A2):
     //    6 pts − 2 (PLX 2406 deduction) = 4 pts × RM 11 weekday = RM 44.
+    //    incentive_earned stores the PER-TRIP MARGINAL (see incentiveEngine).
+    //    This is the only completed trip that day, so its marginal == day total
+    //    == RM 44. If a multi-trip day is ever added here, store each trip's
+    //    marginal (e.g. 44, then 11, then 11) — never the running cumulative.
     { when: at(-1, 9), zone: "A2", route: "Customer Delivery", pallets: 10, size: "4×8", status: "completed", withDriver: true, incentive: 44 },
     // 5. Rejected — with a clear admin reason.
     {

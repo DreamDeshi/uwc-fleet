@@ -839,7 +839,9 @@ router.patch(
 
       const updated = await prisma.trip.update({
         where: { id },
-        data: { status: "completed", incentive_earned: incentive.incentiveAmount },
+        // Store the MARGINAL (per-trip) incentive, not the running day total,
+        // so the endpoints that SUM incentive_earned across a day are correct.
+        data: { status: "completed", incentive_earned: incentive.incentiveThisTrip },
         include: tripInclude,
       });
 

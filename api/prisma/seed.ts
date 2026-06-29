@@ -205,6 +205,15 @@ async function seedAdmin() {
 
 async function seedConsignees() {
   const excelPath = path.resolve(__dirname, "../../References/TRUCK BOOKING SYSTEM (YS).xlsx");
+  // References/ is gitignored (consignee data is NDA-confidential and never
+  // committed), so on a fresh clone / clean environment the file is absent.
+  // Skip the consignee import gracefully instead of crashing the whole seed.
+  if (!fs.existsSync(excelPath)) {
+    console.warn(
+      `Consignee workbook not found at ${excelPath} — skipping consignee import (References/ is gitignored, NDA-confidential).`
+    );
+    return;
+  }
   const workbook = xlsx.readFile(excelPath);
   const sheet = workbook.Sheets["CONSIGNEE and CONSIGNOR "];
   if (!sheet) {
