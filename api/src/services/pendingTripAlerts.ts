@@ -12,9 +12,10 @@ function minutesFromEnv(name: string, fallback: number): number {
   return Number.isInteger(n) && n > 0 ? n : fallback;
 }
 
-// How long a booking may sit unassigned before it alerts admins. Override with
-// PENDING_ALERT_THRESHOLD_MINUTES in the API env; defaults to 2 minutes.
-const PENDING_ALERT_THRESHOLD_MINUTES = minutesFromEnv("PENDING_ALERT_THRESHOLD_MINUTES", 2);
+// How long a booking may sit unassigned before the engine retries auto-dispatch
+// and (failing that) alerts admins. Override with PENDING_ALERT_THRESHOLD_MINUTES
+// in the API env; defaults to 10 minutes.
+const PENDING_ALERT_THRESHOLD_MINUTES = minutesFromEnv("PENDING_ALERT_THRESHOLD_MINUTES", 10);
 const PENDING_ALERT_THRESHOLD_MS = PENDING_ALERT_THRESHOLD_MINUTES * 60 * 1000;
 const CHECK_INTERVAL_MS = 60 * 1000; // sweep once a minute
 
