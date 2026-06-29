@@ -188,6 +188,21 @@ export interface DriverPerf {
   current_route: string | null;
 }
 
+// FR-FM7 — driver performance score (GET /users/drivers/performance).
+export interface DriverPerformance {
+  id: string;
+  name: string;
+  employee_number: string | null;
+  truck_plate: string | null;
+  on_time_rate: number; // percent of completed trips on time
+  completion_rate: number; // percent of assigned trips completed (vs cancelled)
+  points_this_month: number; // month incentive total feeding the points component
+  on_time_component: number; // 0–40
+  completion_component: number; // 0–30
+  points_component: number; // 0–30
+  total_score: number; // 0–100, 1 dp
+}
+
 export interface DashboardKpis {
   total_trucks: number;
   active_trucks: number;

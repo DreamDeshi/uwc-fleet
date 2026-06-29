@@ -5,6 +5,7 @@ import type {
   DashboardKpis,
   DestinationRate,
   DriverPerf,
+  DriverPerformance,
   LivePosition,
   MonthlyRow,
   Trip,
@@ -58,6 +59,15 @@ export function useDrivers() {
   return useQuery({
     queryKey: ["drivers"],
     queryFn: async () => (await api.get<DriverPerf[]>("/reports/drivers")).data,
+  });
+}
+
+// FR-FM7 — per-driver performance scores for the Driver Management page.
+export function useDriverPerformance() {
+  return useQuery({
+    queryKey: ["drivers", "performance"],
+    queryFn: async () =>
+      (await api.get<DriverPerformance[]>("/users/drivers/performance")).data,
   });
 }
 
