@@ -123,6 +123,7 @@ export interface Trip {
     // estimate incentive before the trip is finalised. Decimal → string|number.
     entitled_claim_weekday?: string | number;
     entitled_claim_offpeak?: string | number;
+    daily_deduction_points?: number; // pts subtracted once/day before rate
   } | null;
   route_type?: RouteType;
   stops?: TripStop[];
