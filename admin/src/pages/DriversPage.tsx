@@ -114,7 +114,7 @@ function DriverCard({
             {d.assigned_truck ? ` · ${d.assigned_truck.plate}` : ""}
           </div>
         </div>
-        {perf && <ScoreBadge score={perf.total_score} onClick={onOpenPerf} />}
+        {perf && <ScoreBadge perf={perf} onClick={onOpenPerf} />}
         <Pill bg={meta.bg} fg={meta.fg}>{meta.label}</Pill>
       </div>
 
@@ -144,8 +144,31 @@ function Stat({ label, value, divider }: { label: string; value: string; divider
 }
 
 // FR-FM7 — clickable performance score badge (green ≥75, amber 50–74, red <50).
-function ScoreBadge({ score, onClick }: { score: number; onClick: () => void }) {
-  const c = scoreColor(score);
+// A driver with no completed trips has nothing to score yet, so show a neutral
+// grey "No data" badge rather than a misleading red 0.0.
+function ScoreBadge({ perf, onClick }: { perf: DriverPerformance; onClick: () => void }) {
+  if (perf.total_completed === 0) {
+    return (
+      <span
+        title="No completed trips yet — not enough data to score"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          background: "#f3f4f6",
+          color: "#6b7280",
+          padding: "4px 10px",
+          borderRadius: radius.pill,
+          fontSize: 11.5,
+          fontWeight: 700,
+          whiteSpace: "nowrap",
+        }}
+      >
+        No data
+      </span>
+    );
+  }
+
+  const c = scoreColor(perf.total_score);
   return (
     <button
       onClick={onClick}
@@ -165,7 +188,7 @@ function ScoreBadge({ score, onClick }: { score: number; onClick: () => void }) 
         whiteSpace: "nowrap",
       }}
     >
-      {score.toFixed(1)}
+      {perf.total_score.toFixed(1)}
       <span style={{ fontSize: 9.5, fontWeight: 700, opacity: 0.75 }}>/100</span>
     </button>
   );

@@ -133,9 +133,22 @@ function TripCard({ trip, selected, onClick }: { trip: Trip; selected: boolean; 
       <div style={{ fontSize: 13, color: colors.text, marginBottom: 6 }}>
         {ORIGIN_LABEL} → <strong>{tripDestination(trip)}</strong>
       </div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 11.5, color: colors.textMuted }}>{cargoSummary(trip)}</span>
-        <span style={{ fontSize: 11.5, color: colors.textMuted }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 11.5, color: colors.textMuted, flexShrink: 0 }}>{cargoSummary(trip)}</span>
+        {/* Right-align the driver name with a touch of padding so it never sits
+            flush against the card edge; ellipsis keeps long names from overflowing. */}
+        <span
+          style={{
+            fontSize: 11.5,
+            color: colors.textMuted,
+            textAlign: "right",
+            paddingRight: 2,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
           {trip.driver?.name ?? (trip.is_external ? "External" : "Unassigned")}
         </span>
       </div>

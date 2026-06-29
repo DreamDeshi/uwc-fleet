@@ -194,6 +194,7 @@ export interface DriverPerformance {
   name: string;
   employee_number: string | null;
   truck_plate: string | null;
+  total_completed: number; // completed trips all-time; 0 → render a "No data" badge
   on_time_rate: number; // percent of completed trips on time
   completion_rate: number; // percent of assigned trips completed (vs cancelled)
   points_this_month: number; // month incentive total feeding the points component
