@@ -22,6 +22,7 @@ import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
 import { RouteLine } from "../../components/RouteLine";
 import { LiveTripMap } from "../../components/LiveTripMap";
+import { StatusTimeline } from "../../components/StatusTimeline";
 import { LoadingState, ErrorState } from "../../components/States";
 import { formatMoney, formatDate, formatTime } from "../../lib/format";
 import {
@@ -166,6 +167,14 @@ export function TripDetailsScreen() {
               <Text style={styles.smallMuted}>{trip.truck?.type ?? ""}</Text>
             </Card>
           </View>
+
+          {/* Adaptive status timeline (from GET /trips/:id .timeline) */}
+          <Card style={{ marginBottom: 12 }}>
+            <Text style={styles.cardLabel}>{t("timeline.title")}</Text>
+            <View style={{ marginTop: 4 }}>
+              <StatusTimeline steps={trip.timeline ?? []} />
+            </View>
+          </Card>
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>
