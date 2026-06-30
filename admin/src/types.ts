@@ -307,6 +307,13 @@ export interface MonthlyRow {
   external: number;
 }
 
+export interface SchedulingConflictInfo {
+  tripId: string;
+  driverOrTruck: "driver" | "truck";
+  plateOrDriverName: string;
+  pickup: string;
+}
+
 export interface ApiErrorShape {
-  error: { code: string; message: string };
+  error: { code: string; message: string; conflicts?: SchedulingConflictInfo[] };
 }

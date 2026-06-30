@@ -25,7 +25,7 @@ import {
 } from "@/components/ui";
 import { DispatchToggle } from "@/components/DispatchToggle";
 import { StatusTimeline } from "@/components/StatusTimeline";
-import { apiErrorMessage } from "@/services/api";
+import { apiErrorMessage, apiErrorCode, apiErrorConflicts } from "@/services/api";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import {
   ORIGIN_LABEL,
@@ -36,7 +36,7 @@ import {
   tripGroup,
   tripProgress,
 } from "@/lib/trip";
-import type { Trip } from "@/types";
+import type { Trip, SchedulingConflictInfo } from "@/types";
 
 const GROUP_ORDER = ["pending", "active", "completed", "cancelled"] as const;
 const GROUP_META: Record<string, { label: string; dot: string }> = {
@@ -435,18 +435,29 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Pending scheduling conflict awaiting the admin's "Assign anyway" decision.
+  const [conflict, setConflict] = useState<
+    { driverId: string; plate: string; conflicts: SchedulingConflictInfo[] } | null
+  >(null);
 
   const drivers = useDrivers();
   const approve = useApproveTrip();
   const reject = useRejectTrip();
   const pallets = totalPallets(trip);
 
-  async function assign(driverId: string, plate: string) {
+  async function assign(driverId: string, plate: string, force = false) {
     setError(null);
     try {
-      await approve.mutateAsync({ id: trip.id, driver_id: driverId, truck_plate: plate });
+      await approve.mutateAsync({ id: trip.id, driver_id: driverId, truck_plate: plate, force });
+      setConflict(null);
       onDone();
     } catch (e) {
+      // A scheduling conflict is recoverable: surface the clashing trips and let
+      // the admin re-submit with force ("Assign anyway"). Other errors are shown plainly.
+      if (apiErrorCode(e) === "SCHEDULING_CONFLICT") {
+        setConflict({ driverId, plate, conflicts: apiErrorConflicts(e) });
+        return;
+      }
       setError(apiErrorMessage(e, "Could not assign driver."));
     }
   }
@@ -489,6 +500,32 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
       {error && (
         <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>
           {error}
+        </div>
+      )}
+
+      {conflict && (
+        <div style={{ background: colors.yellowTint, border: "1px solid #f0d98a", borderRadius: radius.md, padding: "11px 13px", marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: colors.amber, marginBottom: 6 }}>
+            ⚠ Scheduling conflict
+          </div>
+          {conflict.conflicts.map((c) => (
+            <div key={c.tripId} style={{ fontSize: 12.5, color: colors.text, marginBottom: 3 }}>
+              {c.plateOrDriverName} has another trip at <strong>{formatDateTime(c.pickup)}</strong>, within the conflict window of this pickup.
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <Button variant="ghost" size="sm" onClick={() => setConflict(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="accent"
+              size="sm"
+              disabled={approve.isPending}
+              onClick={() => assign(conflict.driverId, conflict.plate, true)}
+            >
+              Assign anyway
+            </Button>
+          </div>
         </div>
       )}
 

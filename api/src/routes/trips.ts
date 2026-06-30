@@ -23,6 +23,11 @@ import { autoDispatchTrip } from "../services/dispatchEngine";
 import { palletEquivalents } from "../lib/pallets";
 import { recordTripEvent } from "../lib/tripHistory";
 import { buildTripTimeline } from "../lib/tripTimeline";
+import {
+  findSchedulingConflicts,
+  CONFLICT_STATUSES,
+  ASSIGNMENT_CONFLICT_BUFFER_MS,
+} from "../services/schedulingConflict";
 
 const router = Router();
 router.use(requireAuth);
@@ -351,9 +356,12 @@ router.get("/:id/location", async (req, res, next) => {
 });
 
 // ── PATCH /trips/:id/approve — admin approves + assigns driver & truck ──
+// `force` overrides a scheduling conflict (the admin's "Assign anyway"); it does
+// NOT override the physical overload guard.
 const approveTripSchema = z.object({
   driver_id: z.string().min(1),
   truck_plate: z.string().min(1),
+  force: z.boolean().optional(),
 });
 
 router.patch(
@@ -363,7 +371,7 @@ router.patch(
   async (req, res, next) => {
     try {
       const { id } = req.params;
-      const { driver_id, truck_plate } = req.body;
+      const { driver_id, truck_plate, force } = req.body;
 
       const trip = await prisma.trip.findUnique({ where: { id } });
       if (!trip) {
@@ -425,14 +433,59 @@ router.patch(
               );
             }
 
+            // Scheduling-conflict check (roadmap #2) — layered ALONGSIDE the
+            // active-trip guard below, with its own code. The same driver or
+            // truck already committed to another trip whose pickup is within the
+            // buffer of this one is a conflict. Without force → 409 with the
+            // clashing trips so the admin can decide; with force → record the
+            // override and let the explicitly-overridden trips through.
+            const pickup = trip.pickup_datetime;
+            const conflictCandidates = await tx.trip.findMany({
+              where: {
+                id: { not: id },
+                status: { in: [...CONFLICT_STATUSES] },
+                OR: [{ driver_id }, { truck_plate }],
+                pickup_datetime: {
+                  gte: new Date(pickup.getTime() - ASSIGNMENT_CONFLICT_BUFFER_MS),
+                  lte: new Date(pickup.getTime() + ASSIGNMENT_CONFLICT_BUFFER_MS),
+                },
+              },
+              select: {
+                id: true,
+                status: true,
+                driver_id: true,
+                truck_plate: true,
+                pickup_datetime: true,
+                driver: { select: { name: true } },
+              },
+            });
+            const conflicts = findSchedulingConflicts({
+              newTripId: id,
+              driverId: driver_id,
+              truckPlate: truck_plate,
+              pickupDateTime: pickup,
+              candidates: conflictCandidates,
+            });
+            if (conflicts.length > 0 && !force) {
+              throw new ApiError(
+                409,
+                "SCHEDULING_CONFLICT",
+                "This driver or truck has another trip scheduled within the conflict window.",
+                { conflicts }
+              );
+            }
+            const overriddenConflictIds = force ? conflicts.map((c) => c.tripId) : [];
+
             // One active trip per driver: refuse to assign a driver who is already
             // out on an assigned/in_progress trip. Checked inside the txn so two
             // concurrent approves can't both slip a second trip onto the driver.
+            // A force-override excuses ONLY the conflicting trips the admin saw and
+            // overrode — any other active trip still blocks (guard not replaced).
             const driverActiveTrips = await tx.trip.count({
               where: {
                 driver_id,
                 status: { in: ["assigned", "in_progress"] },
-                id: { not: id },
+                id: { notIn: [id, ...overriddenConflictIds] },
               },
             });
             if (driverActiveTrips > 0) {
@@ -445,6 +498,16 @@ router.patch(
             await tx.auditLog.create({
               data: { user_id: req.user!.id, action: "trip.approved", table_name: "Trip", record_id: id },
             });
+            if (force && conflicts.length > 0) {
+              await tx.auditLog.create({
+                data: {
+                  user_id: req.user!.id,
+                  action: "assignment_conflict_override",
+                  table_name: "Trip",
+                  record_id: `${id}; conflicts: ${conflicts.map((c) => c.tripId).join(", ")}`,
+                },
+              });
+            }
             await recordTripEvent(tx, {
               tripId: id,
               event: "assigned",

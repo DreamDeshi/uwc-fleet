@@ -1,5 +1,5 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
-import type { ApiErrorShape, LoginResponse } from "@/types";
+import type { ApiErrorShape, LoginResponse, SchedulingConflictInfo } from "@/types";
 
 // VITE_API_URL wins when set; otherwise production builds target the deployed
 // Railway API and dev builds hit the local server. Baked in at build time.
@@ -85,6 +85,15 @@ api.interceptors.response.use(
 export function apiErrorMessage(err: unknown, fallback = "Something went wrong."): string {
   const ax = err as AxiosError<ApiErrorShape>;
   return ax?.response?.data?.error?.message ?? fallback;
+}
+
+export function apiErrorCode(err: unknown): string | undefined {
+  return (err as AxiosError<ApiErrorShape>)?.response?.data?.error?.code;
+}
+
+// Scheduling-conflict trips returned on a 409 SCHEDULING_CONFLICT, or [] otherwise.
+export function apiErrorConflicts(err: unknown): SchedulingConflictInfo[] {
+  return (err as AxiosError<ApiErrorShape>)?.response?.data?.error?.conflicts ?? [];
 }
 
 export async function loginRequest(phone: string, password: string): Promise<LoginResponse> {
