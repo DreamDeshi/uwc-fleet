@@ -127,7 +127,7 @@ export function createTrip(token: string, input: CreateTripInput): Promise<Trip>
 export function approveTrip(
   adminToken: string,
   id: string,
-  body: { driver_id: string; truck_plate: string }
+  body: { driver_id: string; truck_plate: string; force?: boolean }
 ): Promise<Trip> {
   return req(adminToken, "PATCH", `/trips/${id}/approve`, body);
 }

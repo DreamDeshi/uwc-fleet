@@ -210,10 +210,11 @@ function useInvalidate(keys: string[][]) {
 export function useApproveTrip() {
   const invalidate = useInvalidate([["trips"], ["dashboard"], ["drivers"], ["trucks"]]);
   return useMutation({
-    mutationFn: async (v: { id: string; driver_id: string; truck_plate: string }) =>
+    mutationFn: async (v: { id: string; driver_id: string; truck_plate: string; force?: boolean }) =>
       (await api.patch<Trip>(`/trips/${v.id}/approve`, {
         driver_id: v.driver_id,
         truck_plate: v.truck_plate,
+        ...(v.force ? { force: true } : {}),
       })).data,
     onSuccess: invalidate,
   });

@@ -24,6 +24,7 @@ import { palletEquivalents } from "../lib/pallets";
 import { isSerializationConflict } from "../lib/prismaErrors";
 import { claimPendingTrip } from "./tripAssignment";
 import { recordTripEvent } from "../lib/tripHistory";
+import { CONFLICT_STATUSES, ASSIGNMENT_CONFLICT_BUFFER_MS } from "./schedulingConflict";
 
 // ── Pure engine types ─────────────────────────────────────────────────
 
@@ -300,7 +301,39 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
           zoneRows.map((z) => [z.code, z.adjacentTo.map((a) => a.code)])
         );
 
-        const sel = selectTruck(order, candidates, adjacency);
+        // Scheduling-conflict skip (roadmap #2): a candidate whose driver or
+        // truck already has another trip within the pickup buffer is ineligible.
+        // Layered alongside the one-active-trip filter above (which already
+        // excludes drivers on an assigned/in_progress trip); this additionally
+        // covers the pickup-time buffer and the truck dimension.
+        const pickupMs = trip.pickup_datetime.getTime();
+        const conflictRows = await tx.trip.findMany({
+          where: {
+            id: { not: tripId },
+            status: { in: [...CONFLICT_STATUSES] },
+            OR: [
+              { driver_id: { in: candidates.map((c) => c.driverId) } },
+              { truck_plate: { in: candidates.map((c) => c.plate) } },
+            ],
+            pickup_datetime: {
+              gte: new Date(pickupMs - ASSIGNMENT_CONFLICT_BUFFER_MS),
+              lte: new Date(pickupMs + ASSIGNMENT_CONFLICT_BUFFER_MS),
+            },
+          },
+          select: { driver_id: true, truck_plate: true, pickup_datetime: true },
+        });
+        const conflictedDrivers = new Set<string>();
+        const conflictedPlates = new Set<string>();
+        for (const x of conflictRows) {
+          if (Math.abs(x.pickup_datetime.getTime() - pickupMs) >= ASSIGNMENT_CONFLICT_BUFFER_MS) continue;
+          if (x.driver_id) conflictedDrivers.add(x.driver_id);
+          if (x.truck_plate) conflictedPlates.add(x.truck_plate);
+        }
+        const eligibleCandidates = candidates.filter(
+          (c) => !conflictedDrivers.has(c.driverId) && !conflictedPlates.has(c.plate)
+        );
+
+        const sel = selectTruck(order, eligibleCandidates, adjacency);
         if (!sel) return { sel: null as TruckSelection | null, raced: false };
 
         // Status-guarded claim: a concurrent dispatch that already assigned this
