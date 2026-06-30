@@ -296,5 +296,20 @@
   "admin": {
     "webOnlyTitle": "Papan Pemuka Admin",
     "webOnlyBody": "Alat admin berada di papan pemuka web. Sila log masuk di sana."
+  },
+  "timeline": {
+    "title": "Garis masa status",
+    "booked": "Ditempah",
+    "assigned": "Ditugaskan",
+    "started": "Dalam perjalanan",
+    "stopArrived": "Tiba",
+    "stopDelivered": "Dihantar",
+    "completed": "Selesai",
+    "rejected": "Ditolak",
+    "cancelled": "Dibatalkan",
+    "assignedExternal": "Ditugaskan kepada penghantar luar",
+    "rerouted": "Dialih laluan",
+    "stopPrefix": "Hentian {{n}}",
+    "pending": "Belum"
   }
 }

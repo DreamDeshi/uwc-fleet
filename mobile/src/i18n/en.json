@@ -361,5 +361,20 @@
   "admin": {
     "webOnlyTitle": "Admin Dashboard",
     "webOnlyBody": "Admin tools live in the web dashboard. Please sign in there."
+  },
+  "timeline": {
+    "title": "Status timeline",
+    "booked": "Booked",
+    "assigned": "Assigned",
+    "started": "En route",
+    "stopArrived": "Arrived",
+    "stopDelivered": "Delivered",
+    "completed": "Completed",
+    "rejected": "Rejected",
+    "cancelled": "Cancelled",
+    "assignedExternal": "Assigned to forwarder",
+    "rerouted": "Rerouted",
+    "stopPrefix": "Stop {{n}}",
+    "pending": "Pending"
   }
 }
