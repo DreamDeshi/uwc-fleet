@@ -41,6 +41,23 @@ enum StopStatus {
   delivered
 }
 
+// Immutable trip-lifecycle milestones. One row is appended per transition; rows
+// are never updated or deleted, so the table doubles as audit evidence and backs
+// the status timeline shown to admin / requestor / driver. Stop-scoped events
+// (arrived/delivered) repeat per stop on multi-stop trips.
+enum TripEvent {
+  booked
+  assigned
+  started
+  stop_arrived
+  stop_delivered
+  completed
+  rejected
+  cancelled
+  assigned_external
+  rerouted // reserved for the reroute workflow (roadmap item #3)
+}
+
 enum DocumentType {
   do_photo
   k2_form
@@ -173,6 +190,7 @@ model Trip {
   documents           TripDocument[]
   location_logs       LocationLog[]
   external_forwarder  ExternalForwarder?
+  status_history      TripStatusHistory[]
 }
 
 // ── 8. TripStop ──────────────────────────────────────────────────────
@@ -316,4 +334,25 @@ model FuelLog {
   cost        Decimal  @db.Decimal(10, 2)
   odometer    Int?
   logged_at   DateTime @default(now())
+}
+
+// ── 18. TripStatusHistory ────────────────────────────────────────────
+//
+// Append-only lifecycle log backing the status timeline. A row is written
+// inside the same operation as each status change (see lib/tripHistory.ts).
+// actor_id is null for system-driven events (auto-dispatch, background sweep).
+// stop_id is set only for per-stop events (stop_arrived / stop_delivered).
+// note carries human context: "<driver> · <plate>" on assign, the rejection
+// reason, or the forwarder name.
+model TripStatusHistory {
+  id         String    @id @default(cuid())
+  trip_id    String
+  trip       Trip      @relation(fields: [trip_id], references: [id])
+  event      TripEvent
+  stop_id    String?
+  actor_id   String?
+  note       String?
+  created_at DateTime  @default(now())
+
+  @@index([trip_id, created_at])
 }

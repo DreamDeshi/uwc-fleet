@@ -21,6 +21,8 @@ import { sendPushNotifications } from "../lib/pushNotifications";
 import { getDispatchMode } from "../lib/settings";
 import { autoDispatchTrip } from "../services/dispatchEngine";
 import { palletEquivalents } from "../lib/pallets";
+import { recordTripEvent } from "../lib/tripHistory";
+import { buildTripTimeline } from "../lib/tripTimeline";
 
 const router = Router();
 router.use(requireAuth);
@@ -126,6 +128,7 @@ router.post(
       await prisma.auditLog.create({
         data: { user_id: req.user!.id, action: "trip.created", table_name: "Trip", record_id: trip.id },
       });
+      await recordTripEvent(prisma, { tripId: trip.id, event: "booked", actorId: req.user!.id });
 
       // Fully-automatic mode: run the dispatch engine immediately so the booking
       // is assigned the moment it's submitted. Best-effort — if no truck fits the
@@ -229,7 +232,13 @@ router.get("/", async (req, res, next) => {
 // ── GET /trips/:id — detail, role-scoped ─────────────────────────────────
 router.get("/:id", async (req, res, next) => {
   try {
-    const trip = await prisma.trip.findUnique({ where: { id: req.params.id }, include: tripInclude });
+    const trip = await prisma.trip.findUnique({
+      where: { id: req.params.id },
+      include: {
+        ...tripInclude,
+        status_history: { orderBy: { created_at: "asc" as const } },
+      },
+    });
     if (!trip) {
       throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
     }
@@ -241,7 +250,9 @@ router.get("/:id", async (req, res, next) => {
       throw new ApiError(403, "FORBIDDEN", "You do not have permission to view this trip.");
     }
 
-    res.json(trip);
+    // Adaptive status timeline derived once, server-side, so all three clients
+    // render the same milestones without duplicating the lifecycle logic.
+    res.json({ ...trip, timeline: buildTripTimeline(trip) });
   } catch (err) {
     next(err);
   }
@@ -434,6 +445,12 @@ router.patch(
             await tx.auditLog.create({
               data: { user_id: req.user!.id, action: "trip.approved", table_name: "Trip", record_id: id },
             });
+            await recordTripEvent(tx, {
+              tripId: id,
+              event: "assigned",
+              actorId: req.user!.id,
+              note: `${driver.name} · ${truck_plate}`,
+            });
 
             return tx.trip.findUnique({ where: { id }, include: tripInclude });
           },
@@ -507,6 +524,12 @@ router.patch(
       await prisma.auditLog.create({
         data: { user_id: req.user!.id, action: "trip.rejected", table_name: "Trip", record_id: id },
       });
+      await recordTripEvent(prisma, {
+        tripId: id,
+        event: "rejected",
+        actorId: req.user!.id,
+        note: reason ?? null,
+      });
 
       const requestorDevice = await prisma.user.findUnique({
         where: { id: updated.requestor_id },
@@ -569,6 +592,12 @@ router.patch(
           record_id: id,
         },
       });
+      await recordTripEvent(prisma, {
+        tripId: id,
+        event: "assigned_external",
+        actorId: req.user!.id,
+        note: company_name,
+      });
       res.json(updated);
     } catch (err) {
       next(err);
@@ -608,6 +637,7 @@ router.patch("/:id/cancel", async (req, res, next) => {
     await prisma.auditLog.create({
       data: { user_id: req.user!.id, action: "trip.cancelled", table_name: "Trip", record_id: id },
     });
+    await recordTripEvent(prisma, { tripId: id, event: "cancelled", actorId: req.user!.id });
     res.json(updated);
   } catch (err) {
     next(err);
@@ -802,6 +832,7 @@ router.patch(
         await prisma.auditLog.create({
           data: { user_id: req.user!.id, action: "trip.started", table_name: "Trip", record_id: id },
         });
+        await recordTripEvent(prisma, { tripId: id, event: "started", actorId: req.user!.id });
         res.json(updated);
         return;
       }
@@ -824,6 +855,12 @@ router.patch(
         });
         await prisma.auditLog.create({
           data: { user_id: req.user!.id, action: "stop.arrived", table_name: "TripStop", record_id: stop.id },
+        });
+        await recordTripEvent(prisma, {
+          tripId: id,
+          event: "stop_arrived",
+          stopId: stop.id,
+          actorId: req.user!.id,
         });
         const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
         res.json(updated);
@@ -849,6 +886,12 @@ router.patch(
       });
       await prisma.auditLog.create({
         data: { user_id: req.user!.id, action: "stop.delivered", table_name: "TripStop", record_id: stop.id },
+      });
+      await recordTripEvent(prisma, {
+        tripId: id,
+        event: "stop_delivered",
+        stopId: stop.id,
+        actorId: req.user!.id,
       });
 
       const remainingStops = await prisma.tripStop.count({
@@ -917,6 +960,7 @@ router.patch(
       await prisma.auditLog.create({
         data: { user_id: req.user!.id, action: "trip.completed", table_name: "Trip", record_id: id },
       });
+      await recordTripEvent(prisma, { tripId: id, event: "completed", actorId: req.user!.id });
 
       res.json(updated);
     } catch (err) {
