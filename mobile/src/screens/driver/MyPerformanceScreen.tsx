@@ -57,7 +57,6 @@ function Loaded({ data }: { data: NonNullable<ReturnType<typeof useMyPerformance
     { icon: "checkmark-done-outline", value: `${Math.round(data.completion_rate)}%`, label: t("myPerformance.completion") },
     { icon: "cube-outline", value: `${data.total_completed}`, label: t("myPerformance.tripsCompleted") },
     { icon: "cash-outline", value: formatMoney(data.rm_earned_this_month), label: t("myPerformance.rmEarned") },
-    { icon: "star-outline", value: `${Math.round(data.points_this_month)}`, label: t("myPerformance.pointsThisMonth") },
   ];
 
   return (

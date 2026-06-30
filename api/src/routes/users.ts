@@ -40,7 +40,6 @@ router.get("/me/performance", requireAuth, requireRole("driver"), async (req, re
       on_time_rate: mine.on_time_rate,
       completion_rate: mine.completion_rate,
       total_completed: mine.total_completed,
-      points_this_month: mine.points_this_month,
       rm_earned_this_month: mine.rm_earned_this_month,
       has_data: hasData,
     });
