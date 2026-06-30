@@ -81,6 +81,29 @@ export async function seedPendingTrip(
   });
 }
 
+/**
+ * Create a PENDING trip whose cargo exceeds the largest truck (PLX 2406 = 16
+ * 4×4 pallets), so NO truck can ever fit it. In auto mode the dispatch engine
+ * finds no eligible truck and flags it auto_dispatch_failed (Phase 2); it also
+ * can't be assigned manually (the overload guard blocks it), making it a clean,
+ * deterministic "needs attention" fixture independent of other drivers' state.
+ */
+export async function seedOversizedTrip(
+  requestorToken: string,
+  preferZones: string[] = []
+): Promise<Trip> {
+  const [routeType, consignee] = await Promise.all([
+    pickRouteType(requestorToken),
+    pickConsignee(requestorToken, preferZones),
+  ]);
+  return createTrip(requestorToken, {
+    route_type_id: routeType.id,
+    pickup_datetime: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    stops: [{ consignee_id: consignee.id }],
+    cargo_details: [{ pallet_type: "4×4", quantity: 20 }], // 20 > 16 → fits no truck
+  });
+}
+
 /** Create a trip already ASSIGNED to the test driver (Azmi / PLX 2406). */
 export async function seedAssignedTrip(adminToken: string): Promise<Trip> {
   const requestor = await login(REQUESTOR);

@@ -39,7 +39,15 @@ export interface Trip {
   truck_plate: string | null;
   incentive_earned: string | number | null;
   pickup_datetime: string;
+  auto_dispatch_failed: boolean; // Phase 2: needs-attention flag (self-clearing)
   stops: Stop[];
+  [key: string]: unknown;
+}
+
+export interface DashboardKpis {
+  pending_trips: number;
+  auto_dispatch_failed: number; // Phase 2: pending bookings the engine couldn't place
+  awaiting_manual: number; // Phase 2: pending bookings awaiting manual dispatch
   [key: string]: unknown;
 }
 
@@ -160,6 +168,11 @@ export function markStopDocs(
   body: { do_uploaded?: boolean; k2_form_ack?: boolean }
 ): Promise<Trip> {
   return req(driverToken, "PATCH", `/trips/${id}/stops/${stopId}/docs`, body);
+}
+
+// ── Dashboard KPIs (admin) ──────────────────────────────────────────────
+export function getDashboard(adminToken: string): Promise<DashboardKpis> {
+  return req(adminToken, "GET", "/reports/dashboard");
 }
 
 // ── Dispatch mode (admin) ───────────────────────────────────────────────

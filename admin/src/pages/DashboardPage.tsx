@@ -46,9 +46,21 @@ export function DashboardPage() {
       {/* Dispatch mode toggle (Mr. Teh requirement) */}
       <Card pad={14} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <DispatchToggle />
-        <span style={{ fontSize: 12.5, color: colors.textMuted }}>
-          {k.pending_trips} pending {k.pending_trips === 1 ? "request" : "requests"} awaiting dispatch
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {/* Auto-dispatch failures get their OWN, distinct signal — never folded
+              into the plain "awaiting manual" count (Phase 2). */}
+          {k.auto_dispatch_failed > 0 && (
+            <button
+              onClick={() => navigate("/trips")}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, background: colors.redTint, color: colors.red, border: `1px solid ${colors.red}`, borderRadius: radius.pill, padding: "5px 11px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}
+            >
+              ⚠ {k.auto_dispatch_failed} auto-dispatch failed
+            </button>
+          )}
+          <span style={{ fontSize: 12.5, color: colors.textMuted }}>
+            {k.awaiting_manual} awaiting manual dispatch
+          </span>
+        </div>
       </Card>
 
       {/* KPI cards */}
@@ -101,7 +113,7 @@ export function DashboardPage() {
         <KpiCard
           label="Active Alerts"
           value={k.alerts}
-          sub={`${docAlerts.length} doc · ${k.pending_trips} unassigned`}
+          sub={`${docAlerts.length} doc · ${k.auto_dispatch_failed} failed · ${k.awaiting_manual} awaiting`}
           bg={colors.red}
           fg="#fff"
           accent="rgba(255,255,255,0.18)"

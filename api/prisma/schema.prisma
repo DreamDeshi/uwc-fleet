@@ -183,6 +183,13 @@ model Trip {
   // Set once admins have been pinged about a 15-min-old pending order, so the
   // background alert job notifies them exactly once per trip.
   pending_alert_sent Boolean  @default(false)
+  // Set true when an auto-dispatch attempt (create-time OR the 60s sweep) finds
+  // no eligible driver/truck for this booking (or, per Phase 3, the route would
+  // finish past the operating window). Self-clearing: reset to false the moment
+  // the trip leaves pending (assigned by a later sweep/adjacency or manually, or
+  // cancelled/rejected), so the admin "needs attention" signal is never sticky.
+  // Displayed state = (status == pending AND auto_dispatch_failed == true).
+  auto_dispatch_failed Boolean @default(false)
   created_at       DateTime   @default(now())
 
   stops               TripStop[]

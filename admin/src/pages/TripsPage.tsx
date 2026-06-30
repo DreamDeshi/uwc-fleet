@@ -81,6 +81,8 @@ export function TripsPage() {
   const [zone, setZone] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  // Phase 2: show ONLY pending bookings the auto-dispatcher couldn't place.
+  const [needsAttentionOnly, setNeedsAttentionOnly] = useState(false);
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedQ(q), 300);
@@ -97,7 +99,7 @@ export function TripsPage() {
   });
   const drivers = useDrivers();
 
-  const hasFilters = !!(q || status || driverId || zone || dateFrom || dateTo);
+  const hasFilters = !!(q || status || driverId || zone || dateFrom || dateTo || needsAttentionOnly);
   const clearFilters = () => {
     setQ("");
     setDebouncedQ("");
@@ -106,13 +108,23 @@ export function TripsPage() {
     setZone("");
     setDateFrom("");
     setDateTo("");
+    setNeedsAttentionOnly(false);
   };
+
+  // A booking "needs attention" when it's still pending AND auto-dispatch failed
+  // to place it — the persistent, self-clearing Phase-2 signal.
+  const needsAttention = (t: Trip) => t.status === "pending" && t.auto_dispatch_failed;
+  const attentionCount = useMemo(
+    () => (trips.data ?? []).filter(needsAttention).length,
+    [trips.data]
+  );
 
   const grouped = useMemo(() => {
     const g: Record<string, Trip[]> = { pending: [], active: [], completed: [], cancelled: [] };
-    for (const t of trips.data ?? []) g[tripGroup(t.status)].push(t);
+    const source = needsAttentionOnly ? (trips.data ?? []).filter(needsAttention) : trips.data ?? [];
+    for (const t of source) g[tripGroup(t.status)].push(t);
     return g;
-  }, [trips.data]);
+  }, [trips.data, needsAttentionOnly]);
 
   if (trips.isLoading) return <Loading />;
   if (trips.isError) return <ErrorState message="Could not load trips." onRetry={() => trips.refetch()} />;
@@ -151,6 +163,28 @@ export function TripsPage() {
             <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={controlStyle} />
           </div>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+            {/* Phase 2: one-click filter to the auto-dispatch failures. The chip
+                always renders so the count is visible at a glance; it turns solid
+                red when active. */}
+            <button
+              onClick={() => setNeedsAttentionOnly((v) => !v)}
+              title="Show only bookings auto-dispatch could not place"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                borderRadius: radius.pill,
+                padding: "5px 11px",
+                fontSize: 12.5,
+                fontWeight: 700,
+                cursor: "pointer",
+                border: `1px solid ${colors.red}`,
+                background: needsAttentionOnly ? colors.red : colors.redTint,
+                color: needsAttentionOnly ? "#fff" : colors.red,
+              }}
+            >
+              ⚠ Needs attention{attentionCount > 0 ? ` · ${attentionCount}` : ""}
+            </button>
             <span style={{ fontSize: 12.5, color: colors.textMuted }}>
               {all.length} result{all.length === 1 ? "" : "s"}
             </span>
@@ -210,8 +244,12 @@ export function TripsPage() {
 // ── Trip card (left list) ─────────────────────────────────────────────
 function TripCard({ trip, selected, onClick }: { trip: Trip; selected: boolean; onClick: () => void }) {
   const group = tripGroup(trip.status);
-  const accent =
-    group === "pending" ? colors.orange : group === "active" ? colors.blue : group === "completed" ? colors.green : "#9ca3af";
+  // Auto-dispatch failed (still pending) → red accent + a distinct marker, so it
+  // never looks like an ordinary "awaiting manual" pending card (Phase 2).
+  const needsAttention = trip.status === "pending" && trip.auto_dispatch_failed;
+  const accent = needsAttention
+    ? colors.red
+    : group === "pending" ? colors.orange : group === "active" ? colors.blue : group === "completed" ? colors.green : "#9ca3af";
   return (
     <div
       onClick={onClick}
@@ -225,6 +263,11 @@ function TripCard({ trip, selected, onClick }: { trip: Trip; selected: boolean; 
         boxShadow: selected ? "0 4px 14px rgba(0,0,0,0.08)" : undefined,
       }}
     >
+      {needsAttention && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7, color: colors.red, fontSize: 11.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>
+          ⚠ Needs attention — auto-dispatch failed
+        </div>
+      )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7 }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: colors.blue }}>{trip.ticket_number}</span>
         <TripStatusBadge status={trip.status} />

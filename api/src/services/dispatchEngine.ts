@@ -342,6 +342,7 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
           driver_id: sel.driverId,
           truck_plate: sel.plate,
           pending_alert_sent: true, // it's handled now; don't ping admins about it
+          auto_dispatch_failed: false, // self-clearing: a later sweep placed it
         });
         if (!won) return { sel: null as TruckSelection | null, raced: true };
 
@@ -383,6 +384,16 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
     return { assigned: false, reason: "Trip was already assigned by a concurrent dispatch." };
   }
   if (!selection) {
+    // No eligible driver/truck for this booking. Flag it so web admins get a
+    // distinct, persistent "needs attention — auto-dispatch failed" signal
+    // (Phase 2), instead of it being indistinguishable from an awaiting-manual
+    // pending trip. The status==pending guard means we never flag a trip a
+    // concurrent writer just assigned; the flag self-clears on any transition
+    // out of pending (manual assign / later sweep / cancel / reject).
+    await prisma.trip.updateMany({
+      where: { id: tripId, status: "pending" },
+      data: { auto_dispatch_failed: true },
+    });
     return { assigned: false, reason: "No available truck has capacity for this order." };
   }
 

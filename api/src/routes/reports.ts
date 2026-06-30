@@ -44,6 +44,7 @@ router.get("/dashboard", async (_req, res, next) => {
       completedToday,
       pendingApprovals,
       pendingTrips,
+      autoDispatchFailed,
       trucks,
       completedThisMonth,
     ] = await Promise.all([
@@ -60,6 +61,10 @@ router.get("/dashboard", async (_req, res, next) => {
       }),
       prisma.user.count({ where: { status: "pending_approval" } }),
       prisma.trip.count({ where: { status: "pending" } }),
+      // Pending bookings the auto-dispatcher couldn't place — the "needs
+      // attention" subset of pending (Phase 2). Self-clearing flag, so this only
+      // counts trips still pending AND flagged.
+      prisma.trip.count({ where: { status: "pending", auto_dispatch_failed: true } }),
       prisma.truck.findMany({
         select: { insurance_expiry: true, permit_expiry: true, road_tax_expiry: true },
       }),
@@ -97,6 +102,10 @@ router.get("/dashboard", async (_req, res, next) => {
       on_time_rate: onTimeRate, // percent, or null when no completed trips this month
       pending_approvals: pendingApprovals,
       pending_trips: pendingTrips,
+      // Split the conflated "unassigned" count: auto-dispatch FAILED (needs
+      // attention) vs simply AWAITING MANUAL dispatch. failed ⊆ pending.
+      auto_dispatch_failed: autoDispatchFailed,
+      awaiting_manual: Math.max(0, pendingTrips - autoDispatchFailed),
       alerts: expiringDocs + pendingTrips, // doc expiries + unassigned bookings
     });
   } catch (err) {
