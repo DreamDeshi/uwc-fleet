@@ -195,6 +195,10 @@ export interface DriverPerformance {
   employee_number: string | null;
   truck_plate: string | null;
   total_completed: number; // completed trips all-time; 0 → render a "No data" badge
+  total_cancelled: number; // cancelled trips all-time (workload/reliability context)
+  completed_this_month: number; // completed trips this MYT month (workload lens)
+  distance_km_this_month: number; // estimated round-trip km this month (productivity)
+  rm_earned_this_month: number; // incentive earned this month (== points_this_month)
   on_time_rate: number; // percent of completed trips on time
   completion_rate: number; // percent of assigned trips completed (vs cancelled)
   points_this_month: number; // month incentive total feeding the points component

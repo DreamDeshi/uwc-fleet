@@ -18,6 +18,7 @@ const LoginPage = lazyPage(() => import("@/pages/LoginPage"), "LoginPage");
 const DashboardPage = lazyPage(() => import("@/pages/DashboardPage"), "DashboardPage");
 const TripsPage = lazyPage(() => import("@/pages/TripsPage"), "TripsPage");
 const DriversPage = lazyPage(() => import("@/pages/DriversPage"), "DriversPage");
+const PerformancePage = lazyPage(() => import("@/pages/PerformancePage"), "PerformancePage");
 const TrucksPage = lazyPage(() => import("@/pages/TrucksPage"), "TrucksPage");
 const IncentivesPage = lazyPage(() => import("@/pages/IncentivesPage"), "IncentivesPage");
 const ApprovalsPage = lazyPage(() => import("@/pages/ApprovalsPage"), "ApprovalsPage");
@@ -64,6 +65,7 @@ export default function App() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/trips" element={<TripsPage />} />
         <Route path="/drivers" element={<DriversPage />} />
+        <Route path="/performance" element={<PerformancePage />} />
         <Route path="/trucks" element={<TrucksPage />} />
         <Route path="/incentives" element={<IncentivesPage />} />
         <Route path="/approvals" element={<ApprovalsPage />} />

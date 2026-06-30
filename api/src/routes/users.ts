@@ -5,10 +5,51 @@ import { ApiError } from "../lib/apiError";
 import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
-import { computeScore, isTripOnTime, type DriverTripStats } from "../lib/performanceScore";
+import {
+  computeScore,
+  isTripOnTime,
+  tierForScore,
+  percentileBand,
+  type DriverTripStats,
+} from "../lib/performanceScore";
+import { estimateTripDistanceKm } from "../lib/geo";
 
 const router = Router();
 
+// ── Driver self-service: my own performance (FR-FM7 personal view) ─────────
+// Declared BEFORE the blanket admin guard below so a driver can actually reach
+// it. Returns ONLY the caller's own metrics, plus a tier and an anonymous
+// percentile band — never another driver's name or score. A driver with no
+// completed trips gets has_data:false (null tier/band) so the app shows a
+// friendly empty state instead of a misleading Bronze/0.
+router.get("/me/performance", requireAuth, requireRole("driver"), async (req, res, next) => {
+  try {
+    const all = await buildDriverPerformance();
+    const mine = all.find((d) => d.id === req.user!.id);
+    if (!mine) {
+      throw new ApiError(404, "DRIVER_NOT_FOUND", "Driver not found.");
+    }
+
+    const hasData = mine.total_completed > 0;
+    res.json({
+      total_score: mine.total_score,
+      tier: hasData ? tierForScore(mine.total_score) : null,
+      percentile_band: hasData
+        ? percentileBand(mine.total_score, all.map((d) => d.total_score))
+        : null,
+      on_time_rate: mine.on_time_rate,
+      completion_rate: mine.completion_rate,
+      total_completed: mine.total_completed,
+      points_this_month: mine.points_this_month,
+      rm_earned_this_month: mine.rm_earned_this_month,
+      has_data: hasData,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Everything below this guard is admin-only.
 router.use(requireAuth, requireRole("admin"));
 
 // Malaysia is UTC+8 year-round; the points component is scoped to the current
@@ -46,40 +87,60 @@ async function buildDriverPerformance() {
           status: true,
           pickup_datetime: true,
           incentive_earned: true,
-          stops: { select: { delivered_at: true } },
+          stops: {
+            orderBy: { sequence: "asc" },
+            select: { delivered_at: true, consignee: { select: { zone_code: true } } },
+          },
         },
       },
     },
   });
 
+  const inMonth = (d: Date) => d >= monthStart && d < monthEnd;
+
   const reduced = drivers.map((d) => {
     const completed = d.trips_driven.filter((t) => t.status === "completed");
+    const completedThisMonth = completed.filter((t) => inMonth(new Date(t.pickup_datetime)));
     const stats: DriverTripStats = {
       totalCompleted: completed.length,
       onTimeCompleted: completed.filter((t) => isTripOnTime(t.pickup_datetime, t.stops)).length,
       cancelled: d.trips_driven.filter((t) => t.status === "cancelled").length,
-      pointsThisMonth: completed
-        .filter((t) => {
-          const p = new Date(t.pickup_datetime);
-          return p >= monthStart && p < monthEnd;
-        })
-        .reduce((sum, t) => sum + Number(t.incentive_earned ?? 0), 0),
+      pointsThisMonth: completedThisMonth.reduce(
+        (sum, t) => sum + Number(t.incentive_earned ?? 0),
+        0
+      ),
     };
-    return { driver: d, stats };
+    // Estimated round-trip km of this month's completed trips (zone-centroid
+    // proxy, same basis as the driver earnings summary — not a billing figure).
+    const distanceThisMonth = completedThisMonth.reduce(
+      (sum, t) => sum + estimateTripDistanceKm(t.stops[0]?.consignee?.zone_code ?? null),
+      0
+    );
+    return { driver: d, stats, distanceThisMonth, completedThisMonth: completedThisMonth.length };
   });
 
   const maxPoints = reduced.reduce((max, r) => Math.max(max, r.stats.pointsThisMonth), 0);
 
-  return reduced.map(({ driver, stats }) => ({
-    id: driver.id,
-    name: driver.name,
-    employee_number: driver.employee_number,
-    truck_plate: driver.assigned_truck_plate,
-    // Lets the dashboard distinguish "scored 0" from "no completed trips yet"
-    // (a fresh driver shouldn't render a red 0.0 badge).
-    total_completed: stats.totalCompleted,
-    ...computeScore(stats, maxPoints),
-  }));
+  return reduced.map(({ driver, stats, distanceThisMonth, completedThisMonth }) => {
+    const breakdown = computeScore(stats, maxPoints);
+    return {
+      id: driver.id,
+      name: driver.name,
+      employee_number: driver.employee_number,
+      truck_plate: driver.assigned_truck_plate,
+      // Lets the dashboard distinguish "scored 0" from "no completed trips yet"
+      // (a fresh driver shouldn't render a red 0.0 badge).
+      total_completed: stats.totalCompleted,
+      total_cancelled: stats.cancelled,
+      completed_this_month: completedThisMonth,
+      distance_km_this_month: distanceThisMonth,
+      // Points and RM are the same figure here — incentive_earned is the only
+      // per-trip earnings number the schema stores — but both views ask for the
+      // metric by name, so expose both keys.
+      rm_earned_this_month: breakdown.points_this_month,
+      ...breakdown,
+    };
+  });
 }
 
 // GET /users/drivers/performance — all drivers' performance scores (admin only).

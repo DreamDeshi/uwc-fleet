@@ -46,6 +46,16 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    to: "/performance",
+    label: "Performance",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+        <path d="M8 21h8M12 17v4M6 4h12v5a6 6 0 01-12 0V4z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M18 5h2.5a2 2 0 010 4H18M6 5H3.5a2 2 0 000 4H6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     to: "/trucks",
     label: "Truck Management",
     icon: (
@@ -92,6 +102,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/": { title: "Dashboard", subtitle: "Live fleet overview" },
   "/trips": { title: "Trip Management", subtitle: "Dispatch & monitor bookings" },
   "/drivers": { title: "Driver Management", subtitle: "Drivers & performance" },
+  "/performance": { title: "Driver Performance", subtitle: "Reliability, productivity & workload" },
   "/trucks": { title: "Truck Management", subtitle: "Fleet & document expiries" },
   "/incentives": { title: "Incentive Rate Management", subtitle: "Claim rates & destination points" },
   "/approvals": { title: "User Approval Queue", subtitle: "New account registrations" },

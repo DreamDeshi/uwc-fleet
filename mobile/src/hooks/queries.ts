@@ -103,6 +103,31 @@ export function useIncentives() {
   });
 }
 
+// ── My performance (FR-FM7 personal view) — the logged-in driver only ───────
+// The API returns ONLY this driver's own metrics plus a tier and an anonymous
+// percentile band — no leaderboard, no peer names/scores. `has_data` is false
+// (tier/band null) until the driver has at least one completed trip.
+export type PerformanceTier = "Gold" | "Silver" | "Bronze";
+
+export interface MyPerformance {
+  total_score: number;
+  tier: PerformanceTier | null;
+  percentile_band: string | null;
+  on_time_rate: number;
+  completion_rate: number;
+  total_completed: number;
+  points_this_month: number;
+  rm_earned_this_month: number;
+  has_data: boolean;
+}
+
+export function useMyPerformance() {
+  return useQuery({
+    queryKey: ["performance", "mine"],
+    queryFn: async () => (await api.get<MyPerformance>("/users/me/performance")).data,
+  });
+}
+
 // ── Requestor analytics (FR-RS1-5) — scoped to the logged-in requestor ──────
 export interface RequestorAnalytics {
   monthly_activity: { month: string; count: number }[]; // last 6 MYT months

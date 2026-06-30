@@ -16,6 +16,7 @@ export type DriverTabParamList = {
   Home: undefined;
   TripsTab: NavigatorScreenParams<TripsStackParamList>;
   Earnings: undefined;
+  Performance: undefined;
   Profile: undefined;
 };
 
