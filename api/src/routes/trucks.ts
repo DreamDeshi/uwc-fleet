@@ -7,6 +7,8 @@ import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { getTripDayStart, getTripDayEnd } from "../services/incentiveEngine";
 import { palletEquivalents } from "../lib/pallets";
+import { loadSpecTrucks } from "../lib/uwcSpec";
+import { planRateReset } from "../services/rateReset";
 
 const router = Router();
 router.use(requireAuth);
@@ -347,6 +349,72 @@ router.get("/alerts", async (_req, res, next) => {
       );
 
     res.json(payload);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /trucks/reset-rates — restore all truck rates to UWC spec defaults ──
+//
+// Re-applies entitled_claim_weekday/_offpeak, daily_deduction_points and
+// max_pallets from docs/uwc-spec.json (the SAME source seed.ts reads, so reset
+// and a fresh seed never diverge) to every matching truck. Matches by plate;
+// never creates or deletes trucks — a spec plate missing from the DB is skipped
+// and reported. Money stays Decimal (Prisma coerces the numeric spec values).
+// Writes ONE audit row per reset action, recording the plates updated.
+//
+// Registered as a literal path (no params) so it can't be shadowed by, and
+// can't shadow, the `/:plate/rates` route below.
+router.post("/reset-rates", async (req, res, next) => {
+  try {
+    const specTrucks = loadSpecTrucks();
+    const dbTrucks = await prisma.truck.findMany({
+      select: {
+        plate: true,
+        entitled_claim_weekday: true,
+        entitled_claim_offpeak: true,
+        daily_deduction_points: true,
+        max_pallets: true,
+      },
+    });
+
+    const plan = planRateReset(
+      specTrucks,
+      dbTrucks.map((t) => ({
+        plate: t.plate,
+        entitled_claim_weekday: Number(t.entitled_claim_weekday),
+        entitled_claim_offpeak: Number(t.entitled_claim_offpeak),
+        daily_deduction_points: t.daily_deduction_points,
+        max_pallets: t.max_pallets,
+      }))
+    );
+
+    // Apply the updates + the single audit row atomically. The audit row is
+    // written on every reset action (record_id lists the plates updated, or a
+    // marker when nothing drifted) so the action is always traceable.
+    const auditRecord =
+      plan.updated.length > 0
+        ? plan.updated.map((u) => u.plate).join(", ")
+        : "(none — all trucks already at spec)";
+    await prisma.$transaction([
+      ...plan.updated.map((u) =>
+        prisma.truck.update({ where: { plate: u.plate }, data: u.data })
+      ),
+      prisma.auditLog.create({
+        data: {
+          user_id: req.user!.id,
+          action: "rate_reset_to_spec",
+          table_name: "Truck",
+          record_id: auditRecord,
+        },
+      }),
+    ]);
+
+    res.json({
+      updated: plan.updated.map((u) => ({ plate: u.plate, changes: u.changes })),
+      already_at_spec: plan.alreadyAtSpec,
+      skipped: plan.skipped,
+    });
   } catch (err) {
     next(err);
   }

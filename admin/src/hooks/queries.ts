@@ -10,6 +10,7 @@ import type {
   LivePosition,
   MonthlyRow,
   RateAuditEntry,
+  RateResetResult,
   Trip,
   Truck,
   TruckExpiryAlert,
@@ -269,6 +270,16 @@ export function useUpdateTruckRates() {
       const { plate, ...body } = v;
       return (await api.patch(`/trucks/${encodeURIComponent(plate)}/rates`, body)).data;
     },
+    onSuccess: invalidate,
+  });
+}
+
+export function useResetTruckRates() {
+  // A reset touches every truck's rate row, so refresh the trucks list and the
+  // rate-audit trail (the endpoint writes a rate_reset_to_spec audit row).
+  const invalidate = useInvalidate([["trucks"], ["rates", "audit"], ["dashboard"]]);
+  return useMutation({
+    mutationFn: async () => (await api.post<RateResetResult>("/trucks/reset-rates", {})).data,
     onSuccess: invalidate,
   });
 }

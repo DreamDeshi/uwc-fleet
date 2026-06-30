@@ -7,7 +7,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "prisma generate && tsc",
+    "build": "prisma generate && tsc && node scripts/copy-spec.mjs",
     "start": "node dist/index.js",
     "seed": "tsx prisma/seed.ts",
     "test": "vitest run",

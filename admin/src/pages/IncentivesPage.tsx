@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import { useDestinationRates, useRateAudit, useTrucks, useUpdateDestinationRate, useUpdateTruckRates } from "@/hooks/queries";
+import { useDestinationRates, useRateAudit, useResetTruckRates, useTrucks, useUpdateDestinationRate, useUpdateTruckRates } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
 import { Button, Card, ErrorState, Input, Loading, Modal, Pill, SectionTitle } from "@/components/ui";
 import { formatDate, formatMoney } from "@/lib/format";
 import { apiErrorMessage } from "@/services/api";
-import type { DestinationRate, RateAuditEntry, Truck } from "@/types";
+import type { DestinationRate, RateAuditEntry, RateResetResult, Truck } from "@/types";
 
 // Small muted "last updated by X on DATE" line, shown under a row when the audit
 // log has a record for it. Kept compact so it never crowds the rate values.
@@ -61,6 +61,9 @@ function TruckRatesTab() {
   const trucks = useTrucks();
   const audit = useRateAudit();
   const [editing, setEditing] = useState<Truck | null>(null);
+  // "Reset to UWC spec defaults" — confirm dialog + last result summary.
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [resetResult, setResetResult] = useState<RateResetResult | null>(null);
 
   const auditByPlate = useMemo(() => {
     const m = new Map<string, RateAuditEntry>();
@@ -74,7 +77,16 @@ function TruckRatesTab() {
   return (
     <Card pad={0}>
       <div style={{ padding: 18, borderBottom: `1px solid ${colors.border}` }}>
-        <SectionTitle title="Entitled Claim Rates per Truck" subtitle={`${trucks.data!.length} trucks`} />
+        <SectionTitle
+          title="Entitled Claim Rates per Truck"
+          subtitle={`${trucks.data!.length} trucks`}
+          right={
+            <Button variant="outline" size="sm" onClick={() => setConfirmingReset(true)}>
+              ↺ Reset to UWC spec defaults
+            </Button>
+          }
+        />
+        {resetResult && <ResetResultBanner result={resetResult} onDismiss={() => setResetResult(null)} />}
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
@@ -104,7 +116,74 @@ function TruckRatesTab() {
         </tbody>
       </table>
       {editing && <EditTruckModal truck={editing} onClose={() => setEditing(null)} />}
+      {confirmingReset && (
+        <ResetRatesConfirm
+          onClose={() => setConfirmingReset(false)}
+          onDone={(r) => {
+            setResetResult(r);
+            setConfirmingReset(false);
+          }}
+        />
+      )}
     </Card>
+  );
+}
+
+// Confirm dialog for the spec reset. Overwrites all truck rate values, so it
+// asks before firing (Cancel / Reset).
+function ResetRatesConfirm({
+  onClose,
+  onDone,
+}: {
+  onClose: () => void;
+  onDone: (r: RateResetResult) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const reset = useResetTruckRates();
+
+  async function doReset() {
+    setError(null);
+    try {
+      onDone(await reset.mutateAsync());
+    } catch (e) {
+      setError(apiErrorMessage(e, "Could not reset rates."));
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Reset truck rates to UWC spec?" width={420}>
+      {error && (
+        <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>
+          {error}
+        </div>
+      )}
+      <div style={{ fontSize: 13.5, color: colors.text, lineHeight: 1.6, marginBottom: 14 }}>
+        Reset all truck rates to UWC spec defaults? This overwrites current rate values
+        (weekday &amp; weekend claim, daily deduction, max load) for all trucks with the
+        authoritative values from <code>docs/uwc-spec.json</code>. Audit-logged.
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <Button variant="ghost" full onClick={onClose} disabled={reset.isPending}>Cancel</Button>
+        <Button variant="danger" full onClick={doReset} disabled={reset.isPending}>
+          {reset.isPending ? "Resetting…" : "Reset"}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+// Brief result summary after a reset (e.g. "3 trucks reset · 4 already at spec").
+function ResetResultBanner({ result, onDismiss }: { result: RateResetResult; onDismiss: () => void }) {
+  const parts = [
+    `${result.updated.length} truck${result.updated.length === 1 ? "" : "s"} reset`,
+    `${result.already_at_spec.length} already at spec`,
+  ];
+  if (result.skipped.length > 0) parts.push(`${result.skipped.length} skipped (not in DB)`);
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 12, background: colors.greenTint, color: colors.green, borderRadius: radius.md, padding: "9px 13px", fontSize: 12.5, fontWeight: 600 }}>
+      <span>✓ {parts.join(" · ")}</span>
+      <button onClick={onDismiss} style={{ background: "none", border: "none", color: colors.green, cursor: "pointer", fontSize: 14, fontWeight: 700 }}>×</button>
+    </div>
   );
 }
 

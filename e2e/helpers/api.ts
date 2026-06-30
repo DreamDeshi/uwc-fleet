@@ -170,6 +170,44 @@ export function markStopDocs(
   return req(driverToken, "PATCH", `/trips/${id}/stops/${stopId}/docs`, body);
 }
 
+// ── Truck rates (admin) ─────────────────────────────────────────────────
+export interface TruckRate {
+  plate: string;
+  entitled_claim_weekday: number;
+  entitled_claim_offpeak: number;
+  daily_deduction_points: number;
+  max_pallets: number;
+  [key: string]: unknown;
+}
+
+export function getTrucks(adminToken: string): Promise<TruckRate[]> {
+  return req(adminToken, "GET", "/trucks");
+}
+
+/** The current weekday claim rate for one plate (via GET /trucks). */
+export async function getTruckWeekdayRate(adminToken: string, plate: string): Promise<number> {
+  const trucks = await getTrucks(adminToken);
+  const t = trucks.find((x) => x.plate === plate);
+  if (!t) throw new Error(`Truck ${plate} not found.`);
+  return Number(t.entitled_claim_weekday);
+}
+
+export function patchTruckRates(
+  adminToken: string,
+  plate: string,
+  body: { entitled_claim_weekday?: number; entitled_claim_offpeak?: number; daily_deduction_points?: number }
+): Promise<unknown> {
+  return req(adminToken, "PATCH", `/trucks/${encodeURIComponent(plate)}/rates`, body);
+}
+
+export function resetTruckRatesToSpec(adminToken: string): Promise<{
+  updated: { plate: string; changes: { field: string; from: number; to: number }[] }[];
+  already_at_spec: string[];
+  skipped: string[];
+}> {
+  return req(adminToken, "POST", "/trucks/reset-rates", {});
+}
+
 // ── Dashboard KPIs (admin) ──────────────────────────────────────────────
 export function getDashboard(adminToken: string): Promise<DashboardKpis> {
   return req(adminToken, "GET", "/reports/dashboard");

@@ -314,6 +314,18 @@ export interface MonthlyRow {
   external: number;
 }
 
+// Result of POST /trucks/reset-rates (restore truck rates to UWC spec defaults).
+export interface RateResetChange {
+  field: "entitled_claim_weekday" | "entitled_claim_offpeak" | "daily_deduction_points" | "max_pallets";
+  from: number;
+  to: number;
+}
+export interface RateResetResult {
+  updated: { plate: string; changes: RateResetChange[] }[];
+  already_at_spec: string[];
+  skipped: string[];
+}
+
 export interface SchedulingConflictInfo {
   tripId: string;
   driverOrTruck: "driver" | "truck";
