@@ -128,6 +128,19 @@ async function seedRouteTypes() {
 }
 
 async function seedTrucks() {
+  // Rate provenance — Mr. Teh's authoritative INTERNAL LORRY RATE sheet,
+  // reconciled 2026-06-30 (all 7 plates, both rate tiers, and capacities match):
+  //   - entitled_claim_weekday / _offpeak are the two-tier "Entitled Claim per
+  //     point" rates; BOTH are stored per truck even when equal (PRJ/PQL/PRH have
+  //     no off-peak uplift; PLX/PND jump 11->13; PPE 10->12).
+  //   - 4 Wheel (Generic) has NO off-peak row in the sheet; offpeak_rate is
+  //     defaulted to the peak rate (11). TODO confirm generic off-peak rate.
+  //   - daily_deduction: ONLY PLX 2406 = 2 is client-confirmed. The others
+  //     (PND/PRH = 2, PRJ/PQL/PPE = 3) are as-seeded — verify deduction value
+  //     with the client before treating as authoritative; left unchanged here.
+  // NOTE: live-DB rates are admin-editable, so this seed only governs FRESH
+  // deploys; an already-running DB may have drifted and needs an admin-UI edit
+  // or a re-seed to match (e.g. a live PLX 2406 weekday rate of 12 vs spec 11).
   for (const t of spec.trucks) {
     const expiry = TRUCK_EXPIRY[t.plate];
     // priority_zones is owned by seedDrivers (driver coverage zones), so it is
