@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { computeScore, isTripOnTime, type DriverTripStats } from "../src/lib/performanceScore";
+import {
+  computeScore,
+  isTripOnTime,
+  tierForScore,
+  percentileBand,
+  type DriverTripStats,
+} from "../src/lib/performanceScore";
 
 // Driver performance score — FR-FM7. The score is three weighted components:
 // on-time (40%), completion (30%), normalised incentive points (30%).
@@ -96,5 +102,45 @@ describe("isTripOnTime", () => {
     const pickup = new Date("2026-06-24T01:00:00Z");
     const stops = [{ delivered_at: null }, { delivered_at: new Date("2026-06-24T05:00:00Z") }];
     expect(isTripOnTime(pickup, stops)).toBe(true);
+  });
+});
+
+// Driver-facing self view (FR-FM7) — tier + anonymous percentile band.
+
+describe("tierForScore", () => {
+  it("is Gold at or above 75", () => {
+    expect(tierForScore(75)).toBe("Gold");
+    expect(tierForScore(100)).toBe("Gold");
+    expect(tierForScore(88.4)).toBe("Gold");
+  });
+
+  it("is Silver from 50 up to (but not including) 75", () => {
+    expect(tierForScore(50)).toBe("Silver");
+    expect(tierForScore(74.9)).toBe("Silver");
+  });
+
+  it("is Bronze below 50", () => {
+    expect(tierForScore(49.9)).toBe("Bronze");
+    expect(tierForScore(0)).toBe("Bronze");
+  });
+});
+
+describe("percentileBand", () => {
+  it("buckets a four-driver fleet into one band per quartile", () => {
+    const scores = [90, 70, 50, 30];
+    expect(percentileBand(90, scores)).toBe("top 25%"); // 0/4 above
+    expect(percentileBand(70, scores)).toBe("top 50%"); // 1/4 above
+    expect(percentileBand(50, scores)).toBe("top 75%"); // 2/4 above
+    expect(percentileBand(30, scores)).toBe("bottom 25%"); // 3/4 above
+  });
+
+  it("puts a lone driver at the top", () => {
+    expect(percentileBand(42, [42])).toBe("top 25%");
+  });
+
+  it("keeps tied top scorers in the top band", () => {
+    const scores = [80, 80, 40, 20];
+    // Neither 80 has anyone strictly above → both 'top 25%'.
+    expect(percentileBand(80, scores)).toBe("top 25%");
   });
 });

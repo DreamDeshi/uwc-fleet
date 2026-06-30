@@ -18,6 +18,7 @@ const TAB_BAR_STYLE = {
 import { DriverDashboardScreen } from "../screens/driver/DriverDashboardScreen";
 import { TripsStack } from "./TripsStack";
 import { EarningsScreen } from "../screens/driver/EarningsScreen";
+import { MyPerformanceScreen } from "../screens/driver/MyPerformanceScreen";
 import { ProfileScreen } from "../screens/shared/ProfileScreen";
 
 const Tab = createBottomTabNavigator<DriverTabParamList>();
@@ -64,6 +65,14 @@ export function DriverTabs() {
         options={{
           title: t("tabs.earnings"),
           tabBarIcon: ({ color, size }) => <Ionicons name="cash-outline" size={size} color={color} />,
+        }}
+      />
+      <Tab.Screen
+        name="Performance"
+        component={MyPerformanceScreen}
+        options={{
+          title: t("tabs.performance"),
+          tabBarIcon: ({ color, size }) => <Ionicons name="trophy-outline" size={size} color={color} />,
         }}
       />
       <Tab.Screen

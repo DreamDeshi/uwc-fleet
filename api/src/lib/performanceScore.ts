@@ -102,3 +102,38 @@ export function computeScore(stats: DriverTripStats, maxPointsThisMonth: number)
     total_score: round1(on_time_component + completion_component + points_component),
   };
 }
+
+// ── Tier & percentile band (driver-facing "My Performance" view) ───────────
+// These power the per-driver self view. They take only the driver's own score
+// plus the anonymous spread of every driver's score — no names or peer numbers
+// pass through, so the result is safe to return to the driver endpoint.
+
+export type PerformanceTier = "Gold" | "Silver" | "Bronze";
+
+/** Tier from a total score: Gold ≥ 75, Silver 50–74, Bronze < 50. */
+export function tierForScore(totalScore: number): PerformanceTier {
+  if (totalScore >= 75) return "Gold";
+  if (totalScore >= 50) return "Silver";
+  return "Bronze";
+}
+
+/**
+ * Anonymous quartile band describing where `score` sits among `allScores` (the
+ * whole fleet, this driver included). Higher score = better. The band is keyed
+ * off the fraction of drivers scoring strictly higher:
+ *   none above   → "top 25%"   (you're in the best quarter)
+ *   < 50% above  → "top 50%"
+ *   < 75% above  → "top 75%"
+ *   otherwise    → "bottom 25%"
+ *
+ * Returns only the band string — never a name or another driver's number.
+ */
+export function percentileBand(score: number, allScores: number[]): string {
+  const total = allScores.length;
+  if (total === 0) return "top 25%";
+  const fractionAbove = allScores.filter((s) => s > score).length / total;
+  if (fractionAbove < 0.25) return "top 25%";
+  if (fractionAbove < 0.5) return "top 50%";
+  if (fractionAbove < 0.75) return "top 75%";
+  return "bottom 25%";
+}
