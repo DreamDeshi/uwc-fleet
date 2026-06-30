@@ -474,22 +474,28 @@ router.patch(
                 { conflicts }
               );
             }
-            const overriddenConflictIds = force ? conflicts.map((c) => c.tripId) : [];
 
-            // One active trip per driver: refuse to assign a driver who is already
-            // out on an assigned/in_progress trip. Checked inside the txn so two
-            // concurrent approves can't both slip a second trip onto the driver.
-            // A force-override excuses ONLY the conflicting trips the admin saw and
-            // overrode — any other active trip still blocks (guard not replaced).
-            const driverActiveTrips = await tx.trip.count({
+            // One-active-trip-per-driver (core model): a driver may HOLD several
+            // scheduled (assigned-but-not-started) trips, but may be OUT on only
+            // ONE in_progress trip at a time. So the hard block here is solely an
+            // in_progress trip — scheduled overlaps are handled by the
+            // SCHEDULING_CONFLICT layer above (overridable with force). This guard
+            // is never force-overridable: you cannot stack work onto a driver who
+            // is physically mid-delivery. Checked inside the txn so two concurrent
+            // approves can't both flip the same driver to a second active trip.
+            const driverInProgress = await tx.trip.count({
               where: {
                 driver_id,
-                status: { in: ["assigned", "in_progress"] },
-                id: { notIn: [id, ...overriddenConflictIds] },
+                status: "in_progress",
+                id: { not: id },
               },
             });
-            if (driverActiveTrips > 0) {
-              throw new ApiError(409, "DRIVER_BUSY", "This driver already has an active trip.");
+            if (driverInProgress > 0) {
+              throw new ApiError(
+                409,
+                "DRIVER_BUSY",
+                "This driver is currently out on an in-progress trip."
+              );
             }
 
             // Atomic claim: throws 409 CONCURRENT_ASSIGNMENT if no longer pending.

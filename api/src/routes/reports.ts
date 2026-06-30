@@ -140,10 +140,18 @@ router.get("/drivers", async (_req, res, next) => {
     });
 
     const payload = drivers.map((d) => {
+      // Committed load = pallets on this driver's truck across BOTH scheduled
+      // (assigned) and in-progress trips — this is what the /approve overload
+      // guard sums, so the picker's "fits" preview matches the server.
       const activeTrips = d.trips_driven.filter(
         (t) => t.status === "assigned" || t.status === "in_progress"
       );
-      const active = activeTrips[0];
+      // "Busy" (one-active) is now ONLY an in_progress trip — a driver may hold
+      // several scheduled (assigned-but-not-started) trips and stay selectable;
+      // scheduled overlaps are governed by the SCHEDULING_CONFLICT buffer at
+      // assignment, not by hiding the driver here (Phase 1 picker alignment).
+      const inProgressTrip = d.trips_driven.find((t) => t.status === "in_progress");
+      const scheduledTrips = d.trips_driven.filter((t) => t.status === "assigned").length;
       // 4×4-pallet-equivalents already committed to this driver's truck.
       const currentLoad = activeTrips.reduce(
         (sum, t) => sum + palletEquivalents(t.cargo_details),
@@ -161,16 +169,21 @@ router.get("/drivers", async (_req, res, next) => {
         0
       );
 
+      // on_trip ⇐ actually OUT on a trip (in_progress) — the only state that
+      // blocks a new assignment. A driver with only scheduled trips is available.
       let derivedStatus: "on_trip" | "available" | "off_duty";
       if (d.status !== "active" || !d.assigned_truck) {
         derivedStatus = "off_duty";
-      } else if (active) {
+      } else if (inProgressTrip) {
         derivedStatus = "on_trip";
       } else {
         derivedStatus = "available";
       }
 
-      const currentRoute = active?.stops[0]?.consignee.area ?? active?.stops[0]?.consignee.zone_code ?? null;
+      const currentRoute =
+        inProgressTrip?.stops[0]?.consignee.area ??
+        inProgressTrip?.stops[0]?.consignee.zone_code ??
+        null;
 
       return {
         id: d.id,
@@ -180,6 +193,7 @@ router.get("/drivers", async (_req, res, next) => {
         status: derivedStatus,
         assigned_truck: d.assigned_truck,
         current_load: currentLoad,
+        scheduled_trips: scheduledTrips, // assigned-but-not-started trips queued for this driver
         trips_total: d.trips_driven.filter((t) => t.status === "completed").length,
         trips_this_month: monthTrips.length,
         trips_today: tripsToday,

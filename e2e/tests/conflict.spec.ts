@@ -3,21 +3,22 @@ import { ADMIN, REQUESTOR, DRIVER } from "../helpers/accounts";
 import { approveTrip, driverIdentity, getTrip, login, setDispatchMode } from "../helpers/api";
 import { seedPendingTrip } from "../helpers/seed";
 import { resetState } from "../helpers/reset";
+import { adminLogin, gotoAdminTrips } from "../helpers/ui";
 
 /**
  * SCHEDULING-CONFLICT CHECK AT ASSIGNMENT (roadmap #2).
  *
- * These drive the shared backend through the API (the suite's own pattern for
- * trip-state setup/assertions). They exercise the server-side conflict guard
- * end-to-end: the 409 SCHEDULING_CONFLICT block, the force override
- * ("Assign anyway"), and the auto-dispatch skip.
+ * These exercise the server-side conflict guard end-to-end: the 409
+ * SCHEDULING_CONFLICT block, the force override ("Assign anyway"), and the
+ * auto-dispatch skip. Some drive the backend through the API (the suite's
+ * pattern for trip-state setup/assertions); the last one drives the FULL admin
+ * UI flow.
  *
- * Note: the admin picker currently hides a driver the moment they hold an
- * `assigned` trip (reports.ts derivedStatus), so a driver-dimension conflict is
- * not reachable by clicking through the picker today — hence the API-level
- * assertions here. The "Assign anyway" button is wired in DispatchPanel and
- * becomes reachable once the picker surfaces assigned-but-not-started drivers
- * (roadmap #2: "drivers stay available until a trip is actually started").
+ * Phase 1 aligned the picker to the one-active model: a driver is hidden from
+ * the dispatch picker ONLY while a trip is actually in_progress — an
+ * assigned-but-not-started driver stays selectable. That makes the manual
+ * "Assign anyway" override reachable by clicking through the UI (see the last
+ * test), which previously could only be proven at the API level.
  */
 test.describe("Scheduling-conflict check at assignment (roadmap #2)", () => {
   let adminToken: string;
@@ -77,5 +78,50 @@ test.describe("Scheduling-conflict check at assignment (roadmap #2)", () => {
     } finally {
       await setDispatchMode(adminToken, "manual");
     }
+  });
+
+  test("UI: assigning a scheduled driver shows the ⚠ conflict warning, then 'Assign anyway' succeeds", async ({
+    page,
+  }) => {
+    const requestor = await login(REQUESTOR);
+    const azmi = await driverIdentity(DRIVER);
+    const azmiName = (await login(DRIVER)).user.name;
+
+    // Trip A → assign Driver 1/PLX 2406 (pickup ~now+1h). Driver 1 now holds a SCHEDULED
+    // (assigned, not in_progress) trip — so he stays selectable in the picker.
+    const tripA = await seedPendingTrip(requestor.accessToken, ["P2"]);
+    await approveTrip(adminToken, tripA.id, { driver_id: azmi.id, truck_plate: azmi.plate });
+
+    // Trip B in the same pickup window → assigning Driver 1 clashes within the buffer.
+    const tripB = await seedPendingTrip(requestor.accessToken, ["P2"]);
+
+    await adminLogin(page, ADMIN);
+    await gotoAdminTrips(page);
+
+    // Open trip B's dispatch panel.
+    await page.getByText(tripB.ticket_number).first().click();
+
+    // Driver 1's card is the picker card (in the dispatch panel) that carries an
+    // Assign button — the deepest div that contains both his name and the button
+    // (his left-board card for trip A has no Assign button, so it's excluded).
+    const azmiAssign = page
+      .locator("div")
+      .filter({ hasText: azmiName })
+      .filter({ has: page.getByRole("button", { name: "Assign", exact: true }) })
+      .last()
+      .getByRole("button", { name: "Assign", exact: true });
+    await expect(azmiAssign).toBeVisible();
+    await azmiAssign.click();
+
+    // The inline scheduling-conflict warning appears (no hard block).
+    await expect(page.getByText("⚠ Scheduling conflict")).toBeVisible();
+
+    // "Assign anyway" re-submits with force=true → the override proceeds.
+    await page.getByRole("button", { name: "Assign anyway" }).click();
+
+    // Trip B is assigned. Because the override + its assignment_conflict_override
+    // audit row are written in the SAME Serializable transaction as the status
+    // flip, a successful assignment guarantees the audit row was written.
+    await expect.poll(async () => (await getTrip(adminToken, tripB.id)).status).toBe("assigned");
   });
 });
