@@ -50,6 +50,9 @@ async function main() {
   await prisma.tripDocument.deleteMany({});
   await prisma.externalForwarder.deleteMany({});
   await prisma.cargoDetail.deleteMany({});
+  // TripStatusHistory has a RESTRICT FK to Trip — clear it before the trips or
+  // the trip delete is blocked.
+  await prisma.tripStatusHistory.deleteMany({});
   await prisma.tripStop.deleteMany({});
   const delTrips = await prisma.trip.deleteMany({});
   // Trip-related audit-log rows (Trip / TripStop actions) — these reference no
