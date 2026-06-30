@@ -25,6 +25,11 @@ import { isSerializationConflict } from "../lib/prismaErrors";
 import { claimPendingTrip } from "./tripAssignment";
 import { recordTripEvent } from "../lib/tripHistory";
 import { CONFLICT_STATUSES, ASSIGNMENT_CONFLICT_BUFFER_MS } from "./schedulingConflict";
+import {
+  estimateOperatingWindow,
+  formatMinutesToHm,
+  type OperatingWindowEstimate,
+} from "./operatingWindow";
 
 // ── Pure engine types ─────────────────────────────────────────────────
 
@@ -249,6 +254,7 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
   // status-guarded claim makes the same-trip case deterministic (loser → raced).
   let selection: TruckSelection | null = null;
   let raced = false;
+  let windowExceeded: OperatingWindowEstimate | null = null;
   try {
     const outcome = await prisma.$transaction(
       async (tx) => {
@@ -334,7 +340,26 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
         );
 
         const sel = selectTruck(order, eligibleCandidates, adjacency);
-        if (!sel) return { sel: null as TruckSelection | null, raced: false };
+        if (!sel) {
+          return { sel: null as TruckSelection | null, raced: false, window: null as OperatingWindowEstimate | null };
+        }
+
+        // Operating-window cutoff (Phase 3): the chosen truck's run must finish
+        // within its operating window (and the pickup must be inside it). The flat
+        // estimate is truck-independent for a given trip, so a breach means no
+        // truck can serve it in-window — do NOT auto-assign; leave it pending and
+        // let the caller flag it (reason "exceeds operating window"). pickup_datetime
+        // is never mutated.
+        const selTruck = trucks.find((t) => t.plate === sel.plate);
+        const windowEst = estimateOperatingWindow({
+          pickupDateTime: trip.pickup_datetime,
+          stopCount: trip.stops.length,
+          windowStart: selTruck?.operating_hours_start,
+          windowEnd: selTruck?.operating_hours_end,
+        });
+        if (windowEst.exceedsWindow) {
+          return { sel: null as TruckSelection | null, raced: false, window: windowEst };
+        }
 
         // Status-guarded claim: a concurrent dispatch that already assigned this
         // trip leaves us with count 0 → we lost the race.
@@ -344,7 +369,9 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
           pending_alert_sent: true, // it's handled now; don't ping admins about it
           auto_dispatch_failed: false, // self-clearing: a later sweep placed it
         });
-        if (!won) return { sel: null as TruckSelection | null, raced: true };
+        if (!won) {
+          return { sel: null as TruckSelection | null, raced: true, window: null as OperatingWindowEstimate | null };
+        }
 
         if (actor) {
           await tx.auditLog.create({
@@ -365,12 +392,13 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
           actorId: null,
           note: driverName ? `${driverName} · ${sel.plate} (auto)` : `${sel.plate} (auto)`,
         });
-        return { sel, raced: false };
+        return { sel, raced: false, window: null as OperatingWindowEstimate | null };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
     selection = outcome.sel;
     raced = outcome.raced;
+    windowExceeded = outcome.window;
   } catch (err) {
     if (isSerializationConflict(err)) {
       // Lost a write-conflict with a concurrent dispatch. Best-effort: leave the
@@ -394,7 +422,14 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
       where: { id: tripId, status: "pending" },
       data: { auto_dispatch_failed: true },
     });
-    return { assigned: false, reason: "No available truck has capacity for this order." };
+    // Distinguish the operating-window breach (Phase 3) from a plain no-truck
+    // failure in the reason text the dashboard/board can surface.
+    const reason = windowExceeded
+      ? windowExceeded.reason === "pickup_outside_window"
+        ? `Pickup is outside the operating window (${formatMinutesToHm(windowExceeded.windowStartMin)}–${formatMinutesToHm(windowExceeded.windowEndMin)}).`
+        : `Estimated completion ${windowExceeded.completionLabel} exceeds the ${formatMinutesToHm(windowExceeded.windowEndMin)} operating window.`
+      : "No available truck has capacity for this order.";
+    return { assigned: false, reason };
   }
 
   const updated = await loadTripWithRelations(tripId);

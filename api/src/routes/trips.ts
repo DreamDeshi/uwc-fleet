@@ -28,6 +28,7 @@ import {
   CONFLICT_STATUSES,
   ASSIGNMENT_CONFLICT_BUFFER_MS,
 } from "../services/schedulingConflict";
+import { estimateOperatingWindow, formatMinutesToHm } from "../services/operatingWindow";
 
 const router = Router();
 router.use(requireAuth);
@@ -498,6 +499,34 @@ router.patch(
               );
             }
 
+            // Operating-window cutoff (Phase 3): WARN (don't hard-block) when the
+            // run's estimated completion would fall past the truck's operating
+            // window, or the pickup is outside it. Like the scheduling conflict
+            // this is overridable with force ("Assign anyway") and writes an audit
+            // row; the physical overload guard remains the only non-overridable
+            // block. pickup_datetime is never mutated.
+            const stopCount = await tx.tripStop.count({ where: { trip_id: id } });
+            const windowEst = estimateOperatingWindow({
+              pickupDateTime: trip.pickup_datetime,
+              stopCount,
+              windowStart: truck.operating_hours_start,
+              windowEnd: truck.operating_hours_end,
+            });
+            if (windowEst.exceedsWindow && !force) {
+              throw new ApiError(
+                409,
+                "OPERATING_WINDOW",
+                windowEst.reason === "pickup_outside_window"
+                  ? `Pickup is outside the ${formatMinutesToHm(windowEst.windowStartMin)}–${formatMinutesToHm(windowEst.windowEndMin)} operating window.`
+                  : `Est. completion ${windowEst.completionLabel} is past the ${formatMinutesToHm(windowEst.windowEndMin)} operating window.`,
+                {
+                  estimated_completion: windowEst.completionLabel,
+                  window_end: formatMinutesToHm(windowEst.windowEndMin),
+                  reason: windowEst.reason,
+                }
+              );
+            }
+
             // Atomic claim: throws 409 CONCURRENT_ASSIGNMENT if no longer pending.
             // Clear any auto-dispatch-failed flag — a manual assignment resolves
             // the "needs attention" state (Phase 2 self-clearing).
@@ -517,6 +546,17 @@ router.patch(
                   action: "assignment_conflict_override",
                   table_name: "Trip",
                   record_id: `${id}; conflicts: ${conflicts.map((c) => c.tripId).join(", ")}`,
+                },
+              });
+            }
+            // Audit a forced override of the operating-window warning (Phase 3).
+            if (force && windowEst.exceedsWindow) {
+              await tx.auditLog.create({
+                data: {
+                  user_id: req.user!.id,
+                  action: "operating_window_override",
+                  table_name: "Trip",
+                  record_id: `${id}; est_completion ${windowEst.completionLabel} (${windowEst.reason})`,
                 },
               });
             }
