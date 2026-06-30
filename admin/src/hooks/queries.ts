@@ -51,6 +51,16 @@ export function useTrips(filters: TripFilters = {}) {
   });
 }
 
+// Single-trip detail. Only this endpoint returns the `timeline` array, so the
+// detail panel fetches it on selection rather than relying on the list payload.
+export function useTrip(id: string | null) {
+  return useQuery({
+    queryKey: ["trips", "detail", id],
+    queryFn: async () => (await api.get<Trip>(`/trips/${id}`)).data,
+    enabled: !!id,
+  });
+}
+
 export function useTrucks() {
   return useQuery({
     queryKey: ["trucks"],

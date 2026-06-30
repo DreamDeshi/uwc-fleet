@@ -92,6 +92,32 @@ export interface TripParty {
   phone: string;
 }
 
+export type TripEvent =
+  | "booked"
+  | "assigned"
+  | "started"
+  | "stop_arrived"
+  | "stop_delivered"
+  | "completed"
+  | "rejected"
+  | "cancelled"
+  | "assigned_external"
+  | "rerouted";
+
+export type TimelineStepState = "done" | "current" | "upcoming";
+
+// One milestone in the adaptive status timeline (built server-side in
+// api/src/lib/tripTimeline.ts and returned on GET /trips/:id).
+export interface TimelineStep {
+  event: TripEvent;
+  state: TimelineStepState;
+  timestamp: string | null;
+  note?: string | null;
+  stopId?: string;
+  stopSequence?: number;
+  stopLabel?: string;
+}
+
 export interface Trip {
   id: string;
   ticket_number: string;
@@ -112,6 +138,8 @@ export interface Trip {
   stops: TripStop[];
   cargo_details: CargoDetail[];
   documents?: TripDocument[];
+  // Present only on the GET /trips/:id detail response, not on list items.
+  timeline?: TimelineStep[];
 }
 
 export interface TruckAlert {

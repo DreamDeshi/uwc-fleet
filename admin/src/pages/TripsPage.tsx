@@ -5,6 +5,7 @@ import {
   useCancelTrip,
   useDrivers,
   useRejectTrip,
+  useTrip,
   useTrips,
 } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
@@ -23,6 +24,7 @@ import {
   TripStatusBadge,
 } from "@/components/ui";
 import { DispatchToggle } from "@/components/DispatchToggle";
+import { StatusTimeline } from "@/components/StatusTimeline";
 import { apiErrorMessage } from "@/services/api";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import {
@@ -260,6 +262,10 @@ function TripCard({ trip, selected, onClick }: { trip: Trip; selected: boolean; 
 
 // ── Trip detail / dispatch panel (right) ──────────────────────────────
 function TripDetail({ trip, onDone }: { trip: Trip; onDone: () => void }) {
+  // Only GET /trips/:id carries the timeline; the list payload doesn't. Fetch
+  // it on selection and fall back to the list trip for everything else.
+  const detail = useTrip(trip.id);
+  const timeline = detail.data?.timeline ?? [];
   return (
     <Card>
       {/* Header */}
@@ -336,6 +342,9 @@ function TripDetail({ trip, onDone }: { trip: Trip; onDone: () => void }) {
           ))}
         </div>
       </div>
+
+      {/* Adaptive status timeline (from GET /trips/:id) */}
+      <StatusTimeline steps={timeline} />
 
       {/* Documents (DO / invoice uploaded by the requestor) */}
       <DocumentsSection trip={trip} />
