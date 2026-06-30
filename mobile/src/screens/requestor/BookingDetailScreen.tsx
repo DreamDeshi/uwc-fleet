@@ -17,6 +17,7 @@ import { Button } from "../../components/Button";
 import { Header } from "../../components/Header";
 import { RouteLine } from "../../components/RouteLine";
 import { LiveTripMap } from "../../components/LiveTripMap";
+import { StatusTimeline } from "../../components/StatusTimeline";
 import { LoadingState, ErrorState } from "../../components/States";
 import { tripDestination, tripConsigneeName, cargoSummary, tripDestZone, ORIGIN_LABEL } from "../../lib/trip";
 import { formatDateTime, initials as nameInitials } from "../../lib/format";
@@ -24,16 +25,6 @@ import { TripStatus } from "../../types";
 
 type Nav = NativeStackNavigationProp<RequestorStackParamList, "BookingDetail">;
 type Rt = RouteProp<RequestorStackParamList, "BookingDetail">;
-
-const ORDER: Record<TripStatus, number> = {
-  pending: 0,
-  approved: 1,
-  rejected: -1,
-  assigned: 2,
-  in_progress: 3,
-  completed: 4,
-  cancelled: -1,
-};
 
 export function BookingDetailScreen() {
   const { t } = useTranslation();
@@ -56,26 +47,7 @@ export function BookingDetailScreen() {
   if (isError || !trip) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
 
   const banner = bannerFor(trip.status);
-  const order = ORDER[trip.status];
-  const isCancelled = trip.status === "cancelled" || trip.status === "rejected";
   const canCancel = trip.status === "pending" || trip.status === "approved";
-
-  const timeline = isCancelled
-    ? [
-        { label: t("bookingDetail.tlSubmitted"), done: true },
-        {
-          label: trip.status === "rejected" ? t("bookingDetail.tlRejected") : t("bookingDetail.tlCancelled"),
-          cancelled: true,
-        },
-      ]
-    : [
-        { label: t("bookingDetail.tlSubmitted"), done: true },
-        { label: t("bookingDetail.tlReview"), done: order >= 1 },
-        { label: t("bookingDetail.tlAssigned"), done: order >= 2 },
-        { label: t("bookingDetail.tlInTransit"), done: order >= 3 },
-        { label: t("bookingDetail.tlDelivered"), done: order >= 4 },
-      ];
-  const activeIndex = timeline.findIndex((s) => !s.done && !("cancelled" in s && s.cancelled));
 
   const onCancel = async () => {
     setError(null);
@@ -226,34 +198,10 @@ export function BookingDetailScreen() {
           )}
         </Card>
 
-        {/* Timeline */}
+        {/* Adaptive status timeline (from GET /trips/:id .timeline) */}
         <Card>
           <Text style={[styles.cardLabel, { marginBottom: 16 }]}>{t("bookingDetail.timeline")}</Text>
-          {timeline.map((s: any, i: number) => {
-            const active = i === activeIndex;
-            const color = s.cancelled ? colors.red : s.done ? colors.green : active ? colors.blue : "#c0cbdf";
-            return (
-              <View key={i} style={styles.tlRow}>
-                <View style={styles.tlRail}>
-                  <View style={[styles.tlDot, { backgroundColor: color }]}>
-                    {s.done ? (
-                      <Ionicons name="checkmark" size={13} color={colors.white} />
-                    ) : s.cancelled ? (
-                      <Ionicons name="close" size={13} color={colors.white} />
-                    ) : active ? (
-                      <View style={styles.tlInner} />
-                    ) : null}
-                  </View>
-                  {i < timeline.length - 1 ? (
-                    <View style={[styles.tlLine, { backgroundColor: s.done ? colors.green : "#e8edf5" }]} />
-                  ) : null}
-                </View>
-                <Text style={[styles.tlLabel, { color: s.done ? colors.green : s.cancelled ? colors.red : active ? colors.blue : colors.textFaint }]}>
-                  {s.label}
-                </Text>
-              </View>
-            );
-          })}
+          <StatusTimeline steps={trip.timeline ?? []} />
         </Card>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -409,12 +357,6 @@ const styles = StyleSheet.create({
   detailCell: { borderTopWidth: 1, borderTopColor: colors.bg, paddingTop: 10 },
   detailKey: { fontSize: 12, color: colors.textFaint, fontWeight: "600", marginBottom: 4 },
   detailVal: { fontSize: 14, fontWeight: "700", color: colors.navy },
-  tlRow: { flexDirection: "row", gap: 14 },
-  tlRail: { alignItems: "center" },
-  tlDot: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  tlInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.white },
-  tlLine: { width: 2, height: 26 },
-  tlLabel: { fontSize: 14, fontWeight: "700", paddingTop: 4 },
   error: { color: colors.red, fontSize: 13, fontWeight: "600", marginTop: 12 },
   bottom: { paddingHorizontal: 16, paddingTop: 12, backgroundColor: colors.bg },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center", padding: 24 },

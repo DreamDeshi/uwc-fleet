@@ -296,5 +296,20 @@
   "admin": {
     "webOnlyTitle": "管理员仪表板",
     "webOnlyBody": "管理工具位于网页仪表板。请在那里登录。"
+  },
+  "timeline": {
+    "title": "状态时间线",
+    "booked": "已预订",
+    "assigned": "已分配",
+    "started": "运送中",
+    "stopArrived": "已到达",
+    "stopDelivered": "已送达",
+    "completed": "已完成",
+    "rejected": "已拒绝",
+    "cancelled": "已取消",
+    "assignedExternal": "已分配给外部承运商",
+    "rerouted": "已改道",
+    "stopPrefix": "第 {{n}} 站",
+    "pending": "待定"
   }
 }
