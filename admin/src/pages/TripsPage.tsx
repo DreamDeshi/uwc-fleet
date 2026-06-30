@@ -482,6 +482,10 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
   const [conflict, setConflict] = useState<
     { driverId: string; plate: string; conflicts: SchedulingConflictInfo[] } | null
   >(null);
+  // Operating-window warning (Phase 3) awaiting the admin's "Assign anyway".
+  const [windowWarn, setWindowWarn] = useState<
+    { driverId: string; plate: string; message: string } | null
+  >(null);
 
   const drivers = useDrivers();
   const approve = useApproveTrip();
@@ -493,12 +497,19 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
     try {
       await approve.mutateAsync({ id: trip.id, driver_id: driverId, truck_plate: plate, force });
       setConflict(null);
+      setWindowWarn(null);
       onDone();
     } catch (e) {
-      // A scheduling conflict is recoverable: surface the clashing trips and let
-      // the admin re-submit with force ("Assign anyway"). Other errors are shown plainly.
-      if (apiErrorCode(e) === "SCHEDULING_CONFLICT") {
+      // Both the scheduling conflict and the operating-window cutoff are
+      // recoverable soft warnings: surface them and let the admin re-submit with
+      // force ("Assign anyway"). Other errors (e.g. overload) are shown plainly.
+      const code = apiErrorCode(e);
+      if (code === "SCHEDULING_CONFLICT") {
         setConflict({ driverId, plate, conflicts: apiErrorConflicts(e) });
+        return;
+      }
+      if (code === "OPERATING_WINDOW") {
+        setWindowWarn({ driverId, plate, message: apiErrorMessage(e, "Past the operating window.") });
         return;
       }
       setError(apiErrorMessage(e, "Could not assign driver."));
@@ -565,6 +576,28 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
               size="sm"
               disabled={approve.isPending}
               onClick={() => assign(conflict.driverId, conflict.plate, true)}
+            >
+              Assign anyway
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {windowWarn && (
+        <div style={{ background: colors.yellowTint, border: "1px solid #f0d98a", borderRadius: radius.md, padding: "11px 13px", marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: colors.amber, marginBottom: 6 }}>
+            ⚠ Operating window
+          </div>
+          <div style={{ fontSize: 12.5, color: colors.text, marginBottom: 3 }}>{windowWarn.message}</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <Button variant="ghost" size="sm" onClick={() => setWindowWarn(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="accent"
+              size="sm"
+              disabled={approve.isPending}
+              onClick={() => assign(windowWarn.driverId, windowWarn.plate, true)}
             >
               Assign anyway
             </Button>

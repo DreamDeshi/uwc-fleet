@@ -63,6 +63,18 @@ export async function pickSearchableConsignee(
   return { term, display: match.company_name, id: match.id };
 }
 
+// Tomorrow 09:00 Malaysia time (UTC+8). A FIXED, near-future, in-window instant:
+//   - always inside the 07:00–18:00 operating window (a 1-stop run finishes
+//     ~10:35), so the Phase-3 cutoff never trips manual-assign flows by wall clock;
+//   - deterministic, so two trips seeded in one test share a pickup — exactly the
+//     within-buffer overlap the scheduling-conflict specs rely on.
+function inWindowPickupIso(): string {
+  const now = new Date();
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 9 - 8, 0)
+  ).toISOString();
+}
+
 /** Create a fresh PENDING trip owned by the test requestor. */
 export async function seedPendingTrip(
   requestorToken: string,
@@ -74,8 +86,7 @@ export async function seedPendingTrip(
   ]);
   return createTrip(requestorToken, {
     route_type_id: routeType.id,
-    // A near-future weekday-ish pickup; only its existence matters for these flows.
-    pickup_datetime: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    pickup_datetime: inWindowPickupIso(),
     stops: [{ consignee_id: consignee.id }],
     cargo_details: [CARGO_LINE],
   });
@@ -101,6 +112,29 @@ export async function seedOversizedTrip(
     pickup_datetime: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     stops: [{ consignee_id: consignee.id }],
     cargo_details: [{ pallet_type: "4×4", quantity: 20 }], // 20 > 16 → fits no truck
+  });
+}
+
+/**
+ * Create a PENDING trip with an explicit pickup instant — used by the
+ * operating-window specs to force a route that finishes past 18:00 (or a pickup
+ * outside the window). 1×(4×4) pallet so capacity/zone never block it; the only
+ * variable under test is the pickup time.
+ */
+export async function seedPendingTripAt(
+  requestorToken: string,
+  pickupIso: string,
+  preferZones: string[] = []
+): Promise<Trip> {
+  const [routeType, consignee] = await Promise.all([
+    pickRouteType(requestorToken),
+    pickConsignee(requestorToken, preferZones),
+  ]);
+  return createTrip(requestorToken, {
+    route_type_id: routeType.id,
+    pickup_datetime: pickupIso,
+    stops: [{ consignee_id: consignee.id }],
+    cargo_details: [CARGO_LINE],
   });
 }
 
