@@ -499,7 +499,13 @@ router.patch(
             }
 
             // Atomic claim: throws 409 CONCURRENT_ASSIGNMENT if no longer pending.
-            await claimPendingTripOrThrow(tx, id, { driver_id, truck_plate });
+            // Clear any auto-dispatch-failed flag — a manual assignment resolves
+            // the "needs attention" state (Phase 2 self-clearing).
+            await claimPendingTripOrThrow(tx, id, {
+              driver_id,
+              truck_plate,
+              auto_dispatch_failed: false,
+            });
 
             await tx.auditLog.create({
               data: { user_id: req.user!.id, action: "trip.approved", table_name: "Trip", record_id: id },
@@ -587,7 +593,8 @@ router.patch(
       const { reason } = req.body;
       const updated = await prisma.trip.update({
         where: { id },
-        data: { status: "rejected", rejection_reason: reason ?? null },
+        // Leaving pending clears the needs-attention flag (Phase 2 self-clearing).
+        data: { status: "rejected", rejection_reason: reason ?? null, auto_dispatch_failed: false },
         include: tripInclude,
       });
       await prisma.auditLog.create({
@@ -650,7 +657,8 @@ router.patch(
       });
       const updated = await prisma.trip.update({
         where: { id },
-        data: { status: "assigned", is_external: true },
+        // Outsourcing resolves the booking → clear the needs-attention flag.
+        data: { status: "assigned", is_external: true, auto_dispatch_failed: false },
         include: tripInclude,
       });
       await prisma.auditLog.create({
@@ -700,7 +708,8 @@ router.patch("/:id/cancel", async (req, res, next) => {
 
     const updated = await prisma.trip.update({
       where: { id },
-      data: { status: "cancelled" },
+      // Cancelling clears the needs-attention flag (Phase 2 self-clearing).
+      data: { status: "cancelled", auto_dispatch_failed: false },
       include: tripInclude,
     });
     await prisma.auditLog.create({

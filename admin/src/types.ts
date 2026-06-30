@@ -134,6 +134,9 @@ export interface Trip {
   incentive_earned: string | null;
   is_external: boolean;
   rejection_reason: string | null;
+  // Phase 2: true when auto-dispatch couldn't place this booking. Self-clearing.
+  // "Needs attention" UI shows for (status === "pending" && auto_dispatch_failed).
+  auto_dispatch_failed: boolean;
   created_at: string;
   stops: TripStop[];
   cargo_details: CargoDetail[];
@@ -246,6 +249,9 @@ export interface DashboardKpis {
   on_time_rate: number | null;
   pending_approvals: number;
   pending_trips: number;
+  // Phase 2: split the conflated "unassigned" count. failed ⊆ pending_trips.
+  auto_dispatch_failed: number; // pending bookings the engine couldn't place
+  awaiting_manual: number; // pending bookings simply awaiting manual dispatch
   alerts: number;
 }
 
