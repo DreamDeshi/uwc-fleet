@@ -119,11 +119,30 @@ export function getTripDayEnd(date: Date): Date {
 }
 
 /**
- * Step 2 — the key rule: first trip of the day earns full destination
- * points, every later trip earns exactly 1 point regardless of destination.
+ * Step 2 — the key rule (client-confirmed): points are counted PER DROP POINT
+ * (stop), PER ZONE, PER DAY, PER DRIVER.
+ *   - The FIRST delivered drop into a given zone on a given day earns that
+ *     zone's FULL points.
+ *   - Every later delivered drop into the SAME zone that day earns 1 point.
+ * The ledger spans both the stops within one trip and separate trips — order by
+ * delivered_at and feed the zones already hit earlier today via
+ * `zonesAlreadyHitToday`. Returns the points each drop earns, pre-deduction.
  */
-export function computeTripPoints(sequenceNumberToday: number, destinationPoints: number): number {
-  return sequenceNumberToday === 1 ? destinationPoints : 1;
+export interface ScoredDrop {
+  zoneCode: string;
+  zonePoints: number; // the zone's full destination points
+}
+
+export function scoreDrops(
+  drops: ScoredDrop[],
+  zonesAlreadyHitToday: Iterable<string> = []
+): number[] {
+  const seen = new Set<string>(zonesAlreadyHitToday);
+  return drops.map((d) => {
+    const points = seen.has(d.zoneCode) ? 1 : d.zonePoints;
+    seen.add(d.zoneCode);
+    return points;
+  });
 }
 
 /**
@@ -144,93 +163,77 @@ export function isDocumentationComplete(
   return true;
 }
 
-/** Steps 4 & 5 — deduction then final RM calculation. */
-export function calculateIncentiveAmount(params: {
-  totalPointsToday: number;
-  dailyDeductionPoints: number;
-  rate: number;
-}): number {
-  const netPoints = Math.max(params.totalPointsToday - params.dailyDeductionPoints, 0);
-  return Math.round(netPoints * params.rate * 100) / 100;
-}
-
 export interface DeliveryIncentiveResult {
-  sequenceNumberToday: number;
-  pointsEarnedThisTrip: number;
-  totalPointsToday: number;
   isOffPeak: boolean;
   rateUsed: number;
-  /** Running day total (cumulative) as of this trip. */
-  incentiveAmount: number;
+  /** Points each of THIS trip's drops earned, pre-deduction (per-zone rule). */
+  dropPoints: number[];
+  /** Sum of dropPoints (pre-deduction) for this trip. */
+  pointsThisTrip: number;
+  /** Deduction points actually subtracted (0 unless this trip holds the day's first drop). */
+  deductionApplied: number;
   /**
-   * MARGINAL incentive this trip alone contributes — the value to persist in
-   * incentive_earned. floored(day total WITH this trip) − floored(day total
-   * BEFORE this trip), so summing it across a day reproduces the day total.
+   * MARGINAL incentive (RM) this trip contributes — the value persisted in
+   * incentive_earned. Because the daily deduction is applied exactly once (on
+   * the day's first drop, which lives in the first trip), summing this across a
+   * day reproduces the day total without re-inflating.
    */
   incentiveThisTrip: number;
 }
 
 /**
- * Full per-delivery calculation. Callers must supply:
- *  - completedTripsTodayBeforeThis: how many trips this driver already
- *    delivered earlier in the same trip-day (NOT including this one)
- *  - firstTripPointsToday: the points trip #1 of the day earned (its
- *    destination points). Only needed when this isn't trip #1; pass null
- *    for trip #1 itself.
- *  - destinationPoints: this trip's destination points (used only if this
- *    turns out to be trip #1 of the day)
+ * Full per-trip incentive (Steps 2, 4 & 5), scoring the trip's drops with the
+ * per-zone-per-day rule then applying the rate and the once-per-day deduction.
+ *
+ * Caller supplies:
+ *  - drops: this trip's DELIVERED stops, in delivered order, each with its
+ *    zone code and that zone's full destination points.
+ *  - zonesDeliveredEarlierToday: zones this driver already delivered to earlier
+ *    today (across prior trips) — so a stop whose zone was already hit scores 1.
+ *  - isFirstDeliveredDropOfDay: true iff no drop was delivered earlier today
+ *    (i.e. this trip holds the day's first drop, so the daily deduction lands
+ *    on its first stop).
+ *
+ * Rate is the trip's peak/off-peak rate by MYT pickup time (unchanged).
  */
 export function calculateDeliveryIncentive(params: {
   pickupDateTime: Date;
-  destinationPoints: number;
-  completedTripsTodayBeforeThis: number;
-  firstTripPointsToday: number | null;
+  drops: ScoredDrop[];
+  zonesDeliveredEarlierToday: string[];
+  isFirstDeliveredDropOfDay: boolean;
   truck: {
     daily_deduction_points: number;
     entitled_claim_weekday: number;
     entitled_claim_offpeak: number;
   };
 }): DeliveryIncentiveResult {
-  const sequenceNumberToday = params.completedTripsTodayBeforeThis + 1;
-  const pointsEarnedThisTrip = computeTripPoints(sequenceNumberToday, params.destinationPoints);
-
-  // Points contributed by every trip before this one today: trip #1's
-  // destination points, plus exactly 1 point for each trip in between.
-  const pointsFromPriorTrips =
-    sequenceNumberToday === 1 ? 0 : (params.firstTripPointsToday ?? 0) + (sequenceNumberToday - 2);
-
-  const totalPointsToday = pointsFromPriorTrips + pointsEarnedThisTrip;
-
   const offPeak = isOffPeak(params.pickupDateTime);
   const rate = offPeak ? params.truck.entitled_claim_offpeak : params.truck.entitled_claim_weekday;
 
-  // Cumulative day total WITH this trip (the running figure).
-  const incentiveAmount = calculateIncentiveAmount({
-    totalPointsToday,
-    dailyDeductionPoints: params.truck.daily_deduction_points,
-    rate,
-  });
+  const dropPoints = scoreDrops(params.drops, params.zonesDeliveredEarlierToday);
 
-  // Cumulative day total BEFORE this trip, using the same deduction + rate.
-  // The deduction is applied to the whole day's points (not per trip), so the
-  // marginal of trip #1 absorbs the full deduction and later trips add their
-  // own (post-deduction) points × rate.
-  const incentiveBeforeThisTrip = calculateIncentiveAmount({
-    totalPointsToday: pointsFromPriorTrips,
-    dailyDeductionPoints: params.truck.daily_deduction_points,
-    rate,
-  });
-
-  // MARGINAL incentive this trip adds — the value stored in incentive_earned.
-  const incentiveThisTrip = Math.round((incentiveAmount - incentiveBeforeThisTrip) * 100) / 100;
+  // Daily deduction applied once/day on the first drop ('daily' per client). If
+  // it should apply per new-zone instead, change here.
+  let deductionApplied = 0;
+  let incentive = 0;
+  for (let i = 0; i < dropPoints.length; i++) {
+    let points = dropPoints[i];
+    if (params.isFirstDeliveredDropOfDay && i === 0) {
+      const before = points;
+      // TODO: zero-floor edge not client-confirmed (e.g. a 1pt P2 first drop
+      // minus a 2pt deduction floors to 0; the unused deduction is not carried).
+      points = Math.max(points - params.truck.daily_deduction_points, 0);
+      deductionApplied = before - points;
+    }
+    incentive += points * rate;
+  }
 
   return {
-    sequenceNumberToday,
-    pointsEarnedThisTrip,
-    totalPointsToday,
     isOffPeak: offPeak,
     rateUsed: rate,
-    incentiveAmount,
-    incentiveThisTrip,
+    dropPoints,
+    pointsThisTrip: dropPoints.reduce((a, b) => a + b, 0),
+    deductionApplied,
+    incentiveThisTrip: Math.round(incentive * 100) / 100,
   };
 }

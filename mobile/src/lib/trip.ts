@@ -114,20 +114,42 @@ function isOffPeak(date: Date): boolean {
 export function estimateIncentive(trip: Trip): number | null {
   const truck = trip.truck;
   if (!truck) return null;
-  const stops = [...(trip.stops ?? [])].sort((a, b) => a.sequence - b.sequence);
-  const destZone = stops[stops.length - 1]?.consignee?.zone_code;
-  const points = destZone ? ZONE_POINTS[destZone] : undefined;
-  if (points == null) return null;
   const rateRaw = isOffPeak(new Date(trip.pickup_datetime))
     ? truck.entitled_claim_offpeak
     : truck.entitled_claim_weekday;
   const rate = Number(rateRaw);
   if (rateRaw == null || !Number.isFinite(rate)) return null;
-  // Apply the once-per-day points deduction the engine takes before multiplying
-  // by the rate (floored at 0 so a small first trip never goes negative).
+
+  const stops = [...(trip.stops ?? [])].sort((a, b) => a.sequence - b.sequence);
+
+  // Mirrors the server's per-zone-per-day rule, scored across THIS trip's stops:
+  // the first stop into a zone earns the zone's full points, a repeat zone earns
+  // 1. The daily deduction lands once, on the first stop.
+  //
+  // Pre-completion estimate caveat: this pure client function only sees this
+  // trip's stops, so it assumes this is the driver's first trip of the day (the
+  // deduction applies here) and cannot know zones already hit by the driver's
+  // OTHER trips today. The server's finalized incentive_earned is authoritative.
   const deduction = truck.daily_deduction_points ?? 0;
-  const netPoints = Math.max(points - deduction, 0);
-  return netPoints * rate;
+  const seen = new Set<string>();
+  let total = 0;
+  let counted = false;
+  let firstStop = true;
+  for (const s of stops) {
+    const zone = s.consignee?.zone_code;
+    const full = zone ? ZONE_POINTS[zone] : undefined;
+    if (!zone || full == null) continue;
+    let points = seen.has(zone) ? 1 : full;
+    seen.add(zone);
+    if (firstStop) {
+      points = Math.max(points - deduction, 0); // floored at 0
+      firstStop = false;
+    }
+    total += points * rate;
+    counted = true;
+  }
+  if (!counted) return null;
+  return Math.round(total * 100) / 100;
 }
 
 export function totalPallets(trip: Trip): number {
