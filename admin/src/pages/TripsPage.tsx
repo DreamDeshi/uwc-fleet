@@ -561,6 +561,10 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
                           {d.assigned_truck
                             ? `${d.assigned_truck.plate} · ${d.current_load}/${d.assigned_truck.max_pallets}p`
                             : "No truck"}
+                          {/* Scheduled (assigned-but-not-started) trips: the driver
+                              is still selectable, but assigning within the conflict
+                              window will prompt an "Assign anyway" override. */}
+                          {d.scheduled_trips > 0 ? ` · ${d.scheduled_trips} scheduled` : ""}
                         </div>
                       </div>
                     </div>

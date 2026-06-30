@@ -126,6 +126,15 @@ function DriverCard({
           En route: {d.current_route}
         </div>
       )}
+
+      {/* Scheduled (assigned-but-not-started) trips. The driver still reads
+          "Available" for dispatch — only an in_progress trip marks them On Trip —
+          so surface the queued count here to explain the status. */}
+      {d.scheduled_trips > 0 && (
+        <div style={{ marginTop: d.current_route ? 8 : 12, background: colors.panel, color: colors.textMuted, borderRadius: radius.pill, padding: "6px 12px", fontSize: 12, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
+          🗓 {d.scheduled_trips} scheduled trip{d.scheduled_trips === 1 ? "" : "s"}
+        </div>
+      )}
     </Card>
   );
 }

@@ -3,9 +3,11 @@
  * before each spec runs:
  *   1. dispatch mode → manual (so newly seeded trips stay pending until a test
  *      explicitly assigns or auto-dispatches them);
- *   2. the test driver (Azmi) is freed — any active trip is driven to completion
- *      via the API, because the "one active trip per driver" rule would otherwise
- *      reject a fresh assignment with 409 DRIVER_BUSY;
+ *   2. the test driver (Azmi) is freed — any active trip (assigned or in_progress)
+ *      is driven to completion via the API, so each spec starts from a clean slate
+ *      (an in_progress trip would otherwise block a fresh assignment with 409
+ *      DRIVER_BUSY; a leftover assigned trip would trip the SCHEDULING_CONFLICT
+ *      buffer — both are avoided by completing them here);
  *   3. all still-open (pending/approved) trips are cancelled to keep the boards tidy.
  *
  * Trips already assigned to OTHER drivers can't be cancelled (the API only allows
