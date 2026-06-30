@@ -909,13 +909,13 @@ router.patch(
         throw new ApiError(400, "TRUCK_NOT_ASSIGNED", "This trip has no truck assigned.");
       }
 
-      const destinationRate = await prisma.destinationRate.findFirst({
-        where: { zone_code: consigneeForGate.zone_code },
-      });
-      const destinationPoints = destinationRate?.points ?? 1;
-
       const dayStart = getTripDayStart(trip.pickup_datetime);
       const dayEnd = getTripDayEnd(trip.pickup_datetime);
+
+      // Per-day ledger: zones this driver already delivered to earlier today (in
+      // prior completed trips). A stop whose zone is already on the ledger scores
+      // 1 point; the FIRST drop of the day is the one the daily deduction lands
+      // on, so isFirstDeliveredDropOfDay is true only when the ledger is empty.
       const priorTripsToday = await prisma.trip.findMany({
         where: {
           driver_id: req.user!.id,
@@ -923,25 +923,35 @@ router.patch(
           pickup_datetime: { gte: dayStart, lt: dayEnd },
           id: { not: id },
         },
-        orderBy: { pickup_datetime: "asc" },
-        include: { stops: { orderBy: { sequence: "asc" }, include: { consignee: true } } },
+        include: { stops: { include: { consignee: { select: { zone_code: true } } } } },
       });
+      const zonesDeliveredEarlierToday = priorTripsToday.flatMap((t) =>
+        t.stops.filter((s) => s.status === "delivered").map((s) => s.consignee.zone_code)
+      );
+      const isFirstDeliveredDropOfDay = zonesDeliveredEarlierToday.length === 0;
 
-      let firstTripPointsToday: number | null = null;
-      if (priorTripsToday.length > 0) {
-        const firstTrip = priorTripsToday[0];
-        const firstZone = firstTrip.stops[0]?.consignee.zone_code;
-        const firstRate = firstZone
-          ? await prisma.destinationRate.findFirst({ where: { zone_code: firstZone } })
-          : null;
-        firstTripPointsToday = firstRate?.points ?? 1;
-      }
+      // This trip's delivered drops, in delivered order, each with its zone's
+      // full destination points. Scored stop-by-stop (per-zone-per-day), summed.
+      const thisTripStops = await prisma.tripStop.findMany({
+        where: { trip_id: id },
+        orderBy: { delivered_at: "asc" },
+        include: { consignee: { select: { zone_code: true } } },
+      });
+      const zoneCodes = [...new Set(thisTripStops.map((s) => s.consignee.zone_code))];
+      const rateRows = await prisma.destinationRate.findMany({
+        where: { zone_code: { in: zoneCodes } },
+      });
+      const pointsByZone = new Map(rateRows.map((r) => [r.zone_code, r.points]));
+      const drops = thisTripStops.map((s) => ({
+        zoneCode: s.consignee.zone_code,
+        zonePoints: pointsByZone.get(s.consignee.zone_code) ?? 1,
+      }));
 
       const incentive = calculateDeliveryIncentive({
         pickupDateTime: trip.pickup_datetime,
-        destinationPoints,
-        completedTripsTodayBeforeThis: priorTripsToday.length,
-        firstTripPointsToday,
+        drops,
+        zonesDeliveredEarlierToday,
+        isFirstDeliveredDropOfDay,
         truck: {
           daily_deduction_points: trip.truck.daily_deduction_points,
           entitled_claim_weekday: Number(trip.truck.entitled_claim_weekday),
