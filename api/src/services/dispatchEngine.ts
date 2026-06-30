@@ -23,6 +23,7 @@ import { sendPushNotifications } from "../lib/pushNotifications";
 import { palletEquivalents } from "../lib/pallets";
 import { isSerializationConflict } from "../lib/prismaErrors";
 import { claimPendingTrip } from "./tripAssignment";
+import { recordTripEvent } from "../lib/tripHistory";
 
 // ── Pure engine types ─────────────────────────────────────────────────
 
@@ -264,7 +265,7 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
             },
           },
           include: {
-            driver: { select: { id: true } },
+            driver: { select: { id: true, name: true } },
             trips: {
               where: { status: { in: [...ACTIVE_TRIP_STATUSES] }, id: { not: tripId } },
               select: {
@@ -321,6 +322,15 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
             },
           });
         }
+        // actorId null: the assignment was system-driven (auto-dispatch), not a
+        // person — the timeline distinguishes this from a manual admin approve.
+        const driverName = trucks.find((t) => t.plate === sel.plate)?.driver?.name ?? null;
+        await recordTripEvent(tx, {
+          tripId,
+          event: "assigned",
+          actorId: null,
+          note: driverName ? `${driverName} · ${sel.plate} (auto)` : `${sel.plate} (auto)`,
+        });
         return { sel, raced: false };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
