@@ -116,7 +116,6 @@ export interface MyPerformance {
   on_time_rate: number;
   completion_rate: number;
   total_completed: number;
-  points_this_month: number;
   rm_earned_this_month: number;
   has_data: boolean;
 }

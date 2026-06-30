@@ -174,7 +174,6 @@
     "completion": "Completion Rate",
     "tripsCompleted": "Trips Completed",
     "rmEarned": "Earned This Month",
-    "pointsThisMonth": "Points This Month",
     "howItWorks": "Your score blends on-time delivery (40%), trip completion (30%) and incentive earned (30%).",
     "emptyTitle": "Not enough trips yet",
     "emptyBody": "Complete your first trips and your performance score, tier and ranking will appear here.",
