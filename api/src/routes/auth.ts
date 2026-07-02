@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
 import { validateBody } from "../middleware/validate";
-import { requireAuth } from "../middleware/auth";
+import { accountStatusError, requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import {
   signAccessToken,
@@ -138,6 +138,13 @@ router.post("/refresh", validateBody(refreshSchema), async (req, res, next) => {
     const matches = await bcrypt.compare(refreshToken, user.refresh_token_hash);
     if (!matches) {
       throw new ApiError(401, "INVALID_REFRESH_TOKEN", "Refresh token is invalid or expired.");
+    }
+
+    // A disabled/pending account must not be able to mint new tokens — without
+    // this, a user disabled mid-session could refresh indefinitely.
+    const statusErr = accountStatusError(user.status);
+    if (statusErr) {
+      throw statusErr;
     }
 
     // Rotation: issue a brand new pair, invalidate the old refresh token.
