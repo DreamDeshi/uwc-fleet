@@ -9,6 +9,7 @@ import type {
   FuelLog,
   LivePosition,
   MonthlyRow,
+  PublicHoliday,
   RateAuditEntry,
   RateResetResult,
   Trip,
@@ -289,6 +290,31 @@ export function useUpdateDestinationRate() {
   return useMutation({
     mutationFn: async (v: { id: string; points: number }) =>
       (await api.patch<DestinationRate>(`/rates/destinations/${v.id}`, { points: v.points })).data,
+    onSuccess: invalidate,
+  });
+}
+
+// ── Public holidays (admin-managed calendar; drives the off-peak rate) ──
+export function useHolidays() {
+  return useQuery({
+    queryKey: ["holidays"],
+    queryFn: async () => (await api.get<PublicHoliday[]>("/holidays")).data,
+  });
+}
+
+export function useAddHoliday() {
+  const invalidate = useInvalidate([["holidays"]]);
+  return useMutation({
+    mutationFn: async (v: { date: string; name: string }) =>
+      (await api.post<PublicHoliday>("/holidays", v)).data,
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteHoliday() {
+  const invalidate = useInvalidate([["holidays"]]);
+  return useMutation({
+    mutationFn: async (id: string) => (await api.delete(`/holidays/${id}`)).data,
     onSuccess: invalidate,
   });
 }

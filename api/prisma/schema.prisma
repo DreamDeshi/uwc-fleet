@@ -229,6 +229,19 @@ model TripStop {
   zone_points  Int?
 }
 
+// ── 8b. PublicHoliday ────────────────────────────────────────────────
+// Admin-managed public-holiday calendar — drives the incentive engine's
+// weekday/off-peak decision (replaces the old hardcoded 2026 list, which
+// carried wrong dates). `date` is the MYT calendar day as a "YYYY-MM-DD"
+// string — the exact key isOffPeak() compares against — so there is no
+// UTC/DATE-column ambiguity anywhere in the money path.
+model PublicHoliday {
+  id         String   @id @default(cuid())
+  date       String   @unique // "YYYY-MM-DD" (MYT calendar day)
+  name       String
+  created_at DateTime @default(now())
+}
+
 // ── 9. Consignee ─────────────────────────────────────────────────────
 
 model Consignee {

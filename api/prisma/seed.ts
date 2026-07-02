@@ -18,6 +18,7 @@ import path from "path";
 import bcrypt from "bcrypt";
 import * as xlsx from "xlsx";
 import { prisma } from "../src/lib/prisma";
+import { PUBLIC_HOLIDAYS_2026 } from "../src/data/publicHolidays2026";
 
 const BCRYPT_COST = 10;
 const SEED_PASSWORD = "Password123"; // placeholder — change after first login
@@ -222,6 +223,20 @@ async function seedDrivers() {
   console.log(`Seeded ${spec.driver_assignments.length} drivers (password: ${SEED_PASSWORD}).`);
 }
 
+async function seedPublicHolidays() {
+  // Corrected gazetted 2026 set (shared module; the calendar migration inserts
+  // the same rows in prod). Upsert by date so re-seeding never duplicates and
+  // never clobbers an admin's later edits to a holiday's name.
+  for (const h of PUBLIC_HOLIDAYS_2026) {
+    await prisma.publicHoliday.upsert({
+      where: { date: h.date },
+      update: {},
+      create: { date: h.date, name: h.name },
+    });
+  }
+  console.log(`Seeded ${PUBLIC_HOLIDAYS_2026.length} public holidays (2026).`);
+}
+
 async function seedAdmin() {
   const password_hash = await bcrypt.hash(SEED_PASSWORD, BCRYPT_COST);
   await prisma.user.upsert({
@@ -308,6 +323,7 @@ async function main() {
   await seedRouteTypes();
   await seedTrucks();
   await seedDrivers();
+  await seedPublicHolidays();
   await seedAdmin();
 
   const existingConsignees = await prisma.consignee.count();

@@ -7,7 +7,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { DriverTabParamList } from "../../navigation/types";
 import { useAuth } from "../../context/AuthContext";
-import { useTrips } from "../../hooks/queries";
+import { useTrips, useHolidaySet } from "../../hooks/queries";
 import { colors, radius, shadow } from "../../theme";
 import { Card } from "../../components/Card";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -176,11 +176,12 @@ function AssignmentCard({
   isNext?: boolean;
 }) {
   const { t } = useTranslation();
+  const holidays = useHolidaySet();
   // The real incentive_earned is only set on completion (null/0 while the trip is
   // assigned or in progress). Until then show an estimate, marked "Est.", matching
   // TripDetailsScreen — never a bare RM 0 on an active assignment.
   const finalized = trip.incentive_earned !== null && trip.incentive_earned !== undefined;
-  const estimate = finalized ? null : estimateIncentive(trip);
+  const estimate = finalized ? null : estimateIncentive(trip, holidays);
   const rmValue = finalized
     ? formatMoney(trip.incentive_earned)
     : estimate !== null

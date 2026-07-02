@@ -295,6 +295,14 @@ export interface DestinationRate {
   zone: { code: string; name: string } | null;
 }
 
+// Admin-managed public-holiday calendar (GET /holidays) — dates are MYT
+// "YYYY-MM-DD" keys; a listed date pays the off-peak rate all day.
+export interface PublicHoliday {
+  id: string;
+  date: string;
+  name: string;
+}
+
 // Latest rate-change audit entry per record (GET /rates/audit) — drives the
 // "last updated by X on DATE" note on the Incentive Rates page.
 export interface RateAuditEntry {

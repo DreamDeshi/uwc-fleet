@@ -43,28 +43,6 @@ export const DAILY_RESET_HOUR = hourFromEnv("DAILY_RESET_HOUR", 0);
 // UTC instant and then read the UTC* fields to get the wall-clock MYT parts.
 const MYT_OFFSET_MS = 8 * 60 * 60 * 1000;
 
-// Malaysian public holidays 2026 (brief Section 18), deduped to "YYYY-MM-DD".
-// On these dates the off-peak rate table applies all day.
-// TODO: make this admin-configurable (store in DB) instead of hardcoding.
-export const MY_PUBLIC_HOLIDAYS_2026: Set<string> = new Set([
-  "2026-01-01", // New Year's Day
-  "2026-01-29", // Chinese New Year
-  "2026-01-30", // Chinese New Year (2nd day)
-  "2026-02-01", // Federal Territory Day
-  "2026-03-28", // Hari Raya Aidilfitri
-  "2026-03-29", // Hari Raya Aidilfitri (2nd day)
-  "2026-04-14", // Thaipusam (Penang)
-  "2026-05-01", // Labour Day
-  "2026-05-20", // Wesak Day
-  "2026-06-05", // Hari Raya Aidiladha
-  "2026-06-08", // Yang di-Pertuan Agong Birthday
-  "2026-07-07", // Awal Muharram
-  "2026-08-31", // National Day
-  "2026-09-16", // Malaysia Day / Prophet Muhammad Birthday (same date in brief)
-  "2026-10-20", // Deepavali
-  "2026-12-25", // Christmas
-]);
-
 /** The Malaysia-time (UTC+8) wall-clock parts of a UTC instant. */
 function mytParts(date: Date): { year: number; month: number; day: number; hour: number; weekday: number } {
   const myt = new Date(date.getTime() + MYT_OFFSET_MS);
@@ -77,8 +55,11 @@ function mytParts(date: Date): { year: number; month: number; day: number; hour:
   };
 }
 
-/** The trip's date as a Malaysia-time "YYYY-MM-DD" string. */
-function mytDateKey(date: Date): string {
+/**
+ * The trip's date as a Malaysia-time "YYYY-MM-DD" string — the key format the
+ * PublicHoliday table stores and the leave calendar compares against.
+ */
+export function mytDateKey(date: Date): string {
   const p = mytParts(date);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${p.year}-${pad(p.month + 1)}-${pad(p.day)}`;
@@ -88,11 +69,16 @@ function mytDateKey(date: Date): string {
  * Weekday rates apply Mon-Fri before the off-peak cutoff (Malaysia time).
  * Off-peak rates apply on Sat/Sun, on public holidays, or any day at/after
  * the cutoff hour — all evaluated against the trip's Malaysia-time wall clock.
+ *
+ * `publicHolidays` is a set of MYT "YYYY-MM-DD" keys, supplied by the caller
+ * (loaded from the admin-managed PublicHoliday table at the route layer).
+ * The engine holds NO baked-in holiday list — an empty set simply means no
+ * holidays, so this function stays pure and DB-free.
  */
-export function isOffPeak(date: Date): boolean {
+export function isOffPeak(date: Date, publicHolidays: ReadonlySet<string>): boolean {
   const { weekday, hour } = mytParts(date);
   if (weekday === 0 || weekday === 6) return true; // Sat / Sun
-  if (MY_PUBLIC_HOLIDAYS_2026.has(mytDateKey(date))) return true; // public holiday
+  if (publicHolidays.has(mytDateKey(date))) return true; // public holiday
   return hour >= OFFPEAK_CUTOFF_HOUR;
 }
 
@@ -205,13 +191,15 @@ export function calculateDeliveryIncentive(params: {
   drops: ScoredDrop[];
   zonesDeliveredEarlierToday: string[];
   isFirstDeliveredDropOfDay: boolean;
+  /** MYT "YYYY-MM-DD" holiday keys from the PublicHoliday table (caller-supplied — the engine never reads the DB). */
+  publicHolidays: ReadonlySet<string>;
   truck: {
     daily_deduction_points: number;
     entitled_claim_weekday: number;
     entitled_claim_offpeak: number;
   };
 }): DeliveryIncentiveResult {
-  const offPeak = isOffPeak(params.pickupDateTime);
+  const offPeak = isOffPeak(params.pickupDateTime, params.publicHolidays);
   const rate = offPeak ? params.truck.entitled_claim_offpeak : params.truck.entitled_claim_weekday;
 
   const dropPoints = scoreDrops(params.drops, params.zonesDeliveredEarlierToday);

@@ -98,4 +98,15 @@ describe("finalizeTripOnce (write-once compare-and-set)", () => {
     expect(await finalizeTripOnce(client, "t1", 66)).toBe(false);
     expect(row.incentive_earned).toBe(44);
   });
+
+  it("holiday-calendar edits never touch stored pay: a re-finalization at the new tier loses", async () => {
+    // Weekday Ipoh trip finalized at RM44 with an empty calendar; an admin then
+    // adds that date as a holiday. Recomputing WOULD give (6−2)×13 = RM52, but
+    // the decision ran exactly once at finalization — the CAS refuses a rerun
+    // and the stored pay stays RM44 (readers only ever sum the stored value).
+    const { row, client } = fakeTrip({ status: "in_progress", incentive_earned: null });
+    await finalizeTripOnce(client, "t1", 44);
+    expect(await finalizeTripOnce(client, "t1", 52)).toBe(false);
+    expect(row).toEqual({ status: "completed", incentive_earned: 44 });
+  });
 });

@@ -22,6 +22,7 @@ import {
   isDocumentationComplete,
 } from "../services/incentiveEngine";
 import { PLANT_ORIGIN, zoneCoord, getRoute, type LatLng } from "../lib/geo";
+import { loadHolidaySet } from "../lib/holidays";
 import { upload } from "../lib/upload";
 import { uploadBuffer } from "../lib/cloudinary";
 import { sendPushNotifications } from "../lib/pushNotifications";
@@ -1101,6 +1102,11 @@ router.patch(
         drops,
         zonesDeliveredEarlierToday,
         isFirstDeliveredDropOfDay,
+        // Admin-managed calendar (PublicHoliday table) — loaded here so the
+        // engine stays pure. The weekday/off-peak decision runs exactly once,
+        // at this finalization; later calendar edits never touch stored pay
+        // (write-once finalizeTripOnce below).
+        publicHolidays: await loadHolidaySet(),
         truck: finalizationRateParams({
           entitled_claim_weekday: trip.entitled_claim_weekday,
           entitled_claim_offpeak: trip.entitled_claim_offpeak,
