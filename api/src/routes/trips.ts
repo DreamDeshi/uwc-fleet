@@ -793,6 +793,17 @@ router.patch(
         throw new ApiError(400, "STOP_NOT_FOUND", "That stop is not part of this trip.");
       }
 
+      // do_uploaded may only assert a POD photo that actually exists — it is
+      // flipped by the photo upload; allowing it bare would let the delivery
+      // gate (and the incentive behind it) be satisfied with no photo at all.
+      if (do_uploaded === true && !stop.pod_photo) {
+        throw new ApiError(
+          400,
+          "POD_PHOTO_REQUIRED",
+          "Upload the POD photo first — the DO flag cannot be set without it."
+        );
+      }
+
       await prisma.tripStop.update({
         where: { id: stopId },
         data: {
