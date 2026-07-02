@@ -7,7 +7,7 @@ import { TextField, PressableField } from "./Field";
 import { Button } from "./Button";
 import { OptionsModal } from "./OptionsModal";
 import { useCreateConsignee } from "../hooks/queries";
-import { apiErrorMessage } from "../services/api";
+import { apiErrorCandidates, apiErrorCode, apiErrorMessage, SimilarConsignee } from "../services/api";
 import { useToast } from "./Toast";
 import { Consignee } from "../types";
 
@@ -44,13 +44,17 @@ export function NewConsigneeModal({
   const [area, setArea] = useState("");
   const [zoneOpen, setZoneOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 409 SIMILAR_EXISTS candidates ("did you mean?") — the requestor can tap an
+  // existing entry instead of creating a near-duplicate, or create anyway.
+  const [similar, setSimilar] = useState<SimilarConsignee[] | null>(null);
 
   const reset = () => {
-    setCompany(""); setZone(undefined); setContact(""); setPhone(""); setArea(""); setError(null);
+    setCompany(""); setZone(undefined); setContact(""); setPhone(""); setArea(""); setError(null); setSimilar(null);
   };
 
-  const submit = async () => {
+  const submit = async (force = false) => {
     setError(null);
+    if (!force) setSimilar(null);
     if (!company.trim() || !zone) {
       setError(t("booking.consigneeRequired"));
       return;
@@ -62,11 +66,27 @@ export function NewConsigneeModal({
         contact_person: contact.trim() || undefined,
         phone: phone.trim() || undefined,
         area: area.trim() || undefined,
+        force,
       });
       onCreatedDone(c);
     } catch (err) {
+      if (apiErrorCode(err) === "SIMILAR_EXISTS") {
+        setSimilar(apiErrorCandidates(err));
+        return;
+      }
       setError(apiErrorMessage(err));
     }
+  };
+
+  // Tapping a candidate uses the EXISTING consignee (no duplicate created).
+  const useExisting = (c: SimilarConsignee) => {
+    onCreatedDone({
+      id: c.id,
+      company_name: c.company_name,
+      area: c.area,
+      state: c.state,
+      zone_code: c.zone_code,
+    });
   };
 
   const onCreatedDone = (c: Consignee) => {
@@ -100,9 +120,25 @@ export function NewConsigneeModal({
             <TextField label={t("booking.phone")} value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
             <TextField label={t("booking.area")} value={area} onChangeText={setArea} />
             {error ? <Text style={styles.error}>{error}</Text> : null}
+            {similar && similar.length > 0 && (
+              <View style={styles.similarBox}>
+                <Text style={styles.similarTitle}>{t("booking.similarTitle")}</Text>
+                {similar.map((c) => (
+                  <TouchableOpacity key={c.id} style={styles.similarRow} onPress={() => useExisting(c)}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.similarName}>{c.company_name}</Text>
+                      <Text style={styles.similarSub}>
+                        {[c.area, c.state, c.zone_code].filter(Boolean).join(" · ")}
+                      </Text>
+                    </View>
+                    <Text style={styles.similarUse}>{t("booking.similarUse")}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
             <Button
-              title={t("booking.addConsigneeBtn")}
-              onPress={submit}
+              title={similar ? t("booking.similarCreateAnyway") : t("booking.addConsigneeBtn")}
+              onPress={() => submit(!!similar)}
               loading={createConsignee.isPending}
               style={{ marginTop: 4, marginBottom: 12 }}
             />
@@ -128,4 +164,10 @@ const styles = StyleSheet.create({
   head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
   title: { fontSize: 17, fontWeight: "800", color: colors.navy },
   error: { color: colors.red, fontSize: 13, fontWeight: "600", marginBottom: 8 },
+  similarBox: { backgroundColor: "#FFF8E1", borderRadius: radius.md, padding: 12, marginBottom: 10 },
+  similarTitle: { fontSize: 13, fontWeight: "800", color: "#B26A00", marginBottom: 8 },
+  similarRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#E6D9A8" },
+  similarName: { fontSize: 13.5, fontWeight: "700", color: colors.navy },
+  similarSub: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+  similarUse: { fontSize: 12.5, fontWeight: "800", color: colors.blue, marginLeft: 10 },
 });

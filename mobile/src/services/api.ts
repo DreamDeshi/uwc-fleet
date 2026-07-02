@@ -121,6 +121,25 @@ export function apiErrorMessage(err: unknown, fallback = "Something went wrong."
   return fallback;
 }
 
+/** The API's error code (e.g. "SIMILAR_EXISTS"), or null for non-API errors. */
+export function apiErrorCode(err: unknown): string | null {
+  const ax = err as AxiosError<{ error?: { code?: string } }>;
+  return ax?.response?.data?.error?.code ?? null;
+}
+
+/** Similar-consignee candidates from a 409 SIMILAR_EXISTS response. */
+export interface SimilarConsignee {
+  id: string;
+  company_name: string;
+  area: string | null;
+  state: string | null;
+  zone_code: string;
+}
+export function apiErrorCandidates(err: unknown): SimilarConsignee[] {
+  const ax = err as AxiosError<{ error?: { candidates?: SimilarConsignee[] } }>;
+  return ax?.response?.data?.error?.candidates ?? [];
+}
+
 // ── Auth calls (used by AuthContext) ───────────────────────────────────────
 export async function loginRequest(phone: string, password: string): Promise<LoginResponse> {
   const res = await api.post<LoginResponse>("/auth/login", { phone, password });

@@ -27,6 +27,22 @@ function normalise(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+// Two company names are "similar" (dedupe warning on self-add) when their
+// normalised forms are equal or one contains the other — so "A.C.E Sdn Bhd"
+// matches "ACE SDN. BHD." and "ACE Engineering" matches "ACE ENGINEERING SDN
+// BHD". Containment requires 4+ normalised chars so a very short name doesn't
+// flag half the directory. Exported for unit tests; the create route's SQL
+// prefilter mirrors this rule.
+export function isSimilarCompanyName(a: string, b: string): boolean {
+  const na = normalise(a);
+  const nb = normalise(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.length >= 4 && nb.includes(na)) return true;
+  if (nb.length >= 4 && na.includes(nb)) return true;
+  return false;
+}
+
 // Strip the "SDN BHD" / "BHD" company suffix for display only — the full legal
 // name stays in the database; this just declutters the search list. Never
 // returns empty (falls back to the original if the name was only the suffix).
@@ -150,6 +166,8 @@ const createConsigneeSchema = z.object({
   state: z.string().optional(),
   postal_code: z.string().optional(),
   vendor_code: z.string().optional(),
+  // Re-submit with force=true to create despite a SIMILAR_EXISTS warning.
+  force: z.boolean().optional(),
 });
 
 router.post(
@@ -158,15 +176,51 @@ router.post(
   validateBody(createConsigneeSchema),
   async (req, res, next) => {
     try {
-      const { zone_code } = req.body;
+      // `force` is control flow, not consignee data — it must never reach the
+      // Prisma create spread below.
+      const { force, ...data } = req.body;
+      const { zone_code, company_name } = data;
 
       const zone = await prisma.zone.findUnique({ where: { code: zone_code } });
       if (!zone) {
         throw new ApiError(400, "ZONE_NOT_FOUND", "That delivery zone does not exist.");
       }
 
+      // Dedupe warning: the directory already grows junk near-duplicates from
+      // self-adds ("ACE" vs "A.C.E Sdn Bhd"). Reuse the search normalisation to
+      // find similar actives; without force, return them as candidates so the
+      // requestor can pick the existing entry instead.
+      if (!force) {
+        const ns = normalise(company_name);
+        if (ns.length > 0) {
+          const like = `%${ns}%`;
+          const nameNorm = Prisma.sql`regexp_replace(lower(c.company_name), ${PG_NORMALISE_REGEX}, '', 'g')`;
+          const rows = await prisma.$queryRaw<
+            { id: string; company_name: string; area: string | null; state: string | null; zone_code: string }[]
+          >(Prisma.sql`
+            SELECT c.id, c.company_name, c.area, c.state, c.zone_code
+            FROM "Consignee" c
+            WHERE c.is_active = true
+              AND (${nameNorm} LIKE ${like} OR ${ns} LIKE '%' || ${nameNorm} || '%')
+            ORDER BY c.company_name ASC
+            LIMIT 8
+          `);
+          const candidates = rows
+            .filter((r) => isSimilarCompanyName(company_name, r.company_name))
+            .slice(0, 5);
+          if (candidates.length > 0) {
+            throw new ApiError(
+              409,
+              "SIMILAR_EXISTS",
+              "A similar consignee already exists — pick it from the list, or create anyway.",
+              { candidates }
+            );
+          }
+        }
+      }
+
       const consignee = await prisma.consignee.create({
-        data: { ...req.body, created_by: req.user!.id },
+        data: { ...data, created_by: req.user!.id },
         select: {
           id: true,
           company_name: true,
