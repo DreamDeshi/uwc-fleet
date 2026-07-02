@@ -4,10 +4,13 @@
  * booking — so any truck can carry them and the dispatch engine always finds a fit.
  */
 import {
+  addLeave,
   approveTrip,
   createTrip,
+  deleteLeave,
   driverIdentity,
   driverStatus,
+  getDriverBoard,
   getRouteTypes,
   login,
   searchConsignees,
@@ -93,26 +96,63 @@ export async function seedPendingTrip(
 }
 
 /**
- * Create a PENDING trip whose cargo exceeds the largest truck (PLX 2406 = 16
- * 4×4 pallets), so NO truck can ever fit it. In auto mode the dispatch engine
- * finds no eligible truck and flags it auto_dispatch_failed (Phase 2); it also
- * can't be assigned manually (the overload guard blocks it), making it a clean,
- * deterministic "needs attention" fixture independent of other drivers' state.
+ * Create a PENDING trip that auto-dispatch deterministically CANNOT place —
+ * every driver is put on leave for the trip's pickup date (a far-future day no
+ * other spec books), so the engine finds zero candidates and flags it
+ * auto_dispatch_failed (Phase 2), independent of other drivers' live state.
+ *
+ * (The old fixture used an oversized 20-pallet order, but creation now rejects
+ * cargo bigger than the largest truck — CARGO_EXCEEDS_FLEET, covered in
+ * creationValidation.spec.ts — so an undispatchable-but-VALID booking has to
+ * be forced via availability instead.)
+ *
+ * Returns a cleanup() that removes the leave rows; call it in `finally` so the
+ * shared DB's dispatch pool is restored even when an assertion fails.
  */
-export async function seedOversizedTrip(
-  requestorToken: string,
-  preferZones: string[] = []
-): Promise<Trip> {
-  const [routeType, consignee] = await Promise.all([
-    pickRouteType(requestorToken),
-    pickConsignee(requestorToken, preferZones),
-  ]);
-  return createTrip(requestorToken, {
-    route_type_id: routeType.id,
-    pickup_datetime: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    stops: [{ consignee_id: consignee.id }],
-    cargo_details: [{ pallet_type: "4×4", quantity: 20 }], // 20 > 16 → fits no truck
-  });
+export async function seedUndispatchableTrip(
+  adminToken: string,
+  requestorToken: string
+): Promise<{ trip: Trip; cleanup: () => Promise<void> }> {
+  // Pickup 45 days out at 10:00 MYT — inside the operating window (so the
+  // needs-attention flag can only come from "no eligible driver") and far from
+  // every other spec's pickups (no conflict-buffer interference).
+  const now = new Date();
+  const pickupMs = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 45,
+    10 - 8,
+    0
+  );
+  const pickupIso = new Date(pickupMs).toISOString();
+  // The leave calendar keys on the pickup's MYT calendar day.
+  const leaveDate = new Date(pickupMs + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  const drivers = await getDriverBoard(adminToken);
+  const leaveIds: string[] = [];
+  for (const d of drivers) {
+    const leave = await addLeave(adminToken, {
+      driver_id: d.id,
+      start_date: leaveDate,
+      note: "e2e fixture — all drivers off for this date",
+    });
+    leaveIds.push(leave.id);
+  }
+
+  const trip = await seedPendingTripAt(requestorToken, pickupIso);
+
+  return {
+    trip,
+    cleanup: async () => {
+      for (const id of leaveIds) {
+        try {
+          await deleteLeave(adminToken, id);
+        } catch {
+          // Best-effort: an already-removed leave row must not fail the spec.
+        }
+      }
+    },
+  };
 }
 
 /**

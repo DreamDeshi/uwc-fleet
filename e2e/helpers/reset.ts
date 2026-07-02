@@ -22,8 +22,10 @@ import {
   login,
   markStopDocs,
   setDispatchMode,
+  uploadPod,
 } from "./api";
 import { ADMIN, DRIVER } from "./accounts";
+import { POD_FILE } from "./pod";
 
 const ACTIVE: string[] = ["assigned", "in_progress"];
 
@@ -39,9 +41,13 @@ export async function freeDriver(): Promise<void> {
     const stops = [...(trip.stops ?? [])].sort((a, b) => a.sequence - b.sequence);
     for (const stop of stops) {
       if (stop.status === "delivered") continue;
-      // Satisfy the documentation gate (DO photo + K2 ack) without a real upload,
-      // then mark delivered. Delivering the last stop completes the trip.
-      await markStopDocs(accessToken, trip.id, stop.id, { do_uploaded: true, k2_form_ack: true });
+      // Satisfy the documentation gate the same way the driver app does: a
+      // REAL photo upload (sets pod_photo and flips do_uploaded server-side —
+      // the flag can no longer be self-attested, 400 POD_PHOTO_REQUIRED), plus
+      // the K2 customs ack, which is still a legitimate checkbox on its own.
+      // Delivering the last stop completes the trip.
+      await uploadPod(accessToken, trip.id, stop.id, POD_FILE);
+      await markStopDocs(accessToken, trip.id, stop.id, { k2_form_ack: true });
       await driverStatus(accessToken, trip.id, "delivered", stop.id);
     }
   }
