@@ -11,6 +11,7 @@ import {
   finalizationRateParams,
   dropZonePoints,
   snapshotStopZonePoints,
+  buildPointsByZone,
 } from "../services/rateSnapshot";
 import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
@@ -1202,8 +1203,9 @@ router.patch(
       const zoneCodes = [...new Set(thisTripStops.map((s) => s.consignee.zone_code))];
       const rateRows = await prisma.destinationRate.findMany({
         where: { zone_code: { in: zoneCodes } },
+        select: { zone_code: true, location_name: true, points: true },
       });
-      const pointsByZone = new Map(rateRows.map((r) => [r.zone_code, r.points]));
+      const pointsByZone = buildPointsByZone(rateRows);
       const drops = thisTripStops.map((s) => ({
         zoneCode: s.consignee.zone_code,
         zonePoints: dropZonePoints(s, pointsByZone.get(s.consignee.zone_code)),

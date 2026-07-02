@@ -71,9 +71,21 @@ router.patch("/destinations/:id", validateBody(pointsSchema), async (req, res, n
     }
 
     const oldPoints = rate.points;
-    const updated = await prisma.destinationRate.update({
+    // Points are a PER-ZONE value (spec §10 — the zone table is zone-keyed):
+    // K2 deliberately has two location rows (Kuala Ketil + Sungai Petani), so
+    // editing one must update every row of the same zone, or the engine's
+    // per-zone lookup would depend on arbitrary row order. Rows without a zone
+    // (e.g. the orphan Kuala Lumpur row) update singly.
+    if (rate.zone_code) {
+      await prisma.destinationRate.updateMany({
+        where: { zone_code: rate.zone_code },
+        data: { points: req.body.points },
+      });
+    } else {
+      await prisma.destinationRate.update({ where: { id }, data: { points: req.body.points } });
+    }
+    const updated = await prisma.destinationRate.findUnique({
       where: { id },
-      data: { points: req.body.points },
       include: { zone: { select: { code: true, name: true } } },
     });
 
@@ -87,7 +99,7 @@ router.patch("/destinations/:id", validateBody(pointsSchema), async (req, res, n
         user_id: req.user!.id,
         action:
           oldPoints !== req.body.points
-            ? `rate.updated points ${oldPoints}→${req.body.points}`
+            ? `rate.updated points ${oldPoints}→${req.body.points}${rate.zone_code ? ` (zone ${rate.zone_code}, all locations)` : ""}`
             : "rate.updated",
         table_name: "DestinationRate",
         record_id: id,
