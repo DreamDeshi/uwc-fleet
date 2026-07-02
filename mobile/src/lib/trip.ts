@@ -70,51 +70,35 @@ const ZONE_POINTS: Record<string, number> = {
 // build) whose timezone isn't Malaysia.
 const MYT_OFFSET_MS = 8 * 60 * 60 * 1000;
 
-// Malaysian public holidays 2026 (brief Section 18), deduped to "YYYY-MM-DD".
-// On these dates the off-peak rate table applies all day. Kept in sync with
-// api/src/services/incentiveEngine.ts MY_PUBLIC_HOLIDAYS_2026.
-const MY_PUBLIC_HOLIDAYS_2026: Set<string> = new Set([
-  "2026-01-01", // New Year's Day
-  "2026-01-29", // Chinese New Year
-  "2026-01-30", // Chinese New Year (2nd day)
-  "2026-02-01", // Federal Territory Day
-  "2026-03-28", // Hari Raya Aidilfitri
-  "2026-03-29", // Hari Raya Aidilfitri (2nd day)
-  "2026-04-14", // Thaipusam (Penang)
-  "2026-05-01", // Labour Day
-  "2026-05-20", // Wesak Day
-  "2026-06-05", // Hari Raya Aidiladha
-  "2026-06-08", // Yang di-Pertuan Agong Birthday
-  "2026-07-07", // Awal Muharram
-  "2026-08-31", // National Day
-  "2026-09-16", // Malaysia Day / Prophet Muhammad Birthday (same date in brief)
-  "2026-10-20", // Deepavali
-  "2026-12-25", // Christmas
-]);
-
 // Off-peak = Saturday/Sunday (MYT), a Malaysian public holiday, or a weekday
 // at/after 18:00 MYT. Mirrors the server's incentiveEngine.isOffPeak.
-function isOffPeak(date: Date): boolean {
+// `publicHolidays` comes from GET /holidays (the admin-managed calendar) via
+// useHolidays() — there is deliberately NO baked-in holiday list on the client
+// anymore (the old hardcoded copy carried wrong dates and drifted from the
+// server). An empty set (calendar still loading) just means "no holidays".
+function isOffPeak(date: Date, publicHolidays: ReadonlySet<string>): boolean {
   const myt = new Date(date.getTime() + MYT_OFFSET_MS);
   const day = myt.getUTCDay(); // 0 = Sunday, 6 = Saturday
   if (day === 0 || day === 6) return true;
   const pad = (n: number) => String(n).padStart(2, "0");
   const key = `${myt.getUTCFullYear()}-${pad(myt.getUTCMonth() + 1)}-${pad(myt.getUTCDate())}`;
-  if (MY_PUBLIC_HOLIDAYS_2026.has(key)) return true;
+  if (publicHolidays.has(key)) return true;
   return myt.getUTCHours() >= 18;
 }
 
-// Estimated incentive shown before a trip is completed: (destination points −
-// the truck's daily deduction, floored at 0) × the truck's entitled-claim rate
-// (off-peak rate on weekends / holidays / after 6pm MYT), matching the engine's
-// first-trip-of-day case. The final amount may still differ (a later trip of the
-// day earns fewer points, or completion tips into off-peak), so the UI labels
-// this "Estimated". Uses the last stop's zone, the same one the engine finalises
-// on. Returns null when it can't tell.
-export function estimateIncentive(trip: Trip): number | null {
+// Estimated incentive shown before a trip is completed: each stop scored with
+// the per-zone-per-day rule (first stop into a zone = full points, repeats = 1),
+// minus the truck's daily deduction on the first stop (floored at 0), × the
+// truck's entitled-claim rate (off-peak on weekends / holidays / after 6pm MYT).
+// The final amount may still differ (a later trip of the day earns fewer
+// points), so the UI labels this "Estimated". Returns null when it can't tell.
+export function estimateIncentive(
+  trip: Trip,
+  publicHolidays: ReadonlySet<string>
+): number | null {
   const truck = trip.truck;
   if (!truck) return null;
-  const rateRaw = isOffPeak(new Date(trip.pickup_datetime))
+  const rateRaw = isOffPeak(new Date(trip.pickup_datetime), publicHolidays)
     ? truck.entitled_claim_offpeak
     : truck.entitled_claim_weekday;
   const rate = Number(rateRaw);

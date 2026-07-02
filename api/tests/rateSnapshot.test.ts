@@ -12,6 +12,9 @@ import { calculateDeliveryIncentive } from "../src/services/incentiveEngine";
  * dispatch and completion must not change that trip's pay.
  */
 
+// The engine's holiday calendar is caller-supplied; these tests don't exercise it.
+const NO_HOLIDAYS: ReadonlySet<string> = new Set();
+
 // PLX 2406 at assignment time (the RM44 anchor truck).
 const TRUCK_AT_ASSIGNMENT = {
   entitled_claim_weekday: 11,
@@ -106,6 +109,7 @@ describe("end-to-end rate lock through the engine", () => {
 
   it("still pays the RM44 anchor from the snapshot after a mid-flight edit", () => {
     const r = calculateDeliveryIncentive({
+      publicHolidays: NO_HOLIDAYS,
       pickupDateTime: pickup,
       drops: [{ zoneCode: "A2", zonePoints: dropZonePoints({ zone_points: 6 }, 6) }],
       zonesDeliveredEarlierToday: [],
@@ -117,6 +121,7 @@ describe("end-to-end rate lock through the engine", () => {
 
   it("a trip assigned AFTER the edit pays at the new rate", () => {
     const r = calculateDeliveryIncentive({
+      publicHolidays: NO_HOLIDAYS,
       pickupDateTime: pickup,
       drops: [{ zoneCode: "A2", zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Platform } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
@@ -42,6 +43,22 @@ export function useConsignees(search: string) {
     enabled,
     staleTime: 1000 * 30,
   });
+}
+
+// ── Public holidays ────────────────────────────────────────────────────
+// The admin-managed calendar (GET /holidays) as a Set of "YYYY-MM-DD" MYT
+// keys — what estimateIncentive's off-peak check consumes. Replaces the old
+// hardcoded client list. Changes rarely, so it can be cached for the session;
+// while loading, the empty set just means "no holidays" (estimate refines
+// once the calendar arrives — the server value stays authoritative anyway).
+export function useHolidaySet(): ReadonlySet<string> {
+  const { data } = useQuery({
+    queryKey: ["holidays"],
+    queryFn: async () =>
+      (await api.get<{ id: string; date: string; name: string }[]>("/holidays")).data,
+    staleTime: 1000 * 60 * 60,
+  });
+  return useMemo(() => new Set((data ?? []).map((h) => h.date)), [data]);
 }
 
 // ── Trips ──────────────────────────────────────────────────────────────

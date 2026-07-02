@@ -14,7 +14,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { TripsStackParamList } from "../../navigation/types";
-import { useTrip, useUpdateTripStatus } from "../../hooks/queries";
+import { useTrip, useUpdateTripStatus, useHolidaySet } from "../../hooks/queries";
 import { apiErrorMessage } from "../../services/api";
 import { colors, radius, shadow } from "../../theme";
 import { Card } from "../../components/Card";
@@ -46,6 +46,7 @@ export function TripDetailsScreen() {
   const { params } = useRoute<Rt>();
   const { data: trip, isLoading, isError, refetch, isRefetching } = useTrip(params.tripId);
   const startTrip = useUpdateTripStatus();
+  const holidays = useHolidaySet();
   const [error, setError] = React.useState<string | null>(null);
 
   if (isLoading) return <View style={styles.fill}><LoadingState /></View>;
@@ -56,7 +57,7 @@ export function TripDetailsScreen() {
   // Show the real incentive once it's finalised (set on completion); before
   // that, show an estimate (destination points × truck rate) marked "Estimated".
   const finalized = trip.incentive_earned !== null && trip.incentive_earned !== undefined;
-  const estimate = finalized ? null : estimateIncentive(trip);
+  const estimate = finalized ? null : estimateIncentive(trip, holidays);
   const incentiveValue = finalized
     ? formatMoney(trip.incentive_earned)
     : estimate !== null

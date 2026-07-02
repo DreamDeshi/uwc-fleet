@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import { useDestinationRates, useRateAudit, useResetTruckRates, useTrucks, useUpdateDestinationRate, useUpdateTruckRates } from "@/hooks/queries";
+import { useAddHoliday, useDeleteHoliday, useDestinationRates, useHolidays, useRateAudit, useResetTruckRates, useTrucks, useUpdateDestinationRate, useUpdateTruckRates } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
 import { Button, Card, ErrorState, Input, Loading, Modal, Pill, SectionTitle } from "@/components/ui";
 import { formatDate, formatMoney } from "@/lib/format";
 import { apiErrorMessage } from "@/services/api";
-import type { DestinationRate, RateAuditEntry, RateResetResult, Truck } from "@/types";
+import type { DestinationRate, PublicHoliday, RateAuditEntry, RateResetResult, Truck } from "@/types";
 
 // Small muted "last updated by X on DATE" line, shown under a row when the audit
 // log has a record for it. Kept compact so it never crowds the rate values.
@@ -17,7 +17,7 @@ function UpdatedNote({ entry }: { entry?: RateAuditEntry }) {
   );
 }
 
-type Tab = "trucks" | "destinations" | "formula";
+type Tab = "trucks" | "destinations" | "holidays" | "formula";
 
 export function IncentivesPage() {
   const [tab, setTab] = useState<Tab>("trucks");
@@ -25,7 +25,7 @@ export function IncentivesPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", gap: 8 }}>
-        {([["trucks", "Truck Claim Rates"], ["destinations", "Destination Points"], ["formula", "Formula & Examples"]] as const).map(([v, label]) => (
+        {([["trucks", "Truck Claim Rates"], ["destinations", "Destination Points"], ["holidays", "Public Holidays"], ["formula", "Formula & Examples"]] as const).map(([v, label]) => (
           <button
             key={v}
             onClick={() => setTab(v)}
@@ -51,6 +51,7 @@ export function IncentivesPage() {
 
       {tab === "trucks" && <TruckRatesTab />}
       {tab === "destinations" && <DestinationPointsTab />}
+      {tab === "holidays" && <HolidaysTab />}
       {tab === "formula" && <FormulaTab />}
     </div>
   );
@@ -310,6 +311,139 @@ function EditPointsModal({ rate, onClose }: { rate: DestinationRate; onClose: ()
       <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
         <Button variant="ghost" full onClick={onClose}>Cancel</Button>
         <Button variant="primary" full disabled={update.isPending} onClick={save}>{update.isPending ? "Saving…" : "Save"}</Button>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Public holidays ───────────────────────────────────────────────────
+// Admin-managed calendar that drives the weekday/off-peak rate decision (the
+// engine holds no baked-in list). Money-affecting either way, so deleting asks
+// for confirmation and every change is audit-logged server-side.
+function HolidaysTab() {
+  const holidays = useHolidays();
+  const [deleting, setDeleting] = useState<PublicHoliday | null>(null);
+
+  if (holidays.isLoading) return <Loading />;
+  if (holidays.isError) return <ErrorState message="Could not load the holiday calendar." onRetry={() => holidays.refetch()} />;
+
+  const rows = holidays.data!;
+  const weekdayName = (date: string) => {
+    const d = new Date(`${date}T00:00:00Z`);
+    return Number.isNaN(d.getTime())
+      ? "—"
+      : d.toLocaleDateString("en-MY", { weekday: "long", timeZone: "UTC" });
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ background: colors.yellowTint, borderRadius: radius.md, padding: "11px 15px", fontSize: 12.5, color: colors.amber, fontWeight: 500 }}>
+        Trips picked up on a listed date pay the off-peak rate all day. Islamic holiday
+        dates are moon-sighting estimates — verify against the official JPA/JAKIM gazette.
+      </div>
+      <AddHolidayForm />
+      <Card pad={0}>
+        <div style={{ padding: 18, borderBottom: `1px solid ${colors.border}` }}>
+          <SectionTitle title="Public Holiday Calendar" subtitle={`${rows.length} dates`} />
+        </div>
+        {rows.length === 0 ? (
+          <div style={{ padding: 24, fontSize: 13, color: colors.textMuted }}>
+            No holidays in the calendar — every weekday pays the weekday rate until dates are added.
+          </div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>{["Date", "Day", "Holiday", ""].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {rows.map((h, i) => (
+                <tr key={h.id} style={{ background: i % 2 ? colors.blueTint : "transparent" }}>
+                  <td style={{ ...tdStyle, fontWeight: 700, whiteSpace: "nowrap" }}>{h.date}</td>
+                  <td style={tdStyle}>{weekdayName(h.date)}</td>
+                  <td style={tdStyle}>{h.name}</td>
+                  <td style={{ ...tdStyle, textAlign: "right" }}>
+                    <Button variant="ghost" size="sm" onClick={() => setDeleting(h)}>Remove</Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+      {deleting && <DeleteHolidayConfirm holiday={deleting} onClose={() => setDeleting(null)} />}
+    </div>
+  );
+}
+
+function AddHolidayForm() {
+  const [date, setDate] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const add = useAddHoliday();
+
+  async function submit() {
+    setError(null);
+    if (!date || !name.trim()) {
+      setError("Both the date and the holiday name are required.");
+      return;
+    }
+    try {
+      await add.mutateAsync({ date, name: name.trim() });
+      setDate("");
+      setName("");
+    } catch (e) {
+      setError(apiErrorMessage(e, "Could not add the holiday."));
+    }
+  }
+
+  return (
+    <Card>
+      <SectionTitle title="Add a Holiday" />
+      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+        <div style={{ width: 190 }}>
+          <Input label="Date" value={date} onChange={setDate} type="date" />
+        </div>
+        <div style={{ flex: 1 }}>
+          <Input label="Holiday name" value={name} onChange={setName} placeholder="e.g. Nuzul Al-Quran" />
+        </div>
+        <Button variant="primary" onClick={submit} disabled={add.isPending}>
+          {add.isPending ? "Adding…" : "Add"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+// Removing a holiday flips that date's not-yet-finalized trips back to the
+// weekday rate — ask before firing. Completed trips keep their stored pay.
+function DeleteHolidayConfirm({ holiday, onClose }: { holiday: PublicHoliday; onClose: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const del = useDeleteHoliday();
+
+  async function doDelete() {
+    setError(null);
+    try {
+      await del.mutateAsync(holiday.id);
+      onClose();
+    } catch (e) {
+      setError(apiErrorMessage(e, "Could not remove the holiday."));
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Remove this holiday?" width={420}>
+      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+      <div style={{ fontSize: 13.5, color: colors.text, lineHeight: 1.6, marginBottom: 14 }}>
+        Remove <strong>{holiday.name}</strong> ({holiday.date}) from the calendar? Trips picked
+        up that day will pay the normal weekday rate instead of the off-peak rate.
+        Already-completed trips keep their finalized pay. Audit-logged.
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <Button variant="ghost" full onClick={onClose} disabled={del.isPending}>Cancel</Button>
+        <Button variant="danger" full onClick={doDelete} disabled={del.isPending}>
+          {del.isPending ? "Removing…" : "Remove"}
+        </Button>
       </div>
     </Modal>
   );
