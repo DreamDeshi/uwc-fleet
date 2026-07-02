@@ -52,6 +52,18 @@ const RECENT_CHIP_MAX_CHARS = 25;
 const truncateName = (name: string) =>
   name.length > RECENT_CHIP_MAX_CHARS ? `${name.slice(0, RECENT_CHIP_MAX_CHARS)}…` : name;
 
+// Default pickup = the NEXT bookable slot, never a fixed "Today 09:00": the
+// server rejects past pickups at create, so a fixed morning default would make
+// every same-day afternoon booking fail until the user noticed the time field.
+// Next full hour inside the 08:00–18:00 picker window; past 17:00, roll to
+// tomorrow 08:00.
+function nextBookableSlot(): { dayOffset: number; hour: number } {
+  const nextHour = new Date().getHours() + 1;
+  if (nextHour <= 8) return { dayOffset: 0, hour: 8 };
+  if (nextHour <= 18) return { dayOffset: 0, hour: nextHour };
+  return { dayOffset: 1, hour: 8 };
+}
+
 export function BookingFormScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -94,8 +106,8 @@ export function BookingFormScreen() {
   const [remarks, setRemarks] = useState("");
 
   // Date/time chosen from quick pickers (no native datepicker dependency).
-  const [dayOffset, setDayOffset] = useState(0);
-  const [hour, setHour] = useState(9);
+  const [dayOffset, setDayOffset] = useState(() => nextBookableSlot().dayOffset);
+  const [hour, setHour] = useState(() => nextBookableSlot().hour);
   const [dayOpen, setDayOpen] = useState(false);
   const [timeOpen, setTimeOpen] = useState(false);
 
@@ -150,8 +162,9 @@ export function BookingFormScreen() {
     setCartonQty(0);
     setOthersText("");
     setRemarks("");
-    setDayOffset(0);
-    setHour(9);
+    const slot = nextBookableSlot();
+    setDayOffset(slot.dayOffset);
+    setHour(slot.hour);
     setDocs([]);
     setError(null);
   };
