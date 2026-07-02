@@ -155,9 +155,13 @@ export function scoreDrops(
  * upload is Phase 4+.
  */
 export function isDocumentationComplete(
-  stop: { do_uploaded: boolean; k2_form_ack: boolean },
+  stop: { do_uploaded: boolean; k2_form_ack: boolean; pod_photo: string | null },
   destinationZoneCode: string
 ): boolean {
+  // The gate is the actual POD PHOTO, not the do_uploaded flag alone — the
+  // flag is set by the photo upload, but checking only the boolean let it be
+  // self-attested via PATCH /docs with no photo behind it (audit finding).
+  if (!stop.pod_photo) return false;
   if (!stop.do_uploaded) return false;
   if (destinationZoneCode === "K2" && !stop.k2_form_ack) return false;
   return true;
