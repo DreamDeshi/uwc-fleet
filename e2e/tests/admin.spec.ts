@@ -69,7 +69,7 @@ test.describe("Admin (dashboard)", () => {
       await expect(page.getByText("Engine active — new orders auto-assign")).toBeVisible();
 
       // A booking created now is auto-dispatched on creation. Prefer an A2 (Ipoh)
-      // consignee so the engine is forced onto Driver 1/PLX 2406 — the only A-zone truck,
+      // consignee so the engine is forced onto the PLX 2406 driver — the only A-zone truck,
       // which reset() has just freed — making the assignment deterministic.
       const requestor = await login(REQUESTOR);
       const trip = await seedPendingTrip(requestor.accessToken, ["A2", "P2"]);

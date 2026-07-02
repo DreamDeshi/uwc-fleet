@@ -29,25 +29,25 @@ test.describe("Scheduling-conflict check at assignment (roadmap #2)", () => {
 
   test("manual assign is blocked by a scheduling conflict, then succeeds with force", async () => {
     const requestor = await login(REQUESTOR);
-    const azmi = await driverIdentity(DRIVER);
+    const testDriver = await driverIdentity(DRIVER);
 
-    // Trip 1 → assign Driver 1/PLX 2406 (pickup ~now+1h): the driver+truck are now committed.
+    // Trip 1 → assign the PLX 2406 driver (pickup ~now+1h): the driver+truck are now committed.
     const trip1 = await seedPendingTrip(requestor.accessToken, ["P2"]);
-    await approveTrip(adminToken, trip1.id, { driver_id: azmi.id, truck_plate: azmi.plate });
+    await approveTrip(adminToken, trip1.id, { driver_id: testDriver.id, truck_plate: testDriver.plate });
 
-    // Trip 2 in the same window → assigning Driver 1 clashes within the buffer.
+    // Trip 2 in the same window → assigning the test driver clashes within the buffer.
     const trip2 = await seedPendingTrip(requestor.accessToken, ["P2"]);
 
     // Without force → blocked with SCHEDULING_CONFLICT; trip stays pending.
     await expect(
-      approveTrip(adminToken, trip2.id, { driver_id: azmi.id, truck_plate: azmi.plate })
+      approveTrip(adminToken, trip2.id, { driver_id: testDriver.id, truck_plate: testDriver.plate })
     ).rejects.toThrow(/SCHEDULING_CONFLICT/);
     expect((await getTrip(adminToken, trip2.id)).status).toBe("pending");
 
     // With force ("Assign anyway") → the override proceeds; trip2 is assigned.
     await approveTrip(adminToken, trip2.id, {
-      driver_id: azmi.id,
-      truck_plate: azmi.plate,
+      driver_id: testDriver.id,
+      truck_plate: testDriver.plate,
       force: true,
     });
     expect((await getTrip(adminToken, trip2.id)).status).toBe("assigned");
@@ -55,23 +55,23 @@ test.describe("Scheduling-conflict check at assignment (roadmap #2)", () => {
 
   test("auto-dispatch skips a busy/conflicted driver and assigns the next eligible one", async () => {
     const requestor = await login(REQUESTOR);
-    const azmi = await driverIdentity(DRIVER);
+    const testDriver = await driverIdentity(DRIVER);
 
-    // Commit Driver 1 (the PRIMARY A-zone driver) to an A2 (Ipoh) trip in this window.
+    // Commit the test driver (the PRIMARY A-zone driver) to an A2 (Ipoh) trip in this window.
     const first = await seedPendingTrip(requestor.accessToken, ["A2"]);
-    await approveTrip(adminToken, first.id, { driver_id: azmi.id, truck_plate: azmi.plate });
+    await approveTrip(adminToken, first.id, { driver_id: testDriver.id, truck_plate: testDriver.plate });
 
     await setDispatchMode(adminToken, "auto");
     try {
       // A new A2 booking is auto-dispatched on creation. The engine must NOT pick
-      // Driver 1 (busy + conflicting) — it falls to an A1/A2 backup (Driver 2/PND, or
-      // Driver 6/PRH for <2 pallets). If no backup fits it stays pending, but it must
-      // never double-book Driver 1.
+      // the test driver (busy + conflicting) — it falls to an A1/A2 backup (PND 1888, or
+      // PRH 5292 for <2 pallets). If no backup fits it stays pending, but it must
+      // never double-book the test driver.
       const second = await seedPendingTrip(requestor.accessToken, ["A2"]);
       const after = await getTrip(adminToken, second.id);
-      expect(after.driver_id, "must not auto-assign the busy/conflicted driver").not.toBe(azmi.id);
+      expect(after.driver_id, "must not auto-assign the busy/conflicted driver").not.toBe(testDriver.id);
       if (after.status === "assigned") {
-        expect(after.truck_plate).not.toBe(azmi.plate);
+        expect(after.truck_plate).not.toBe(testDriver.plate);
       } else {
         expect(after.status).toBe("pending");
       }
@@ -84,15 +84,15 @@ test.describe("Scheduling-conflict check at assignment (roadmap #2)", () => {
     page,
   }) => {
     const requestor = await login(REQUESTOR);
-    const azmi = await driverIdentity(DRIVER);
-    const azmiName = (await login(DRIVER)).user.name;
+    const testDriver = await driverIdentity(DRIVER);
+    const testDriverName = (await login(DRIVER)).user.name;
 
-    // Trip A → assign Driver 1/PLX 2406 (pickup ~now+1h). Driver 1 now holds a SCHEDULED
+    // Trip A → assign the PLX 2406 driver (pickup ~now+1h). the test driver now holds a SCHEDULED
     // (assigned, not in_progress) trip — so he stays selectable in the picker.
     const tripA = await seedPendingTrip(requestor.accessToken, ["P2"]);
-    await approveTrip(adminToken, tripA.id, { driver_id: azmi.id, truck_plate: azmi.plate });
+    await approveTrip(adminToken, tripA.id, { driver_id: testDriver.id, truck_plate: testDriver.plate });
 
-    // Trip B in the same pickup window → assigning Driver 1 clashes within the buffer.
+    // Trip B in the same pickup window → assigning the test driver clashes within the buffer.
     const tripB = await seedPendingTrip(requestor.accessToken, ["P2"]);
 
     await adminLogin(page, ADMIN);
@@ -101,17 +101,17 @@ test.describe("Scheduling-conflict check at assignment (roadmap #2)", () => {
     // Open trip B's dispatch panel.
     await page.getByText(tripB.ticket_number).first().click();
 
-    // Driver 1's card is the picker card (in the dispatch panel) that carries an
+    // the PLX 2406 driver's card is the picker card (in the dispatch panel) that carries an
     // Assign button — the deepest div that contains both his name and the button
     // (his left-board card for trip A has no Assign button, so it's excluded).
-    const azmiAssign = page
+    const testDriverAssign = page
       .locator("div")
-      .filter({ hasText: azmiName })
+      .filter({ hasText: testDriverName })
       .filter({ has: page.getByRole("button", { name: "Assign", exact: true }) })
       .last()
       .getByRole("button", { name: "Assign", exact: true });
-    await expect(azmiAssign).toBeVisible();
-    await azmiAssign.click();
+    await expect(testDriverAssign).toBeVisible();
+    await testDriverAssign.click();
 
     // The inline scheduling-conflict warning appears (no hard block).
     await expect(page.getByText("⚠ Scheduling conflict")).toBeVisible();

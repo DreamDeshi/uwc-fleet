@@ -22,7 +22,7 @@ so install its dependencies separately.
   | Role | Phone | Password |
   | --- | --- | --- |
   | Admin | `+60100000001` | `Password123` |
-  | Driver (Driver 1 / PLX 2406) | `+60100000101` | `Password123` |
+  | Driver (PLX 2406) | `+60100000101` | `Password123` |
   | Requestor | `+60199990001` | `Password123` |
 
 ## Install
@@ -72,7 +72,7 @@ The apps share one backend, so the suite **does not** rely on test ordering.
 Before each test, `helpers/reset.ts`:
 
 1. sets dispatch mode back to **manual** (so freshly seeded trips stay pending),
-2. **frees the driver** — any active trip for Driver 1 is driven to completion through
+2. **frees the driver** — any active trip for the test driver is driven to completion through
    the API, because the "one active trip per driver" rule would otherwise reject a
    new assignment with `409 DRIVER_BUSY`, and
 3. cancels all open (pending/approved) trips.

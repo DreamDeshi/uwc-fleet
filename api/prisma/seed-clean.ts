@@ -28,12 +28,12 @@ import { prisma } from "../src/lib/prisma";
 // sync with seed.ts if the seeded admin/driver/requestor phone numbers change.
 const SEEDED_PHONES = [
   "+60100000001", // bootstrap admin (UWC Admin)
-  "+60100000101", // Driver 1        — PLX 2406
-  "+60100000102", // Driver 2  — PND 1888
-  "+60100000103", // Driver 3       — PRJ 5292
-  "+60100000104", // Driver 4      — PQL 5292
-  "+60100000105", // Driver 5 — PPE 1804
-  "+60100000106", // Driver 6                — PRH 5292
+  "+60100000101", // PLX 2406 driver
+  "+60100000102", // PND 1888 driver
+  "+60100000103", // PRJ 5292 driver
+  "+60100000104", // PQL 5292 driver
+  "+60100000105", // PPE 1804 driver
+  "+60100000106", // PRH 5292 driver
   "+60199990001", // test requestor
 ];
 

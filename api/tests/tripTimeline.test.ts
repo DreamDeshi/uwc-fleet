@@ -56,7 +56,7 @@ describe("buildTripTimeline — happy path", () => {
     const steps = buildTripTimeline(
       trip({
         status: "completed",
-        driver: { name: "Driver 1" },
+        driver: { name: "Ali" },
         truck_plate: "PLX 2406",
         stops: [
           stop({
@@ -105,29 +105,29 @@ describe("buildTripTimeline — history rows are authoritative", () => {
     const steps = buildTripTimeline(
       trip({
         status: "assigned",
-        driver: { name: "Driver 1" },
+        driver: { name: "Ali" },
         truck_plate: "PLX 2406",
         status_history: [
           { event: "booked", stop_id: null, note: null, created_at: D("2026-06-30T07:55:00Z") },
-          { event: "assigned", stop_id: null, note: "Driver 1 · PLX 2406", created_at: D("2026-06-30T08:30:00Z") },
+          { event: "assigned", stop_id: null, note: "Ali · PLX 2406", created_at: D("2026-06-30T08:30:00Z") },
         ],
       })
     );
     const booked = steps.find((s) => s.event === "booked")!;
     const assigned = steps.find((s) => s.event === "assigned")!;
     expect(booked.timestamp).toBe(D("2026-06-30T07:55:00Z").toISOString()); // not created_at
-    expect(assigned.note).toBe("Driver 1 · PLX 2406");
+    expect(assigned.note).toBe("Ali · PLX 2406");
     expect(assigned.state).toBe("done");
   });
 
   it("falls back to created_at for Booked and to the driver·plate for the assign note when no history exists", () => {
     const steps = buildTripTimeline(
-      trip({ status: "assigned", driver: { name: "Driver 2" }, truck_plate: "PND 1888" })
+      trip({ status: "assigned", driver: { name: "Abu" }, truck_plate: "PND 1888" })
     );
     expect(steps.find((s) => s.event === "booked")!.timestamp).toBe(
       D("2026-06-30T08:00:00Z").toISOString()
     );
-    expect(steps.find((s) => s.event === "assigned")!.note).toBe("Driver 2 · PND 1888");
+    expect(steps.find((s) => s.event === "assigned")!.note).toBe("Abu · PND 1888");
   });
 });
 

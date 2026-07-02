@@ -56,17 +56,39 @@ interface UwcSpec {
 const SPEC_PATH = path.resolve(__dirname, "../../docs/uwc-spec.json");
 const spec: UwcSpec = JSON.parse(fs.readFileSync(SPEC_PATH, "utf-8"));
 
+// PII overlay: the public docs/uwc-spec.json carries NEUTRAL placeholder driver
+// names/employee numbers (the repo is public; the real identities are NDA data).
+// The real values live in the gitignored References/ folder and are applied
+// here, matched by truck plate, whenever the overlay file is present locally —
+// so a local seed still produces the real drivers.
+const PRIVATE_SPEC_PATH = path.resolve(__dirname, "../../References/uwc-spec.private.json");
+if (fs.existsSync(PRIVATE_SPEC_PATH)) {
+  const overlay = JSON.parse(fs.readFileSync(PRIVATE_SPEC_PATH, "utf-8")) as {
+    driver_assignments: { truck: string; name: string; employee_no: string }[];
+  };
+  const realByTruck = new Map(overlay.driver_assignments.map((d) => [d.truck, d]));
+  for (const d of spec.driver_assignments) {
+    const real = realByTruck.get(d.truck);
+    if (real) {
+      d.name = real.name;
+      d.employee_no = real.employee_no;
+    }
+  }
+  console.log("Applied private driver-identity overlay (References/uwc-spec.private.json).");
+}
+
 // ── Seed-only test fixtures (NOT spec data) ────────────────────────────────
 
 // Driver phone numbers are not in the spec; placeholders for testing only.
-// Keyed by employee number so they bind to the spec's driver_assignments.
+// Keyed by TRUCK PLATE — stable across the public spec and the private overlay
+// (the public tree carries no real employee numbers to key on).
 const DRIVER_PHONES: Record<string, string> = {
-  D001: "+60100000101",
-  D002: "+60100000102",
-  D003: "+60100000103",
-  D004: "+60100000104",
-  D005: "+60100000105",
-  D006: "+60100000106",
+  "PLX 2406": "+60100000101",
+  "PND 1888": "+60100000102",
+  "PRJ 5292": "+60100000103",
+  "PQL 5292": "+60100000104",
+  "PPE 1804": "+60100000105",
+  "PRH 5292": "+60100000106",
 };
 
 // Document-expiry dates seed the doc-expiry alert feature: a few fall within the
@@ -170,9 +192,9 @@ async function seedTrucks() {
 
 async function seedDrivers() {
   for (const d of spec.driver_assignments) {
-    const phone = DRIVER_PHONES[d.employee_no];
+    const phone = DRIVER_PHONES[d.truck];
     if (!phone) {
-      console.warn(`No seed phone for driver ${d.employee_no} (${d.name}) — skipping.`);
+      console.warn(`No seed phone for the ${d.truck} driver — skipping.`);
       continue;
     }
     const department = await prisma.department.findUnique({ where: { name: d.department } });

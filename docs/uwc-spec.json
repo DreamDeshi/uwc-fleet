@@ -22,7 +22,8 @@
       "Kuala Lumpur has destination points (8) but no zone code. Johor & Selangor appear only in the REQUESTOR destination dropdown — they have no points or zone code in the workbook, so they are kept OUT of the authoritative datasets above and live in the separate 'extensions' block at the end of this file.",
       "Rate reconciliation (2026-06-30): trucks[].weekday_rate / offpeak_rate / max_pallets were verified against Mr. Teh's authoritative INTERNAL LORRY RATE sheet — all 7 plates and both rate tiers match exactly.",
       "daily_deduction provenance: ONLY PLX 2406 = 2 is client-confirmed. PND/PRH = 2 and PRJ/PQL/PPE = 3 are as-seeded and UNVERIFIED — confirm with the client before treating them as authoritative.",
-      "4 Wheel (Generic): the rate sheet has no off-peak row, so offpeak_rate is defaulted to the peak rate (11) pending client confirmation. OPEN: whether '4 Wheel' is a 7th dispatchable truck or an external/standby fallback — it has no assigned driver and no priority_zones."
+      "4 Wheel (Generic): the rate sheet has no off-peak row, so offpeak_rate is defaulted to the peak rate (11) pending client confirmation. OPEN: whether '4 Wheel' is a 7th dispatchable truck or an external/standby fallback — it has no assigned driver and no priority_zones.",
+      "driver_assignments names/employee numbers are NEUTRAL PLACEHOLDERS: the real identities are NDA data and live in the gitignored References/uwc-spec.private.json overlay (matched by truck plate), which seed.ts applies when present. Trucks, zones and rates here are unchanged spec data."
     ]
   },
 
@@ -101,12 +102,12 @@
   ],
 
   "driver_assignments": [
-    { "name": "Driver 1",        "employee_no": "D001",  "department": "Marketing", "truck": "PLX 2406", "priority_zones": ["A1", "A2", "P1", "P2"],             "priority_zones_raw": "A1,A2,P1,P2",        "notes": null },
-    { "name": "Driver 2",  "employee_no": "D002", "department": "Marketing", "truck": "PND 1888", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": "Assign A1 & A2 if PLX 2406 is not available." },
-    { "name": "Driver 3",       "employee_no": "D003", "department": "Marketing", "truck": "PRJ 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
-    { "name": "Driver 4",      "employee_no": "D004", "department": "Marketing", "truck": "PQL 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
+    { "name": "Driver 1", "employee_no": "D001", "department": "Marketing", "truck": "PLX 2406", "priority_zones": ["A1", "A2", "P1", "P2"],             "priority_zones_raw": "A1,A2,P1,P2",        "notes": null },
+    { "name": "Driver 2", "employee_no": "D002", "department": "Marketing", "truck": "PND 1888", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": "Assign A1 & A2 if PLX 2406 is not available." },
+    { "name": "Driver 3", "employee_no": "D003", "department": "Marketing", "truck": "PRJ 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
+    { "name": "Driver 4", "employee_no": "D004", "department": "Marketing", "truck": "PQL 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
     { "name": "Driver 5", "employee_no": "D005", "department": "Marketing", "truck": "PPE 1804", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
-    { "name": "Driver 6",                "employee_no": "D006", "department": "Marketing", "truck": "PRH 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2", "A1", "A2"], "priority_zones_raw": "ALL",            "notes": "If A1 & A2 with less than 2 pallets of 4x4, give the priority." }
+    { "name": "Driver 6", "employee_no": "D006", "department": "Marketing", "truck": "PRH 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2", "A1", "A2"], "priority_zones_raw": "ALL",            "notes": "If A1 & A2 with less than 2 pallets of 4x4, give the priority." }
   ],
 
   "extensions": {

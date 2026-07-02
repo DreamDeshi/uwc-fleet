@@ -30,7 +30,7 @@ test.describe.configure({ mode: "serial" });
 test.beforeAll(async () => {
   fs.mkdirSync(SHOTS, { recursive: true });
   // Clean baseline, then give the boards something to show: one trip ASSIGNED to
-  // Driver 1 (driver home + admin "active" group) and one left PENDING (admin "pending"
+  // the test driver (driver home + admin "active" group) and one left PENDING (admin "pending"
   // group + requestor history).
   const { adminToken } = await resetState();
   await seedAssignedTrip(adminToken);

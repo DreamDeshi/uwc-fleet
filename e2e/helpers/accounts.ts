@@ -17,10 +17,10 @@ export interface Account {
 }
 
 export const ADMIN: Account = { phone: "+60100000001", password: "Password123" };
-export const DRIVER: Account = { phone: "+60100000101", password: "Password123" }; // Driver 1 / PLX 2406
+export const DRIVER: Account = { phone: "+60100000101", password: "Password123" }; // the PLX 2406 driver
 export const REQUESTOR: Account = { phone: "+60199990001", password: "Password123" };
 
-// Driver 1's assigned truck. The /approve endpoint requires truck_plate to match the
+// the PLX 2406 driver's assigned truck. The /approve endpoint requires truck_plate to match the
 // driver's assigned_truck_plate; helpers/api.ts resolves this live from
 // GET /users/me, but this is the expected value for reference.
 export const DRIVER_TRUCK_PLATE = "PLX 2406";

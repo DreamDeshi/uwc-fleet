@@ -116,7 +116,7 @@ describe("selectTruck — one active trip per driver (no consolidation onto a bu
 });
 
 describe("selectTruck — A1/A2 driver-priority (INTERNAL LORRY RATE sheet)", () => {
-  // Real coverage zones from the sheet. Driver 6/PRH covers ALL zones but is gated
+  // Real coverage zones from the sheet. PRH 5292 covers ALL zones but is gated
   // to <2 pallets on A1/A2; the 17.5ft lorries never serve A1/A2.
   const plx = (over: Partial<TruckCandidate> = {}) =>
     truck({ plate: "PLX 2406", maxPallets: 16, coverageZones: ["A1", "A2", "P1", "P2"], ...over });
@@ -127,22 +127,22 @@ describe("selectTruck — A1/A2 driver-priority (INTERNAL LORRY RATE sheet)", ()
   const prj = (over: Partial<TruckCandidate> = {}) =>
     truck({ plate: "PRJ 5292", maxPallets: 8, coverageZones: ["P1", "P2", "P3", "K1", "K2"], ...over });
 
-  it("A1: picks PLX 2406 (Driver 1) over Driver 6 even for a 1-pallet load", () => {
+  it("A1: picks PLX 2406 (the primary) over PRH even for a 1-pallet load", () => {
     const sel = selectTruck({ pallets: 1, zone: "A1" }, [plx(), prh(), prj()], ADJACENCY);
     expect(sel?.plate).toBe("PLX 2406");
   });
 
-  it("A1: when PLX is absent, a 1-pallet order may go to Driver 6/PRH (smallest fit)", () => {
+  it("A1: when PLX is absent, a 1-pallet order may go to PRH (smallest fit)", () => {
     const sel = selectTruck({ pallets: 1, zone: "A1" }, [pnd(), prh(), prj()], ADJACENCY);
     expect(sel?.plate).toBe("PRH 5292");
   });
 
-  it("A2: when PLX is absent, a 2-pallet order excludes Driver 6 and falls to PND (Driver 2)", () => {
+  it("A2: when PLX is absent, a 2-pallet order excludes PRH and falls to PND (the backup)", () => {
     const sel = selectTruck({ pallets: 2, zone: "A2" }, [pnd(), prh(), prj()], ADJACENCY);
     expect(sel?.plate).toBe("PND 1888");
   });
 
-  it("A2: when PLX is available, PND (Driver 2) is excluded — PLX wins", () => {
+  it("A2: when PLX is available, PND (the backup) is excluded — PLX wins", () => {
     const sel = selectTruck({ pallets: 6, zone: "A2" }, [plx(), pnd()], ADJACENCY);
     expect(sel?.plate).toBe("PLX 2406");
   });

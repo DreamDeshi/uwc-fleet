@@ -16,7 +16,7 @@
  */
 import { prisma } from "../src/lib/prisma";
 
-const DEMO_DRIVER_PHONE = "+60100000101"; // Driver 1 — truck PLX 2406
+const DEMO_DRIVER_PHONE = "+60100000101"; // the PLX 2406 driver
 const TRUCK = "PLX 2406";
 
 // Self-added test consignees to purge (created_by set, obviously not real).

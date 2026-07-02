@@ -13,7 +13,7 @@
 **Logins & password:** use the seeded test accounts — **1 admin, 1 requestor, and
 6 drivers**. The exact phone numbers and the shared test password are listed in
 `UWC_MASTER_PROJECT_DOCUMENT.md` §6 (kept out of this public repo). Driver 1 is
-Mohd Driver 1 (truck PLX 2406).
+the driver assigned to truck PLX 2406.
 
 | App | URL |
 |---|---|
