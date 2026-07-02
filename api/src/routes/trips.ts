@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
 import { isSerializationConflict } from "../lib/prismaErrors";
 import { claimPendingTripOrThrow } from "../services/tripAssignment";
+import { assertStopDeliverable, finalizeTripOnce } from "../services/tripCompletion";
 import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
@@ -986,6 +987,11 @@ router.patch(
       }
 
       // action === "delivered"
+      // A stop can be delivered only while the trip is out, and only once —
+      // re-posting "delivered" on a completed trip would otherwise re-run the
+      // finalization below and overwrite incentive_earned at whatever the
+      // rates/day-ledger are NOW (the audit's re-finalization pay hole).
+      assertStopDeliverable(trip, stop);
       const consigneeForGate = await prisma.consignee.findUnique({ where: { id: stop.consignee_id } });
       if (!consigneeForGate) {
         throw new ApiError(400, "CONSIGNEE_NOT_FOUND", "Consignee for this stop no longer exists.");
@@ -1077,13 +1083,19 @@ router.patch(
         },
       });
 
-      const updated = await prisma.trip.update({
-        where: { id },
-        // Store the MARGINAL (per-trip) incentive, not the running day total,
-        // so the endpoints that SUM incentive_earned across a day are correct.
-        data: { status: "completed", incentive_earned: incentive.incentiveThisTrip },
-        include: tripInclude,
-      });
+      // Store the MARGINAL (per-trip) incentive, not the running day total,
+      // so the endpoints that SUM incentive_earned across a day are correct.
+      // Write-once compare-and-set: a concurrent (or repeated) finalization
+      // loses the guard and must never overwrite the stored pay.
+      const finalized = await finalizeTripOnce(prisma, id, incentive.incentiveThisTrip);
+      if (!finalized) {
+        throw new ApiError(
+          409,
+          "TRIP_ALREADY_FINALIZED",
+          "This trip has already been completed and its incentive finalized."
+        );
+      }
+      const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
 
       await prisma.auditLog.create({
         data: { user_id: req.user!.id, action: "trip.completed", table_name: "Trip", record_id: id },
