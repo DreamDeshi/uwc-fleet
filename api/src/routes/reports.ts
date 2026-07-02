@@ -4,6 +4,7 @@ import { getTripDayStart, getTripDayEnd, mytDateKey } from "../services/incentiv
 import { palletEquivalents } from "../lib/pallets";
 import { leaveCoversDate } from "../services/driverLeave";
 import { currentMytMonthBounds, mytDayIndex, mytMonthKey, mytMonthParts, mytMonthStart } from "../lib/myt";
+import { attentionConfig, hoursSince } from "../services/attention";
 
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
@@ -225,6 +226,62 @@ router.get("/drivers", async (_req, res, next) => {
     });
 
     res.json(payload);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /reports/attention — stuck/stale trips needing a human (read-only) ──
+// Complements the pending-only auto_dispatch_failed flag with the three states
+// that previously had no visibility at all. Never mutates anything.
+router.get("/attention", async (_req, res, next) => {
+  try {
+    const now = new Date();
+    const cfg = attentionConfig();
+    const staleCutoff = new Date(now.getTime() - cfg.staleInProgressHours * 60 * 60 * 1000);
+    const overdueCutoff = new Date(now.getTime() - cfg.overdueAssignedHours * 60 * 60 * 1000);
+
+    const shape = {
+      id: true,
+      ticket_number: true,
+      status: true,
+      pickup_datetime: true,
+      truck_plate: true,
+      driver: { select: { name: true, phone: true } },
+    } as const;
+
+    const [staleInProgress, overdueAssigned, completedNullIncentive] = await Promise.all([
+      prisma.trip.findMany({
+        where: { status: "in_progress", pickup_datetime: { lt: staleCutoff } },
+        select: shape,
+        orderBy: { pickup_datetime: "asc" },
+      }),
+      prisma.trip.findMany({
+        where: { status: "assigned", pickup_datetime: { lt: overdueCutoff } },
+        select: shape,
+        orderBy: { pickup_datetime: "asc" },
+      }),
+      // Legacy anomaly: completed by an internal driver but pay never written
+      // (pre-atomic-finalization data). External trips legitimately have no
+      // incentive, so they're excluded.
+      prisma.trip.findMany({
+        where: { status: "completed", incentive_earned: null, is_external: false, driver_id: { not: null } },
+        select: shape,
+        orderBy: { pickup_datetime: "asc" },
+      }),
+    ]);
+
+    const withAge = (t: (typeof staleInProgress)[number]) => ({
+      ...t,
+      hours_since_pickup: Math.round(hoursSince(t.pickup_datetime, now) * 10) / 10,
+    });
+
+    res.json({
+      thresholds: cfg,
+      stale_in_progress: staleInProgress.map(withAge),
+      overdue_assigned: overdueAssigned.map(withAge),
+      completed_null_incentive: completedNullIncentive.map(withAge),
+    });
   } catch (err) {
     next(err);
   }
