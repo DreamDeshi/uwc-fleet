@@ -9,6 +9,7 @@ import { getTripDayStart, getTripDayEnd } from "../services/incentiveEngine";
 import { palletEquivalents } from "../lib/pallets";
 import { loadSpecTrucks } from "../lib/uwcSpec";
 import { planRateReset } from "../services/rateReset";
+import { currentMytMonthBounds } from "../lib/myt";
 
 const router = Router();
 router.use(requireAuth);
@@ -75,17 +76,6 @@ function summariseFuel(logs: { liters: unknown; cost: unknown; odometer: number 
     avg_cost_per_litre: total_litres > 0 ? round2(total_cost_rm / total_litres) : null,
     total_km_covered,
     cost_per_km: total_km_covered > 0 ? round2(total_cost_rm / total_km_covered) : null,
-  };
-}
-
-// [start, end) UTC instants bounding the current Malaysia-time calendar month.
-function currentMytMonthBounds(now: Date): { start: Date; end: Date } {
-  const myt = new Date(now.getTime() + MYT_OFFSET_MS);
-  const y = myt.getUTCFullYear();
-  const m = myt.getUTCMonth();
-  return {
-    start: new Date(Date.UTC(y, m, 1) - MYT_OFFSET_MS),
-    end: new Date(Date.UTC(y, m + 1, 1) - MYT_OFFSET_MS),
   };
 }
 

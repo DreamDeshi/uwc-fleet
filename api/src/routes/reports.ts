@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { getTripDayStart, getTripDayEnd, mytDateKey } from "../services/incentiveEngine";
 import { palletEquivalents } from "../lib/pallets";
 import { leaveCoversDate } from "../services/driverLeave";
+import { currentMytMonthBounds, mytDayIndex, mytMonthKey, mytMonthParts, mytMonthStart } from "../lib/myt";
 
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
@@ -12,20 +13,16 @@ router.use(requireAuth, requireRole("admin"));
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// On-time proxy: every stop was delivered on (or before) the same local
+// On-time proxy: every stop was delivered on (or before) the same MYT
 // calendar day it was picked up — i.e. the run didn't spill into the next day.
 // No scheduled per-stop ETA is stored, so this is the best honest signal of a
-// trip that completed as planned.
-function localDayIndex(d: Date): number {
-  return Math.floor(
-    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / (24 * 60 * 60 * 1000)
-  );
-}
+// trip that completed as planned. Day binning is explicit MYT (lib/myt.ts),
+// matching the engine's trip-days regardless of the server's TZ env.
 function tripOnTime(pickup: Date, stops: { delivered_at: Date | null }[]): boolean {
-  const pickupDay = localDayIndex(new Date(pickup));
+  const pickupDay = mytDayIndex(new Date(pickup));
   return stops.every((s) => {
     if (!s.delivered_at) return true;
-    return localDayIndex(new Date(s.delivered_at)) <= pickupDay;
+    return mytDayIndex(new Date(s.delivered_at)) <= pickupDay;
   });
 }
 
@@ -35,7 +32,7 @@ router.get("/dashboard", async (_req, res, next) => {
     const now = new Date();
     const dayStart = getTripDayStart(now);
     const dayEnd = getTripDayEnd(now);
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const { start: monthStart } = currentMytMonthBounds(now);
 
     const [
       totalTrucks,
@@ -122,7 +119,7 @@ router.get("/drivers", async (_req, res, next) => {
     const now = new Date();
     const dayStart = getTripDayStart(now);
     const dayEnd = getTripDayEnd(now);
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const { start: monthStart } = currentMytMonthBounds(now);
 
     const todayKey = mytDateKey(now);
     const drivers = await prisma.user.findMany({
@@ -236,8 +233,10 @@ router.get("/drivers", async (_req, res, next) => {
 // ── GET /reports/monthly — last 6 calendar months of trip/incentive totals ──
 router.get("/monthly", async (_req, res, next) => {
   try {
+    // 6-month window and bucket keys in explicit MYT (lib/myt.ts).
     const now = new Date();
-    const windowStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const { year: mytYear, month: mytMonth } = mytMonthParts(now);
+    const windowStart = mytMonthStart(mytYear, mytMonth - 5);
 
     const trips = await prisma.trip.findMany({
       where: { pickup_datetime: { gte: windowStart } },
@@ -259,11 +258,12 @@ router.get("/monthly", async (_req, res, next) => {
       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
     for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      // Date.UTC normalises out-of-range month indices across year boundaries.
+      const d = new Date(Date.UTC(mytYear, mytMonth - i, 1));
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
       buckets[key] = {
         month: key,
-        label: `${monthNames[d.getMonth()]} ${d.getFullYear()}`,
+        label: `${monthNames[d.getUTCMonth()]} ${d.getUTCFullYear()}`,
         trips: 0,
         completed: 0,
         incentive: 0,
@@ -272,8 +272,7 @@ router.get("/monthly", async (_req, res, next) => {
     }
 
     for (const t of trips) {
-      const d = new Date(t.pickup_datetime);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const key = mytMonthKey(new Date(t.pickup_datetime));
       const b = buckets[key];
       if (!b) continue;
       b.trips += 1;

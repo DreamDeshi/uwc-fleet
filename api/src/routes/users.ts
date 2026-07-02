@@ -13,6 +13,7 @@ import {
   type DriverTripStats,
 } from "../lib/performanceScore";
 import { estimateTripDistanceKm } from "../lib/geo";
+import { currentMytMonthBounds } from "../lib/myt";
 
 const router = Router();
 
@@ -51,22 +52,9 @@ router.get("/me/performance", requireAuth, requireRole("driver"), async (req, re
 // Everything below this guard is admin-only.
 router.use(requireAuth, requireRole("admin"));
 
-// Malaysia is UTC+8 year-round; the points component is scoped to the current
-// MYT calendar month so a UTC-hosted server still bins trips into the right month.
-const MYT_OFFSET_MS = 8 * 60 * 60 * 1000;
-
-/** [start, end) UTC instants bounding the current Malaysia-time calendar month. */
-function currentMytMonthBounds(now: Date): { start: Date; end: Date } {
-  const myt = new Date(now.getTime() + MYT_OFFSET_MS);
-  const y = myt.getUTCFullYear();
-  const m = myt.getUTCMonth();
-  return {
-    start: new Date(Date.UTC(y, m, 1) - MYT_OFFSET_MS),
-    end: new Date(Date.UTC(y, m + 1, 1) - MYT_OFFSET_MS),
-  };
-}
-
 // ── Driver performance scores (FR-FM7) ───────────────────────────────────
+// The points component is scoped to the current MYT calendar month
+// (lib/myt.ts) so a UTC-hosted server still bins trips into the right month.
 // Builds the score breakdown for every driver. The points component is
 // normalised against the top-earning driver this month, so a single driver's
 // score still depends on the whole fleet — both endpoints compute the full set.

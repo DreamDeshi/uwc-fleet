@@ -17,6 +17,8 @@
  * same ranking.
  */
 
+import { mytDayIndex } from "./myt";
+
 /** Component weights, summing to 100. */
 export const WEIGHTS = { onTime: 40, completion: 30, points: 30 } as const;
 
@@ -51,24 +53,18 @@ export interface ScoreBreakdown {
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
-/** Day index (local) of a Date — used to compare delivery day vs pickup day. */
-function localDayIndex(d: Date): number {
-  return Math.floor(
-    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / (24 * 60 * 60 * 1000)
-  );
-}
-
 /**
- * On-time proxy: every stop was delivered on (or before) the same local
- * calendar day the trip was picked up — i.e. the run didn't spill into the next
- * day. No scheduled per-stop ETA is stored, so this is the best honest signal
- * of a trip that completed as planned. (Same rule as the dashboard KPI.)
+ * On-time proxy: every stop was delivered on (or before) the same MYT
+ * calendar day the trip was picked up — i.e. the run didn't spill into the
+ * next day. No scheduled per-stop ETA is stored, so this is the best honest
+ * signal of a trip that completed as planned. (Same rule as the dashboard
+ * KPI; day binning is explicit MYT via lib/myt.ts, never server-local.)
  */
 export function isTripOnTime(pickup: Date, stops: { delivered_at: Date | null }[]): boolean {
-  const pickupDay = localDayIndex(new Date(pickup));
+  const pickupDay = mytDayIndex(new Date(pickup));
   return stops.every((s) => {
     if (!s.delivered_at) return true;
-    return localDayIndex(new Date(s.delivered_at)) <= pickupDay;
+    return mytDayIndex(new Date(s.delivered_at)) <= pickupDay;
   });
 }
 

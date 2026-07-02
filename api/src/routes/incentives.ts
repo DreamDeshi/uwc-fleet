@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { estimateTripDistanceKm } from "../lib/geo";
+import { currentMytMonthBounds, mytMonthKey } from "../lib/myt";
 
 const router = Router();
 router.use(requireAuth);
@@ -52,19 +53,19 @@ router.get("/mine", requireRole("driver"), async (req, res, next) => {
       pallets: t.cargo_details.reduce((sum, c) => sum + c.quantity, 0),
     }));
 
-    // Current-month aggregate (server local time — matches the daily-reset
-    // assumption documented in the incentive engine).
+    // Current-month aggregate in explicit MYT (lib/myt.ts) — the month bucket
+    // must match the engine's MYT trip-days regardless of the server's TZ env.
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const { start: monthStart } = currentMytMonthBounds(now);
     const monthTrips = trips.filter((t) => new Date(t.pickup_datetime) >= monthStart);
     const monthTotal = monthTrips.reduce((sum, t) => sum + Number(t.incentive_earned ?? 0), 0);
     const monthDistance = monthTrips.reduce((sum, t) => sum + t.distance_km, 0);
 
-    const monthLabel = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const monthLabel = mytMonthKey(now);
 
     res.json({
       summary: {
-        month: monthLabel, // YYYY-MM in local time
+        month: monthLabel, // YYYY-MM in MYT
         total: monthTotal,
         trip_count: monthTrips.length,
         total_distance_km: monthDistance,
