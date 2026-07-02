@@ -286,6 +286,24 @@ export function useResetTruckRates() {
   });
 }
 
+export function useUpdateTruckDocuments() {
+  // Renewal path for the roadworthiness gate: recording a new expiry date
+  // un-blocks the truck for dispatch, so refresh the fleet + alert views.
+  const invalidate = useInvalidate([["trucks"], ["trucks", "alerts"], ["dashboard"]]);
+  return useMutation({
+    mutationFn: async (v: {
+      plate: string;
+      insurance_expiry?: string | null;
+      permit_expiry?: string | null;
+      road_tax_expiry?: string | null;
+    }) => {
+      const { plate, ...body } = v;
+      return (await api.patch<Truck>(`/trucks/${encodeURIComponent(plate)}/documents`, body)).data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
 export function useUpdateDestinationRate() {
   const invalidate = useInvalidate([["rates", "destinations"], ["rates", "audit"]]);
   return useMutation({

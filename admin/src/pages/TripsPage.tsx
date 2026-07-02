@@ -487,6 +487,11 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
   const [windowWarn, setWindowWarn] = useState<
     { driverId: string; plate: string; message: string } | null
   >(null);
+  // Expired-permit warning (roadworthiness gate) awaiting "Assign anyway".
+  // Expired insurance/road tax is a hard TRUCK_UNROADWORTHY error — no override.
+  const [permitWarn, setPermitWarn] = useState<
+    { driverId: string; plate: string; message: string } | null
+  >(null);
 
   const drivers = useDrivers();
   const approve = useApproveTrip();
@@ -499,11 +504,13 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
       await approve.mutateAsync({ id: trip.id, driver_id: driverId, truck_plate: plate, force });
       setConflict(null);
       setWindowWarn(null);
+      setPermitWarn(null);
       onDone();
     } catch (e) {
-      // Both the scheduling conflict and the operating-window cutoff are
+      // The scheduling conflict, operating-window cutoff and expired permit are
       // recoverable soft warnings: surface them and let the admin re-submit with
-      // force ("Assign anyway"). Other errors (e.g. overload) are shown plainly.
+      // force ("Assign anyway"). Other errors (overload, unroadworthy) are shown
+      // plainly and cannot be overridden.
       const code = apiErrorCode(e);
       if (code === "SCHEDULING_CONFLICT") {
         setConflict({ driverId, plate, conflicts: apiErrorConflicts(e) });
@@ -511,6 +518,10 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
       }
       if (code === "OPERATING_WINDOW") {
         setWindowWarn({ driverId, plate, message: apiErrorMessage(e, "Past the operating window.") });
+        return;
+      }
+      if (code === "TRUCK_PERMIT_EXPIRED") {
+        setPermitWarn({ driverId, plate, message: apiErrorMessage(e, "This truck's permit has expired.") });
         return;
       }
       setError(apiErrorMessage(e, "Could not assign driver."));
@@ -599,6 +610,30 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
               size="sm"
               disabled={approve.isPending}
               onClick={() => assign(windowWarn.driverId, windowWarn.plate, true)}
+            >
+              Assign anyway
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {permitWarn && (
+        <div style={{ background: colors.yellowTint, border: "1px solid #f0d98a", borderRadius: radius.md, padding: "11px 13px", marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: colors.amber, marginBottom: 6 }}>
+            ⚠ Permit expired
+          </div>
+          <div style={{ fontSize: 12.5, color: colors.text, marginBottom: 3 }}>
+            {permitWarn.message} Overriding is audit-logged; update the date on the Trucks page once renewed.
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <Button variant="ghost" size="sm" onClick={() => setPermitWarn(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="accent"
+              size="sm"
+              disabled={approve.isPending}
+              onClick={() => assign(permitWarn.driverId, permitWarn.plate, true)}
             >
               Assign anyway
             </Button>
