@@ -7,7 +7,7 @@ import {
 
 const BUFFER_MS = 120 * 60 * 1000; // 120 min, the default
 const P = new Date("2026-06-22T06:00:00Z"); // 2:00pm MYT
-const DRIVER = "driver-azmi";
+const DRIVER = "driver-1";
 const TRUCK = "PLX 2406";
 const min = (n: number) => new Date(P.getTime() + n * 60 * 1000);
 
@@ -18,7 +18,7 @@ function candidate(over: Partial<ConflictCandidateTrip> = {}): ConflictCandidate
     driver_id: DRIVER,
     truck_plate: TRUCK,
     pickup_datetime: min(60),
-    driver: { name: "Azmi" },
+    driver: { name: "Ali" },
     ...over,
   };
 }
@@ -42,7 +42,7 @@ describe("findSchedulingConflicts", () => {
       candidates: [candidate({ truck_plate: "OTHER 1", pickup_datetime: min(60) })],
     });
     expect(c).toHaveLength(1);
-    expect(c[0]).toMatchObject({ tripId: "x1", driverOrTruck: "driver", plateOrDriverName: "Azmi" });
+    expect(c[0]).toMatchObject({ tripId: "x1", driverOrTruck: "driver", plateOrDriverName: "Ali" });
   });
 
   it("flags a same-TRUCK trip within the buffer (different driver)", () => {

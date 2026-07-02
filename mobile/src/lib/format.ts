@@ -65,7 +65,7 @@ export function monthYear(ym: string): string {
   return `${monthNames("long")[m - 1]} ${y}`;
 }
 
-// initials for avatar bubbles, e.g. "Mohd Azmi B. Che Dol" -> "MA"
+// initials for avatar bubbles, e.g. "Mohd Ali B. Abu" -> "MA"
 export function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase();

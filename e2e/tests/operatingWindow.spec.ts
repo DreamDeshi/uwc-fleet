@@ -59,20 +59,20 @@ test.describe("Operating-window cutoff (Phase 3)", () => {
 
   test("manual assign WARNS (OPERATING_WINDOW), then succeeds with force", async () => {
     const requestor = await login(REQUESTOR);
-    const azmi = await driverIdentity(DRIVER);
+    const testDriver = await driverIdentity(DRIVER);
 
     const trip = await seedPendingTripAt(requestor.accessToken, futureMytPickup(6, 17, 30), ["P2"]);
 
     // Without force → 409 OPERATING_WINDOW; the trip stays pending.
     await expect(
-      approveTrip(adminToken, trip.id, { driver_id: azmi.id, truck_plate: azmi.plate })
+      approveTrip(adminToken, trip.id, { driver_id: testDriver.id, truck_plate: testDriver.plate })
     ).rejects.toThrow(/OPERATING_WINDOW/);
     expect((await getTrip(adminToken, trip.id)).status).toBe("pending");
 
     // With force ("Assign anyway") → the override proceeds.
     await approveTrip(adminToken, trip.id, {
-      driver_id: azmi.id,
-      truck_plate: azmi.plate,
+      driver_id: testDriver.id,
+      truck_plate: testDriver.plate,
       force: true,
     });
     expect((await getTrip(adminToken, trip.id)).status).toBe("assigned");
@@ -80,11 +80,11 @@ test.describe("Operating-window cutoff (Phase 3)", () => {
 
   test("a normal mid-day route assigns without warning", async () => {
     const requestor = await login(REQUESTOR);
-    const azmi = await driverIdentity(DRIVER);
+    const testDriver = await driverIdentity(DRIVER);
 
     // Pickup 10:00 MYT, 1 stop ⇒ est. completion ≈ 11:35, comfortably in-window.
     const trip = await seedPendingTripAt(requestor.accessToken, futureMytPickup(7, 10, 0), ["P2"]);
-    await approveTrip(adminToken, trip.id, { driver_id: azmi.id, truck_plate: azmi.plate });
+    await approveTrip(adminToken, trip.id, { driver_id: testDriver.id, truck_plate: testDriver.plate });
     expect((await getTrip(adminToken, trip.id)).status).toBe("assigned");
   });
 });

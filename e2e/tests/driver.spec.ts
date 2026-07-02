@@ -12,7 +12,7 @@ import { POD_FILE } from "../helpers/pod";
  *  10. Start trip → status becomes in_progress.
  *  11. Upload DO photo + mark delivered → trip completed, incentive shown.
  *
- * Each test seeds its own trip for Azmi via the API; reset() frees Azmi first so
+ * Each test seeds its own trip for the test driver via the API; reset() frees the test driver first so
  * the "one active trip per driver" rule never blocks the fresh assignment.
  */
 test.describe("Driver (mobile web)", () => {
@@ -29,7 +29,7 @@ test.describe("Driver (mobile web)", () => {
 
     await expect(page.getByText("Today's Assignment")).toBeVisible();
     // The assignment card shows the assigned status (uppercased by StatusBadge)
-    // and Azmi's truck.
+    // and the PLX 2406 driver's truck.
     await expect(page.getByText("ASSIGNED").first()).toBeVisible();
     await expect(page.getByText("PLX 2406").first()).toBeVisible();
   });

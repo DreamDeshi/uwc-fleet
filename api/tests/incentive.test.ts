@@ -8,9 +8,9 @@ import {
   getTripDayEnd,
 } from "../src/services/incentiveEngine";
 
-// Mohd Azmi's truck (PLX 2406): weekday RM11, off-peak RM13, deduction 2 pts.
+// The primary A1/A2 truck (PLX 2406): weekday RM11, off-peak RM13, deduction 2 pts.
 const PLX2406 = { daily_deduction_points: 2, entitled_claim_weekday: 11, entitled_claim_offpeak: 13 };
-// Khoo's truck (PRH 5292, 1t): flat RM9, seeded deduction 2 pts.
+// The 1t truck (PRH 5292): flat RM9, seeded deduction 2 pts.
 const PRH5292 = { daily_deduction_points: 2, entitled_claim_weekday: 9, entitled_claim_offpeak: 9 };
 // A 17.5ft lorry class: flat RM10, deduction 3 pts.
 const TRUCK_17_5 = { daily_deduction_points: 3, entitled_claim_weekday: 10, entitled_claim_offpeak: 10 };

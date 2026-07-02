@@ -28,7 +28,7 @@ export async function pickRouteType(token: string): Promise<{ id: string; name: 
 
 /**
  * A consignee suitable for API seeding. Prefers the given zones (e.g. ["A2"] so
- * auto-dispatch is forced onto Azmi/PLX 2406, the only A-zone truck), falling
+ * auto-dispatch is forced onto the PLX 2406 driver, the only A-zone truck), falling
  * back to any consignee so the helper never returns empty.
  */
 export async function pickConsignee(token: string, preferZones: string[] = []): Promise<Consignee> {
@@ -138,7 +138,7 @@ export async function seedPendingTripAt(
   });
 }
 
-/** Create a trip already ASSIGNED to the test driver (Azmi / PLX 2406). */
+/** Create a trip already ASSIGNED to the test driver (PLX 2406). */
 export async function seedAssignedTrip(adminToken: string): Promise<Trip> {
   const requestor = await login(REQUESTOR);
   const trip = await seedPendingTrip(requestor.accessToken);

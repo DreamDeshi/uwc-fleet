@@ -3,7 +3,7 @@
  * before each spec runs:
  *   1. dispatch mode → manual (so newly seeded trips stay pending until a test
  *      explicitly assigns or auto-dispatches them);
- *   2. the test driver (Azmi) is freed — any active trip (assigned or in_progress)
+ *   2. the test driver (the test driver) is freed — any active trip (assigned or in_progress)
  *      is driven to completion via the API, so each spec starts from a clean slate
  *      (an in_progress trip would otherwise block a fresh assignment with 409
  *      DRIVER_BUSY; a leftover assigned trip would trip the SCHEDULING_CONFLICT
