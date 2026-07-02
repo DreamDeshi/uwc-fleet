@@ -26,7 +26,7 @@ import {
 import { DispatchToggle } from "@/components/DispatchToggle";
 import { StatusTimeline } from "@/components/StatusTimeline";
 import { apiErrorMessage, apiErrorCode, apiErrorConflicts } from "@/services/api";
-import { formatDateTime, formatMoney } from "@/lib/format";
+import { formatDateTime, formatMoney, mytDateKey } from "@/lib/format";
 import {
   ORIGIN_LABEL,
   cargoSummary,
@@ -615,7 +615,14 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {(drivers.data ?? []).map((d) => {
-                const available = d.status === "available" && d.assigned_truck;
+                // Leave is checked against THIS trip's pickup MYT date (not
+                // "today") — a driver on leave next week is still assignable
+                // for tomorrow. Server enforces the same rule (DRIVER_ON_LEAVE).
+                const pickupKey = mytDateKey(trip.pickup_datetime);
+                const onLeave = d.leaves.some(
+                  (l) => l.start_date <= pickupKey && l.end_date >= pickupKey
+                );
+                const available = d.status === "available" && d.assigned_truck && !onLeave;
                 const remaining = d.assigned_truck ? d.assigned_truck.max_pallets - d.current_load : 0;
                 const fits = d.assigned_truck ? remaining >= pallets : false;
                 return (
@@ -656,7 +663,11 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
                       </Button>
                     ) : (
                       <div style={{ fontSize: 11.5, color: colors.textMuted, textAlign: "center", padding: "7px 0" }}>
-                        {d.status === "on_trip" ? `On route${d.current_route ? `: ${d.current_route}` : ""}` : "Off duty"}
+                        {onLeave
+                          ? "On leave for this pickup date"
+                          : d.status === "on_trip"
+                            ? `On route${d.current_route ? `: ${d.current_route}` : ""}`
+                            : "Off duty"}
                       </div>
                     )}
                   </div>

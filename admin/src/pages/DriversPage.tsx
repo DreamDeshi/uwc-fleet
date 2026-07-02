@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useDrivers, useDriverPerformance } from "@/hooks/queries";
+import { useAddLeave, useDeleteLeave, useDrivers, useDriverPerformance, useLeaves } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
-import { Avatar, Card, EmptyState, ErrorState, Loading, Pill, SearchInput, SegmentedFilter } from "@/components/ui";
-import { formatMoney } from "@/lib/format";
-import type { DriverPerf, DriverPerformance, DriverStatus } from "@/types";
+import { Avatar, Button, Card, EmptyState, ErrorState, Input, Loading, Modal, Pill, SearchInput, SectionTitle, SegmentedFilter } from "@/components/ui";
+import { formatDate, formatMoney } from "@/lib/format";
+import { apiErrorMessage } from "@/services/api";
+import type { DriverLeaveEntry, DriverPerf, DriverPerformance, DriverStatus } from "@/types";
 
 const STATUS_META: Record<DriverStatus, { label: string; bg: string; fg: string }> = {
   on_trip: { label: "On Trip", bg: colors.blueTint, fg: colors.blue },
@@ -85,7 +86,178 @@ export function DriversPage() {
           ))}
         </div>
       )}
+
+      <LeaveManager drivers={drivers.data ?? []} />
     </div>
+  );
+}
+
+// ── Driver leave (tracker #4) ─────────────────────────────────────────
+// Date-based availability: a driver on leave for a trip's pickup date is
+// excluded from auto-dispatch and blocked in the dispatch panel for that date,
+// while keeping their login and their trips on other dates. NOT the same as
+// disabling the account (which revokes access entirely).
+function LeaveManager({ drivers }: { drivers: DriverPerf[] }) {
+  const leaves = useLeaves();
+  const [deleting, setDeleting] = useState<DriverLeaveEntry | null>(null);
+
+  return (
+    <Card pad={0}>
+      <div style={{ padding: 18, borderBottom: `1px solid ${colors.border}` }}>
+        <SectionTitle
+          title="Driver Leave"
+          subtitle="A driver on leave is skipped by dispatch for those dates — login stays active"
+        />
+        <AddLeaveForm drivers={drivers} />
+      </div>
+      {leaves.isLoading ? (
+        <div style={{ padding: 18 }}><Loading /></div>
+      ) : leaves.isError ? (
+        <div style={{ padding: 18 }}>
+          <ErrorState message="Could not load leave entries." onRetry={() => leaves.refetch()} />
+        </div>
+      ) : (leaves.data ?? []).length === 0 ? (
+        <div style={{ padding: 20, fontSize: 13, color: colors.textMuted }}>
+          No leave recorded — every active driver is in the dispatch pool.
+        </div>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>{["Driver", "From", "To", "Note", ""].map((h) => (
+              <th key={h} style={{ textAlign: "left", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: colors.textMuted, padding: "12px 16px", borderBottom: `1px solid ${colors.border}`, background: colors.panel }}>{h}</th>
+            ))}</tr>
+          </thead>
+          <tbody>
+            {leaves.data!.map((l, i) => (
+              <tr key={l.id} style={{ background: i % 2 ? colors.blueTint : "transparent" }}>
+                <td style={leaveTd}>
+                  <span style={{ fontWeight: 700 }}>{l.driver.name}</span>
+                  {l.driver.assigned_truck_plate ? ` · ${l.driver.assigned_truck_plate}` : ""}
+                </td>
+                <td style={leaveTd}>{formatDate(l.start_date)}</td>
+                <td style={leaveTd}>{l.end_date === l.start_date ? "—" : formatDate(l.end_date)}</td>
+                <td style={{ ...leaveTd, color: colors.textMuted }}>{l.note ?? ""}</td>
+                <td style={{ ...leaveTd, textAlign: "right" }}>
+                  <Button variant="ghost" size="sm" onClick={() => setDeleting(l)}>Remove</Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {deleting && <DeleteLeaveConfirm leave={deleting} onClose={() => setDeleting(null)} />}
+    </Card>
+  );
+}
+
+const leaveTd: React.CSSProperties = {
+  fontSize: 13,
+  color: colors.text,
+  padding: "11px 16px",
+  borderBottom: `1px solid ${colors.divider}`,
+};
+
+function AddLeaveForm({ drivers }: { drivers: DriverPerf[] }) {
+  const [driverId, setDriverId] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [note, setNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const add = useAddLeave();
+
+  async function submit() {
+    setError(null);
+    if (!driverId || !start) {
+      setError("Pick a driver and at least the start date.");
+      return;
+    }
+    try {
+      await add.mutateAsync({
+        driver_id: driverId,
+        start_date: start,
+        end_date: end || undefined,
+        note: note.trim() || undefined,
+      });
+      setDriverId("");
+      setStart("");
+      setEnd("");
+      setNote("");
+    } catch (e) {
+      setError(apiErrorMessage(e, "Could not add the leave entry."));
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 10 }}>{error}</div>}
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <label style={{ display: "block" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: colors.text }}>Driver</div>
+          <select
+            value={driverId}
+            onChange={(e) => setDriverId(e.target.value)}
+            style={{ padding: "11px 13px", borderRadius: radius.md, border: `1px solid ${colors.border}`, fontSize: 14, minWidth: 220, background: colors.card, color: colors.text }}
+          >
+            <option value="">Select a driver…</option>
+            {drivers.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}{d.assigned_truck ? ` (${d.assigned_truck.plate})` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div style={{ width: 170, marginBottom: -14 }}>
+          <Input label="From" value={start} onChange={setStart} type="date" />
+        </div>
+        <div style={{ width: 170, marginBottom: -14 }}>
+          <Input label="To (optional)" value={end} onChange={setEnd} type="date" />
+        </div>
+        <div style={{ flex: 1, minWidth: 160, marginBottom: -14 }}>
+          <Input label="Note (optional)" value={note} onChange={setNote} placeholder="e.g. Annual leave" />
+        </div>
+        <Button variant="primary" onClick={submit} disabled={add.isPending}>
+          {add.isPending ? "Adding…" : "Add leave"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Removing leave puts the driver straight back into the dispatch pool for
+// those dates — confirm before firing (audit-logged server-side).
+function DeleteLeaveConfirm({ leave, onClose }: { leave: DriverLeaveEntry; onClose: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const del = useDeleteLeave();
+
+  async function doDelete() {
+    setError(null);
+    try {
+      await del.mutateAsync(leave.id);
+      onClose();
+    } catch (e) {
+      setError(apiErrorMessage(e, "Could not remove the leave entry."));
+    }
+  }
+
+  const range =
+    leave.end_date === leave.start_date
+      ? formatDate(leave.start_date)
+      : `${formatDate(leave.start_date)} – ${formatDate(leave.end_date)}`;
+
+  return (
+    <Modal open onClose={onClose} title="Remove this leave entry?" width={420}>
+      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+      <div style={{ fontSize: 13.5, color: colors.text, lineHeight: 1.6, marginBottom: 14 }}>
+        Remove <strong>{leave.driver.name}</strong>'s leave ({range})? The driver goes
+        straight back into the dispatch pool for those dates.
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <Button variant="ghost" full onClick={onClose} disabled={del.isPending}>Cancel</Button>
+        <Button variant="danger" full onClick={doDelete} disabled={del.isPending}>
+          {del.isPending ? "Removing…" : "Remove"}
+        </Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -111,6 +283,9 @@ function DriverCard({
           </div>
         </div>
         {perf && <ScoreBadge perf={perf} onClick={onOpenPerf} />}
+        {/* Leave is date-scoped, so it's a badge alongside status, not a status:
+            an on-leave-today driver can still hold trips for other dates. */}
+        {d.on_leave_today && <Pill bg={colors.yellowTint} fg={colors.amber}>On leave</Pill>}
         <Pill bg={meta.bg} fg={meta.fg}>{meta.label}</Pill>
       </div>
 

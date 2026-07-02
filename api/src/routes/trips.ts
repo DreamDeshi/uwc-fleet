@@ -20,7 +20,9 @@ import {
   getTripDayStart,
   getTripDayEnd,
   isDocumentationComplete,
+  mytDateKey,
 } from "../services/incentiveEngine";
+import { leaveDateFilter } from "../services/driverLeave";
 import { PLANT_ORIGIN, zoneCoord, getRoute, type LatLng } from "../lib/geo";
 import { loadHolidaySet } from "../lib/holidays";
 import { upload } from "../lib/upload";
@@ -504,6 +506,22 @@ router.patch(
                 409,
                 "DRIVER_BUSY",
                 "This driver is currently out on an in-progress trip."
+              );
+            }
+
+            // Leave guard (tracker #4): like DRIVER_BUSY, never force-overridable —
+            // a driver on leave for the trip's PICKUP date is physically unavailable.
+            // Date-scoped, so the same driver stays assignable for other dates.
+            const leave = await tx.driverLeave.findFirst({
+              where: { driver_id, ...leaveDateFilter(mytDateKey(trip.pickup_datetime)) },
+            });
+            if (leave) {
+              throw new ApiError(
+                409,
+                "DRIVER_ON_LEAVE",
+                `This driver is on leave for the pickup date (${leave.start_date}${
+                  leave.end_date !== leave.start_date ? ` to ${leave.end_date}` : ""
+                }).`
               );
             }
 

@@ -19,6 +19,7 @@ import fleetRoutes from "./routes/fleet";
 import settingsRoutes from "./routes/settings";
 import dispatchRoutes from "./routes/dispatch";
 import holidaysRoutes from "./routes/holidays";
+import leavesRoutes from "./routes/leaves";
 import { errorHandler } from "./middleware/errorHandler";
 import { startPendingTripAlerts } from "./services/pendingTripAlerts";
 
@@ -69,6 +70,7 @@ app.use("/api/v1/fleet", fleetRoutes);
 app.use("/api/v1/settings", settingsRoutes);
 app.use("/api/v1/dispatch", dispatchRoutes);
 app.use("/api/v1/holidays", holidaysRoutes);
+app.use("/api/v1/leaves", leavesRoutes);
 
 app.use(errorHandler);
 

@@ -210,6 +210,11 @@ export interface DriverPerf {
   phone: string;
   account_status: UserStatus;
   status: DriverStatus;
+  // Leave is DATE-scoped (it doesn't change `status`): current + upcoming
+  // ranges, inclusive "YYYY-MM-DD" MYT. The dispatch panel checks them against
+  // the trip's pickup date; the server enforces on approve/auto anyway.
+  on_leave_today: boolean;
+  leaves: { start_date: string; end_date: string; note: string | null }[];
   assigned_truck: { plate: string; max_pallets: number } | null;
   current_load: number; // pallets already on this driver's truck (active trips)
   scheduled_trips: number; // assigned-but-not-started trips queued for this driver
@@ -218,6 +223,16 @@ export interface DriverPerf {
   trips_today: number;
   incentive_this_month: number;
   current_route: string | null;
+}
+
+// One driver-leave entry (GET /leaves) — admin-managed dispatch availability.
+export interface DriverLeaveEntry {
+  id: string;
+  driver_id: string;
+  start_date: string; // inclusive "YYYY-MM-DD" MYT
+  end_date: string; // inclusive
+  note: string | null;
+  driver: { name: string; assigned_truck_plate: string | null };
 }
 
 // FR-FM7 — driver performance score (GET /users/drivers/performance).

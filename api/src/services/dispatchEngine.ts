@@ -24,6 +24,8 @@ import { palletEquivalents } from "../lib/pallets";
 import { isSerializationConflict } from "../lib/prismaErrors";
 import { claimPendingTrip } from "./tripAssignment";
 import { truckRateSnapshot, snapshotStopZonePoints } from "./rateSnapshot";
+import { leaveDateFilter } from "./driverLeave";
+import { mytDateKey } from "./incentiveEngine";
 import { recordTripEvent } from "../lib/tripHistory";
 import { CONFLICT_STATUSES, ASSIGNMENT_CONFLICT_BUFFER_MS } from "./schedulingConflict";
 import {
@@ -253,6 +255,11 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
   // overfill a truck. Reading each truck's live load inside the transaction lets
   // Postgres detect the read-write conflict and abort one with P2034; the
   // status-guarded claim makes the same-trip case deterministic (loser → raced).
+  // Leave is date-scoped: exclude drivers whose leave covers the trip's PICKUP
+  // MYT day — a driver on leave that day is out of the pool for THIS booking
+  // but stays eligible for bookings picked up on other dates.
+  const pickupDateKey = mytDateKey(trip.pickup_datetime);
+
   let selection: TruckSelection | null = null;
   let raced = false;
   let windowExceeded: OperatingWindowEstimate | null = null;
@@ -269,6 +276,9 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
               is: {
                 status: "active",
                 trips_driven: { none: { status: { in: [...ACTIVE_TRIP_STATUSES] } } },
+                // On leave for the pickup date → not a candidate (query form of
+                // driverLeave.leaveCoversDate).
+                leaves: { none: leaveDateFilter(pickupDateKey) },
               },
             },
           },

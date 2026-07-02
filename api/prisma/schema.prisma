@@ -94,6 +94,25 @@ model User {
   audit_logs       AuditLog[]
   fuel_logs        FuelLog[]
   consignees_added Consignee[]     @relation("ConsigneeCreatedBy")
+  leaves           DriverLeave[]   @relation("DriverLeaves")
+}
+
+// Per-driver leave calendar — feeds DISPATCH availability, not pay. A driver
+// whose leave covers a trip's pickup MYT date is excluded from auto-dispatch
+// candidates and blocked in the manual approve (409 DRIVER_ON_LEAVE); their
+// login stays intact (leave is availability, NOT the disable status — which
+// revokes access entirely). Dates are inclusive "YYYY-MM-DD" MYT strings,
+// same convention as PublicHoliday.
+model DriverLeave {
+  id         String   @id @default(cuid())
+  driver_id  String
+  driver     User     @relation("DriverLeaves", fields: [driver_id], references: [id])
+  start_date String // "YYYY-MM-DD" MYT, inclusive
+  end_date   String // "YYYY-MM-DD" MYT, inclusive (= start_date for one day)
+  note       String?
+  created_at DateTime @default(now())
+
+  @@index([driver_id, start_date, end_date])
 }
 
 // ── 2. Department ────────────────────────────────────────────────────
