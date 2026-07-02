@@ -3,7 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
-import { isSerializationConflict } from "../lib/prismaErrors";
+import { isSerializationConflict, isUniqueViolation } from "../lib/prismaErrors";
 import { claimPendingTripOrThrow } from "../services/tripAssignment";
 import { assertStopDeliverable, finalizeTripOnce } from "../services/tripCompletion";
 import {
@@ -63,18 +63,26 @@ function tripDestinationLabel(trip: {
   return c?.area || c?.company_name || c?.zone_code || "destination";
 }
 
-// ── Ticket number generation: TKT-YYYYMMDD-NNN, sequential per calendar day ──
-async function generateTicketNumber(now: Date): Promise<string> {
-  const datePart = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
-    now.getDate()
-  ).padStart(2, "0")}`;
+// ── Ticket number generation: TKT-YYYYMMDD-NNN, sequential per MYT day ──
+// The count-then-create window is racy: two simultaneous bookings can compute
+// the same sequence, and ticket_number is @unique. The create route retries on
+// that unique violation (attempt bumps the sequence past the winner) instead
+// of 500ing the losing booking.
+const TICKET_CREATE_RETRIES = 3;
+
+/** "YYYYMMDD" of the MYT day — matches the MYT day-window the count uses. */
+export function ticketDatePart(now: Date): string {
+  return mytDateKey(now).replace(/-/g, "");
+}
+
+async function generateTicketNumber(now: Date, attempt = 0): Promise<string> {
   const dayStart = getTripDayStart(now);
   const dayEnd = getTripDayEnd(now);
   const countToday = await prisma.trip.count({
     where: { created_at: { gte: dayStart, lt: dayEnd } },
   });
-  const sequence = String(countToday + 1).padStart(3, "0");
-  return `TKT-${datePart}-${sequence}`;
+  const sequence = String(countToday + 1 + attempt).padStart(3, "0");
+  return `TKT-${ticketDatePart(now)}-${sequence}`;
 }
 
 // ── POST /trips — requestor submits a booking ───────────────────────────
@@ -148,25 +156,38 @@ router.post(
         }
       }
 
-      const ticket_number = await generateTicketNumber(new Date());
-
-      const trip = await prisma.trip.create({
-        data: {
-          ticket_number,
-          requestor_id: req.user!.id,
-          route_type_id,
-          pickup_datetime,
-          is_external: is_external ?? false,
-          stops: {
-            create: stops.map((s: { consignee_id: string; sequence?: number }, idx: number) => ({
-              consignee_id: s.consignee_id,
-              sequence: s.sequence ?? idx + 1,
-            })),
-          },
-          cargo_details: { create: cargo_details },
-        },
-        include: tripInclude,
-      });
+      // Ticket generation + create, retried on a ticket_number collision: two
+      // concurrent bookings can compute the same sequence (count-then-create is
+      // not atomic); the loser re-counts with a bumped sequence instead of 500ing.
+      let trip!: Prisma.TripGetPayload<{ include: typeof tripInclude }>;
+      for (let attempt = 0; ; attempt++) {
+        const ticket_number = await generateTicketNumber(new Date(), attempt);
+        try {
+          trip = await prisma.trip.create({
+            data: {
+              ticket_number,
+              requestor_id: req.user!.id,
+              route_type_id,
+              pickup_datetime,
+              is_external: is_external ?? false,
+              stops: {
+                create: stops.map((s: { consignee_id: string; sequence?: number }, idx: number) => ({
+                  consignee_id: s.consignee_id,
+                  sequence: s.sequence ?? idx + 1,
+                })),
+              },
+              cargo_details: { create: cargo_details },
+            },
+            include: tripInclude,
+          });
+          break;
+        } catch (err) {
+          if (isUniqueViolation(err, "ticket_number") && attempt < TICKET_CREATE_RETRIES) {
+            continue;
+          }
+          throw err;
+        }
+      }
 
       await prisma.auditLog.create({
         data: { user_id: req.user!.id, action: "trip.created", table_name: "Trip", record_id: trip.id },
