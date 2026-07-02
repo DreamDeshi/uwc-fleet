@@ -1208,7 +1208,7 @@ router.patch(
       const pointsByZone = buildPointsByZone(rateRows);
       const drops = thisTripStops.map((s) => ({
         zoneCode: s.consignee.zone_code,
-        zonePoints: dropZonePoints(s, pointsByZone.get(s.consignee.zone_code)),
+        zonePoints: dropZonePoints(s, pointsByZone.get(s.consignee.zone_code), s.consignee.zone_code),
       }));
 
       const incentive = calculateDeliveryIncentive({

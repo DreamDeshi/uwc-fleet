@@ -19,6 +19,7 @@
  */
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { ApiError } from "../lib/apiError";
 import { sendPushNotifications } from "../lib/pushNotifications";
 import { palletEquivalents } from "../lib/pallets";
 import { isSerializationConflict } from "../lib/prismaErrors";
@@ -450,6 +451,17 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
       // Lost a write-conflict with a concurrent dispatch. Best-effort: leave the
       // trip pending so the other writer (or the 15-min sweep) handles it.
       return { assigned: false, reason: "Concurrent dispatch in progress; will retry." };
+    }
+    if (err instanceof ApiError && err.code === "ZONE_POINTS_MISSING") {
+      // Configuration error, not a race: a stop's zone has no destination
+      // points, so the snapshot refused to write a silent 1-point payday.
+      // Leave the trip pending and raise the needs-attention flag so an admin
+      // fixes the rates instead of the booking vanishing into a log line.
+      await prisma.trip.updateMany({
+        where: { id: tripId, status: "pending" },
+        data: { auto_dispatch_failed: true },
+      });
+      return { assigned: false, reason: err.message };
     }
     throw err;
   }

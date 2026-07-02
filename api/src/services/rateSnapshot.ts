@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { ApiError } from "../lib/apiError";
 
 /**
  * Rate lock (audit fix #1): the pay a trip finalizes at must be the pay it was
@@ -64,14 +65,27 @@ export function finalizationRateParams(trip: {
 
 /**
  * A drop's zone points at finalization: the stop's assignment-time snapshot
- * when present, else the live DestinationRate points (legacy fallback), else
- * the engine's long-standing 1-point default for an unknown zone.
+ * when present, else the live DestinationRate points (legacy fallback).
+ *
+ * A zone with NEITHER is a configuration error in a money path — it used to
+ * silently pay 1 point (so a mis-seeded KL/JH/SL zone would quietly underpay
+ * an 8-point run). Now it throws ZONE_POINTS_MISSING so the trip cannot
+ * finalize at wrong pay; the fix is adding the zone's DestinationRate row.
  */
 export function dropZonePoints(
   stop: { zone_points: number | null },
-  livePoints: number | undefined
+  livePoints: number | undefined,
+  zoneCode?: string
 ): number {
-  return stop.zone_points ?? livePoints ?? 1;
+  const points = stop.zone_points ?? livePoints;
+  if (points == null) {
+    throw new ApiError(
+      422,
+      "ZONE_POINTS_MISSING",
+      `Zone ${zoneCode ?? "(unknown)"} has no destination points configured — add it on the Incentive Rates page before this trip can be finalized.`
+    );
+  }
+  return points;
 }
 
 /**
@@ -120,9 +134,21 @@ export async function snapshotStopZonePoints(
   const pointsByZone = buildPointsByZone(rateRows);
 
   for (const s of stops) {
+    const points = pointsByZone.get(s.consignee.zone_code);
+    if (points == null) {
+      // Loud, at ASSIGNMENT time: a zone without points must never be
+      // snapshotted as a silent 1-point payday. Manual assign surfaces this
+      // as a 422 to the admin; auto-dispatch aborts and leaves the trip
+      // pending with the needs-attention flag.
+      throw new ApiError(
+        422,
+        "ZONE_POINTS_MISSING",
+        `Zone ${s.consignee.zone_code} has no destination points configured — add it on the Incentive Rates page before assigning this trip.`
+      );
+    }
     await tx.tripStop.update({
       where: { id: s.id },
-      data: { zone_points: pointsByZone.get(s.consignee.zone_code) ?? 1 },
+      data: { zone_points: points },
     });
   }
 }

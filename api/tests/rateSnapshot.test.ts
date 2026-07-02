@@ -127,8 +127,16 @@ describe("dropZonePoints — snapshot wins over live zone points", () => {
     expect(dropZonePoints({ zone_points: null }, 6)).toBe(6);
   });
 
-  it("defaults to 1 point when the zone is unknown everywhere", () => {
-    expect(dropZonePoints({ zone_points: null }, undefined)).toBe(1);
+  it("THROWS ZONE_POINTS_MISSING when the zone is unknown everywhere (never a silent 1-point pay)", () => {
+    try {
+      dropZonePoints({ zone_points: null }, undefined, "KL");
+      expect.unreachable("expected ZONE_POINTS_MISSING");
+    } catch (err) {
+      const e = err as { code?: string; statusCode?: number; message?: string };
+      expect(e.code).toBe("ZONE_POINTS_MISSING");
+      expect(e.statusCode).toBe(422);
+      expect(e.message).toContain("KL");
+    }
   });
 });
 
