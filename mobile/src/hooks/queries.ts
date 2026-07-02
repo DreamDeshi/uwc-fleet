@@ -334,6 +334,8 @@ export interface CreateConsigneeInput {
   phone?: string;
   area?: string;
   state?: string;
+  // Re-submit with force after a SIMILAR_EXISTS warning to create anyway.
+  force?: boolean;
 }
 
 export function useCreateConsignee() {
