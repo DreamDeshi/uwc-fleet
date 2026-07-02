@@ -4,6 +4,7 @@ import type {
   AdminUser,
   DashboardKpis,
   DestinationRate,
+  DriverLeaveEntry,
   DriverPerf,
   DriverPerformance,
   FuelLog,
@@ -290,6 +291,32 @@ export function useUpdateDestinationRate() {
   return useMutation({
     mutationFn: async (v: { id: string; points: number }) =>
       (await api.patch<DestinationRate>(`/rates/destinations/${v.id}`, { points: v.points })).data,
+    onSuccess: invalidate,
+  });
+}
+
+// ── Driver leave (admin-managed calendar; drives dispatch availability) ──
+export function useLeaves() {
+  return useQuery({
+    queryKey: ["leaves"],
+    queryFn: async () => (await api.get<DriverLeaveEntry[]>("/leaves")).data,
+  });
+}
+
+export function useAddLeave() {
+  // The driver board embeds leave ranges, so refresh it alongside the list.
+  const invalidate = useInvalidate([["leaves"], ["drivers"]]);
+  return useMutation({
+    mutationFn: async (v: { driver_id: string; start_date: string; end_date?: string; note?: string }) =>
+      (await api.post<DriverLeaveEntry>("/leaves", v)).data,
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteLeave() {
+  const invalidate = useInvalidate([["leaves"], ["drivers"]]);
+  return useMutation({
+    mutationFn: async (id: string) => (await api.delete(`/leaves/${id}`)).data,
     onSuccess: invalidate,
   });
 }

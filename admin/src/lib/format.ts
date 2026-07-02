@@ -27,6 +27,14 @@ export function formatDateTime(value: string | Date | null | undefined): string 
   return `${formatDate(value)}, ${formatTime(value)}`;
 }
 
+// The MYT (UTC+8) calendar day of an instant as "YYYY-MM-DD" — the key format
+// the API's holiday/leave calendars use. Computed with a fixed offset, NOT the
+// browser's local timezone.
+export function mytDateKey(value: string | Date): string {
+  const myt = new Date(new Date(value).getTime() + 8 * 60 * 60 * 1000);
+  return myt.toISOString().slice(0, 10);
+}
+
 export function formatFullDate(value: Date): string {
   return value.toLocaleDateString("en-MY", {
     weekday: "long",

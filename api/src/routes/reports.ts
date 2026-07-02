@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
-import { getTripDayStart, getTripDayEnd } from "../services/incentiveEngine";
+import { getTripDayStart, getTripDayEnd, mytDateKey } from "../services/incentiveEngine";
 import { palletEquivalents } from "../lib/pallets";
+import { leaveCoversDate } from "../services/driverLeave";
 
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
@@ -123,6 +124,7 @@ router.get("/drivers", async (_req, res, next) => {
     const dayEnd = getTripDayEnd(now);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
+    const todayKey = mytDateKey(now);
     const drivers = await prisma.user.findMany({
       where: { role: "driver" },
       orderBy: { name: "asc" },
@@ -132,6 +134,15 @@ router.get("/drivers", async (_req, res, next) => {
         phone: true,
         status: true,
         assigned_truck: { select: { plate: true, max_pallets: true } },
+        // Current + upcoming leave ranges only (past leave is history, not
+        // availability). The dispatch panel checks these against the TRIP'S
+        // pickup date client-side for display; enforcement is server-side
+        // (auto candidate filter + the /approve DRIVER_ON_LEAVE guard).
+        leaves: {
+          where: { end_date: { gte: todayKey } },
+          orderBy: { start_date: "asc" },
+          select: { start_date: true, end_date: true, note: true },
+        },
         trips_driven: {
           select: {
             status: true,
@@ -200,6 +211,11 @@ router.get("/drivers", async (_req, res, next) => {
         phone: d.phone,
         account_status: d.status,
         status: derivedStatus,
+        // Leave is DATE-scoped, so it deliberately does not change `status`:
+        // a driver on leave today can still be assigned a trip picked up on
+        // another date. Consumers badge/block per relevant date.
+        on_leave_today: d.leaves.some((l) => leaveCoversDate(l, todayKey)),
+        leaves: d.leaves,
         assigned_truck: d.assigned_truck,
         current_load: currentLoad,
         scheduled_trips: scheduledTrips, // assigned-but-not-started trips queued for this driver
