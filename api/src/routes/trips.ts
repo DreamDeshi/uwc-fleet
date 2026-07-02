@@ -6,6 +6,12 @@ import { ApiError } from "../lib/apiError";
 import { isSerializationConflict } from "../lib/prismaErrors";
 import { claimPendingTripOrThrow } from "../services/tripAssignment";
 import { assertStopDeliverable, finalizeTripOnce } from "../services/tripCompletion";
+import {
+  truckRateSnapshot,
+  finalizationRateParams,
+  dropZonePoints,
+  snapshotStopZonePoints,
+} from "../services/rateSnapshot";
 import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
@@ -530,12 +536,16 @@ router.patch(
 
             // Atomic claim: throws 409 CONCURRENT_ASSIGNMENT if no longer pending.
             // Clear any auto-dispatch-failed flag — a manual assignment resolves
-            // the "needs attention" state (Phase 2 self-clearing).
+            // the "needs attention" state (Phase 2 self-clearing). The claim also
+            // freezes the truck's rates onto the trip (rate lock): finalization
+            // pays at these values even if an admin edits the rates mid-flight.
             await claimPendingTripOrThrow(tx, id, {
               driver_id,
               truck_plate,
               auto_dispatch_failed: false,
+              ...truckRateSnapshot(truck),
             });
+            await snapshotStopZonePoints(tx, id);
 
             await tx.auditLog.create({
               data: { user_id: req.user!.id, action: "trip.approved", table_name: "Trip", record_id: id },
@@ -1072,6 +1082,10 @@ router.patch(
         orderBy: { delivered_at: "asc" },
         include: { consignee: { select: { zone_code: true } } },
       });
+      // Rate lock: points and claim rates come from the ASSIGNMENT-time
+      // snapshot (TripStop.zone_points / the trip's rate fields); the live
+      // lookups below are only the fallback for trips assigned before the
+      // rate-lock migration or rows seeded directly into `assigned`.
       const zoneCodes = [...new Set(thisTripStops.map((s) => s.consignee.zone_code))];
       const rateRows = await prisma.destinationRate.findMany({
         where: { zone_code: { in: zoneCodes } },
@@ -1079,7 +1093,7 @@ router.patch(
       const pointsByZone = new Map(rateRows.map((r) => [r.zone_code, r.points]));
       const drops = thisTripStops.map((s) => ({
         zoneCode: s.consignee.zone_code,
-        zonePoints: pointsByZone.get(s.consignee.zone_code) ?? 1,
+        zonePoints: dropZonePoints(s, pointsByZone.get(s.consignee.zone_code)),
       }));
 
       const incentive = calculateDeliveryIncentive({
@@ -1087,11 +1101,12 @@ router.patch(
         drops,
         zonesDeliveredEarlierToday,
         isFirstDeliveredDropOfDay,
-        truck: {
-          daily_deduction_points: trip.truck.daily_deduction_points,
-          entitled_claim_weekday: Number(trip.truck.entitled_claim_weekday),
-          entitled_claim_offpeak: Number(trip.truck.entitled_claim_offpeak),
-        },
+        truck: finalizationRateParams({
+          entitled_claim_weekday: trip.entitled_claim_weekday,
+          entitled_claim_offpeak: trip.entitled_claim_offpeak,
+          daily_deduction_points: trip.daily_deduction_points,
+          truck: trip.truck,
+        }),
       });
 
       // Store the MARGINAL (per-trip) incentive, not the running day total,

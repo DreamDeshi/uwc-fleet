@@ -78,9 +78,10 @@ router.patch("/destinations/:id", validateBody(pointsSchema), async (req, res, n
     });
 
     // Encode the old → new into `action` behind a stable "rate.updated" prefix
-    // (AuditLog has no free-text column). Only future trips are affected; the
-    // engine reads destination points at finalization, so completed trips keep
-    // their stored incentive_earned.
+    // (AuditLog has no free-text column). Only future ASSIGNMENTS are affected:
+    // each stop's zone points are snapshotted at assignment (rate lock), so
+    // in-flight trips finalize at their assignment-time points and completed
+    // trips keep their stored incentive_earned.
     await prisma.auditLog.create({
       data: {
         user_id: req.user!.id,
