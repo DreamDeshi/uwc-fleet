@@ -170,6 +170,41 @@ export function markStopDocs(
   return req(driverToken, "PATCH", `/trips/${id}/stops/${stopId}/docs`, body);
 }
 
+/**
+ * Upload a real POD photo for a stop (multipart, field "photo" — the same
+ * request the driver app sends). The server stores the Cloudinary URL and
+ * flips do_uploaded, satisfying the documentation gate legitimately —
+ * do_uploaded can no longer be self-attested without a photo
+ * (400 POD_PHOTO_REQUIRED).
+ */
+export async function uploadPod(
+  driverToken: string,
+  id: string,
+  stopId: string,
+  file: { name: string; mimeType: string; buffer: Buffer }
+): Promise<Trip> {
+  const form = new FormData();
+  form.append("photo", new Blob([new Uint8Array(file.buffer)], { type: file.mimeType }), file.name);
+  const res = await fetch(`${API_BASE}/trips/${id}/stops/${stopId}/pod`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${driverToken}` }, // no Content-Type: fetch sets the multipart boundary
+    body: form,
+  });
+  const text = await res.text();
+  let data: any;
+  try {
+    data = text ? JSON.parse(text) : undefined;
+  } catch {
+    data = text;
+  }
+  if (!res.ok) {
+    const code = data?.error?.code ?? res.status;
+    const msg = data?.error?.message ?? text;
+    throw new Error(`API POST /trips/${id}/stops/${stopId}/pod → ${res.status} ${code}: ${msg}`);
+  }
+  return data as Trip;
+}
+
 // ── Truck rates (admin) ─────────────────────────────────────────────────
 export interface TruckRate {
   plate: string;
@@ -206,6 +241,24 @@ export function resetTruckRatesToSpec(adminToken: string): Promise<{
   skipped: string[];
 }> {
   return req(adminToken, "POST", "/trucks/reset-rates", {});
+}
+
+// ── Driver leave (admin) — date-based dispatch availability ─────────────
+export function getDriverBoard(
+  adminToken: string
+): Promise<{ id: string; name: string; status: string }[]> {
+  return req(adminToken, "GET", "/reports/drivers");
+}
+
+export function addLeave(
+  adminToken: string,
+  body: { driver_id: string; start_date: string; end_date?: string; note?: string }
+): Promise<{ id: string }> {
+  return req(adminToken, "POST", "/leaves", body);
+}
+
+export function deleteLeave(adminToken: string, id: string): Promise<{ deleted: boolean }> {
+  return req(adminToken, "DELETE", `/leaves/${id}`);
 }
 
 // ── Dashboard KPIs (admin) ──────────────────────────────────────────────

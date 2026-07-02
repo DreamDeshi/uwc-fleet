@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { ADMIN, REQUESTOR } from "../helpers/accounts";
 import { cancelTrip, getDashboard, getTrip, login, setDispatchMode } from "../helpers/api";
-import { seedOversizedTrip, seedPendingTrip } from "../helpers/seed";
+import { seedUndispatchableTrip, seedPendingTrip } from "../helpers/seed";
 import { resetState } from "../helpers/reset";
 
 /**
@@ -14,9 +14,11 @@ import { resetState } from "../helpers/reset";
  *   - the flag self-clears the moment the trip leaves pending;
  *   - the dashboard reports failed-auto-dispatch separately from awaiting-manual.
  *
- * The "no eligible truck" case is forced deterministically with an oversized
- * order (20 pallets > the 16-pallet largest truck), so it never depends on which
- * other drivers happen to be busy on the shared DB.
+ * The "no eligible driver/truck" case is forced deterministically by putting
+ * EVERY driver on leave for the trip's pickup date (a far-future day no other
+ * spec books), so it never depends on which drivers happen to be busy on the
+ * shared DB. (The old oversized-order trick is impossible now — creation
+ * rejects cargo bigger than the largest truck, see creationValidation.spec.ts.)
  *
  * Note on clearing: the flag is cleared by the SAME `auto_dispatch_failed: false`
  * write on every transition out of pending — manual assign (claimPendingTrip),
@@ -30,14 +32,16 @@ test.describe("Failed auto-dispatch → needs-attention state (Phase 2)", () => 
     adminToken = (await resetState()).adminToken;
   });
 
-  test("auto mode with no eligible truck → pending + auto_dispatch_failed set", async () => {
+  test("auto mode with no eligible driver → pending + auto_dispatch_failed set", async () => {
     const requestor = await login(REQUESTOR);
     await setDispatchMode(adminToken, "auto");
+    let cleanup = async () => {};
     try {
-      const trip = await seedOversizedTrip(requestor.accessToken);
-      // The create-time auto-dispatch attempt failed (no truck fits 20 pallets):
-      // the trip stays pending and is flagged for admin attention.
-      const after = await getTrip(adminToken, trip.id);
+      const seeded = await seedUndispatchableTrip(adminToken, requestor.accessToken);
+      cleanup = seeded.cleanup;
+      // The create-time auto-dispatch attempt failed (every driver is on leave
+      // for the pickup date): the trip stays pending and is flagged.
+      const after = await getTrip(adminToken, seeded.trip.id);
       expect(after.status).toBe("pending");
       expect(after.auto_dispatch_failed).toBe(true);
 
@@ -47,8 +51,9 @@ test.describe("Failed auto-dispatch → needs-attention state (Phase 2)", () => 
       // The two counts are reported as separate fields (failed ⊆ pending).
       expect(dash.awaiting_manual).toBe(dash.pending_trips - dash.auto_dispatch_failed);
 
-      await cancelTrip(adminToken, trip.id);
+      await cancelTrip(adminToken, seeded.trip.id);
     } finally {
+      await cleanup();
       await setDispatchMode(adminToken, "manual");
     }
   });
@@ -66,17 +71,20 @@ test.describe("Failed auto-dispatch → needs-attention state (Phase 2)", () => 
   test("the flag self-clears the moment the trip leaves pending", async () => {
     const requestor = await login(REQUESTOR);
     await setDispatchMode(adminToken, "auto");
+    let cleanup = async () => {};
     try {
-      const trip = await seedOversizedTrip(requestor.accessToken);
-      expect((await getTrip(adminToken, trip.id)).auto_dispatch_failed).toBe(true);
+      const seeded = await seedUndispatchableTrip(adminToken, requestor.accessToken);
+      cleanup = seeded.cleanup;
+      expect((await getTrip(adminToken, seeded.trip.id)).auto_dispatch_failed).toBe(true);
 
       // Leaving pending (here via cancel — the same self-clearing write used by
       // manual assign and the retry sweep) resets the flag.
-      await cancelTrip(adminToken, trip.id);
-      const cleared = await getTrip(adminToken, trip.id);
+      await cancelTrip(adminToken, seeded.trip.id);
+      const cleared = await getTrip(adminToken, seeded.trip.id);
       expect(cleared.status).toBe("cancelled");
       expect(cleared.auto_dispatch_failed).toBe(false);
     } finally {
+      await cleanup();
       await setDispatchMode(adminToken, "manual");
     }
   });
