@@ -92,13 +92,17 @@ const DRIVER_PHONES: Record<string, string> = {
   "PRH 5292": "+60100000106",
 };
 
-// Document-expiry dates seed the doc-expiry alert feature: a few fall within the
-// 30-day window so the admin dashboard demonstrably flags them. Demo fixtures,
-// not spec data. Keyed by plate.
+// Document-expiry dates (demo fixtures, not spec data; keyed by plate). All
+// comfortably future: expired insurance/road tax now HARD-BLOCKS dispatch (and
+// an expired permit warns), so near-term dates would silently sideline trucks
+// mid-trial. To demo the ≤30-day expiry alerts (or the block itself), set a
+// near date live via the Trucks page "Update documents" editor — reversible
+// and audit-logged. (PND 1888's road tax, 2026-10-01, re-enters the alert
+// window from September naturally.)
 const TRUCK_EXPIRY: Record<string, { insurance: string; permit: string; roadtax: string }> = {
-  "PLX 2406": { insurance: "2026-12-15", permit: "2026-11-01", roadtax: "2026-07-10" },
-  "PND 1888": { insurance: "2026-07-05", permit: "2027-01-20", roadtax: "2026-10-01" },
-  "PRJ 5292": { insurance: "2026-09-01", permit: "2026-07-18", roadtax: "2026-12-01" },
+  "PLX 2406": { insurance: "2026-12-15", permit: "2026-11-01", roadtax: "2027-07-10" },
+  "PND 1888": { insurance: "2027-07-05", permit: "2027-01-20", roadtax: "2026-10-01" },
+  "PRJ 5292": { insurance: "2027-09-01", permit: "2027-07-18", roadtax: "2026-12-01" },
   "PQL 5292": { insurance: "2027-02-01", permit: "2027-01-10", roadtax: "2026-11-20" },
   "PPE 1804": { insurance: "2027-03-15", permit: "2026-12-05", roadtax: "2027-01-08" },
   "PRH 5292": { insurance: "2027-01-01", permit: "2026-12-20", roadtax: "2027-02-10" },
