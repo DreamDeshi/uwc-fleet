@@ -383,9 +383,17 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
         // let the caller flag it (reason "exceeds operating window"). pickup_datetime
         // is never mutated.
         const selTruck = trucks.find((t) => t.plate === sel.plate);
+        // Per-stop zone points scale the drive-leg estimate (distance proxy);
+        // a zone without a rate row falls back to the flat per-leg figure.
+        const stopZones = trip.stops.map((s) => s.consignee.zone_code);
+        const windowRates = await tx.destinationRate.findMany({
+          where: { zone_code: { in: [...new Set(stopZones)] } },
+        });
+        const windowPoints = new Map(windowRates.map((r) => [r.zone_code, r.points]));
         const windowEst = estimateOperatingWindow({
           pickupDateTime: trip.pickup_datetime,
           stopCount: trip.stops.length,
+          stopPoints: stopZones.map((z) => windowPoints.get(z) ?? null),
           windowStart: selTruck?.operating_hours_start,
           windowEnd: selTruck?.operating_hours_end,
         });

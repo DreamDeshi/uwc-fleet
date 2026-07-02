@@ -120,3 +120,68 @@ describe("HH:MM parsing/formatting helpers", () => {
     expect(formatMinutesToHm(5)).toBe("00:05");
   });
 });
+
+describe("estimateOperatingWindow — zone-scaled drive legs (distance proxy)", () => {
+  // All cases pin env-independent values explicitly: flat 45 min/leg, 30 load,
+  // 20 unload, baseline 3 points (a 3-point zone = one flat leg).
+  const base = {
+    loadMin: 30,
+    unloadMinPerStop: 20,
+    driveMinPerLeg: 45,
+    drivePointsBaseline: 3,
+    windowStart: "07:00",
+    windowEnd: "18:00",
+  };
+  const pickupMyt = (h: number, m = 0) => new Date(Date.UTC(2026, 6, 8, h - 8, m)); // Wed MYT
+
+  it("a 16:00 Ipoh run (6 pts → 90-min leg) now FLAGS: est. 18:20 past 18:00", () => {
+    const est = estimateOperatingWindow({
+      ...base,
+      pickupDateTime: pickupMyt(16, 0),
+      stopCount: 1,
+      stopPoints: [6],
+    });
+    expect(est.addedMinutes).toBe(30 + 90 + 20);
+    expect(est.completionLabel).toBe("18:20");
+    expect(est.exceedsWindow).toBe(true);
+    expect(est.reason).toBe("completion_past_window");
+  });
+
+  it("the same 16:00 run under the OLD flat estimate would have passed (17:35)", () => {
+    const est = estimateOperatingWindow({ ...base, pickupDateTime: pickupMyt(16, 0), stopCount: 1 });
+    expect(est.completionLabel).toBe("17:35");
+    expect(est.exceedsWindow).toBe(false);
+  });
+
+  it("a 16:50 Juru hop (1 pt → 15-min leg) no longer over-warns: est. 17:55 in-window", () => {
+    const est = estimateOperatingWindow({
+      ...base,
+      pickupDateTime: pickupMyt(16, 50),
+      stopCount: 1,
+      stopPoints: [1],
+    });
+    expect(est.addedMinutes).toBe(30 + 15 + 20);
+    expect(est.completionLabel).toBe("17:55");
+    expect(est.exceedsWindow).toBe(false);
+  });
+
+  it("multi-stop legs sum per-stop points: Juru (1) + Kulim (3) = 15 + 45 drive", () => {
+    const est = estimateOperatingWindow({
+      ...base,
+      pickupDateTime: pickupMyt(10, 0),
+      stopCount: 2,
+      stopPoints: [1, 3],
+    });
+    expect(est.addedMinutes).toBe(30 + (15 + 45) + 2 * 20);
+  });
+
+  it("an unknown zone (null points) falls back to the flat leg", () => {
+    const est = estimateOperatingWindow({
+      ...base,
+      pickupDateTime: pickupMyt(10, 0),
+      stopCount: 2,
+      stopPoints: [null, 6],
+    });
+    expect(est.addedMinutes).toBe(30 + (45 + 90) + 2 * 20);
+  });
+});

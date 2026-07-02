@@ -602,10 +602,22 @@ router.patch(
             // this is overridable with force ("Assign anyway") and writes an audit
             // row; the physical overload guard remains the only non-overridable
             // block. pickup_datetime is never mutated.
-            const stopCount = await tx.tripStop.count({ where: { trip_id: id } });
+            // Per-stop zone points scale the drive-leg estimate (distance
+            // proxy); a zone without a rate row falls back to the flat figure.
+            const windowStops = await tx.tripStop.findMany({
+              where: { trip_id: id },
+              orderBy: { sequence: "asc" },
+              select: { consignee: { select: { zone_code: true } } },
+            });
+            const windowZones = windowStops.map((s) => s.consignee.zone_code);
+            const windowRates = await tx.destinationRate.findMany({
+              where: { zone_code: { in: [...new Set(windowZones)] } },
+            });
+            const windowPoints = new Map(windowRates.map((r) => [r.zone_code, r.points]));
             const windowEst = estimateOperatingWindow({
               pickupDateTime: trip.pickup_datetime,
-              stopCount,
+              stopCount: windowStops.length,
+              stopPoints: windowZones.map((z) => windowPoints.get(z) ?? null),
               windowStart: truck.operating_hours_start,
               windowEnd: truck.operating_hours_end,
             });

@@ -9,15 +9,16 @@
  * Estimate (configurable via env, all minutes):
  *   estimated_completion = pickup
  *                        + OP_LOAD_MIN                       (load at the plant)
- *                        + stops × OP_DRIVE_MIN_PER_LEG      (legs base→s1→s2…→sN)
+ *                        + Σ drive minutes per leg           (legs base→s1→s2…→sN)
  *                        + stops × OP_UNLOAD_MIN_PER_STOP    (unload at each stop)
  *
- * Drive time is a FLAT per-leg figure. We have zone-centroid coordinates
- * (lib/geo.ts haversine) and Google Directions duration_s (when GOOGLE_MAPS_API_KEY
- * is set), but a flat per-leg estimate keeps this offline, deterministic and
- * free of an average-speed assumption.
- * // TODO refine with real distances later (per-leg zone-distance matrix or
- * //      Google duration_s) instead of a flat per-leg minute figure.
+ * Per-leg drive minutes SCALE with the destination zone's incentive points —
+ * the closest distance proxy the system already has (Juru = 1 pt ≈ 15 min,
+ * Ipoh = 6 pts ≈ 90 min at the defaults): leg = OP_DRIVE_MIN_PER_LEG ×
+ * (points / OP_DRIVE_POINTS_BASELINE). A stop whose points are unknown (or a
+ * caller that doesn't pass stopPoints) falls back to the FLAT
+ * OP_DRIVE_MIN_PER_LEG — the previous behaviour, unchanged. Still an ESTIMATE:
+ * offline, deterministic, no external distance API.
  *
  * Time handling: all wall-clock comparisons are in Malaysia time (MYT, fixed
  * UTC+8, no daylight saving) — never server-local — matching incentiveEngine.ts.
@@ -39,6 +40,15 @@ function minutesFromEnv(name: string, fallback: number): number {
 export const OP_LOAD_MIN = minutesFromEnv("OP_LOAD_MIN", 30);
 export const OP_UNLOAD_MIN_PER_STOP = minutesFromEnv("OP_UNLOAD_MIN_PER_STOP", 20);
 export const OP_DRIVE_MIN_PER_LEG = minutesFromEnv("OP_DRIVE_MIN_PER_LEG", 45);
+// Zone points that correspond to ONE flat OP_DRIVE_MIN_PER_LEG of driving —
+// a 3-point zone (Kulim/Penang tier) keeps the historical 45-minute leg.
+function baselineFromEnv(): number {
+  const raw = process.env.OP_DRIVE_POINTS_BASELINE;
+  if (raw === undefined || raw.trim() === "") return 3;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 3;
+}
+export const OP_DRIVE_POINTS_BASELINE = baselineFromEnv();
 
 // The default operating window (matches Truck.operating_hours_* seed + spec §8).
 export const DEFAULT_WINDOW_START = "07:00";
@@ -83,11 +93,18 @@ function windowEndInstant(date: Date, windowEndMin: number): Date {
 export interface OperatingWindowInput {
   pickupDateTime: Date;
   stopCount: number; // number of delivery stops on the trip (≥1)
+  /**
+   * Destination-zone points per stop, in stop order (distance proxy for the
+   * per-leg drive scaling). null = unknown zone → that leg uses the flat
+   * figure. Omitted entirely → every leg is flat (previous behaviour).
+   */
+  stopPoints?: (number | null)[];
   windowStart?: string | null; // "HH:MM" MYT; defaults to 07:00
   windowEnd?: string | null; // "HH:MM" MYT; defaults to 18:00
   loadMin?: number;
   unloadMinPerStop?: number;
   driveMinPerLeg?: number;
+  drivePointsBaseline?: number;
 }
 
 export interface OperatingWindowEstimate {
@@ -116,12 +133,24 @@ export function estimateOperatingWindow(input: OperatingWindowInput): OperatingW
   const loadMin = input.loadMin ?? OP_LOAD_MIN;
   const unloadMinPerStop = input.unloadMinPerStop ?? OP_UNLOAD_MIN_PER_STOP;
   const driveMinPerLeg = input.driveMinPerLeg ?? OP_DRIVE_MIN_PER_LEG;
+  const drivePointsBaseline = input.drivePointsBaseline ?? OP_DRIVE_POINTS_BASELINE;
 
   const windowStartMin = parseHmToMinutes(input.windowStart, parseHmToMinutes(DEFAULT_WINDOW_START, 7 * 60));
   const windowEndMin = parseHmToMinutes(input.windowEnd, parseHmToMinutes(DEFAULT_WINDOW_END, 18 * 60));
 
-  // Legs base→stop1→…→stopN = N legs for N stops.
-  const addedMinutes = loadMin + stops * driveMinPerLeg + stops * unloadMinPerStop;
+  // Legs base→stop1→…→stopN = N legs for N stops. Each leg's drive minutes
+  // scale with its destination zone's points (distance proxy); unknown points
+  // (or no stopPoints at all) fall back to the flat per-leg figure.
+  const legDriveMin = (points: number | null | undefined): number =>
+    points != null && points > 0
+      ? Math.round(driveMinPerLeg * (points / drivePointsBaseline))
+      : driveMinPerLeg;
+  const driveMinutes =
+    input.stopPoints && input.stopPoints.length > 0
+      ? input.stopPoints.reduce<number>((sum, p) => sum + legDriveMin(p), 0)
+      : stops * driveMinPerLeg;
+
+  const addedMinutes = loadMin + driveMinutes + stops * unloadMinPerStop;
   const estimatedCompletion = new Date(input.pickupDateTime.getTime() + addedMinutes * 60 * 1000);
 
   const pickupMinutesMyt = mytMinutesOfDay(input.pickupDateTime);
