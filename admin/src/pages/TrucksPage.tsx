@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
-import { useTrucks, useTruckAlerts } from "@/hooks/queries";
+import { useTrucks, useTruckAlerts, useUpdateTruckDocuments } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
-import { Avatar, Card, EmptyState, ErrorState, Loading, Pill, SearchInput, SegmentedFilter } from "@/components/ui";
+import { Avatar, Button, Card, EmptyState, ErrorState, Input, Loading, Modal, Pill, SearchInput, SegmentedFilter } from "@/components/ui";
 import { LoadCapacityBar } from "@/components/LoadCapacityBar";
 import { FuelPanel } from "@/components/FuelPanel";
+import { apiErrorMessage } from "@/services/api";
 import { formatDate, formatMoney, relativeExpiry } from "@/lib/format";
 import type { DocExpiry, ExpiryStatus, Truck, TruckAlert, TruckExpiryAlert } from "@/types";
 
@@ -181,6 +182,9 @@ function AlertDocRow({ label, doc }: { label: string; doc: DocExpiry }) {
 function TruckCard({ truck: t }: { truck: Truck }) {
   const meta = STATUS_META[t.status] ?? STATUS_META.idle;
   const hasAlert = t.alerts.length > 0;
+  // Expired insurance/road tax hard-blocks dispatch (permit warns) — this
+  // modal is the renewal path that un-bricks the truck.
+  const [editingDocs, setEditingDocs] = useState(false);
   return (
     <Card style={hasAlert ? { border: `1px solid #FFB74D`, boxShadow: "0 2px 12px rgba(249,115,22,0.12)" } : undefined}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
@@ -217,7 +221,55 @@ function TruckCard({ truck: t }: { truck: Truck }) {
         <DocRow label="Permit" date={t.permit_expiry} alert={findAlert(t.alerts, "permit")} />
         <DocRow label="Road Tax" date={t.road_tax_expiry} alert={findAlert(t.alerts, "road_tax")} />
       </div>
+      <div style={{ marginTop: 10 }}>
+        <Button variant="ghost" size="sm" onClick={() => setEditingDocs(true)}>
+          Update documents
+        </Button>
+      </div>
+      {editingDocs && <EditDocumentsModal truck={t} onClose={() => setEditingDocs(false)} />}
     </Card>
+  );
+}
+
+// Record a renewed insurance / permit / road-tax expiry date. Expired
+// insurance or road tax hard-blocks dispatch, so this is the operational
+// lever that puts a renewed truck back in the pool (audit-logged server-side).
+function EditDocumentsModal({ truck, onClose }: { truck: Truck; onClose: () => void }) {
+  const toInput = (d: string | null) => (d ? d.slice(0, 10) : "");
+  const [insurance, setInsurance] = useState(toInput(truck.insurance_expiry));
+  const [permit, setPermit] = useState(toInput(truck.permit_expiry));
+  const [roadTax, setRoadTax] = useState(toInput(truck.road_tax_expiry));
+  const [error, setError] = useState<string | null>(null);
+  const update = useUpdateTruckDocuments();
+
+  async function save() {
+    setError(null);
+    try {
+      await update.mutateAsync({
+        plate: truck.plate,
+        insurance_expiry: insurance || null,
+        permit_expiry: permit || null,
+        road_tax_expiry: roadTax || null,
+      });
+      onClose();
+    } catch (e) {
+      setError(apiErrorMessage(e, "Could not update document dates."));
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Documents — ${truck.plate}`} width={400}>
+      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+      <Input label="Insurance expiry" value={insurance} onChange={setInsurance} type="date" />
+      <Input label="Permit expiry" value={permit} onChange={setPermit} type="date" />
+      <Input label="Road tax expiry" value={roadTax} onChange={setRoadTax} type="date" />
+      <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+        <Button variant="ghost" full onClick={onClose}>Cancel</Button>
+        <Button variant="primary" full disabled={update.isPending} onClick={save}>
+          {update.isPending ? "Saving…" : "Save Dates"}
+        </Button>
+      </div>
+    </Modal>
   );
 }
 

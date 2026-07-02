@@ -26,6 +26,7 @@ import { claimPendingTrip } from "./tripAssignment";
 import { truckRateSnapshot, snapshotStopZonePoints } from "./rateSnapshot";
 import { leaveDateFilter } from "./driverLeave";
 import { mytDateKey } from "./incentiveEngine";
+import { roadworthyWhere } from "./truckEligibility";
 import { recordTripEvent } from "../lib/tripHistory";
 import { CONFLICT_STATUSES, ASSIGNMENT_CONFLICT_BUFFER_MS } from "./schedulingConflict";
 import {
@@ -272,6 +273,11 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
           // a second order (this is what kept re-picking the in_progress PLX 2406).
           where: {
             is_available: true,
+            // Roadworthiness gate: expired insurance / road tax / permit →
+            // never a candidate (query form of truckEligibility). No force
+            // exists in auto — the trip goes needs-attention and the admin
+            // decides manually (where only the permit is overridable).
+            ...roadworthyWhere(new Date()),
             driver: {
               is: {
                 status: "active",

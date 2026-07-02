@@ -23,6 +23,7 @@ import {
   mytDateKey,
 } from "../services/incentiveEngine";
 import { leaveDateFilter } from "../services/driverLeave";
+import { truckExpiryIssues } from "../services/truckEligibility";
 import { PLANT_ORIGIN, zoneCoord, getRoute, type LatLng } from "../lib/geo";
 import { loadHolidaySet } from "../lib/holidays";
 import { upload } from "../lib/upload";
@@ -470,6 +471,29 @@ router.patch(
               );
             }
 
+            // Roadworthiness gate: expired insurance / road tax is a HARD
+            // block (never force-overridable — liability, not judgment); an
+            // expired permit warns and may be forced ("Assign anyway",
+            // audit-logged below alongside the other overrides).
+            const expiry = truckExpiryIssues(truck, new Date());
+            if (expiry.hard.length > 0) {
+              const docs = expiry.hard
+                .map((h) => `${h.doc} expired ${mytDateKey(h.expiry)}`)
+                .join("; ");
+              throw new ApiError(
+                409,
+                "TRUCK_UNROADWORTHY",
+                `Truck ${truck_plate} cannot be dispatched: ${docs}. Update the document dates on the Trucks page once renewed.`
+              );
+            }
+            if (expiry.permitExpired && !force) {
+              throw new ApiError(
+                409,
+                "TRUCK_PERMIT_EXPIRED",
+                `Truck ${truck_plate}'s permit expired ${mytDateKey(expiry.permitExpired)}.`
+              );
+            }
+
             // Scheduling-conflict check (roadmap #2) — layered ALONGSIDE the
             // active-trip guard below, with its own code. The same driver or
             // truck already committed to another trip whose pickup is within the
@@ -613,6 +637,17 @@ router.patch(
                   action: "operating_window_override",
                   table_name: "Trip",
                   record_id: `${id}; est_completion ${windowEst.completionLabel} (${windowEst.reason})`,
+                },
+              });
+            }
+            // Audit a forced override of an expired permit (roadworthiness gate).
+            if (force && expiry.permitExpired) {
+              await tx.auditLog.create({
+                data: {
+                  user_id: req.user!.id,
+                  action: "permit_expiry_override",
+                  table_name: "Trip",
+                  record_id: `${id}; ${truck_plate} permit expired ${mytDateKey(expiry.permitExpired)}`,
                 },
               });
             }

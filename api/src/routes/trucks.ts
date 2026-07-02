@@ -420,6 +420,57 @@ router.post("/reset-rates", async (req, res, next) => {
   }
 });
 
+// ── PATCH /trucks/:plate/documents — update expiry dates (audit-logged) ──
+// The roadworthiness gate blocks dispatch on expired insurance/road tax (and
+// warns on permit), so admins need a way to record a renewal — without this,
+// an expired document would brick the truck until someone edited the DB.
+const documentsSchema = z
+  .object({
+    insurance_expiry: z.coerce.date().nullable().optional(),
+    permit_expiry: z.coerce.date().nullable().optional(),
+    road_tax_expiry: z.coerce.date().nullable().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, "At least one document date is required.");
+
+router.patch("/:plate/documents", validateBody(documentsSchema), async (req, res, next) => {
+  try {
+    const { plate } = req.params;
+    const truck = await prisma.truck.findUnique({ where: { plate } });
+    if (!truck) {
+      throw new ApiError(404, "TRUCK_NOT_FOUND", "Truck not found.");
+    }
+
+    const { insurance_expiry, permit_expiry, road_tax_expiry } = req.body;
+    const fmt = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : "—");
+    const changes: string[] = [];
+    if (insurance_expiry !== undefined) changes.push(`insurance ${fmt(truck.insurance_expiry)}→${fmt(insurance_expiry)}`);
+    if (permit_expiry !== undefined) changes.push(`permit ${fmt(truck.permit_expiry)}→${fmt(permit_expiry)}`);
+    if (road_tax_expiry !== undefined) changes.push(`road_tax ${fmt(truck.road_tax_expiry)}→${fmt(road_tax_expiry)}`);
+
+    const updated = await prisma.truck.update({
+      where: { plate },
+      data: {
+        ...(insurance_expiry !== undefined ? { insurance_expiry } : {}),
+        ...(permit_expiry !== undefined ? { permit_expiry } : {}),
+        ...(road_tax_expiry !== undefined ? { road_tax_expiry } : {}),
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        user_id: req.user!.id,
+        action: `truck.documents_updated ${changes.join(", ")}`,
+        table_name: "Truck",
+        record_id: plate,
+      },
+    });
+
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── PATCH /trucks/:plate/rates — edit incentive claim rates (audit-logged) ──
 const rateSchema = z
   .object({
