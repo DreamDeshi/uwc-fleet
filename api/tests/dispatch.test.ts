@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   selectTruck,
   enRouteZones,
+  autoAssignNote,
   type TruckCandidate,
 } from "../src/services/dispatchEngine";
 
@@ -188,5 +189,24 @@ describe("enRouteZones — return-trip matching", () => {
   it("returns nothing for zones with no corridor", () => {
     expect(enRouteZones("P1")).toEqual([]);
     expect(enRouteZones(null)).toEqual([]);
+  });
+});
+
+describe("autoAssignNote — the persisted decision log", () => {
+  it("records driver, plate and the engine's selection reason", () => {
+    const sel = selectTruck(
+      { pallets: 2, zone: "K1" },
+      [truck({ plate: "PRJ 5292", maxPallets: 8, coverageZones: ["K1"] })],
+      ADJACENCY
+    )!;
+    expect(autoAssignNote("Ali", sel.plate, sel.reason)).toBe(
+      "Ali · PRJ 5292 (auto — driver covers zone K1; fits 2/8 pallets)"
+    );
+  });
+
+  it("falls back to the plate when the driver name is unknown", () => {
+    expect(autoAssignNote(null, "PND 1888", "adjacent-zone driver for K1; fits 1/14 pallets")).toBe(
+      "PND 1888 (auto — adjacent-zone driver for K1; fits 1/14 pallets)"
+    );
   });
 });

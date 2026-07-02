@@ -177,6 +177,21 @@ export function enRouteZones(zone: string | null): string[] {
   return EN_ROUTE[zone] ?? [];
 }
 
+/**
+ * Timeline note for an auto-assignment — persists WHY the engine chose this
+ * truck (exact-zone / adjacent / next-available; fits N/M pallets) on the
+ * trip's immutable status history, where the admin trip detail renders it.
+ * Pure; unit-tested in tests/dispatch.test.ts.
+ */
+export function autoAssignNote(
+  driverName: string | null,
+  plate: string,
+  reason: string
+): string {
+  const who = driverName ? `${driverName} · ${plate}` : plate;
+  return `${who} (auto — ${reason})`;
+}
+
 // ── DB helpers ─────────────────────────────────────────────────────────
 
 const ACTIVE_TRIP_STATUSES = ["assigned", "in_progress"] as const;
@@ -406,12 +421,14 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
         }
         // actorId null: the assignment was system-driven (auto-dispatch), not a
         // person — the timeline distinguishes this from a manual admin approve.
+        // The note carries the engine's selection reason so a completed
+        // auto-dispatch permanently records WHY this truck was chosen.
         const driverName = trucks.find((t) => t.plate === sel.plate)?.driver?.name ?? null;
         await recordTripEvent(tx, {
           tripId,
           event: "assigned",
           actorId: null,
-          note: driverName ? `${driverName} · ${sel.plate} (auto)` : `${sel.plate} (auto)`,
+          note: autoAssignNote(driverName, sel.plate, sel.reason),
         });
         return { sel, raced: false, window: null as OperatingWindowEstimate | null };
       },
