@@ -13,6 +13,7 @@ import {
   Avatar,
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   ErrorState,
   Input,
@@ -712,6 +713,8 @@ function ExternalForm({ trip, onDone }: { trip: Trip; onDone: () => void }) {
   const [rate, setRate] = useState("");
   const [cargo, setCargo] = useState(`${totalPallets(trip)} pallets`);
   const [error, setError] = useState<string | null>(null);
+  // Outsourcing commits the booking to a third party — confirm before firing.
+  const [confirming, setConfirming] = useState(false);
   const assign = useAssignExternal();
 
   async function submit() {
@@ -727,6 +730,8 @@ function ExternalForm({ trip, onDone }: { trip: Trip; onDone: () => void }) {
       onDone();
     } catch (e) {
       setError(apiErrorMessage(e, "Could not assign forwarder."));
+    } finally {
+      setConfirming(false);
     }
   }
 
@@ -741,9 +746,26 @@ function ExternalForm({ trip, onDone }: { trip: Trip; onDone: () => void }) {
         <Input label="Rate (RM)" value={rate} onChange={setRate} type="number" placeholder="0.00" />
       </div>
       <Input label="Cargo Size" value={cargo} onChange={setCargo} />
-      <Button variant="accent" full disabled={!company.trim() || assign.isPending} onClick={submit}>
+      <Button variant="accent" full disabled={!company.trim() || assign.isPending} onClick={() => setConfirming(true)}>
         {assign.isPending ? "Assigning…" : "Confirm External Assignment"}
       </Button>
+      {confirming && (
+        <ConfirmDialog
+          title="Assign to external forwarder?"
+          body={
+            <>
+              Outsource booking <strong>{trip.ticket_number}</strong> to{" "}
+              <strong>{company.trim()}</strong>
+              {rate ? <> at RM {rate}</> : null}? The booking leaves the internal fleet and
+              no driver incentive applies.
+            </>
+          }
+          confirmLabel="Assign Forwarder"
+          pending={assign.isPending}
+          onClose={() => setConfirming(false)}
+          onConfirm={submit}
+        />
+      )}
     </div>
   );
 }
@@ -752,6 +774,8 @@ function ExternalForm({ trip, onDone }: { trip: Trip; onDone: () => void }) {
 function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
   const cancel = useCancelTrip();
   const [error, setError] = useState<string | null>(null);
+  // Cancelling kills the booking outright — confirm before firing.
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
   const canCancel = trip.status === "pending" || trip.status === "approved";
 
   async function doCancel() {
@@ -761,6 +785,8 @@ function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
       onDone();
     } catch (e) {
       setError(apiErrorMessage(e, "Could not cancel trip."));
+    } finally {
+      setConfirmingCancel(false);
     }
   }
 
@@ -789,10 +815,25 @@ function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
 
       {canCancel && (
         <div style={{ marginTop: 14 }}>
-          <Button variant="outline" size="sm" disabled={cancel.isPending} onClick={doCancel}>
+          <Button variant="outline" size="sm" disabled={cancel.isPending} onClick={() => setConfirmingCancel(true)}>
             Cancel Booking
           </Button>
         </div>
+      )}
+      {confirmingCancel && (
+        <ConfirmDialog
+          title="Cancel this booking?"
+          body={
+            <>
+              Cancel booking <strong>{trip.ticket_number}</strong>? The requestor keeps the
+              record, but the trip will not be dispatched. This cannot be undone.
+            </>
+          }
+          confirmLabel="Cancel Booking"
+          pending={cancel.isPending}
+          onClose={() => setConfirmingCancel(false)}
+          onConfirm={doCancel}
+        />
       )}
     </div>
   );

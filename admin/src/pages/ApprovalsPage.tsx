@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useApproveUser, usePendingUsers } from "@/hooks/queries";
 import { colors } from "@/theme";
-import { Avatar, Button, Card, EmptyState, ErrorState, Loading, Pill } from "@/components/ui";
+import { Avatar, Button, Card, ConfirmDialog, EmptyState, ErrorState, Loading, Pill } from "@/components/ui";
 import { formatDate } from "@/lib/format";
 import { apiErrorMessage } from "@/services/api";
 import type { AdminUser } from "@/types";
@@ -40,6 +40,9 @@ export function ApprovalsPage() {
 function ApprovalRow({ user }: { user: AdminUser }) {
   const approve = useApproveUser();
   const [error, setError] = useState<string | null>(null);
+  // Rejecting/disabling revokes the account's access outright (status is
+  // re-checked on every request) — confirm before firing. Approve stays direct.
+  const [confirmingReject, setConfirmingReject] = useState(false);
 
   async function act(status: "active" | "disabled") {
     setError(null);
@@ -47,6 +50,8 @@ function ApprovalRow({ user }: { user: AdminUser }) {
       await approve.mutateAsync({ id: user.id, status });
     } catch (e) {
       setError(apiErrorMessage(e, "Action failed."));
+    } finally {
+      setConfirmingReject(false);
     }
   }
 
@@ -67,13 +72,28 @@ function ApprovalRow({ user }: { user: AdminUser }) {
         {error && <div style={{ fontSize: 12, color: colors.red, marginTop: 4 }}>{error}</div>}
       </div>
       <div style={{ display: "flex", gap: 8 }}>
-        <Button variant="ghost" size="sm" disabled={approve.isPending} onClick={() => act("disabled")} style={{ color: colors.red, borderColor: colors.red }}>
+        <Button variant="ghost" size="sm" disabled={approve.isPending} onClick={() => setConfirmingReject(true)} style={{ color: colors.red, borderColor: colors.red }}>
           Reject
         </Button>
         <Button variant="success" size="sm" disabled={approve.isPending} onClick={() => act("active")}>
           Approve
         </Button>
       </div>
+      {confirmingReject && (
+        <ConfirmDialog
+          title="Reject this account?"
+          body={
+            <>
+              Reject <strong>{user.name}</strong> ({user.role})? The account is disabled and
+              cannot log in until an admin re-approves it.
+            </>
+          }
+          confirmLabel="Reject Account"
+          pending={approve.isPending}
+          onClose={() => setConfirmingReject(false)}
+          onConfirm={() => act("disabled")}
+        />
+      )}
     </Card>
   );
 }

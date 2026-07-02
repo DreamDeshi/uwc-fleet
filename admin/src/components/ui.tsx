@@ -398,6 +398,42 @@ export function Modal({
   );
 }
 
+// ── Confirm dialog ───────────────────────────────────────────────────
+// Generic Cancel/Confirm modal for destructive actions (same shape as the
+// reject-booking / reset-rates dialogs). The caller keeps its own error
+// display; on success it should close the dialog itself.
+export function ConfirmDialog({
+  title,
+  body,
+  confirmLabel = "Confirm",
+  pending,
+  onClose,
+  onConfirm,
+}: {
+  title: string;
+  body: ReactNode;
+  confirmLabel?: string;
+  pending?: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal open onClose={onClose} title={title} width={420}>
+      <div style={{ fontSize: 13.5, color: colors.text, lineHeight: 1.6, marginBottom: 14 }}>
+        {body}
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <Button variant="ghost" full onClick={onClose} disabled={pending}>
+          Cancel
+        </Button>
+        <Button variant="danger" full onClick={onConfirm} disabled={pending}>
+          {pending ? "Working…" : confirmLabel}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 // ── Form input ───────────────────────────────────────────────────────
 export function Input({
   label,
