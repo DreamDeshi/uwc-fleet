@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { api } from "@/services/api";
 import type {
   AdminUser,
+  AttentionReport,
   DashboardKpis,
   DestinationRate,
   DriverLeaveEntry,
@@ -310,6 +311,15 @@ export function useUpdateDestinationRate() {
     mutationFn: async (v: { id: string; points: number }) =>
       (await api.patch<DestinationRate>(`/rates/destinations/${v.id}`, { points: v.points })).data,
     onSuccess: invalidate,
+  });
+}
+
+// Stuck/stale trips needing a human — polled so the dashboard card stays live.
+export function useAttention() {
+  return useQuery({
+    queryKey: ["reports", "attention"],
+    queryFn: async () => (await api.get<AttentionReport>("/reports/attention")).data,
+    refetchInterval: 60_000,
   });
 }
 

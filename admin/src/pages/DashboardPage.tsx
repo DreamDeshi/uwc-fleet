@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
-import { useDashboard, useDrivers, useFleetLive, useTrips, useTrucks } from "@/hooks/queries";
+import { useAttention, useDashboard, useDrivers, useFleetLive, useTrips, useTrucks } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
 import { Card, KpiCard, Loading, ErrorState, ProgressBar, TripStatusBadge, SectionTitle, Pill, EmptyState } from "@/components/ui";
 // FleetMap pulls in Leaflet (~150 KB). It sits below the fold on the dashboard,
@@ -10,9 +10,74 @@ import { LoadCapacityBar } from "@/components/LoadCapacityBar";
 import { DispatchToggle } from "@/components/DispatchToggle";
 import { relativeExpiry } from "@/lib/format";
 import { ORIGIN_LABEL, tripDestination, cargoSummary, tripProgress } from "@/lib/trip";
-import type { Truck } from "@/types";
+import type { AttentionTrip, Truck } from "@/types";
 
 const docLabel: Record<string, string> = { insurance: "Insurance", permit: "Permit", road_tax: "Road Tax" };
+
+// ── Stuck/stale trips (read-only attention report) ──────────────────────
+// The needs-attention flag only covers PENDING trips; this card surfaces the
+// three previously-invisible states from GET /reports/attention. Renders
+// nothing when the fleet is healthy.
+function AttentionPanel({
+  report,
+  onOpenTrips,
+}: {
+  report?: import("@/types").AttentionReport;
+  onOpenTrips: () => void;
+}) {
+  if (!report) return null;
+  const groups: { title: string; hint: string; rows: AttentionTrip[] }[] = [
+    {
+      title: "In progress too long",
+      hint: `pickup > ${report.thresholds.staleInProgressHours}h ago, still not completed`,
+      rows: report.stale_in_progress,
+    },
+    {
+      title: "Assigned but never started",
+      hint: `pickup > ${report.thresholds.overdueAssignedHours}h ago, driver hasn't started`,
+      rows: report.overdue_assigned,
+    },
+    {
+      title: "Completed with no incentive recorded",
+      hint: "legacy anomaly — pay was never computed for these",
+      rows: report.completed_null_incentive,
+    },
+  ].filter((g) => g.rows.length > 0);
+  if (groups.length === 0) return null;
+
+  return (
+    <Card pad={0} style={{ border: `1px solid #FFB74D` }}>
+      <div style={{ padding: "14px 18px", borderBottom: `1px solid ${colors.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <SectionTitle title="⚠ Trips needing attention" subtitle="stuck or stale — auto-refreshes every minute" />
+        <button onClick={onOpenTrips} style={{ background: "none", border: "none", color: colors.blue, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+          Open trip board →
+        </button>
+      </div>
+      <div style={{ padding: "10px 18px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+        {groups.map((g) => (
+          <div key={g.title}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: colors.orange, marginBottom: 4 }}>
+              {g.title} · {g.rows.length}
+              <span style={{ fontWeight: 500, color: colors.textFaint }}> ({g.hint})</span>
+            </div>
+            {g.rows.slice(0, 5).map((t) => (
+              <div key={t.id} style={{ fontSize: 12.5, color: colors.text, padding: "3px 0", display: "flex", gap: 8 }}>
+                <span style={{ fontWeight: 700 }}>{t.ticket_number}</span>
+                <span style={{ color: colors.textMuted }}>
+                  {t.driver?.name ?? "—"}
+                  {t.truck_plate ? ` · ${t.truck_plate}` : ""} · {Math.round(t.hours_since_pickup)}h since pickup
+                </span>
+              </div>
+            ))}
+            {g.rows.length > 5 && (
+              <div style={{ fontSize: 12, color: colors.textFaint }}>… and {g.rows.length - 5} more</div>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
 
 function alertTone(daysLeft: number) {
   if (daysLeft < 0) return { bg: colors.redTint, fg: colors.red };
@@ -27,6 +92,7 @@ export function DashboardPage() {
   const trips = useTrips();
   const drivers = useDrivers();
   const live = useFleetLive();
+  const attention = useAttention();
 
   if (dash.isLoading || trucks.isLoading) return <Loading />;
   if (dash.isError) return <ErrorState message="Could not load dashboard." onRetry={() => dash.refetch()} />;
@@ -62,6 +128,8 @@ export function DashboardPage() {
           </span>
         </div>
       </Card>
+
+      <AttentionPanel report={attention.data} onOpenTrips={() => navigate("/trips")} />
 
       {/* KPI cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>

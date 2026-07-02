@@ -225,6 +225,23 @@ export interface DriverPerf {
   current_route: string | null;
 }
 
+// Stuck/stale trips needing a human (GET /reports/attention) — read-only.
+export interface AttentionTrip {
+  id: string;
+  ticket_number: string;
+  status: string;
+  pickup_datetime: string;
+  truck_plate: string | null;
+  driver: { name: string; phone: string } | null;
+  hours_since_pickup: number;
+}
+export interface AttentionReport {
+  thresholds: { staleInProgressHours: number; overdueAssignedHours: number };
+  stale_in_progress: AttentionTrip[];
+  overdue_assigned: AttentionTrip[];
+  completed_null_incentive: AttentionTrip[];
+}
+
 // One driver-leave entry (GET /leaves) — admin-managed dispatch availability.
 export interface DriverLeaveEntry {
   id: string;
