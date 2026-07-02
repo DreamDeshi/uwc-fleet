@@ -75,6 +75,29 @@ export function dropZonePoints(
 }
 
 /**
+ * Per-zone points map from DestinationRate rows, built DETERMINISTICALLY: rows
+ * are sorted (zone, then location name) before the last-wins Map insert, so
+ * two rows sharing a zone (K2's Kuala Ketil + Sungai Petani pair) always
+ * resolve the same way regardless of DB return order. The rates editor keeps
+ * same-zone rows in sync, so the values should never actually diverge — this
+ * makes the lookup order-independent anyway.
+ */
+export function buildPointsByZone(
+  rows: { zone_code: string | null; location_name: string; points: number }[]
+): Map<string, number> {
+  const sorted = [...rows].sort(
+    (a, b) =>
+      (a.zone_code ?? "").localeCompare(b.zone_code ?? "") ||
+      a.location_name.localeCompare(b.location_name)
+  );
+  const map = new Map<string, number>();
+  for (const r of sorted) {
+    if (r.zone_code !== null) map.set(r.zone_code, r.points);
+  }
+  return map;
+}
+
+/**
  * Snapshot every stop's destination-zone points for a just-claimed trip. Runs
  * inside the SAME transaction as the assignment claim (both call sites hold a
  * Serializable tx), and only after the claim was won — losers never write.
@@ -92,8 +115,9 @@ export async function snapshotStopZonePoints(
   const zoneCodes = [...new Set(stops.map((s) => s.consignee.zone_code))];
   const rateRows = await tx.destinationRate.findMany({
     where: { zone_code: { in: zoneCodes } },
+    select: { zone_code: true, location_name: true, points: true },
   });
-  const pointsByZone = new Map(rateRows.map((r) => [r.zone_code, r.points]));
+  const pointsByZone = buildPointsByZone(rateRows);
 
   for (const s of stops) {
     await tx.tripStop.update({

@@ -3,6 +3,7 @@ import {
   truckRateSnapshot,
   finalizationRateParams,
   dropZonePoints,
+  buildPointsByZone,
 } from "../src/services/rateSnapshot";
 import { calculateDeliveryIncentive } from "../src/services/incentiveEngine";
 
@@ -85,6 +86,35 @@ describe("finalizationRateParams — snapshot wins over live truck", () => {
     });
     expect(params.entitled_claim_weekday).toBe(11);
     expect(params.entitled_claim_offpeak).toBe(13);
+  });
+});
+
+describe("buildPointsByZone — deterministic regardless of DB row order", () => {
+  // K2 legitimately has two location rows sharing one zone (spec sheet).
+  const rows = [
+    { zone_code: "K2", location_name: "Sungai Petani", points: 4 },
+    { zone_code: "A2", location_name: "Ipoh", points: 6 },
+    { zone_code: "K2", location_name: "Kuala Ketil", points: 4 },
+    { zone_code: null, location_name: "Kuala Lumpur", points: 8 }, // no zone → not mapped
+  ];
+
+  it("maps each zone once and skips null-zone rows", () => {
+    const m = buildPointsByZone(rows);
+    expect(m.get("K2")).toBe(4);
+    expect(m.get("A2")).toBe(6);
+    expect(m.size).toBe(2);
+  });
+
+  it("resolves same-zone twins identically whatever order the DB returns them", () => {
+    // Simulate the historical twin drift ("Penang" edited, "Penang Island" not):
+    // the winner must be the same for every permutation of row order.
+    const twins = [
+      { zone_code: "P1", location_name: "Penang", points: 3 },
+      { zone_code: "P1", location_name: "Penang Island", points: 5 },
+    ];
+    const forward = buildPointsByZone(twins).get("P1");
+    const reversed = buildPointsByZone([...twins].reverse()).get("P1");
+    expect(forward).toBe(reversed); // order-independent — no coin flip
   });
 });
 
