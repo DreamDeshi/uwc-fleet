@@ -177,6 +177,14 @@ model Trip {
   status           TripStatus @default(pending)
   pickup_datetime  DateTime
   incentive_earned Decimal?   @db.Decimal(10, 2)
+  // Rate-lock snapshot, written at ASSIGNMENT time (manual approve and
+  // auto-dispatch both claim through it): a trip finalizes at the rates it was
+  // dispatched under — a later admin rate edit affects future assignments only.
+  // Null on trips assigned before the rate-lock migration; the finalization
+  // path falls back to the live truck values for those.
+  entitled_claim_weekday Decimal? @db.Decimal(10, 2)
+  entitled_claim_offpeak Decimal? @db.Decimal(10, 2)
+  daily_deduction_points Int?
   is_external      Boolean    @default(false)
   // Admin's reason when a booking is rejected — shown to the requestor.
   rejection_reason String?
@@ -215,6 +223,10 @@ model TripStop {
   pod_photo    String? // Cloudinary URL
   do_uploaded  Boolean    @default(false)
   k2_form_ack  Boolean    @default(false) // required only when destination zone is K2
+  // This stop's destination-zone points, snapshotted at assignment (rate lock —
+  // same rationale as the Trip claim-rate snapshot). Null = pre-migration stop;
+  // finalization falls back to the live DestinationRate points.
+  zone_points  Int?
 }
 
 // ── 9. Consignee ─────────────────────────────────────────────────────

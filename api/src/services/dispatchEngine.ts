@@ -23,6 +23,7 @@ import { sendPushNotifications } from "../lib/pushNotifications";
 import { palletEquivalents } from "../lib/pallets";
 import { isSerializationConflict } from "../lib/prismaErrors";
 import { claimPendingTrip } from "./tripAssignment";
+import { truckRateSnapshot, snapshotStopZonePoints } from "./rateSnapshot";
 import { recordTripEvent } from "../lib/tripHistory";
 import { CONFLICT_STATUSES, ASSIGNMENT_CONFLICT_BUFFER_MS } from "./schedulingConflict";
 import {
@@ -362,16 +363,20 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
         }
 
         // Status-guarded claim: a concurrent dispatch that already assigned this
-        // trip leaves us with count 0 → we lost the race.
+        // trip leaves us with count 0 → we lost the race. The claim also freezes
+        // the truck's rates onto the trip (rate lock): finalization pays at these
+        // values even if an admin edits the rates while the trip is in flight.
         const won = await claimPendingTrip(tx, tripId, {
           driver_id: sel.driverId,
           truck_plate: sel.plate,
           pending_alert_sent: true, // it's handled now; don't ping admins about it
           auto_dispatch_failed: false, // self-clearing: a later sweep placed it
+          ...(selTruck ? truckRateSnapshot(selTruck) : {}),
         });
         if (!won) {
           return { sel: null as TruckSelection | null, raced: true, window: null as OperatingWindowEstimate | null };
         }
+        await snapshotStopZonePoints(tx, tripId);
 
         if (actor) {
           await tx.auditLog.create({

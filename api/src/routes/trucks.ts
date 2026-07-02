@@ -442,8 +442,9 @@ router.patch("/:plate/rates", validateBody(rateSchema), async (req, res, next) =
     // Record the old → new of each field that actually changed. AuditLog has no
     // free-text column, so the change summary is encoded into `action` behind a
     // stable "rate.updated" prefix (greppable; no schema change). Only future
-    // trips are affected — the engine reads these values at finalization time and
-    // completed trips keep their stored incentive_earned.
+    // ASSIGNMENTS are affected — in-flight trips finalize at the rates
+    // snapshotted onto them when they were assigned (rate lock), and completed
+    // trips keep their stored incentive_earned.
     const changes: string[] = [];
     if (entitled_claim_weekday !== undefined && Number(truck.entitled_claim_weekday) !== entitled_claim_weekday) {
       changes.push(`weekday ${Number(truck.entitled_claim_weekday).toFixed(2)}→${entitled_claim_weekday.toFixed(2)}`);
