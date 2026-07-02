@@ -77,9 +77,18 @@ async function generateTicketNumber(now: Date): Promise<string> {
 }
 
 // ── POST /trips — requestor submits a booking ───────────────────────────
-const createTripSchema = z.object({
+// Small grace window so a "now" pickup isn't rejected by clock skew between
+// the requestor's device and the server.
+export const PICKUP_GRACE_MS = 15 * 60 * 1000;
+
+// Exported for unit tests (tests/tripValidation.test.ts).
+export const createTripSchema = z.object({
   route_type_id: z.string().min(1),
-  pickup_datetime: z.coerce.date(),
+  pickup_datetime: z.coerce
+    .date()
+    .refine((d) => d.getTime() >= Date.now() - PICKUP_GRACE_MS, {
+      message: "Pickup time is in the past.",
+    }),
   is_external: z.boolean().optional(),
   stops: z
     .array(
@@ -119,6 +128,23 @@ router.post(
       const foundConsignees = await prisma.consignee.findMany({ where: { id: { in: consigneeIds } } });
       if (foundConsignees.length !== new Set(consigneeIds).size) {
         throw new ApiError(400, "CONSIGNEE_NOT_FOUND", "One or more consignees do not exist.");
+      }
+
+      // Cargo bigger than the biggest truck can NEVER be dispatched internally —
+      // fail the booking now with a clear error instead of accepting it and
+      // letting auto-dispatch fail forever. External-forwarder bookings skip
+      // this: outsourcing is exactly what oversized cargo is for.
+      if (!is_external) {
+        const orderPallets = palletEquivalents(cargo_details);
+        const largest = await prisma.truck.aggregate({ _max: { max_pallets: true } });
+        const fleetMax = largest._max.max_pallets;
+        if (fleetMax !== null && orderPallets > fleetMax) {
+          throw new ApiError(
+            400,
+            "CARGO_EXCEEDS_FLEET",
+            `This order is ${orderPallets} pallet-equivalents, but the largest truck holds ${fleetMax}. Split the order or book an external forwarder.`
+          );
+        }
       }
 
       const ticket_number = await generateTicketNumber(new Date());
