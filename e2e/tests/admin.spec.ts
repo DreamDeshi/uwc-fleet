@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { ADMIN, REQUESTOR } from "../helpers/accounts";
+import { ADMIN, DRIVER, REQUESTOR } from "../helpers/accounts";
 import { getTrip, login, setDispatchMode } from "../helpers/api";
 import { seedPendingTrip } from "../helpers/seed";
 import { resetState } from "../helpers/reset";
@@ -40,6 +40,11 @@ test.describe("Admin (dashboard)", () => {
 
   test("6. manually assigns a driver to a pending trip → Assigned", async ({ page }) => {
     const requestor = await login(REQUESTOR);
+    // reset() freed the TEST driver, so assigning THEM never trips the
+    // scheduling-conflict buffer — other drivers may hold leftover assigned
+    // trips at the fixture's shared "tomorrow 09:00" pickup on the shared DB
+    // (reset can't unassign those), so clicking the first card is a coin flip.
+    const testDriverName = (await login(DRIVER)).user.name;
     const trip = await seedPendingTrip(requestor.accessToken);
 
     await adminLogin(page, ADMIN);
@@ -47,8 +52,14 @@ test.describe("Admin (dashboard)", () => {
 
     // Open the trip → the dispatch panel with one Assign button per fitting driver.
     await page.getByText(trip.ticket_number).first().click();
-    // Exact name: a substring match would also hit the "🚛 Assign Internal Driver" tab.
-    const assign = page.getByRole("button", { name: "Assign", exact: true }).first();
+    // The test driver's picker card = the deepest div containing both their
+    // name and an Assign button (same locator as conflict.spec's UI override).
+    const assign = page
+      .locator("div")
+      .filter({ hasText: testDriverName })
+      .filter({ has: page.getByRole("button", { name: "Assign", exact: true }) })
+      .last()
+      .getByRole("button", { name: "Assign", exact: true });
     await expect(assign).toBeVisible();
     await assign.click();
 
