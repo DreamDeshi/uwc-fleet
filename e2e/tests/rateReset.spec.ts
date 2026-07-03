@@ -32,6 +32,15 @@ test.describe("Reset truck rates to UWC spec defaults (next-day cutoff)", () => 
   test("admin stages a drift, resets via the UI, staged rates return to spec; live rate never moves", async ({ page }) => {
     const admin = await login(ADMIN);
 
+    // PRECONDITION: the LIVE value starts at spec. Under the cutoff there is
+    // deliberately NO same-day live repair (a reset stages the correction for
+    // tomorrow), so a dirty starting value must fail loudly here — not as a
+    // confusing mid-test assertion.
+    expect(
+      await getTruckWeekdayRate(admin.accessToken, PLX),
+      "PRECONDITION: PLX live weekday must start at spec — the DB is dirty (a staged correction folds at the next MYT midnight)"
+    ).toBe(SPEC_WEEKDAY);
+
     // Introduce drift directly (API setup, the suite's pattern): PLX weekday →
     // 12. Under the cutoff this is STAGED for tomorrow — the LIVE value stays
     // at spec, which is exactly the client's "not immediately" rule.
@@ -45,29 +54,43 @@ test.describe("Reset truck rates to UWC spec defaults (next-day cutoff)", () => 
       await expect(page).toHaveURL(/\/incentives$/);
 
       // "Truck Claim Rates" is the default tab. The PLX row still shows the
-      // LIVE spec value, plus the staged-edit note with its effective date.
+      // LIVE spec value, plus the staged-edit note with the DRIFTED value.
       const plxRow = page.locator("tr", { hasText: PLX });
       await expect(plxRow.getByText(`RM ${SPEC_WEEKDAY}`, { exact: true })).toBeVisible();
-      await expect(plxRow.getByText(/New rates .*take effect .*\(MYT\)/)).toBeVisible();
+      await expect(plxRow.getByText(new RegExp(`New rates weekday RM ${DRIFT_WEEKDAY}.*take effect .*\\(MYT\\)`))).toBeVisible();
 
       // Reset → confirm dialog (which spells out the next-day rule) → Reset.
       await page.getByRole("button", { name: /Reset to UWC spec defaults/ }).click();
       await expect(page.getByText("Reset truck rates to UWC spec?")).toBeVisible();
-      await expect(page.getByText(/take effect/i).first()).toBeVisible();
       await page.getByRole("button", { name: "Reset", exact: true }).click();
 
-      // Result banner appears; the staged drift is replaced by spec values.
-      await expect(page.getByText(/reset/i).first()).toBeVisible();
-      await expect(plxRow.getByText(`RM ${SPEC_WEEKDAY}`, { exact: true })).toBeVisible();
-      expect(await getTruckPendingWeekdayRate(admin.accessToken, PLX)).toBe(SPEC_WEEKDAY);
+      // WAIT ON THINGS THAT ONLY EXIST AFTER THE MUTATION RESOLVES. The live
+      // table value never changes under the cutoff and /reset/i matches the
+      // reset BUTTON label, so neither is a real wait — asserting the pending
+      // API value straight after click() raced the in-flight POST (the 3 Jul
+      // prod failure: pending read 12 before the reset landed).
+      //   1. the result banner ("… already at spec …") renders on success;
+      await expect(page.getByText(/already at spec/)).toBeVisible();
+      //   2. the PLX staged note now shows the SPEC value (refetch completed);
+      await expect(plxRow.getByText(new RegExp(`New rates weekday RM ${SPEC_WEEKDAY}`))).toBeVisible();
+      //   3. and the API agrees (poll — tolerate refetch/API ordering).
+      await expect
+        .poll(() => getTruckPendingWeekdayRate(admin.accessToken, PLX))
+        .toBe(SPEC_WEEKDAY);
+      // Live value STILL never moved — the whole point of the cutoff.
+      expect(await getTruckWeekdayRate(admin.accessToken, PLX)).toBe(SPEC_WEEKDAY);
     } finally {
       // Belt-and-suspenders: stage everything back to spec even if the UI step
       // failed midway. The live value was never off spec; the staged spec
       // values fold in (as a no-op) at the next maturation sweep.
       await resetTruckRatesToSpec(admin.accessToken);
       expect(await getTruckWeekdayRate(admin.accessToken, PLX)).toBe(SPEC_WEEKDAY);
-      const pending = await getTruckPendingWeekdayRate(admin.accessToken, PLX);
-      expect(pending === null || pending === SPEC_WEEKDAY).toBe(true);
+      await expect
+        .poll(async () => {
+          const pending = await getTruckPendingWeekdayRate(admin.accessToken, PLX);
+          return pending === null || pending === SPEC_WEEKDAY;
+        })
+        .toBe(true);
     }
   });
 });
