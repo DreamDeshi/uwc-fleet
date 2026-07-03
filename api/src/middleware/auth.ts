@@ -31,6 +31,8 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   const token = header.slice("Bearer ".length);
   let payload;
   try {
+    // Step 1: cryptographic check — signature + expiry. This proves who the
+    // token SAYS you are, but deliberately isn't the whole story (step 2 below).
     payload = verifyAccessToken(token);
   } catch {
     next(new ApiError(401, "INVALID_TOKEN", "Access token is invalid or expired."));
@@ -38,10 +40,12 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   }
 
   try {
-    // Account status is re-checked on EVERY request (single indexed PK lookup)
-    // so that disabling a user cuts access immediately — otherwise a disabled
-    // account could keep authenticating until its tokens expire (30-min access,
-    // and /refresh would mint new ones for 7-day stretches).
+    // Step 2: is this account still allowed in? Account status is re-checked on
+    // EVERY request (single indexed PK lookup) so that disabling a user cuts
+    // access immediately — otherwise a disabled account could keep
+    // authenticating until its tokens expire (30-min access, and /refresh
+    // would mint new ones for 7-day stretches). This was an audit finding; the
+    // DB round-trip per request is the accepted price of instant revocation.
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
       select: { status: true },
@@ -51,6 +55,8 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
       next(statusErr);
       return;
     }
+    // Attach the identity for downstream handlers — requireRole and the
+    // row-level ownership checks all read req.user from here.
     req.user = { id: payload.sub, role: payload.role };
     next();
   } catch (err) {

@@ -131,6 +131,9 @@ async function seedZones() {
     });
   }
   for (const rate of spec.destination_points) {
+    // Matched by location NAME (a zone can hold two locations — K2 is both
+    // Sungai Petani and Kuala Ketil) and created only when missing, so an
+    // admin's later point edits survive a re-seed.
     const exists = await prisma.destinationRate.findFirst({
       where: { location_name: rate.location_name },
     });
@@ -206,7 +209,7 @@ async function seedDrivers() {
     const password_hash = await bcrypt.hash(SEED_PASSWORD, BCRYPT_COST);
     await prisma.user.upsert({
       where: { phone },
-      update: {},
+      update: {}, // existing accounts untouched — a changed password survives re-seed
       create: {
         phone,
         password_hash,
@@ -315,6 +318,9 @@ async function seedConsignees() {
 }
 
 async function main() {
+  // Everything here upserts, so re-running the seed is safe: it fills gaps and
+  // re-syncs spec values without duplicating rows or wiping live data.
+  //
   // Cargo sizes / 4×4-equivalent factors live in spec.cargo but have no DB table
   // of their own — they're consumed in code (api/src/lib/pallets.ts). Logged here
   // so the spec import is complete and visible.

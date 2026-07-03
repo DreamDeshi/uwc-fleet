@@ -72,11 +72,13 @@ export function findSchedulingConflicts(params: {
   const conflicts: SchedulingConflict[] = [];
 
   for (const x of params.candidates) {
-    if (params.newTripId && x.id === params.newTripId) continue;
-    if (!statuses.has(x.status)) continue;
+    if (params.newTripId && x.id === params.newTripId) continue; // a trip can't conflict with itself
+    if (!statuses.has(x.status)) continue; // completed/cancelled/rejected trips don't hold the slot
+    // Same person OR same vehicle — either one makes the time slot contested.
     const driverClash = x.driver_id != null && x.driver_id === params.driverId;
     const truckClash = x.truck_plate != null && x.truck_plate === params.truckPlate;
     if (!driverClash && !truckClash) continue;
+    // Pickups at least a full buffer apart (default 2h) are far enough — fine.
     if (Math.abs(x.pickup_datetime.getTime() - pickupMs) >= bufferMs) continue;
 
     conflicts.push({

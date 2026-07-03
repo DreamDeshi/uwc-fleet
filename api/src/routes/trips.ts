@@ -42,6 +42,22 @@ import {
 } from "../services/schedulingConflict";
 import { estimateOperatingWindow, formatMinutesToHm } from "../services/operatingWindow";
 
+// ──────────────────────────────────────────────────────────────────────────
+// This file is the trip LIFECYCLE end to end — if you read one route file,
+// read this one:
+//   1. POST /                    requestor books (validation → ticket number →
+//                                auto-dispatch fires immediately in auto mode)
+//   2. PATCH /:id/approve        admin assigns a driver+truck (all the guards
+//                                live here; rates are snapshotted at this moment)
+//      PATCH /:id/reject | /:id/assign-external | /:id/cancel — the other exits
+//   3. PATCH /:id/status         driver starts the trip, then marks each stop
+//                                arrived/delivered; the LAST delivered stop
+//                                completes the trip and computes the incentive
+//                                (write-once — see the delivered branch)
+//   4. POST /:id/stops/:sid/pod  POD photo per stop — the money gate
+// Reads (GET /, /:id, /:id/route, /:id/location) are role-scoped: admins see
+// everything, drivers and requestors only ever see their own trips.
+// ──────────────────────────────────────────────────────────────────────────
 const router = Router();
 router.use(requireAuth);
 
@@ -460,6 +476,16 @@ router.patch(
       // truck's live load, re-check capacity, then claim the trip with a
       // status-guarded conditional update — only the writer that still sees it
       // pending wins. Concurrent conflicting writers abort with P2034 → 409.
+      //
+      // The guard ladder runs in this order (hard = never overridable,
+      // force = admin can "Assign anyway", which is audit-logged):
+      //   1. capacity overload            — hard (physics)
+      //   2. insurance/road tax expired   — hard (liability)   permit → force
+      //   3. scheduling conflict (±2h)    — force
+      //   4. driver mid-delivery          — hard (DRIVER_BUSY, in_progress only)
+      //   5. driver on leave that date    — hard
+      //   6. operating-window breach      — force
+      //   7. atomic claim + rate snapshot — the point of no return
       let updated;
       try {
         updated = await prisma.$transaction(
@@ -888,9 +914,11 @@ router.patch("/:id/cancel", async (req, res, next) => {
 });
 
 // ── PATCH /trips/:id/stops/:stopId/docs — driver confirms a stop's documents ──
-// Photo upload is out of scope for this phase, so the driver confirms the DO
-// (and the K2 customs form for K2 destinations) with a checkbox. These flags
-// gate the "delivered" action below via isDocumentationComplete().
+// Historically the DO confirmation was a bare checkbox (the photo upload came
+// later); today the POD photo is REQUIRED first — do_uploaded can only be set
+// once pod_photo exists (guard below), and the POD upload route flips it
+// automatically anyway. The K2 customs form remains a checkbox acknowledgement.
+// These flags gate the "delivered" action via isDocumentationComplete().
 const stopDocsSchema = z.object({
   do_uploaded: z.boolean().optional(),
   k2_form_ack: z.boolean().optional(),
@@ -1091,7 +1119,9 @@ router.patch(
         return;
       }
 
-      // arrived / delivered both act on a specific stop.
+      // arrived / delivered both act on a specific stop. No stop_id → default
+      // to the first not-yet-delivered stop, so single-stop trips don't need
+      // to name it.
       const stop = stop_id
         ? trip.stops.find((s) => s.id === stop_id)
         : trip.stops.find((s) => s.status !== "delivered");
@@ -1158,6 +1188,7 @@ router.patch(
       });
 
       if (remainingStops > 0) {
+        // More stops to go — the trip stays in_progress and no money moves yet.
         const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
         res.json(updated);
         return;
@@ -1168,6 +1199,8 @@ router.patch(
         throw new ApiError(400, "TRUCK_NOT_ASSIGNED", "This trip has no truck assigned.");
       }
 
+      // The driver's incentive "day" in MYT (resets at midnight by default) —
+      // everything below is scoped to this window.
       const dayStart = getTripDayStart(trip.pickup_datetime);
       const dayEnd = getTripDayEnd(trip.pickup_datetime);
 

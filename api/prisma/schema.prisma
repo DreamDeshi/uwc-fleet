@@ -1,6 +1,7 @@
 // UWC Trucking Management System — Prisma schema
-// 16 tables per Development Brief Section 5.
-// Money fields are always Decimal, never Float.
+// Started as 16 tables (Development Brief Section 5); now 20 — AppSetting,
+// TripStatusHistory, PublicHoliday and DriverLeave were added as the features
+// landed. Money fields are always Decimal, never Float (no binary-float cents).
 
 generator client {
   provider = "prisma-client-js"
@@ -25,6 +26,10 @@ enum UserStatus {
   disabled
 }
 
+// Lifecycle: pending → assigned → in_progress → completed, with rejected and
+// cancelled as terminal exits. (`approved` exists for a two-step approve-then-
+// assign flow; the current code assigns in one step, so trips normally skip it —
+// the conflict checker still treats it as occupying the driver, to be safe.)
 enum TripStatus {
   pending
   approved
@@ -70,7 +75,10 @@ enum DispatchMode {
 }
 
 // ── 1. User ──────────────────────────────────────────────────────────
-
+// One table for all three roles — `role` decides what the account can do,
+// `status` whether it can log in at all (new registrations wait in
+// pending_approval until an admin approves). Drivers are pinned 1:1 to their
+// truck via assigned_truck_plate, mirroring UWC's real fixed driver-truck pairs.
 model User {
   id                  String     @id @default(cuid())
   phone               String     @unique // login ID
@@ -116,7 +124,7 @@ model DriverLeave {
 }
 
 // ── 2. Department ────────────────────────────────────────────────────
-
+// The 15 UWC departments — pure reference data; registration requires one.
 model Department {
   id    String @id @default(cuid())
   name  String @unique
@@ -124,7 +132,10 @@ model Department {
 }
 
 // ── 3. Truck ─────────────────────────────────────────────────────────
-
+// One row per physical lorry, keyed by plate. Carries everything dispatch and
+// pay need: capacity in 4×4-pallet units, the two claim rates (weekday /
+// off-peak), the daily deduction, the driver's coverage zones, per-truck
+// operating hours, and the road-legal document expiries that gate dispatch.
 model Truck {
   plate                  String    @id
   type                   String // e.g. "10t-30ft"
@@ -162,7 +173,7 @@ model Zone {
 }
 
 // ── 5. RouteType ─────────────────────────────────────────────────────
-
+// The 6 booking categories (Customer/Supplier/Inter-Plant × Delivery/Return).
 model RouteType {
   id   String @id @default(cuid())
   name String @unique // Customer Delivery, Supplier Delivery, Inter-Plant Delivery,
@@ -171,7 +182,9 @@ model RouteType {
 }
 
 // ── 6. DestinationRate ───────────────────────────────────────────────
-
+// Zone → incentive points (the "first drop of the day" value the engine pays
+// full). Two rows may legitimately share a zone — K2 is both Sungai Petani and
+// Kuala Ketil — so the rates editor updates all rows of a zone together.
 model DestinationRate {
   id            String  @id @default(cuid())
   zone_code     String?
@@ -181,7 +194,10 @@ model DestinationRate {
 }
 
 // ── 7. Trip ──────────────────────────────────────────────────────────
-
+// The core record: one booking through its whole life. Note the money fields —
+// incentive_earned stores the PER-TRIP MARGINAL amount (summing a day's trips
+// gives the day total), and the three nullable rate columns are the
+// assignment-time snapshot (rate lock) that finalization pays at.
 model Trip {
   id               String     @id @default(cuid())
   ticket_number    String     @unique // TKT-YYYYMMDD-NNN
@@ -228,7 +244,9 @@ model Trip {
 }
 
 // ── 8. TripStop ──────────────────────────────────────────────────────
-
+// One delivery drop on a trip; multi-stop bookings create several, in sequence.
+// This is where the proof-of-delivery lives (pod_photo) and where the driver's
+// per-stop Arrived/Delivered taps land.
 model TripStop {
   id           String     @id @default(cuid())
   trip_id      String
@@ -262,7 +280,10 @@ model PublicHoliday {
 }
 
 // ── 9. Consignee ─────────────────────────────────────────────────────
-
+// The customer/consignee master (UWC's real, NDA-protected "ship to" list —
+// which is why the seed Excel is gitignored). zone_code is what links a
+// delivery address into the dispatch + incentive zone model. Requestors can
+// self-add a missing company; created_by records who.
 model Consignee {
   id              String   @id @default(cuid())
   company_name    String
@@ -284,7 +305,10 @@ model Consignee {
 }
 
 // ── 10. CargoDetail ──────────────────────────────────────────────────
-
+// What's on the truck for a trip. Pallet quantities are converted to
+// 4×4-pallet equivalents (lib/pallets.ts) for every capacity check. Cargo is
+// per-TRIP, not per-stop — which is why truck capacity frees only when the
+// whole trip completes (a known, documented spec trade-off).
 model CargoDetail {
   id              String  @id @default(cuid())
   trip_id         String
@@ -297,7 +321,8 @@ model CargoDetail {
 }
 
 // ── 11. TripDocument ─────────────────────────────────────────────────
-
+// Requestor-uploaded paperwork (DO / invoice / other) as Cloudinary URLs.
+// The driver's POD photo is NOT here — it lives on TripStop.pod_photo, per stop.
 model TripDocument {
   id          String       @id @default(cuid())
   trip_id     String
@@ -327,7 +352,9 @@ model LocationLog {
 }
 
 // ── 13. AuditLog ──────────────────────────────────────────────────────
-
+// Append-only "who did what, to which record": every sensitive mutation writes
+// one row. record_id is a plain string ON PURPOSE (no FK) — an audit entry must
+// be able to outlive the record it describes.
 model AuditLog {
   id         String   @id @default(cuid())
   user_id    String
@@ -339,7 +366,7 @@ model AuditLog {
 }
 
 // ── 14. VehicleMaintenance ───────────────────────────────────────────
-
+// Service history per truck — feeds the maintenance/expiry alerts (FR-MT1).
 model VehicleMaintenance {
   id            String    @id @default(cuid())
   truck_plate   String
@@ -351,7 +378,9 @@ model VehicleMaintenance {
 }
 
 // ── 15. ExternalForwarder ────────────────────────────────────────────
-
+// Outsourcing details when no internal truck can take a booking (1:1 with the
+// trip). External trips carry no driver incentive — the rate here is what the
+// forwarder charges UWC.
 model ExternalForwarder {
   id           String   @id @default(cuid())
   trip_id      String   @unique
@@ -374,7 +403,7 @@ model AppSetting {
 }
 
 // ── 16. FuelLog ───────────────────────────────────────────────────────
-
+// Fuel fills per truck + driver (FR-CT5) — powers the fuel cost report.
 model FuelLog {
   id          String   @id @default(cuid())
   truck_plate String

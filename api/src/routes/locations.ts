@@ -110,12 +110,16 @@ router.post(
       }
     }
 
+    // One insert for the whole batch — a reconnect flush of a big offline
+    // backlog is still a single query.
     await prisma.locationLog.createMany({
       data: points.map((p) => ({
         trip_id: p.trip_id,
         driver_id: driverId,
         latitude: p.latitude,
         longitude: p.longitude,
+        // Points that sat in the phone's offline queue keep their ORIGINAL
+        // capture time; live ticks omit it and take the DB default (now).
         ...(p.recorded_at ? { recorded_at: new Date(p.recorded_at) } : {}),
       })),
     });

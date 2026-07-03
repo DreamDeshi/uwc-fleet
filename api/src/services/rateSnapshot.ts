@@ -30,6 +30,8 @@ export function truckRateSnapshot(truck: {
   entitled_claim_offpeak: DecimalLike;
   daily_deduction_points: number;
 } {
+  // Deliberately a plain copy: we want the truck's values as they stand RIGHT
+  // NOW, frozen onto the trip row at the moment of assignment.
   return {
     entitled_claim_weekday: truck.entitled_claim_weekday,
     entitled_claim_offpeak: truck.entitled_claim_offpeak,
@@ -56,6 +58,9 @@ export function finalizationRateParams(trip: {
   entitled_claim_offpeak: number;
   daily_deduction_points: number;
 } {
+  // The `??` is the legacy fallback: trips assigned before the rate-lock
+  // migration carry no snapshot, so they finalize at the live truck values.
+  // Every trip assigned since gets its frozen rates.
   return {
     entitled_claim_weekday: Number(trip.entitled_claim_weekday ?? trip.truck.entitled_claim_weekday),
     entitled_claim_offpeak: Number(trip.entitled_claim_offpeak ?? trip.truck.entitled_claim_offpeak),

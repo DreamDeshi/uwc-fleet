@@ -126,6 +126,11 @@ export function selectTruck(
   const fittingAll = candidates.filter((c) => {
     // One active trip per driver: a truck already on an active trip (any load or
     // destination) is out of the running — no consolidation onto a busy driver.
+    // This is a deliberate trade-off vs the spec sheet's Rule B (stack same-zone
+    // orders onto one truck until it's full): stacking kept handing new orders
+    // to a driver who was already out. Consolidation still happens WITHIN a
+    // booking (one trip can carry several stops); we just don't pile a second
+    // booking onto a rolling truck.
     if (c.currentLoad > 0 || c.activeZones.length > 0) return false;
     const remaining = c.maxPallets - c.currentLoad;
     if (remaining < order.pallets) return false; // hard overload prevention
@@ -138,14 +143,20 @@ export function selectTruck(
 
   const scored = fitting.map((c) => {
     const remaining = c.maxPallets - c.currentLoad;
+    // Zone match beats everything: a driver whose coverage includes the order's
+    // zone outranks a merely-adjacent one (Mr. Teh's P2↔K1 rule), who in turn
+    // outranks "any free truck".
     const covers = zone != null && c.coverageZones.includes(zone);
     const adjacent = c.coverageZones.some((z) => adjacentToOrder.includes(z));
-    const tier = covers ? 0 : adjacent ? 1 : 2;
+    const tier = covers ? 0 : adjacent ? 1 : 2; // 0 = own zone, 1 = neighbour, 2 = anyone
     return { c, remaining, tier };
   });
 
   scored.sort((a, b) => {
     if (a.tier !== b.tier) return a.tier - b.tier;
+    // Within a tier: smallest truck that fits — sending the 1-tonner on a
+    // 2-pallet run keeps the 30-footers free for big orders (and saves fuel,
+    // which is the whole point of Mr. Teh's "most cost-effective lorry" ask).
     if (a.c.maxPallets !== b.c.maxPallets) return a.c.maxPallets - b.c.maxPallets; // smallest truck that fits
     if (a.remaining !== b.remaining) return a.remaining - b.remaining; // tightest fit
     return a.c.plate.localeCompare(b.c.plate); // deterministic tie-break
@@ -195,6 +206,9 @@ export function autoAssignNote(
 
 // ── DB helpers ─────────────────────────────────────────────────────────
 
+// What counts as "this driver/truck is already out on a job" for auto-dispatch.
+// Deliberately stricter than the manual path (which only blocks on in_progress):
+// auto never stacks work on a driver who holds an assignment they haven't started.
 const ACTIVE_TRIP_STATUSES = ["assigned", "in_progress"] as const;
 
 // 4×4-pallet-equivalent load for a set of cargo lines (see lib/pallets).
@@ -321,11 +335,14 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
         });
 
         const candidates: TruckCandidate[] = trucks
-          .filter((t) => t.driver) // safety: driver relation present
+          .filter((t) => t.driver) // safety: a truck with no assigned driver (e.g. "4 Wheel") can't be dispatched
           .map((t) => ({
             plate: t.plate,
             driverId: t.driver!.id,
             maxPallets: t.max_pallets,
+            // Pallets committed to this truck's OTHER active trips. The driver
+            // filter above already excludes busy drivers, so this is belt and
+            // braces for selectTruck's capacity math.
             currentLoad: t.trips.reduce((sum, tr) => sum + orderPallets(tr.cargo_details), 0),
             coverageZones: t.priority_zones,
             activeZones: t.trips

@@ -135,6 +135,9 @@ export function estimateOperatingWindow(input: OperatingWindowInput): OperatingW
   const driveMinPerLeg = input.driveMinPerLeg ?? OP_DRIVE_MIN_PER_LEG;
   const drivePointsBaseline = input.drivePointsBaseline ?? OP_DRIVE_POINTS_BASELINE;
 
+  // Use the truck's own window when it has one; fall back to the fleet default
+  // (07:00–18:00). The double parse means even a malformed DB string degrades
+  // safely to the default instead of breaking the estimate.
   const windowStartMin = parseHmToMinutes(input.windowStart, parseHmToMinutes(DEFAULT_WINDOW_START, 7 * 60));
   const windowEndMin = parseHmToMinutes(input.windowEnd, parseHmToMinutes(DEFAULT_WINDOW_END, 18 * 60));
 
@@ -156,7 +159,12 @@ export function estimateOperatingWindow(input: OperatingWindowInput): OperatingW
   const pickupMinutesMyt = mytMinutesOfDay(input.pickupDateTime);
   const completionMinutesMyt = mytMinutesOfDay(estimatedCompletion);
 
+  // Two separate breach modes: a pickup already outside the window (e.g. booked
+  // for 19:00) fails immediately, no estimating needed…
   const pickupOutsideWindow = pickupMinutesMyt < windowStartMin || pickupMinutesMyt > windowEndMin;
+  // …and a valid pickup whose run wouldn't get the driver home in time. We
+  // compare absolute instants against 18:00 on the PICKUP's MYT day, so a run
+  // that spills past midnight is still (correctly) "past the window".
   const completionPastWindow =
     estimatedCompletion.getTime() > windowEndInstant(input.pickupDateTime, windowEndMin).getTime();
 

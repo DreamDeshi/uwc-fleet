@@ -123,10 +123,16 @@ export function scoreDrops(
   drops: ScoredDrop[],
   zonesAlreadyHitToday: Iterable<string> = []
 ): number[] {
+  // `seen` starts pre-loaded with every zone the driver already delivered to
+  // earlier today (on previous trips), so a repeat zone scores 1 even when the
+  // first visit happened on a different trip.
   const seen = new Set<string>(zonesAlreadyHitToday);
   return drops.map((d) => {
+    // First visit to a zone today → the zone's full points. Any repeat → flat 1.
+    // Different zones don't affect each other: three drops in three new zones
+    // all earn full points.
     const points = seen.has(d.zoneCode) ? 1 : d.zonePoints;
-    seen.add(d.zoneCode);
+    seen.add(d.zoneCode); // remember it, so the NEXT drop here counts as a repeat
     return points;
   });
 }
@@ -185,6 +191,12 @@ export interface DeliveryIncentiveResult {
  *    on its first stop).
  *
  * Rate is the trip's peak/off-peak rate by MYT pickup time (unchanged).
+ *
+ * Worked example (this is the anchor case in the unit tests): PLX 2406 on a
+ * weekday, day's first trip, one drop in Ipoh (A2 = 6 points). Ipoh is a new
+ * zone so the drop earns the full 6; PLX's daily deduction is 2 and this is the
+ * day's first drop, so it comes out here; weekday rate is RM11.
+ *   → (6 − 2) × 11 = RM44.
  */
 export function calculateDeliveryIncentive(params: {
   pickupDateTime: Date;
@@ -199,7 +211,11 @@ export function calculateDeliveryIncentive(params: {
     entitled_claim_offpeak: number;
   };
 }): DeliveryIncentiveResult {
+  // Peak vs off-peak is decided ONCE per trip, from its PICKUP time in MYT —
+  // not per stop, and not from when the driver tapped "Delivered".
   const offPeak = isOffPeak(params.pickupDateTime, params.publicHolidays);
+  // Each truck carries its own two rates (e.g. PLX 2406: RM11 weekday / RM13
+  // off-peak), so picking the rate is just a field lookup.
   const rate = offPeak ? params.truck.entitled_claim_offpeak : params.truck.entitled_claim_weekday;
 
   const dropPoints = scoreDrops(params.drops, params.zonesDeliveredEarlierToday);
@@ -211,11 +227,14 @@ export function calculateDeliveryIncentive(params: {
   for (let i = 0; i < dropPoints.length; i++) {
     let points = dropPoints[i];
     if (params.isFirstDeliveredDropOfDay && i === 0) {
+      // This trip holds the day's very FIRST drop, so the truck's daily
+      // deduction comes out of it — exactly once per driver per day. Later
+      // trips pass isFirstDeliveredDropOfDay=false and skip this entirely.
       const before = points;
       // TODO: zero-floor edge not client-confirmed (e.g. a 1pt P2 first drop
       // minus a 2pt deduction floors to 0; the unused deduction is not carried).
       points = Math.max(points - params.truck.daily_deduction_points, 0);
-      deductionApplied = before - points;
+      deductionApplied = before - points; // what we actually took (may be < the full deduction if floored)
     }
     incentive += points * rate;
   }
@@ -226,6 +245,8 @@ export function calculateDeliveryIncentive(params: {
     dropPoints,
     pointsThisTrip: dropPoints.reduce((a, b) => a + b, 0),
     deductionApplied,
+    // Rounded to cents so the persisted RM value is clean (money is Decimal in
+    // the DB, but the engine works in plain numbers for testability).
     incentiveThisTrip: Math.round(incentive * 100) / 100,
   };
 }
