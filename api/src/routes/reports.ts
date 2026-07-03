@@ -250,7 +250,7 @@ router.get("/attention", async (_req, res, next) => {
       driver: { select: { name: true, phone: true } },
     } as const;
 
-    const [staleInProgress, overdueAssigned, completedNullIncentive] = await Promise.all([
+    const [staleInProgress, overdueAssigned, completedNullIncentive, assignedAll] = await Promise.all([
       prisma.trip.findMany({
         where: { status: "in_progress", pickup_datetime: { lt: staleCutoff } },
         select: shape,
@@ -269,6 +269,19 @@ router.get("/attention", async (_req, res, next) => {
         select: shape,
         orderBy: { pickup_datetime: "asc" },
       }),
+      // Leave-collision (client Q3, 3 Jul 2026): assigned trips whose driver
+      // has since been put on leave covering the pickup date. Computed
+      // dynamically (no stored flag), so it self-clears the moment the leave
+      // is removed or the trip is reassigned/unassigned.
+      prisma.trip.findMany({
+        where: { status: "assigned", driver_id: { not: null } },
+        select: {
+          ...shape,
+          driver_id: true,
+          driver: { select: { name: true, phone: true, leaves: { select: { start_date: true, end_date: true } } } },
+        },
+        orderBy: { pickup_datetime: "asc" },
+      }),
     ]);
 
     const withAge = (t: (typeof staleInProgress)[number]) => ({
@@ -276,11 +289,21 @@ router.get("/attention", async (_req, res, next) => {
       hours_since_pickup: Math.round(hoursSince(t.pickup_datetime, now) * 10) / 10,
     });
 
+    const assignedDriverOnLeave = assignedAll
+      .filter((t) =>
+        (t.driver?.leaves ?? []).some((l) => leaveCoversDate(l, mytDateKey(t.pickup_datetime)))
+      )
+      .map(({ driver_id: _dId, driver, ...t }) => ({
+        ...t,
+        driver: driver ? { name: driver.name, phone: driver.phone } : null,
+      }));
+
     res.json({
       thresholds: cfg,
       stale_in_progress: staleInProgress.map(withAge),
       overdue_assigned: overdueAssigned.map(withAge),
       completed_null_incentive: completedNullIncentive.map(withAge),
+      assigned_driver_on_leave: assignedDriverOnLeave.map(withAge),
     });
   } catch (err) {
     next(err);

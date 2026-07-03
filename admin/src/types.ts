@@ -248,6 +248,9 @@ export interface AttentionReport {
   stale_in_progress: AttentionTrip[];
   overdue_assigned: AttentionTrip[];
   completed_null_incentive: AttentionTrip[];
+  // Assigned trips whose driver has since been put on leave covering the
+  // pickup date (client Q3) — reassign or unassign these. Self-clearing.
+  assigned_driver_on_leave: AttentionTrip[];
 }
 
 // One driver-leave entry (GET /leaves) — admin-managed dispatch availability.

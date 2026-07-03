@@ -5,6 +5,9 @@ import { ApiError } from "../lib/apiError";
 import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
+import { assignedLeaveCollisions } from "../services/driverLeave";
+import { mytDateKey } from "../services/incentiveEngine";
+import { sendPushNotifications } from "../lib/pushNotifications";
 
 // Driver-leave calendar (tracker #4) — admin-managed, DISPATCH-side only.
 // Leave never touches pay or login: it removes the driver from the dispatch
@@ -79,7 +82,50 @@ router.post("/", validateBody(createLeaveSchema), async (req, res, next) => {
         record_id: leave.id,
       },
     });
-    res.status(201).json(leave);
+
+    // Leave-collision check (client Q3, 3 Jul 2026): leave only blocks NEW
+    // assignments — trips ALREADY assigned to this driver for the covered
+    // dates need a human to reassign them. Surface them here (response +
+    // admin push) and in GET /reports/attention ("assigned_driver_on_leave"),
+    // which self-clears once each trip is reassigned or the leave is removed.
+    const driverAssigned = await prisma.trip.findMany({
+      where: { driver_id, status: "assigned" },
+      select: { id: true, ticket_number: true, status: true, pickup_datetime: true },
+    });
+    const affected = assignedLeaveCollisions(
+      driverAssigned,
+      { start_date, end_date },
+      mytDateKey
+    );
+    if (affected.length > 0) {
+      const admins = await prisma.user.findMany({
+        where: { role: "admin", status: "active", expo_push_token: { not: null } },
+        select: { expo_push_token: true },
+      });
+      await sendPushNotifications(
+        admins.map((a) => a.expo_push_token),
+        {
+          title: "Driver on leave — reassign trips",
+          body: `${driver.name} is now on leave ${start_date}${
+            end_date !== start_date ? ` to ${end_date}` : ""
+          } but still has ${affected.length} assigned trip${affected.length === 1 ? "" : "s"} (${affected
+            .map((t) => t.ticket_number)
+            .join(", ")}). Reassign or unassign them.`,
+          data: { type: "leave_collision", driverId: driver_id },
+        }
+      );
+    }
+
+    res.status(201).json({
+      ...leave,
+      // Assigned trips colliding with this leave — the Drivers page shows
+      // these so the admin can jump straight to reassigning.
+      affected_trips: affected.map((t) => ({
+        id: t.id,
+        ticket_number: t.ticket_number,
+        pickup_datetime: t.pickup_datetime,
+      })),
+    });
   } catch (err) {
     next(err);
   }

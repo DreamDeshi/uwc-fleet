@@ -78,6 +78,16 @@ export function buildTripTimeline(trip: TimelineTripInput): TimelineStep[] {
   const firstOf = (event: TripEvent, stopId?: string) =>
     hist.find((h) => h.event === event && (stopId === undefined || h.stop_id === stopId));
 
+  // The admin unassign/reassign lever (3 Jul 2026) can move a trip through
+  // several assignments (or back to none): the Assigned milestone reflects the
+  // LATEST assignment-related event, and a trailing "unassigned" means the
+  // trip is currently unassigned again (the trip is back in pending).
+  const lastAssignmentEvent = [...hist]
+    .reverse()
+    .find((h) => h.event === "assigned" || h.event === "reassigned" || h.event === "unassigned");
+  const historyAssigned =
+    lastAssignmentEvent !== undefined && lastAssignmentEvent.event !== "unassigned";
+
   const steps: TimelineStep[] = [];
 
   // 1. Booked — always the first milestone.
@@ -115,13 +125,16 @@ export function buildTripTimeline(trip: TimelineTripInput): TimelineStep[] {
     trip.status === "assigned" ||
     trip.status === "in_progress" ||
     trip.status === "completed" ||
-    !!firstOf("assigned");
+    // History-based (for terminal branches like cancelled-after-assignment):
+    // an unassigned trip that went BACK to pending must not count — its
+    // Assigned milestone is upcoming again.
+    (trip.status !== "pending" && historyAssigned);
 
   // Terminal — Cancelled: show whatever was reached (Assigned, if it got that
   // far) then Cancelled. No En route / stops / Completed.
   if (trip.status === "cancelled") {
     if (reachedAssigned) {
-      const h = firstOf("assigned");
+      const h = historyAssigned ? lastAssignmentEvent : undefined;
       steps.push({
         event: "assigned",
         state: "done",
@@ -146,13 +159,14 @@ export function buildTripTimeline(trip: TimelineTripInput): TimelineStep[] {
   // Normal path — always render the full happy-path skeleton so a pending trip
   // shows every milestone ahead of it; unreached steps are "upcoming".
 
-  // 2. Assigned (driver + truck).
-  const assignedH = firstOf("assigned");
+  // 2. Assigned (driver + truck) — the LATEST assignment when the trip was
+  // reassigned; no stale note/timestamp when it was unassigned back to pending.
+  const assignedH = reachedAssigned && historyAssigned ? lastAssignmentEvent : undefined;
   steps.push({
     event: "assigned",
     state: reachedAssigned ? "done" : "upcoming",
     timestamp: iso(assignedH?.created_at ?? null),
-    note: assignedH?.note ?? assignNote(trip),
+    note: assignedH?.note ?? (reachedAssigned ? assignNote(trip) : null),
   });
 
   // 3. En route (driver started the trip).

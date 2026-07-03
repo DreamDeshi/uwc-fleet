@@ -5,8 +5,10 @@ import {
   useCancelTrip,
   useDrivers,
   useRejectTrip,
+  useReassignTrip,
   useTrip,
   useTrips,
+  useUnassignTrip,
 } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
 import {
@@ -18,6 +20,7 @@ import {
   ErrorState,
   Input,
   Loading,
+  Modal,
   Pill,
   ProgressBar,
   SearchInput,
@@ -473,6 +476,92 @@ function InfoTile({ label, value, sub }: { label: string; value: string; sub?: s
   );
 }
 
+// ── Driver picker grid — shared by dispatch (pending) and the reassign
+// lever (assigned). Availability/leave/fit logic identical in both flows.
+function DriverGrid({
+  trip,
+  busy,
+  onPick,
+  currentDriverId,
+}: {
+  trip: Trip;
+  busy: boolean;
+  onPick: (driverId: string, plate: string, name: string) => void;
+  // Reassign flow: the trip's current driver — shown but not pickable.
+  currentDriverId?: string;
+}) {
+  const drivers = useDrivers();
+  const pallets = totalPallets(trip);
+
+  if (drivers.isLoading) return <Loading label="Loading drivers…" />;
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      {(drivers.data ?? []).map((d) => {
+        // Leave is checked against THIS trip's pickup MYT date (not
+        // "today") — a driver on leave next week is still assignable
+        // for tomorrow. Server enforces the same rule (DRIVER_ON_LEAVE).
+        const pickupKey = mytDateKey(trip.pickup_datetime);
+        const onLeave = d.leaves.some(
+          (l) => l.start_date <= pickupKey && l.end_date >= pickupKey
+        );
+        const isCurrent = currentDriverId !== undefined && d.id === currentDriverId;
+        const available = d.status === "available" && d.assigned_truck && !onLeave && !isCurrent;
+        const remaining = d.assigned_truck ? d.assigned_truck.max_pallets - d.current_load : 0;
+        const fits = d.assigned_truck ? remaining >= pallets : false;
+        return (
+          <div
+            key={d.id}
+            style={{
+              border: `1px solid ${colors.border}`,
+              borderRadius: radius.md,
+              padding: 12,
+              opacity: available ? 1 : 0.55,
+              background: available && fits ? colors.greenTint : colors.card,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 8 }}>
+              <Avatar name={d.name} size={32} />
+              <div style={{ overflow: "hidden" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>{d.name}</div>
+                <div style={{ fontSize: 11, color: colors.textMuted }}>
+                  {d.assigned_truck
+                    ? `${d.assigned_truck.plate} · ${d.current_load}/${d.assigned_truck.max_pallets}p`
+                    : "No truck"}
+                  {/* Scheduled (assigned-but-not-started) trips: the driver
+                      is still selectable, but assigning within the conflict
+                      window will prompt an "Assign anyway" override. */}
+                  {d.scheduled_trips > 0 ? ` · ${d.scheduled_trips} scheduled` : ""}
+                </div>
+              </div>
+            </div>
+            {available ? (
+              <Button
+                variant={fits ? "accent" : "ghost"}
+                size="sm"
+                full
+                disabled={!fits || busy}
+                onClick={() => onPick(d.id, d.assigned_truck!.plate, d.name)}
+              >
+                {fits ? "Assign" : d.current_load > 0 ? "No room" : "Too small"}
+              </Button>
+            ) : (
+              <div style={{ fontSize: 11.5, color: colors.textMuted, textAlign: "center", padding: "7px 0" }}>
+                {isCurrent
+                  ? "Current driver"
+                  : onLeave
+                    ? "On leave for this pickup date"
+                    : d.status === "on_trip"
+                      ? `On route${d.current_route ? `: ${d.current_route}` : ""}`
+                      : "Off duty"}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Dispatch (pending) ────────────────────────────────────────────────
 function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
   const [tab, setTab] = useState<"internal" | "external">("internal");
@@ -493,7 +582,6 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
     { driverId: string; plate: string; message: string } | null
   >(null);
 
-  const drivers = useDrivers();
   const approve = useApproveTrip();
   const reject = useRejectTrip();
   const pallets = totalPallets(trip);
@@ -646,71 +734,7 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
           <div style={{ fontSize: 12, color: colors.textMuted, marginBottom: 10 }}>
             Showing available drivers (capacity ≥ {pallets} pallets highlighted as a fit).
           </div>
-          {drivers.isLoading ? (
-            <Loading label="Loading drivers…" />
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {(drivers.data ?? []).map((d) => {
-                // Leave is checked against THIS trip's pickup MYT date (not
-                // "today") — a driver on leave next week is still assignable
-                // for tomorrow. Server enforces the same rule (DRIVER_ON_LEAVE).
-                const pickupKey = mytDateKey(trip.pickup_datetime);
-                const onLeave = d.leaves.some(
-                  (l) => l.start_date <= pickupKey && l.end_date >= pickupKey
-                );
-                const available = d.status === "available" && d.assigned_truck && !onLeave;
-                const remaining = d.assigned_truck ? d.assigned_truck.max_pallets - d.current_load : 0;
-                const fits = d.assigned_truck ? remaining >= pallets : false;
-                return (
-                  <div
-                    key={d.id}
-                    style={{
-                      border: `1px solid ${colors.border}`,
-                      borderRadius: radius.md,
-                      padding: 12,
-                      opacity: available ? 1 : 0.55,
-                      background: available && fits ? colors.greenTint : colors.card,
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 8 }}>
-                      <Avatar name={d.name} size={32} />
-                      <div style={{ overflow: "hidden" }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>{d.name}</div>
-                        <div style={{ fontSize: 11, color: colors.textMuted }}>
-                          {d.assigned_truck
-                            ? `${d.assigned_truck.plate} · ${d.current_load}/${d.assigned_truck.max_pallets}p`
-                            : "No truck"}
-                          {/* Scheduled (assigned-but-not-started) trips: the driver
-                              is still selectable, but assigning within the conflict
-                              window will prompt an "Assign anyway" override. */}
-                          {d.scheduled_trips > 0 ? ` · ${d.scheduled_trips} scheduled` : ""}
-                        </div>
-                      </div>
-                    </div>
-                    {available ? (
-                      <Button
-                        variant={fits ? "accent" : "ghost"}
-                        size="sm"
-                        full
-                        disabled={!fits || approve.isPending}
-                        onClick={() => assign(d.id, d.assigned_truck!.plate)}
-                      >
-                        {fits ? "Assign" : d.current_load > 0 ? "No room" : "Too small"}
-                      </Button>
-                    ) : (
-                      <div style={{ fontSize: 11.5, color: colors.textMuted, textAlign: "center", padding: "7px 0" }}>
-                        {onLeave
-                          ? "On leave for this pickup date"
-                          : d.status === "on_trip"
-                            ? `On route${d.current_route ? `: ${d.current_route}` : ""}`
-                            : "Off duty"}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <DriverGrid trip={trip} busy={approve.isPending} onPick={(driverId, plate) => assign(driverId, plate)} />
         </div>
       ) : (
         <ExternalForm trip={trip} onDone={onDone} />
@@ -808,10 +832,17 @@ function ExternalForm({ trip, onDone }: { trip: Trip; onDone: () => void }) {
 // ── Monitor (active) ──────────────────────────────────────────────────
 function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
   const cancel = useCancelTrip();
+  const unassign = useUnassignTrip();
   const [error, setError] = useState<string | null>(null);
   // Cancelling kills the booking outright — confirm before firing.
   const [confirmingCancel, setConfirmingCancel] = useState(false);
+  // Assigned-only ops lever (client Q3): unassign / change driver.
+  const [confirmingUnassign, setConfirmingUnassign] = useState(false);
+  const [reassigning, setReassigning] = useState(false);
   const canCancel = trip.status === "pending" || trip.status === "approved";
+  // Only a not-yet-started trip can be interrupted; once the driver starts
+  // (in_progress) this lever disappears (cancel-in-progress is out of scope).
+  const canReassign = trip.status === "assigned" && !trip.is_external;
 
   async function doCancel() {
     setError(null);
@@ -822,6 +853,18 @@ function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
       setError(apiErrorMessage(e, "Could not cancel trip."));
     } finally {
       setConfirmingCancel(false);
+    }
+  }
+
+  async function doUnassign() {
+    setError(null);
+    try {
+      await unassign.mutateAsync({ id: trip.id });
+      onDone();
+    } catch (e) {
+      setError(apiErrorMessage(e, "Could not unassign this trip."));
+    } finally {
+      setConfirmingUnassign(false);
     }
   }
 
@@ -844,6 +887,16 @@ function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
             {trip.driver?.phone ? ` · ${trip.driver.phone}` : ""}
           </div>
         </div>
+        {canReassign && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button variant="outline" size="sm" disabled={unassign.isPending} onClick={() => setReassigning(true)}>
+              Change driver
+            </Button>
+            <Button variant="ghost" size="sm" disabled={unassign.isPending} onClick={() => setConfirmingUnassign(true)}>
+              Unassign
+            </Button>
+          </div>
+        )}
       </div>
 
       {error && <div style={{ color: colors.red, fontSize: 12.5, marginTop: 12 }}>{error}</div>}
@@ -870,7 +923,112 @@ function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
           onConfirm={doCancel}
         />
       )}
+      {confirmingUnassign && (
+        <ConfirmDialog
+          title="Unassign this trip?"
+          body={
+            <>
+              Remove <strong>{trip.driver?.name ?? "the driver"}</strong> from trip{" "}
+              <strong>{trip.ticket_number}</strong>? The trip returns to Pending and re-enters
+              the dispatch flow (auto-dispatch may pick it up again). The driver will be notified.
+            </>
+          }
+          confirmLabel="Unassign"
+          pending={unassign.isPending}
+          onClose={() => setConfirmingUnassign(false)}
+          onConfirm={doUnassign}
+        />
+      )}
+      {reassigning && (
+        <ReassignDialog trip={trip} onClose={() => setReassigning(false)} onDone={onDone} />
+      )}
     </div>
+  );
+}
+
+// ── Reassign (assigned → another driver+truck, client Q3 ops lever) ──────
+// Server runs the FULL assignment guard ladder; the soft warnings (conflict /
+// operating window / expired permit) come back as 409s the admin may override
+// with "Assign anyway" — same UX as the dispatch panel. Hard blocks
+// (overload, unroadworthy, busy, on leave) are shown plainly.
+function ReassignDialog({ trip, onClose, onDone }: { trip: Trip; onClose: () => void; onDone: () => void }) {
+  const reassign = useReassignTrip();
+  const [error, setError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<{ driverId: string; plate: string; name: string } | null>(null);
+  const [warn, setWarn] = useState<{ driverId: string; plate: string; name: string; message: string } | null>(null);
+
+  async function submit(driverId: string, plate: string, name: string, force = false) {
+    setError(null);
+    try {
+      await reassign.mutateAsync({ id: trip.id, driver_id: driverId, truck_plate: plate, force });
+      onClose();
+      onDone();
+    } catch (e) {
+      const code = apiErrorCode(e);
+      if (code === "SCHEDULING_CONFLICT" || code === "OPERATING_WINDOW" || code === "TRUCK_PERMIT_EXPIRED") {
+        setWarn({ driverId, plate, name, message: apiErrorMessage(e, "This assignment needs an override.") });
+        return;
+      }
+      setError(apiErrorMessage(e, "Could not reassign this trip."));
+    } finally {
+      setPicked(null);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Change driver — ${trip.ticket_number}`} width={640}>
+      <div style={{ fontSize: 12.5, color: colors.textMuted, marginBottom: 12 }}>
+        Currently assigned to <strong>{trip.driver?.name ?? "—"}</strong>
+        {trip.truck_plate ? ` · ${trip.truck_plate}` : ""}. Pick the new driver — the same
+        dispatch checks apply, the incentive rates are re-snapshotted for the new truck, and
+        both drivers are notified.
+      </div>
+      {error && (
+        <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>
+          {error}
+        </div>
+      )}
+      {warn && (
+        <div style={{ background: colors.yellowTint, border: "1px solid #f0d98a", borderRadius: radius.md, padding: "11px 13px", marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: colors.amber, marginBottom: 6 }}>⚠ Needs override</div>
+          <div style={{ fontSize: 12.5, color: colors.text, marginBottom: 3 }}>{warn.message}</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <Button variant="ghost" size="sm" onClick={() => setWarn(null)}>Cancel</Button>
+            <Button
+              variant="accent"
+              size="sm"
+              disabled={reassign.isPending}
+              onClick={() => submit(warn.driverId, warn.plate, warn.name, true)}
+            >
+              Assign anyway
+            </Button>
+          </div>
+        </div>
+      )}
+      <DriverGrid
+        trip={trip}
+        busy={reassign.isPending}
+        currentDriverId={trip.driver?.id}
+        onPick={(driverId, plate, name) => setPicked({ driverId, plate, name })}
+      />
+      {picked && (
+        <ConfirmDialog
+          title="Move this trip?"
+          body={
+            <>
+              Move trip <strong>{trip.ticket_number}</strong> from{" "}
+              <strong>{trip.driver?.name ?? "—"}</strong> to <strong>{picked.name}</strong> (
+              {picked.plate})? {trip.driver?.name ?? "The old driver"} will be notified the trip
+              was removed.
+            </>
+          }
+          confirmLabel="Change driver"
+          pending={reassign.isPending}
+          onClose={() => setPicked(null)}
+          onConfirm={() => submit(picked.driverId, picked.plate, picked.name)}
+        />
+      )}
+    </Modal>
   );
 }
 

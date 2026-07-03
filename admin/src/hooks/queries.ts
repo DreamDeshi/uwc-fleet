@@ -233,6 +233,39 @@ export function useRejectTrip() {
   });
 }
 
+// Admin ops lever (client Q3): pull the driver off an ASSIGNED trip — the
+// trip returns to pending and re-enters the dispatch flow.
+export function useUnassignTrip() {
+  const invalidate = useInvalidate([["trips"], ["dashboard"], ["drivers"], ["trucks"]]);
+  return useMutation({
+    mutationFn: async (v: { id: string; reason?: string }) =>
+      (await api.patch<Trip>(`/trips/${v.id}/unassign`, { reason: v.reason })).data,
+    onSuccess: invalidate,
+  });
+}
+
+// Admin ops lever (client Q3): move an ASSIGNED trip to another driver+truck.
+// Runs the full assignment guard ladder server-side; rate snapshot re-taken.
+export function useReassignTrip() {
+  const invalidate = useInvalidate([["trips"], ["dashboard"], ["drivers"], ["trucks"]]);
+  return useMutation({
+    mutationFn: async (v: {
+      id: string;
+      driver_id: string;
+      truck_plate: string;
+      force?: boolean;
+      reason?: string;
+    }) =>
+      (await api.patch<Trip>(`/trips/${v.id}/reassign`, {
+        driver_id: v.driver_id,
+        truck_plate: v.truck_plate,
+        ...(v.force ? { force: true } : {}),
+        ...(v.reason ? { reason: v.reason } : {}),
+      })).data,
+    onSuccess: invalidate,
+  });
+}
+
 export function useAssignExternal() {
   const invalidate = useInvalidate([["trips"], ["dashboard"]]);
   return useMutation({

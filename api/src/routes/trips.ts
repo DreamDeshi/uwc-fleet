@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
 import { isSerializationConflict, isUniqueViolation } from "../lib/prismaErrors";
-import { claimPendingTripOrThrow } from "../services/tripAssignment";
+import { claimPendingTripOrThrow, releaseAssignedTrip } from "../services/tripAssignment";
 import { assertStopDeliverable, finalizeTripOnce } from "../services/tripCompletion";
 import {
   truckRateSnapshot,
@@ -442,57 +442,39 @@ const approveTripSchema = z.object({
   force: z.boolean().optional(),
 });
 
-router.patch(
-  "/:id/approve",
-  requireRole("admin"),
-  validateBody(approveTripSchema),
-  async (req, res, next) => {
-    try {
-      const { id } = req.params;
-      const { driver_id, truck_plate, force } = req.body;
+/**
+ * The assignment guard ladder + atomic claim, shared VERBATIM by the manual
+ * approve and the reassign lever (client-approved 3 Jul 2026) so a reassigned
+ * trip passes exactly the guards a fresh assignment does. Must run inside a
+ * Serializable transaction; the trip must be `pending` when the claim fires
+ * (reassign releases it first, in the same transaction).
+ *
+ * Ladder order (hard = never overridable, force = "Assign anyway" + audit):
+ *   1. capacity overload            — hard (physics)
+ *   2. insurance/road tax expired   — hard (liability)   permit → force
+ *   3. scheduling conflict (±2h)    — force
+ *   4. driver mid-delivery          — hard (DRIVER_BUSY, in_progress only)
+ *   5. driver on leave that date    — hard
+ *   6. operating-window breach      — force
+ *   7. atomic claim + rate snapshot — the point of no return
+ */
+async function assignTripInTx(
+  tx: Prisma.TransactionClient,
+  opts: {
+    trip: { id: string; pickup_datetime: Date };
+    driver_id: string;
+    truck_plate: string;
+    force: boolean;
+    actorUserId: string;
+    auditAction: string; // "trip.approved" | "trip.reassigned …"
+    timelineEvent: "assigned" | "reassigned";
+    timelineNote: string;
+  }
+) {
+  const { trip, driver_id, truck_plate, force, actorUserId } = opts;
+  const id = trip.id;
 
-      const trip = await prisma.trip.findUnique({ where: { id } });
-      if (!trip) {
-        throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
-      }
-      if (trip.status !== "pending") {
-        throw new ApiError(400, "INVALID_STATUS", "Only pending trips can be approved.");
-      }
-
-      const driver = await prisma.user.findUnique({ where: { id: driver_id } });
-      if (!driver || driver.role !== "driver") {
-        throw new ApiError(400, "DRIVER_NOT_FOUND", "Driver does not exist.");
-      }
-      if (driver.assigned_truck_plate !== truck_plate) {
-        throw new ApiError(
-          400,
-          "DRIVER_TRUCK_MISMATCH",
-          "This driver is not assigned to the given truck."
-        );
-      }
-
-      // Overload prevention + assignment, done atomically under Serializable
-      // isolation so two admins (or the background sweep) can't double-assign a
-      // driver/truck or slip past the capacity limit via a check-then-write race
-      // (spec AUTO DISPATCH LOGIC §4.2). Inside the transaction we re-read the
-      // truck's live load, re-check capacity, then claim the trip with a
-      // status-guarded conditional update — only the writer that still sees it
-      // pending wins. Concurrent conflicting writers abort with P2034 → 409.
-      //
-      // The guard ladder runs in this order (hard = never overridable,
-      // force = admin can "Assign anyway", which is audit-logged):
-      //   1. capacity overload            — hard (physics)
-      //   2. insurance/road tax expired   — hard (liability)   permit → force
-      //   3. scheduling conflict (±2h)    — force
-      //   4. driver mid-delivery          — hard (DRIVER_BUSY, in_progress only)
-      //   5. driver on leave that date    — hard
-      //   6. operating-window breach      — force
-      //   7. atomic claim + rate snapshot — the point of no return
-      let updated;
-      try {
-        updated = await prisma.$transaction(
-          async (tx) => {
-            const orderCargo = await tx.cargoDetail.findMany({
+  const orderCargo = await tx.cargoDetail.findMany({
               where: { trip_id: id },
               select: { pallet_type: true, quantity: true },
             });
@@ -681,12 +663,12 @@ router.patch(
             await snapshotStopZonePoints(tx, id);
 
             await tx.auditLog.create({
-              data: { user_id: req.user!.id, action: "trip.approved", table_name: "Trip", record_id: id },
+              data: { user_id: actorUserId, action: opts.auditAction, table_name: "Trip", record_id: id },
             });
             if (force && conflicts.length > 0) {
               await tx.auditLog.create({
                 data: {
-                  user_id: req.user!.id,
+                  user_id: actorUserId,
                   action: "assignment_conflict_override",
                   table_name: "Trip",
                   record_id: `${id}; conflicts: ${conflicts.map((c) => c.tripId).join(", ")}`,
@@ -697,7 +679,7 @@ router.patch(
             if (force && windowEst.exceedsWindow) {
               await tx.auditLog.create({
                 data: {
-                  user_id: req.user!.id,
+                  user_id: actorUserId,
                   action: "operating_window_override",
                   table_name: "Trip",
                   record_id: `${id}; est_completion ${windowEst.completionLabel} (${windowEst.reason})`,
@@ -708,7 +690,7 @@ router.patch(
             if (force && expiry.permitExpired) {
               await tx.auditLog.create({
                 data: {
-                  user_id: req.user!.id,
+                  user_id: actorUserId,
                   action: "permit_expiry_override",
                   table_name: "Trip",
                   record_id: `${id}; ${truck_plate} permit expired ${mytDateKey(expiry.permitExpired)}`,
@@ -717,13 +699,62 @@ router.patch(
             }
             await recordTripEvent(tx, {
               tripId: id,
-              event: "assigned",
-              actorId: req.user!.id,
-              note: `${driver.name} · ${truck_plate}`,
+              event: opts.timelineEvent,
+              actorId: actorUserId,
+              note: opts.timelineNote,
             });
 
             return tx.trip.findUnique({ where: { id }, include: tripInclude });
-          },
+}
+
+router.patch(
+  "/:id/approve",
+  requireRole("admin"),
+  validateBody(approveTripSchema),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { driver_id, truck_plate, force } = req.body;
+
+      const trip = await prisma.trip.findUnique({ where: { id } });
+      if (!trip) {
+        throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      }
+      if (trip.status !== "pending") {
+        throw new ApiError(400, "INVALID_STATUS", "Only pending trips can be approved.");
+      }
+
+      const driver = await prisma.user.findUnique({ where: { id: driver_id } });
+      if (!driver || driver.role !== "driver") {
+        throw new ApiError(400, "DRIVER_NOT_FOUND", "Driver does not exist.");
+      }
+      if (driver.assigned_truck_plate !== truck_plate) {
+        throw new ApiError(
+          400,
+          "DRIVER_TRUCK_MISMATCH",
+          "This driver is not assigned to the given truck."
+        );
+      }
+
+      // Guard ladder + atomic claim (see assignTripInTx above), under
+      // Serializable isolation so two admins (or the background sweep) can't
+      // double-assign a driver/truck or slip past the capacity limit via a
+      // check-then-write race (spec AUTO DISPATCH LOGIC §4.2). Concurrent
+      // conflicting writers abort with P2034 → 409.
+      let updated;
+      try {
+        updated = await prisma.$transaction(
+          (tx) =>
+            assignTripInTx(tx, {
+              trip,
+              driver_id,
+              truck_plate,
+              force: !!force,
+              actorUserId: req.user!.id,
+              auditAction: "trip.approved",
+              timelineEvent: "assigned",
+              timelineNote: `${driver.name} · ${truck_plate}`,
+            }),
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
         );
       } catch (err) {
@@ -757,6 +788,221 @@ router.patch(
           title: "Booking approved",
           body: `Your booking ${updated.ticket_number} has been approved`,
           data: { type: "booking_approved", tripId: updated.id },
+        }),
+      ]);
+
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ── PATCH /trips/:id/unassign — pull the driver off an ASSIGNED trip ──
+// Client-approved ops lever (Q3, 3 Jul 2026): admin may interrupt an assigned
+// (not-yet-started) trip. The trip returns to pending and re-enters the normal
+// flow — the pending sweep re-alerts admins and, in auto mode, retries
+// auto-dispatch. in_progress trips are OUT OF SCOPE (that's the separate
+// cancel-in-progress question): the status-guarded release never matches them.
+const unassignTripSchema = z.object({ reason: z.string().max(500).optional() });
+
+router.patch(
+  "/:id/unassign",
+  requireRole("admin"),
+  validateBody(unassignTripSchema),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+
+      const trip = await prisma.trip.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          status: true,
+          ticket_number: true,
+          driver_id: true,
+          truck_plate: true,
+          driver: { select: { name: true, expo_push_token: true } },
+        },
+      });
+      if (!trip) {
+        throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      }
+      if (trip.status !== "assigned") {
+        throw new ApiError(
+          400,
+          "INVALID_STATUS",
+          "Only assigned (not yet started) trips can be unassigned."
+        );
+      }
+
+      const freedPair = `${trip.driver?.name ?? "driver"} · ${trip.truck_plate ?? "—"}`;
+      await prisma.$transaction(async (tx) => {
+        // Status-guarded CAS: a driver tapping "Start Trip" concurrently wins —
+        // an in_progress trip must never be silently pulled back to pending.
+        const released = await releaseAssignedTrip(tx, id);
+        if (!released) {
+          throw new ApiError(
+            409,
+            "TRIP_NOT_UNASSIGNABLE",
+            "This trip just changed state (the driver may have started it). Refresh and try again."
+          );
+        }
+        // Drop the per-stop zone-point snapshots too — they belong to the old
+        // assignment; the next assignment re-takes them.
+        await tx.tripStop.updateMany({ where: { trip_id: id }, data: { zone_points: null } });
+        await tx.auditLog.create({
+          data: {
+            user_id: req.user!.id,
+            action: `trip.unassigned (freed ${freedPair})${reason ? ` — ${reason}` : ""}`,
+            table_name: "Trip",
+            record_id: id,
+          },
+        });
+        await recordTripEvent(tx, {
+          tripId: id,
+          event: "unassigned",
+          actorId: req.user!.id,
+          note: `was ${freedPair}${reason ? ` — ${reason}` : ""}`,
+        });
+      });
+
+      // Tell the freed driver the trip is no longer theirs (best-effort).
+      await sendPushNotifications([trip.driver?.expo_push_token], {
+        title: "Trip removed",
+        body: `Trip ${trip.ticket_number} has been removed from your assignments`,
+        data: { type: "trip_unassigned", tripId: id },
+      });
+
+      const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ── PATCH /trips/:id/reassign — move an ASSIGNED trip to another driver ──
+// Client-approved ops lever (Q3, 3 Jul 2026). Release + full re-assignment in
+// ONE Serializable transaction: the new driver/truck passes the SAME guard
+// ladder as a fresh assignment (capacity, roadworthiness, conflict, busy,
+// leave, operating window — see assignTripInTx) and the rate snapshot is
+// RE-TAKEN for the new truck at this moment. If any guard rejects, the whole
+// transaction rolls back and the trip stays with the old driver.
+const reassignTripSchema = z.object({
+  driver_id: z.string().min(1),
+  truck_plate: z.string().min(1),
+  force: z.boolean().optional(),
+  reason: z.string().max(500).optional(),
+});
+
+router.patch(
+  "/:id/reassign",
+  requireRole("admin"),
+  validateBody(reassignTripSchema),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { driver_id, truck_plate, force, reason } = req.body;
+
+      const trip = await prisma.trip.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          status: true,
+          ticket_number: true,
+          pickup_datetime: true,
+          driver_id: true,
+          truck_plate: true,
+          driver: { select: { name: true, expo_push_token: true } },
+        },
+      });
+      if (!trip) {
+        throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      }
+      if (trip.status !== "assigned") {
+        throw new ApiError(
+          400,
+          "INVALID_STATUS",
+          "Only assigned (not yet started) trips can be reassigned."
+        );
+      }
+      if (trip.driver_id === driver_id && trip.truck_plate === truck_plate) {
+        throw new ApiError(400, "SAME_ASSIGNMENT", "The trip is already assigned to this driver and truck.");
+      }
+
+      const driver = await prisma.user.findUnique({ where: { id: driver_id } });
+      if (!driver || driver.role !== "driver") {
+        throw new ApiError(400, "DRIVER_NOT_FOUND", "Driver does not exist.");
+      }
+      if (driver.assigned_truck_plate !== truck_plate) {
+        throw new ApiError(
+          400,
+          "DRIVER_TRUCK_MISMATCH",
+          "This driver is not assigned to the given truck."
+        );
+      }
+
+      const oldPair = `${trip.driver?.name ?? "driver"} · ${trip.truck_plate ?? "—"}`;
+      let updated;
+      try {
+        updated = await prisma.$transaction(
+          async (tx) => {
+            // Release first (status-guarded CAS — loses to a concurrent Start
+            // Trip), then run the untouched assignment ladder + claim.
+            const released = await releaseAssignedTrip(tx, id);
+            if (!released) {
+              throw new ApiError(
+                409,
+                "TRIP_NOT_UNASSIGNABLE",
+                "This trip just changed state (the driver may have started it). Refresh and try again."
+              );
+            }
+            return assignTripInTx(tx, {
+              trip,
+              driver_id,
+              truck_plate,
+              force: !!force,
+              actorUserId: req.user!.id,
+              auditAction: `trip.reassigned ${oldPair} → ${driver.name} · ${truck_plate}${reason ? ` — ${reason}` : ""}`,
+              timelineEvent: "reassigned",
+              timelineNote: `${oldPair} → ${driver.name} · ${truck_plate}`,
+            });
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+        );
+      } catch (err) {
+        if (isSerializationConflict(err)) {
+          throw new ApiError(
+            409,
+            "CONCURRENT_ASSIGNMENT",
+            "This trip is being modified by someone else. Please try again."
+          );
+        }
+        throw err;
+      }
+      if (!updated) {
+        throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      }
+
+      // Notify both drivers (best-effort, never blocks the response). The
+      // requestor's booking stays approved throughout — no requestor ping.
+      const newDriverDevice = await prisma.user.findUnique({
+        where: { id: driver_id },
+        select: { expo_push_token: true },
+      });
+      const destination = tripDestinationLabel(updated);
+      await Promise.all([
+        sendPushNotifications([trip.driver?.expo_push_token], {
+          title: "Trip removed",
+          body: `Trip ${trip.ticket_number} has been removed from your assignments`,
+          data: { type: "trip_unassigned", tripId: id },
+        }),
+        sendPushNotifications([newDriverDevice?.expo_push_token], {
+          title: "New trip assigned",
+          body: `New trip assigned: ${destination}`,
+          data: { type: "trip_assigned", tripId: id },
         }),
       ]);
 

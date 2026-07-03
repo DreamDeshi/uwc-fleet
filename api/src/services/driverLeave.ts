@@ -35,3 +35,20 @@ export function leaveDateFilter(dateKey: string): {
 } {
   return { start_date: { lte: dateKey }, end_date: { gte: dateKey } };
 }
+
+/**
+ * Leave-collision check (client Q3, 3 Jul 2026): when a driver is put ON
+ * LEAVE for dates that already have trips ASSIGNED to them, those trips need
+ * a human — leave only blocks NEW assignments, it never auto-unassigns.
+ * Returns the trips whose pickup MYT day falls inside the leave range so the
+ * caller can flag them needs-attention and ping the admins ("driver now on
+ * leave — reassign"). Only `assigned` (not-yet-started) trips collide: an
+ * in_progress trip is already out and a pending one has no driver.
+ */
+export function assignedLeaveCollisions<
+  T extends { status: string; pickup_datetime: Date }
+>(trips: T[], leave: LeaveRange, mytDateKeyOf: (d: Date) => string): T[] {
+  return trips.filter(
+    (t) => t.status === "assigned" && leaveCoversDate(leave, mytDateKeyOf(t.pickup_datetime))
+  );
+}

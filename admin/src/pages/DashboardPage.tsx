@@ -42,6 +42,11 @@ function AttentionPanel({
       hint: "legacy anomaly — pay was never computed for these",
       rows: report.completed_null_incentive,
     },
+    {
+      title: "Driver now on leave — reassign",
+      hint: "assigned trips whose driver has leave covering the pickup date",
+      rows: report.assigned_driver_on_leave ?? [],
+    },
   ].filter((g) => g.rows.length > 0);
   if (groups.length === 0) return null;
 
@@ -65,7 +70,10 @@ function AttentionPanel({
                 <span style={{ fontWeight: 700 }}>{t.ticket_number}</span>
                 <span style={{ color: colors.textMuted }}>
                   {t.driver?.name ?? "—"}
-                  {t.truck_plate ? ` · ${t.truck_plate}` : ""} · {Math.round(t.hours_since_pickup)}h since pickup
+                  {t.truck_plate ? ` · ${t.truck_plate}` : ""} ·{" "}
+                  {/* Leave collisions are usually FUTURE pickups — show "until". */}
+                  {Math.abs(Math.round(t.hours_since_pickup))}h{" "}
+                  {t.hours_since_pickup >= 0 ? "since" : "until"} pickup
                 </span>
               </div>
             ))}
