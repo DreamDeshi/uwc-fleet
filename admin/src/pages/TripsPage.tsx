@@ -378,6 +378,18 @@ function TripDetail({ trip, onDone }: { trip: Trip; onDone: () => void }) {
                 {s.sequence}
               </span>
               <span style={{ flex: 1 }}>{s.consignee.company_name}</span>
+              {/* POD spot-check view (client Q2): pay is automatic once the
+                  mandatory photo is in — admin just opens it to verify. */}
+              {s.pod_photo && (
+                <a
+                  href={s.pod_photo}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: 12, fontWeight: 700, color: colors.blue, textDecoration: "none", whiteSpace: "nowrap" }}
+                >
+                  📷 POD ↗
+                </a>
+              )}
               <span style={{ fontSize: 11, color: colors.textMuted }}>{s.consignee.zone_code}</span>
               <Pill
                 bg={s.status === "delivered" ? colors.greenTint : s.status === "arrived" ? colors.blueTint : colors.panel}

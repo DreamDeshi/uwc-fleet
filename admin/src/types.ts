@@ -69,6 +69,10 @@ export interface TripStop {
   delivered_at: string | null;
   do_uploaded: boolean;
   k2_form_ack: boolean;
+  // Cloudinary URL of the driver's proof-of-delivery photo. Client-confirmed
+  // (Q2, 3 Jul 2026): pay is automatic once the mandatory photo is uploaded;
+  // admin only does random SPOT-CHECKS — this link is that view.
+  pod_photo: string | null;
 }
 
 export interface RouteType {
