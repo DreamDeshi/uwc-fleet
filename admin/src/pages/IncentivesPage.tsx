@@ -17,6 +17,21 @@ function UpdatedNote({ entry }: { entry?: RateAuditEntry }) {
   );
 }
 
+// A staged rate edit waiting for its next-MYT-day cutoff: today's assignments
+// still pay the current (displayed) rates; these values take over on the date.
+function PendingRatesNote({ pending }: { pending: Truck["pending_rates"] }) {
+  if (!pending) return null;
+  const parts: string[] = [];
+  if (pending.entitled_claim_weekday !== null) parts.push(`weekday ${formatMoney(pending.entitled_claim_weekday)}`);
+  if (pending.entitled_claim_offpeak !== null) parts.push(`weekend ${formatMoney(pending.entitled_claim_offpeak)}`);
+  if (pending.daily_deduction_points !== null) parts.push(`deduction ${pending.daily_deduction_points} pts`);
+  return (
+    <div style={{ fontSize: 11, color: colors.amber, fontWeight: 600, marginTop: 3 }}>
+      ⏳ New rates {parts.join(" · ")} — take effect {pending.effective_date} (MYT)
+    </div>
+  );
+}
+
 type Tab = "trucks" | "destinations" | "holidays" | "formula";
 
 export function IncentivesPage() {
@@ -103,6 +118,7 @@ function TruckRatesTab() {
               <td style={{ ...tdStyle, fontWeight: 700 }}>
                 {t.plate}
                 <UpdatedNote entry={auditByPlate.get(t.plate)} />
+                <PendingRatesNote pending={t.pending_rates} />
               </td>
               <td style={tdStyle}>{t.type}</td>
               <td style={tdStyle}>{t.max_pallets} pallets</td>
@@ -162,6 +178,7 @@ function ResetRatesConfirm({
         Reset all truck rates to UWC spec defaults? This overwrites current rate values
         (weekday &amp; weekend claim, daily deduction, max load) for all trucks with the
         authoritative values from <code>docs/uwc-spec.json</code>. Audit-logged.
+        Rate values take effect <strong>tomorrow (MYT)</strong>; max load applies immediately.
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <Button variant="ghost" full onClick={onClose} disabled={reset.isPending}>Cancel</Button>
@@ -180,6 +197,9 @@ function ResetResultBanner({ result, onDismiss }: { result: RateResetResult; onD
     `${result.already_at_spec.length} already at spec`,
   ];
   if (result.skipped.length > 0) parts.push(`${result.skipped.length} skipped (not in DB)`);
+  if (result.updated.length > 0 && result.rates_effective_date) {
+    parts.push(`rates take effect ${result.rates_effective_date} (MYT)`);
+  }
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 12, background: colors.greenTint, color: colors.green, borderRadius: radius.md, padding: "9px 13px", fontSize: 12.5, fontWeight: 600 }}>
       <span>✓ {parts.join(" · ")}</span>
@@ -213,6 +233,10 @@ function EditTruckModal({ truck, onClose }: { truck: Truck; onClose: () => void 
   return (
     <Modal open onClose={onClose} title={`Edit Rates — ${truck.plate}`}>
       {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+      <div style={{ background: colors.yellowTint, color: colors.amber, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12, fontWeight: 500 }}>
+        Rate changes take effect <strong>tomorrow (MYT)</strong> — today's assignments and
+        running trips keep today's rates.
+      </div>
       <Input label="Weekday Rate (RM)" value={weekday} onChange={setWeekday} type="number" />
       <Input label="Weekend / Holiday Rate (RM)" value={weekend} onChange={setWeekend} type="number" />
       <Input label="Daily Deduction (points)" value={deduction} onChange={setDeduction} type="number" />

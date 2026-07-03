@@ -175,6 +175,14 @@ export interface Truck {
   entitled_claim_weekday: number;
   entitled_claim_offpeak: number;
   daily_deduction_points: number;
+  // A staged rate edit waiting for its next-MYT-day cutoff (client rule):
+  // today's assignments still pay the live values above until effective_date.
+  pending_rates: {
+    entitled_claim_weekday: number | null;
+    entitled_claim_offpeak: number | null;
+    daily_deduction_points: number | null;
+    effective_date: string; // MYT "YYYY-MM-DD"
+  } | null;
   priority_zones: string[];
   operating_hours_start: string;
   operating_hours_end: string;
@@ -364,6 +372,9 @@ export interface RateResetResult {
   updated: { plate: string; changes: RateResetChange[] }[];
   already_at_spec: string[];
   skipped: string[];
+  // Reset rate fields are staged to this MYT day (next-day cutoff);
+  // max_pallets applies immediately.
+  rates_effective_date: string;
 }
 
 export interface SchedulingConflictInfo {

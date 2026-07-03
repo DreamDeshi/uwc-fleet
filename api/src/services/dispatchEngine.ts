@@ -25,6 +25,7 @@ import { palletEquivalents } from "../lib/pallets";
 import { isSerializationConflict } from "../lib/prismaErrors";
 import { claimPendingTrip } from "./tripAssignment";
 import { truckRateSnapshot, snapshotStopZonePoints } from "./rateSnapshot";
+import { effectiveTruckRates } from "./pendingRates";
 import { leaveDateFilter } from "./driverLeave";
 import { mytDateKey } from "./incentiveEngine";
 import { roadworthyWhere } from "./truckEligibility";
@@ -423,12 +424,14 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
         // trip leaves us with count 0 → we lost the race. The claim also freezes
         // the truck's rates onto the trip (rate lock): finalization pays at these
         // values even if an admin edits the rates while the trip is in flight.
+        // The rates frozen are those EFFECTIVE right now — a staged rate edit
+        // is invisible until its next-MYT-day cutoff (client rule).
         const won = await claimPendingTrip(tx, tripId, {
           driver_id: sel.driverId,
           truck_plate: sel.plate,
           pending_alert_sent: true, // it's handled now; don't ping admins about it
           auto_dispatch_failed: false, // self-clearing: a later sweep placed it
-          ...(selTruck ? truckRateSnapshot(selTruck) : {}),
+          ...(selTruck ? truckRateSnapshot(effectiveTruckRates(selTruck, new Date())) : {}),
         });
         if (!won) {
           return { sel: null as TruckSelection | null, raced: true, window: null as OperatingWindowEstimate | null };

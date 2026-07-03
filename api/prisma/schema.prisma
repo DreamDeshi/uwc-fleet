@@ -143,6 +143,17 @@ model Truck {
   entitled_claim_weekday Decimal   @db.Decimal(10, 2)
   entitled_claim_offpeak Decimal   @db.Decimal(10, 2)
   daily_deduction_points Int
+  // Next-day rate cutoff (client rule, Mr. Teh 3 Jul 2026): a rate edit is
+  // staged in these pending_* columns and takes effect from
+  // pending_rates_effective (MYT "YYYY-MM-DD", same key format as
+  // PublicHoliday/DriverLeave) — always the day AFTER the edit. Assignment
+  // snapshots read the rate effective at assignment time
+  // (services/pendingRates.ts); a sweep folds matured values into the base
+  // columns above and clears these.
+  pending_claim_weekday    Decimal? @db.Decimal(10, 2)
+  pending_claim_offpeak    Decimal? @db.Decimal(10, 2)
+  pending_deduction_points Int?
+  pending_rates_effective  String?
   priority_zones         String[]
   operating_hours_start  String    @default("07:00")
   operating_hours_end    String    @default("18:00")

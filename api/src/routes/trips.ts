@@ -25,6 +25,7 @@ import {
   mytDateKey,
 } from "../services/incentiveEngine";
 import { leaveDateFilter } from "../services/driverLeave";
+import { effectiveTruckRates } from "../services/pendingRates";
 import { truckExpiryIssues } from "../services/truckEligibility";
 import { PLANT_ORIGIN, zoneCoord, getRoute, type LatLng } from "../lib/geo";
 import { loadHolidaySet } from "../lib/holidays";
@@ -669,11 +670,13 @@ router.patch(
             // the "needs attention" state (Phase 2 self-clearing). The claim also
             // freezes the truck's rates onto the trip (rate lock): finalization
             // pays at these values even if an admin edits the rates mid-flight.
+            // The rates frozen are those EFFECTIVE right now — a staged rate
+            // edit is invisible until its next-MYT-day cutoff (client rule).
             await claimPendingTripOrThrow(tx, id, {
               driver_id,
               truck_plate,
               auto_dispatch_failed: false,
-              ...truckRateSnapshot(truck),
+              ...truckRateSnapshot(effectiveTruckRates(truck, new Date())),
             });
             await snapshotStopZonePoints(tx, id);
 
@@ -1235,7 +1238,9 @@ router.patch(
         entitled_claim_weekday: trip.entitled_claim_weekday,
         entitled_claim_offpeak: trip.entitled_claim_offpeak,
         daily_deduction_points: trip.daily_deduction_points,
-        truck: trip.truck,
+        // The live fallback (pre-snapshot legacy trips only) also respects the
+        // next-day cutoff: pay at the rates effective NOW, not a staged edit.
+        truck: effectiveTruckRates(trip.truck, new Date()),
       });
 
       let incentiveThisTrip = 0;

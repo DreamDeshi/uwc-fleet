@@ -9,6 +9,7 @@ import { getTripDayStart, getTripDayEnd } from "../services/incentiveEngine";
 import { palletEquivalents } from "../lib/pallets";
 import { loadSpecTrucks } from "../lib/uwcSpec";
 import { planRateReset } from "../services/rateReset";
+import { effectiveTruckRates, nextMytDayKey } from "../services/pendingRates";
 import { currentMytMonthBounds } from "../lib/myt";
 
 const router = Router();
@@ -272,6 +273,18 @@ router.get("/", async (_req, res, next) => {
         entitled_claim_weekday: Number(t.entitled_claim_weekday),
         entitled_claim_offpeak: Number(t.entitled_claim_offpeak),
         daily_deduction_points: t.daily_deduction_points,
+        // A staged next-day rate edit, if one is waiting for its cutoff — the
+        // rates editor shows "takes effect DATE (MYT)" from this block.
+        pending_rates: t.pending_rates_effective
+          ? {
+              entitled_claim_weekday:
+                t.pending_claim_weekday !== null ? Number(t.pending_claim_weekday) : null,
+              entitled_claim_offpeak:
+                t.pending_claim_offpeak !== null ? Number(t.pending_claim_offpeak) : null,
+              daily_deduction_points: t.pending_deduction_points,
+              effective_date: t.pending_rates_effective,
+            }
+          : null,
         priority_zones: t.priority_zones,
         operating_hours_start: t.operating_hours_start,
         operating_hours_end: t.operating_hours_end,
@@ -365,18 +378,36 @@ router.post("/reset-rates", async (req, res, next) => {
         entitled_claim_offpeak: true,
         daily_deduction_points: true,
         max_pallets: true,
+        pending_claim_weekday: true,
+        pending_claim_offpeak: true,
+        pending_deduction_points: true,
+        pending_rates_effective: true,
       },
     });
 
+    // Next-day cutoff (client rule 3 Jul 2026): the reset's RATE fields are
+    // staged like any other rate edit, effective tomorrow (MYT). The planner
+    // therefore compares the spec against the rates that will be IN FORCE
+    // tomorrow (pending edit if one is staged, else the live value) — so a
+    // drifted pending edit is corrected, and a truck already scheduled back
+    // to spec isn't re-planned. max_pallets is capacity, not a rate: it still
+    // resets immediately.
+    const now = new Date();
+    const tomorrowInstant = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const effectiveDate = nextMytDayKey(now);
+
     const plan = planRateReset(
       specTrucks,
-      dbTrucks.map((t) => ({
-        plate: t.plate,
-        entitled_claim_weekday: Number(t.entitled_claim_weekday),
-        entitled_claim_offpeak: Number(t.entitled_claim_offpeak),
-        daily_deduction_points: t.daily_deduction_points,
-        max_pallets: t.max_pallets,
-      }))
+      dbTrucks.map((t) => {
+        const eff = effectiveTruckRates(t, tomorrowInstant);
+        return {
+          plate: t.plate,
+          entitled_claim_weekday: Number(eff.entitled_claim_weekday),
+          entitled_claim_offpeak: Number(eff.entitled_claim_offpeak),
+          daily_deduction_points: eff.daily_deduction_points,
+          max_pallets: t.max_pallets,
+        };
+      })
     );
 
     // Apply the updates + the single audit row atomically. The audit row is
@@ -387,13 +418,30 @@ router.post("/reset-rates", async (req, res, next) => {
         ? plan.updated.map((u) => u.plate).join(", ")
         : "(none — all trucks already at spec)";
     await prisma.$transaction([
-      ...plan.updated.map((u) =>
-        prisma.truck.update({ where: { plate: u.plate }, data: u.data })
-      ),
+      ...plan.updated.map((u) => {
+        const ratesChanged = u.changes.some((c) => c.field !== "max_pallets");
+        const palletsChanged = u.changes.some((c) => c.field === "max_pallets");
+        return prisma.truck.update({
+          where: { plate: u.plate },
+          data: {
+            ...(palletsChanged ? { max_pallets: u.data.max_pallets } : {}),
+            // Stage the FULL spec rate target (not just changed fields) so the
+            // pending block reads as one consistent "back to spec" change.
+            ...(ratesChanged
+              ? {
+                  pending_claim_weekday: u.data.entitled_claim_weekday,
+                  pending_claim_offpeak: u.data.entitled_claim_offpeak,
+                  pending_deduction_points: u.data.daily_deduction_points,
+                  pending_rates_effective: effectiveDate,
+                }
+              : {}),
+          },
+        });
+      }),
       prisma.auditLog.create({
         data: {
           user_id: req.user!.id,
-          action: "rate_reset_to_spec",
+          action: `rate_reset_to_spec (rates effective ${effectiveDate})`,
           table_name: "Truck",
           record_id: auditRecord,
         },
@@ -404,6 +452,8 @@ router.post("/reset-rates", async (req, res, next) => {
       updated: plan.updated.map((u) => ({ plate: u.plate, changes: u.changes })),
       already_at_spec: plan.alreadyAtSpec,
       skipped: plan.skipped,
+      // Rate fields take effect on this MYT day (max_pallets applies now).
+      rates_effective_date: effectiveDate,
     });
   } catch (err) {
     next(err);
@@ -497,19 +547,26 @@ router.patch("/:plate/rates", validateBody(rateSchema), async (req, res, next) =
       changes.push(`deduction ${truck.daily_deduction_points}→${daily_deduction_points}`);
     }
 
+    // Next-day cutoff (client rule 3 Jul 2026): the edit is STAGED, effective
+    // from tomorrow (MYT). Today's assignments keep snapshotting today's
+    // rates; the maturation sweep folds these in when the day arrives. Every
+    // submitted field is staged (even unchanged ones) so a re-edit replaces
+    // the previous pending change wholesale instead of merging with it.
+    const effective = nextMytDayKey(new Date());
     const updated = await prisma.truck.update({
       where: { plate },
       data: {
-        ...(entitled_claim_weekday !== undefined ? { entitled_claim_weekday } : {}),
-        ...(entitled_claim_offpeak !== undefined ? { entitled_claim_offpeak } : {}),
-        ...(daily_deduction_points !== undefined ? { daily_deduction_points } : {}),
+        ...(entitled_claim_weekday !== undefined ? { pending_claim_weekday: entitled_claim_weekday } : {}),
+        ...(entitled_claim_offpeak !== undefined ? { pending_claim_offpeak: entitled_claim_offpeak } : {}),
+        ...(daily_deduction_points !== undefined ? { pending_deduction_points: daily_deduction_points } : {}),
+        pending_rates_effective: effective,
       },
     });
 
     await prisma.auditLog.create({
       data: {
         user_id: req.user!.id,
-        action: changes.length ? `rate.updated ${changes.join(", ")}` : "rate.updated",
+        action: `${changes.length ? `rate.updated ${changes.join(", ")}` : "rate.updated"} (effective ${effective})`,
         table_name: "Truck",
         record_id: plate,
       },
@@ -517,9 +574,18 @@ router.patch("/:plate/rates", validateBody(rateSchema), async (req, res, next) =
 
     res.json({
       plate: updated.plate,
+      // Live (still-current) rates — unchanged until the cutoff.
       entitled_claim_weekday: Number(updated.entitled_claim_weekday),
       entitled_claim_offpeak: Number(updated.entitled_claim_offpeak),
       daily_deduction_points: updated.daily_deduction_points,
+      pending_rates: {
+        entitled_claim_weekday:
+          updated.pending_claim_weekday !== null ? Number(updated.pending_claim_weekday) : null,
+        entitled_claim_offpeak:
+          updated.pending_claim_offpeak !== null ? Number(updated.pending_claim_offpeak) : null,
+        daily_deduction_points: updated.pending_deduction_points,
+        effective_date: updated.pending_rates_effective,
+      },
     });
   } catch (err) {
     next(err);
