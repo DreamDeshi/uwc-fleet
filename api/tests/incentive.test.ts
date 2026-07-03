@@ -6,6 +6,7 @@ import {
   calculateDeliveryIncentive,
   getTripDayStart,
   getTripDayEnd,
+  groupStopsByDeliveryDay,
 } from "../src/services/incentiveEngine";
 
 // The primary A1/A2 truck (PLX 2406): weekday RM11, off-peak RM13, deduction 2 pts.
@@ -20,6 +21,9 @@ const TRUCK_17_5 = { daily_deduction_points: 3, entitled_claim_weekday: 10, enti
 
 // All dates below are written as explicit UTC instants (…Z); the comment gives
 // the Malaysia-time (UTC+8) wall clock the engine actually evaluates against.
+// Since the client's 3 Jul 2026 day-boundary answer these instants are the
+// DELIVERY-CONFIRM anchor (rateDateTime) — points and the rate tier key on
+// when a drop is confirmed delivered, not on the pickup time.
 const weekdayMorning = new Date("2026-06-22T01:00:00Z"); // Monday 9am MYT (weekday/peak)
 const offpeakEvening = new Date("2026-06-22T11:00:00Z"); // Monday 7pm MYT (off-peak, after 6pm)
 
@@ -170,7 +174,7 @@ describe("calculateDeliveryIncentive — single-stop trips", () => {
   it("CONFIRMED ANCHOR: PLX 2406, single Ipoh (A2) weekday → (6−2)×11 = RM44", () => {
     const r = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      pickupDateTime: weekdayMorning,
+      rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "A2", zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],
       isFirstDeliveredDropOfDay: true,
@@ -186,7 +190,7 @@ describe("calculateDeliveryIncentive — single-stop trips", () => {
   it("REGRESSION: PLX 2406, single Kulim (K1) off-peak → (3−2)×13 = RM13", () => {
     const r = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      pickupDateTime: offpeakEvening,
+      rateDateTime: offpeakEvening,
       drops: [{ zoneCode: "K1", zonePoints: 3 }],
       zonesDeliveredEarlierToday: [],
       isFirstDeliveredDropOfDay: true,
@@ -201,7 +205,7 @@ describe("calculateDeliveryIncentive — single-stop trips", () => {
     expect(PRH5292.daily_deduction_points).toBe(2); // flag if the seeded value ever changes
     const r = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      pickupDateTime: offpeakEvening,
+      rateDateTime: offpeakEvening,
       drops: [{ zoneCode: "A2", zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],
       isFirstDeliveredDropOfDay: true,
@@ -214,7 +218,7 @@ describe("calculateDeliveryIncentive — single-stop trips", () => {
   it("applies each truck's own deduction (17.5ft lorry: 3 pts) on a K2 first drop: (4−3)×10 = RM10", () => {
     const r = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      pickupDateTime: weekdayMorning,
+      rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "K2", zonePoints: 4 }],
       zonesDeliveredEarlierToday: [],
       isFirstDeliveredDropOfDay: true,
@@ -226,7 +230,7 @@ describe("calculateDeliveryIncentive — single-stop trips", () => {
   it("floors the deducted first drop at 0 (P2=1 pt − 2 pt deduction → RM0)", () => {
     const r = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      pickupDateTime: weekdayMorning,
+      rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "P2", zonePoints: 1 }],
       zonesDeliveredEarlierToday: [],
       isFirstDeliveredDropOfDay: true,
@@ -243,7 +247,7 @@ describe("calculateDeliveryIncentive — multi-trip day (marginals sum, deductio
   it("scores three different-zone trips and sums marginals to the day total", () => {
     const t1 = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      pickupDateTime: weekdayMorning,
+      rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "A2", zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],
       isFirstDeliveredDropOfDay: true,
@@ -251,7 +255,7 @@ describe("calculateDeliveryIncentive — multi-trip day (marginals sum, deductio
     });
     const t2 = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      pickupDateTime: weekdayMorning,
+      rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "K1", zonePoints: 3 }],
       zonesDeliveredEarlierToday: ["A2"],
       isFirstDeliveredDropOfDay: false,
@@ -259,7 +263,7 @@ describe("calculateDeliveryIncentive — multi-trip day (marginals sum, deductio
     });
     const t3 = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      pickupDateTime: weekdayMorning,
+      rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "P1", zonePoints: 3 }],
       zonesDeliveredEarlierToday: ["A2", "K1"],
       isFirstDeliveredDropOfDay: false,
@@ -275,7 +279,7 @@ describe("calculateDeliveryIncentive — multi-trip day (marginals sum, deductio
   it("two trips to the SAME zone: second trip's drop scores 1pt (deduction only on the first)", () => {
     const t1 = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      pickupDateTime: weekdayMorning,
+      rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "K1", zonePoints: 3 }],
       zonesDeliveredEarlierToday: [],
       isFirstDeliveredDropOfDay: true,
@@ -283,7 +287,7 @@ describe("calculateDeliveryIncentive — multi-trip day (marginals sum, deductio
     });
     const t2 = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      pickupDateTime: weekdayMorning,
+      rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "K1", zonePoints: 3 }],
       zonesDeliveredEarlierToday: ["K1"],
       isFirstDeliveredDropOfDay: false,
@@ -301,7 +305,7 @@ describe("calculateDeliveryIncentive — multi-stop scoring within one trip", ()
     // dropPoints = [3, 1]; first drop deducted: (3−2)=1 → incentive = (1 + 1) × 11 = 22.
     const r = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      pickupDateTime: weekdayMorning,
+      rateDateTime: weekdayMorning,
       drops: [
         { zoneCode: "K1", zonePoints: 3 },
         { zoneCode: "K1", zonePoints: 3 },
@@ -319,7 +323,7 @@ describe("calculateDeliveryIncentive — multi-stop scoring within one trip", ()
     // Kulim repeat → 1; Ipoh fresh → 6. No deduction (day's first drop was earlier).
     const r = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      pickupDateTime: weekdayMorning,
+      rateDateTime: weekdayMorning,
       drops: [
         { zoneCode: "K1", zonePoints: 3 },
         { zoneCode: "A2", zonePoints: 6 },
@@ -336,10 +340,10 @@ describe("calculateDeliveryIncentive — multi-stop scoring within one trip", ()
 
 describe("calculateDeliveryIncentive — the admin holiday calendar drives the rate tier", () => {
   // weekdayMorning is Monday 9am MYT (2026-06-22). Same instant, two calendars.
-  it("pays the off-peak rate when the pickup's MYT day is in the calendar", () => {
+  it("pays the off-peak rate when the delivery-confirm's MYT day is in the calendar", () => {
     const r = calculateDeliveryIncentive({
       publicHolidays: new Set(["2026-06-22"]),
-      pickupDateTime: weekdayMorning,
+      rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "A2", zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],
       isFirstDeliveredDropOfDay: true,
@@ -353,7 +357,7 @@ describe("calculateDeliveryIncentive — the admin holiday calendar drives the r
   it("the same trip with an empty calendar pays the weekday rate (no baked-in list)", () => {
     const r = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      pickupDateTime: weekdayMorning,
+      rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "A2", zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],
       isFirstDeliveredDropOfDay: true,
@@ -361,5 +365,143 @@ describe("calculateDeliveryIncentive — the admin holiday calendar drives the r
     });
     expect(r.rateUsed).toBe(11);
     expect(r.incentiveThisTrip).toBe(44); // the anchor, unaffected
+  });
+});
+
+// ── Day attribution keys on DELIVERY confirm time (client rule, 3 Jul 2026) ──
+// "Points calculate on delivery confirm time; after 12am points refresh for
+// next day." The pickup time no longer plays any part in which day a drop
+// counts for — groupStopsByDeliveryDay + the delivered_at-windowed ledger in
+// trips.ts implement it; these tests pin the behaviour the client confirmed.
+describe("delivery-day attribution — groupStopsByDeliveryDay", () => {
+  const fallback = new Date("2026-06-23T04:00:00Z"); // finalization moment (unused when delivered_at set)
+
+  it("CLIENT CASE: picked up 23:30, delivered 00:30 next day → counts for the DELIVERY day", () => {
+    const pickup = new Date("2026-06-22T15:30:00Z"); // Mon 2026-06-22 23:30 MYT
+    const deliveredAt = new Date("2026-06-22T16:30:00Z"); // Tue 2026-06-23 00:30 MYT
+    const groups = groupStopsByDeliveryDay([{ delivered_at: deliveredAt }], fallback);
+
+    expect(groups).toHaveLength(1);
+    // The group's day is the DELIVERY day (Tue 2026-06-23 MYT)…
+    expect(groups[0].dayStart.getTime()).toBe(getTripDayStart(deliveredAt).getTime());
+    // …NOT the pickup day (Mon 2026-06-22 MYT).
+    expect(groups[0].dayStart.getTime()).not.toBe(getTripDayStart(pickup).getTime());
+    // And the rate anchor is the delivery confirm, so this pays the WEEKDAY
+    // tier (Tue 00:30 MYT is before 18:00) even though the 23:30 pickup was
+    // off-peak — the strict confirm-time reading of the rate table.
+    expect(isOffPeak(groups[0].anchor, NO_HOLIDAYS)).toBe(false);
+  });
+
+  it("a multi-stop trip delivered within one MYT day stays one group, in delivered order", () => {
+    const s1 = { delivered_at: new Date("2026-06-22T03:00:00Z") }; // Mon 11:00 MYT
+    const s2 = { delivered_at: new Date("2026-06-22T01:00:00Z") }; // Mon 09:00 MYT
+    const groups = groupStopsByDeliveryDay([s1, s2], fallback);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].stops).toEqual([s2, s1]); // sorted by delivered_at
+    expect(groups[0].anchor.getTime()).toBe(s2.delivered_at.getTime()); // first confirm anchors the rate
+  });
+
+  it("a trip whose confirms straddle midnight splits into two day groups ('after 12am points refresh')", () => {
+    const beforeMidnight = { delivered_at: new Date("2026-06-22T15:50:00Z") }; // Mon 23:50 MYT
+    const afterMidnight = { delivered_at: new Date("2026-06-22T16:10:00Z") }; // Tue 00:10 MYT
+    const groups = groupStopsByDeliveryDay([beforeMidnight, afterMidnight], fallback);
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0].stops).toEqual([beforeMidnight]);
+    expect(groups[1].stops).toEqual([afterMidnight]);
+    expect(groups[1].dayStart.getTime()).toBe(groups[0].dayEnd.getTime()); // consecutive MYT days
+  });
+
+  it("a delivered stop missing delivered_at falls back to the finalization moment (defensive)", () => {
+    const groups = groupStopsByDeliveryDay([{ delivered_at: null }], fallback);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].dayStart.getTime()).toBe(getTripDayStart(fallback).getTime());
+  });
+});
+
+describe("delivery-day attribution — ledger and deduction follow the delivery day", () => {
+  it("CLIENT CASE: two trips DELIVERED the same day but picked up on different days share one ledger day", () => {
+    // Trip 1: picked up Sunday 23:00 MYT, its Kulim drop confirmed Monday 00:40 MYT.
+    const trip1Delivered = new Date("2026-06-21T16:40:00Z"); // Mon 2026-06-22 00:40 MYT
+    // Trip 2: picked up Monday 08:00 MYT, its Kulim drop confirmed Monday 10:00 MYT.
+    const trip2Delivered = new Date("2026-06-22T02:00:00Z"); // Mon 2026-06-22 10:00 MYT
+
+    // Different pickup days, but both DELIVERED on Monday MYT → same ledger day.
+    expect(getTripDayStart(trip1Delivered).getTime()).toBe(getTripDayStart(trip2Delivered).getTime());
+
+    // Trip 1 finalizes first: empty Monday ledger → full points + the deduction.
+    const t1 = calculateDeliveryIncentive({
+      publicHolidays: NO_HOLIDAYS,
+      rateDateTime: trip1Delivered,
+      drops: [{ zoneCode: "K1", zonePoints: 3 }],
+      zonesDeliveredEarlierToday: [],
+      isFirstDeliveredDropOfDay: true,
+      truck: PLX2406,
+    });
+    // Trip 2's Monday ledger already holds trip 1's K1 drop (delivered Monday,
+    // regardless of trip 1's Sunday pickup): repeat zone → 1pt, no deduction.
+    const t2 = calculateDeliveryIncentive({
+      publicHolidays: NO_HOLIDAYS,
+      rateDateTime: trip2Delivered,
+      drops: [{ zoneCode: "K1", zonePoints: 3 }],
+      zonesDeliveredEarlierToday: ["K1"],
+      isFirstDeliveredDropOfDay: false,
+      truck: PLX2406,
+    });
+
+    expect(t1.incentiveThisTrip).toBe(11); // (3−2)×11 — day's first drop takes the deduction
+    expect(t2.dropPoints).toEqual([1]); // same-zone repeat ON THE DELIVERY DAY
+    expect(t2.deductionApplied).toBe(0); // deduction once per day, already spent
+    expect(t2.incentiveThisTrip).toBe(11); // 1×11
+  });
+
+  it("a midnight-straddling trip earns a fresh ledger AND a fresh deduction after 12am", () => {
+    // One trip, two Kulim stops: 23:50 MYT Monday and 00:10 MYT Tuesday.
+    const stops = [
+      { delivered_at: new Date("2026-06-22T15:50:00Z"), zone: "K1" }, // Mon 23:50 MYT
+      { delivered_at: new Date("2026-06-22T16:10:00Z"), zone: "K1" }, // Tue 00:10 MYT
+    ];
+    const groups = groupStopsByDeliveryDay(stops, new Date("2026-06-22T16:15:00Z"));
+    expect(groups).toHaveLength(2);
+
+    // Group 1 (Monday): first drop of ITS day → full points minus deduction.
+    const g1 = calculateDeliveryIncentive({
+      publicHolidays: NO_HOLIDAYS,
+      rateDateTime: groups[0].anchor,
+      drops: groups[0].stops.map((s) => ({ zoneCode: s.zone, zonePoints: 3 })),
+      zonesDeliveredEarlierToday: [],
+      isFirstDeliveredDropOfDay: true,
+      truck: PLX2406,
+    });
+    // Group 2 (Tuesday): the ledger REFRESHED at midnight — K1 is a fresh zone
+    // again (full 3 points) and Tuesday's deduction lands on this drop.
+    const g2 = calculateDeliveryIncentive({
+      publicHolidays: NO_HOLIDAYS,
+      rateDateTime: groups[1].anchor,
+      drops: groups[1].stops.map((s) => ({ zoneCode: s.zone, zonePoints: 3 })),
+      zonesDeliveredEarlierToday: [],
+      isFirstDeliveredDropOfDay: true,
+      truck: PLX2406,
+    });
+
+    expect(g1.isOffPeak).toBe(true); // Mon 23:50 MYT — after 18:00
+    expect(g1.incentiveThisTrip).toBe(13); // (3−2)×13
+    expect(g2.dropPoints).toEqual([3]); // NOT a 1pt repeat — points refreshed
+    expect(g2.deductionApplied).toBe(2); // Tuesday's own deduction
+    expect(g2.isOffPeak).toBe(false); // Tue 00:10 MYT is weekday tier
+    expect(g2.incentiveThisTrip).toBe(11); // (3−2)×11
+  });
+
+  it("RM44 ANCHOR unchanged: same-day pickup and delivery is unaffected by delivery-day keying", () => {
+    // Ipoh (A2) delivered the same weekday it was picked up — the anchor case.
+    const r = calculateDeliveryIncentive({
+      publicHolidays: NO_HOLIDAYS,
+      rateDateTime: weekdayMorning,
+      drops: [{ zoneCode: "A2", zonePoints: 6 }],
+      zonesDeliveredEarlierToday: [],
+      isFirstDeliveredDropOfDay: true,
+      truck: PLX2406,
+    });
+    expect(r.incentiveThisTrip).toBe(44);
   });
 });

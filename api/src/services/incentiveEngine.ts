@@ -86,6 +86,9 @@ export function isOffPeak(date: Date, publicHolidays: ReadonlySet<string>): bool
  * Start of the "trip day" that `date` falls into, per DAILY_RESET_HOUR, in
  * Malaysia time. Returns the UTC instant corresponding to DAILY_RESET_HOUR:00
  * MYT on the trip's MYT day.
+ *
+ * Client rule (Mr. Teh, 3 Jul 2026): the incentive day keys on DELIVERY
+ * confirm time — feed this a stop's delivered_at, not the trip's pickup time.
  */
 export function getTripDayStart(date: Date): Date {
   const p = mytParts(date);
@@ -102,6 +105,52 @@ export function getTripDayStart(date: Date): Date {
 export function getTripDayEnd(date: Date): Date {
   const start = getTripDayStart(date);
   return new Date(start.getTime() + 24 * 60 * 60 * 1000);
+}
+
+/**
+ * One MYT delivery day's worth of a trip's delivered stops (client rule,
+ * 3 Jul 2026: "points calculate on delivery confirm time; after 12am points
+ * refresh for next day"). `anchor` is the group's first delivered_at — the
+ * instant the weekday/off-peak rate tier is read from; dayStart/dayEnd bound
+ * the "prior drops today" ledger query.
+ */
+export interface DeliveryDayGroup<T> {
+  anchor: Date;
+  dayStart: Date;
+  dayEnd: Date;
+  stops: T[];
+}
+
+/**
+ * Split a trip's delivered stops into per-MYT-day groups by their
+ * delivered_at. Almost always one group; a trip whose confirms straddle
+ * midnight splits in two, and each day then scores against its OWN ledger,
+ * earns its OWN daily deduction, and rates at its own confirm-time tier —
+ * the pickup time plays no part in day attribution.
+ *
+ * `fallback` covers a delivered stop with a null delivered_at (defensive —
+ * the delivered write always stamps it); callers pass the finalization moment.
+ */
+export function groupStopsByDeliveryDay<T extends { delivered_at: Date | null }>(
+  stops: T[],
+  fallback: Date
+): DeliveryDayGroup<T>[] {
+  const sorted = [...stops].sort(
+    (a, b) =>
+      (a.delivered_at ?? fallback).getTime() - (b.delivered_at ?? fallback).getTime()
+  );
+  const groups: DeliveryDayGroup<T>[] = [];
+  for (const stop of sorted) {
+    const at = stop.delivered_at ?? fallback;
+    const dayStart = getTripDayStart(at);
+    const current = groups[groups.length - 1];
+    if (current && current.dayStart.getTime() === dayStart.getTime()) {
+      current.stops.push(stop);
+    } else {
+      groups.push({ anchor: at, dayStart, dayEnd: getTripDayEnd(at), stops: [stop] });
+    }
+  }
+  return groups;
 }
 
 /**
@@ -190,7 +239,11 @@ export interface DeliveryIncentiveResult {
  *    (i.e. this trip holds the day's first drop, so the daily deduction lands
  *    on its first stop).
  *
- * Rate is the trip's peak/off-peak rate by MYT pickup time (unchanged).
+ * "Today" above means the MYT day the drops were DELIVERED, and rateDateTime
+ * is the delivery-confirm anchor — per the client rule (3 Jul 2026) that
+ * points calculate on delivery confirm time, not pickup time. The route layer
+ * groups a trip's stops per delivery day (groupStopsByDeliveryDay) and calls
+ * this once per group.
  *
  * Worked example (this is the anchor case in the unit tests): PLX 2406 on a
  * weekday, day's first trip, one drop in Ipoh (A2 = 6 points). Ipoh is a new
@@ -199,7 +252,8 @@ export interface DeliveryIncentiveResult {
  *   → (6 − 2) × 11 = RM44.
  */
 export function calculateDeliveryIncentive(params: {
-  pickupDateTime: Date;
+  /** The delivery-confirm instant the weekday/off-peak tier is read from (the day group's first delivered_at). */
+  rateDateTime: Date;
   drops: ScoredDrop[];
   zonesDeliveredEarlierToday: string[];
   isFirstDeliveredDropOfDay: boolean;
@@ -211,9 +265,10 @@ export function calculateDeliveryIncentive(params: {
     entitled_claim_offpeak: number;
   };
 }): DeliveryIncentiveResult {
-  // Peak vs off-peak is decided ONCE per trip, from its PICKUP time in MYT —
-  // not per stop, and not from when the driver tapped "Delivered".
-  const offPeak = isOffPeak(params.pickupDateTime, params.publicHolidays);
+  // Peak vs off-peak is decided ONCE per delivery-day group, from the group's
+  // first delivery-confirm time in MYT (client rule 3 Jul 2026 — was pickup
+  // time before). Not re-evaluated per stop within the group.
+  const offPeak = isOffPeak(params.rateDateTime, params.publicHolidays);
   // Each truck carries its own two rates (e.g. PLX 2406: RM11 weekday / RM13
   // off-peak), so picking the rate is just a field lookup.
   const rate = offPeak ? params.truck.entitled_claim_offpeak : params.truck.entitled_claim_weekday;

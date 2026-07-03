@@ -113,7 +113,10 @@ export function estimateIncentive(
   // Pre-completion estimate caveat: this pure client function only sees this
   // trip's stops, so it assumes this is the driver's first trip of the day (the
   // deduction applies here) and cannot know zones already hit by the driver's
-  // OTHER trips today. The server's finalized incentive_earned is authoritative.
+  // OTHER trips today. The server also keys the day AND the rate tier on the
+  // DELIVERY confirm time (client rule 3 Jul 2026) which hasn't happened yet,
+  // so this estimate uses the pickup time as the best available stand-in.
+  // The server's finalized incentive_earned is authoritative.
   const deduction = truck.daily_deduction_points ?? 0;
   const seen = new Set<string>();
   let total = 0;

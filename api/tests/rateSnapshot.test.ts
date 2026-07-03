@@ -148,7 +148,7 @@ describe("end-to-end rate lock through the engine", () => {
   it("still pays the RM44 anchor from the snapshot after a mid-flight edit", () => {
     const r = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      pickupDateTime: pickup,
+      rateDateTime: pickup, // delivered same MYT day-part as pickup in this scenario
       drops: [{ zoneCode: "A2", zonePoints: dropZonePoints({ zone_points: 6 }, 6) }],
       zonesDeliveredEarlierToday: [],
       isFirstDeliveredDropOfDay: true,
@@ -160,7 +160,7 @@ describe("end-to-end rate lock through the engine", () => {
   it("a trip assigned AFTER the edit pays at the new rate", () => {
     const r = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      pickupDateTime: pickup,
+      rateDateTime: pickup, // delivered same MYT day-part as pickup in this scenario
       drops: [{ zoneCode: "A2", zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],
       isFirstDeliveredDropOfDay: true,

@@ -20,6 +20,7 @@ import {
   calculateDeliveryIncentive,
   getTripDayStart,
   getTripDayEnd,
+  groupStopsByDeliveryDay,
   isDocumentationComplete,
   mytDateKey,
 } from "../services/incentiveEngine";
@@ -1199,29 +1200,6 @@ router.patch(
         throw new ApiError(400, "TRUCK_NOT_ASSIGNED", "This trip has no truck assigned.");
       }
 
-      // The driver's incentive "day" in MYT (resets at midnight by default) —
-      // everything below is scoped to this window.
-      const dayStart = getTripDayStart(trip.pickup_datetime);
-      const dayEnd = getTripDayEnd(trip.pickup_datetime);
-
-      // Per-day ledger: zones this driver already delivered to earlier today (in
-      // prior completed trips). A stop whose zone is already on the ledger scores
-      // 1 point; the FIRST drop of the day is the one the daily deduction lands
-      // on, so isFirstDeliveredDropOfDay is true only when the ledger is empty.
-      const priorTripsToday = await prisma.trip.findMany({
-        where: {
-          driver_id: req.user!.id,
-          status: "completed",
-          pickup_datetime: { gte: dayStart, lt: dayEnd },
-          id: { not: id },
-        },
-        include: { stops: { include: { consignee: { select: { zone_code: true } } } } },
-      });
-      const zonesDeliveredEarlierToday = priorTripsToday.flatMap((t) =>
-        t.stops.filter((s) => s.status === "delivered").map((s) => s.consignee.zone_code)
-      );
-      const isFirstDeliveredDropOfDay = zonesDeliveredEarlierToday.length === 0;
-
       // This trip's delivered drops, in delivered order, each with its zone's
       // full destination points. Scored stop-by-stop (per-zone-per-day), summed.
       const thisTripStops = await prisma.tripStop.findMany({
@@ -1239,34 +1217,70 @@ router.patch(
         select: { zone_code: true, location_name: true, points: true },
       });
       const pointsByZone = buildPointsByZone(rateRows);
-      const drops = thisTripStops.map((s) => ({
-        zoneCode: s.consignee.zone_code,
-        zonePoints: dropZonePoints(s, pointsByZone.get(s.consignee.zone_code), s.consignee.zone_code),
-      }));
 
-      const incentive = calculateDeliveryIncentive({
-        pickupDateTime: trip.pickup_datetime,
-        drops,
-        zonesDeliveredEarlierToday,
-        isFirstDeliveredDropOfDay,
-        // Admin-managed calendar (PublicHoliday table) — loaded here so the
-        // engine stays pure. The weekday/off-peak decision runs exactly once,
-        // at this finalization; later calendar edits never touch stored pay
-        // (write-once finalizeTripOnce below).
-        publicHolidays: await loadHolidaySet(),
-        truck: finalizationRateParams({
-          entitled_claim_weekday: trip.entitled_claim_weekday,
-          entitled_claim_offpeak: trip.entitled_claim_offpeak,
-          daily_deduction_points: trip.daily_deduction_points,
-          truck: trip.truck,
-        }),
+      // The incentive day keys on DELIVERY confirm time, not pickup (client
+      // rule, Mr. Teh 3 Jul 2026: "points calculate on delivery confirm time;
+      // after 12am points refresh for next day"). A trip picked up 23:30 and
+      // delivered 00:30 counts for the DELIVERY day's ledger and deduction.
+      // Stops are grouped per MYT delivery day (normally one group; a trip
+      // straddling midnight splits, and each day scores against its own
+      // ledger with its own deduction + confirm-time rate tier).
+      const dayGroups = groupStopsByDeliveryDay(thisTripStops, new Date());
+      // Admin-managed calendar (PublicHoliday table) — loaded here so the
+      // engine stays pure. The weekday/off-peak decision runs exactly once,
+      // at this finalization; later calendar edits never touch stored pay
+      // (write-once finalizeTripOnce below).
+      const publicHolidays = await loadHolidaySet();
+      const truckRates = finalizationRateParams({
+        entitled_claim_weekday: trip.entitled_claim_weekday,
+        entitled_claim_offpeak: trip.entitled_claim_offpeak,
+        daily_deduction_points: trip.daily_deduction_points,
+        truck: trip.truck,
       });
+
+      let incentiveThisTrip = 0;
+      for (const group of dayGroups) {
+        // Per-day ledger: drops this driver already DELIVERED on this group's
+        // MYT day, on OTHER (completed) trips — regardless of when those trips
+        // were picked up. A stop whose zone is already on the ledger scores
+        // 1 point; the day's FIRST drop is the one the daily deduction lands
+        // on, so isFirstDeliveredDropOfDay is true only when the ledger is
+        // empty. (One-active-trip serialises a driver's deliveries, so every
+        // earlier drop today belongs to an already-completed trip.)
+        const priorStopsToday = await prisma.tripStop.findMany({
+          where: {
+            status: "delivered",
+            delivered_at: { gte: group.dayStart, lt: group.dayEnd },
+            trip: { driver_id: req.user!.id, status: "completed", id: { not: id } },
+          },
+          select: { consignee: { select: { zone_code: true } } },
+        });
+        const zonesDeliveredEarlierToday = priorStopsToday.map((s) => s.consignee.zone_code);
+        const isFirstDeliveredDropOfDay = zonesDeliveredEarlierToday.length === 0;
+
+        const drops = group.stops.map((s) => ({
+          zoneCode: s.consignee.zone_code,
+          zonePoints: dropZonePoints(s, pointsByZone.get(s.consignee.zone_code), s.consignee.zone_code),
+        }));
+
+        const incentive = calculateDeliveryIncentive({
+          rateDateTime: group.anchor,
+          drops,
+          zonesDeliveredEarlierToday,
+          isFirstDeliveredDropOfDay,
+          publicHolidays,
+          truck: truckRates,
+        });
+        incentiveThisTrip += incentive.incentiveThisTrip;
+      }
+      // Guard against float dust from summing per-group marginals.
+      incentiveThisTrip = Math.round(incentiveThisTrip * 100) / 100;
 
       // Store the MARGINAL (per-trip) incentive, not the running day total,
       // so the endpoints that SUM incentive_earned across a day are correct.
       // Write-once compare-and-set: a concurrent (or repeated) finalization
       // loses the guard and must never overwrite the stored pay.
-      const finalized = await finalizeTripOnce(prisma, id, incentive.incentiveThisTrip);
+      const finalized = await finalizeTripOnce(prisma, id, incentiveThisTrip);
       if (!finalized) {
         throw new ApiError(
           409,
