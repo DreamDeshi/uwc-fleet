@@ -25,7 +25,7 @@ import { palletEquivalents } from "../lib/pallets";
 import { isSerializationConflict } from "../lib/prismaErrors";
 import { claimPendingTrip } from "./tripAssignment";
 import { truckRateSnapshot, snapshotStopZonePoints } from "./rateSnapshot";
-import { effectiveTruckRates } from "./pendingRates";
+import { effectiveTruckRates, effectiveZonePoints } from "./pendingRates";
 import { leaveDateFilter } from "./driverLeave";
 import { mytDateKey } from "./incentiveEngine";
 import { roadworthyWhere } from "./truckEligibility";
@@ -408,7 +408,11 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
         const windowRates = await tx.destinationRate.findMany({
           where: { zone_code: { in: [...new Set(stopZones)] } },
         });
-        const windowPoints = new Map(windowRates.map((r) => [r.zone_code, r.points]));
+        // Points effective NOW (a staged next-day edit is invisible) — the
+        // same values the assignment snapshot will freeze below.
+        const windowPoints = new Map(
+          windowRates.map((r) => [r.zone_code, effectiveZonePoints(r, new Date())])
+        );
         const windowEst = estimateOperatingWindow({
           pickupDateTime: trip.pickup_datetime,
           stopCount: trip.stops.length,

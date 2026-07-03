@@ -204,6 +204,14 @@ model DestinationRate {
   zone          Zone?   @relation(fields: [zone_code], references: [code])
   location_name String // e.g. "Ipoh", "Kuala Lumpur"
   points        Int // first-trip-of-day points for this destination
+  // Next-day cutoff (extends client Q4, 3 Jul 2026; migration
+  // 20260703130000): a points edit stages here, effective from
+  // pending_points_effective (MYT "YYYY-MM-DD" = tomorrow) — same pattern as
+  // Truck.pending_*. Assignment snapshots read the points effective at
+  // assignment time (services/pendingRates.ts); the maturation sweep folds
+  // matured values into `points`.
+  pending_points           Int?
+  pending_points_effective String?
 }
 
 // ── 7. Trip ──────────────────────────────────────────────────────────

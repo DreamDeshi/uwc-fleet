@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { ApiError } from "../lib/apiError";
+import { effectiveZonePoints } from "./pendingRates";
 
 /**
  * Rate lock (audit fix #1): the pay a trip finalizes at must be the pay it was
@@ -134,9 +135,21 @@ export async function snapshotStopZonePoints(
   const zoneCodes = [...new Set(stops.map((s) => s.consignee.zone_code))];
   const rateRows = await tx.destinationRate.findMany({
     where: { zone_code: { in: zoneCodes } },
-    select: { zone_code: true, location_name: true, points: true },
+    select: {
+      zone_code: true,
+      location_name: true,
+      points: true,
+      pending_points: true,
+      pending_points_effective: true,
+    },
   });
-  const pointsByZone = buildPointsByZone(rateRows);
+  // The points snapshotted are those EFFECTIVE right now — a staged points
+  // edit is invisible until its next-MYT-day cutoff (same rule as the truck
+  // claim rates above).
+  const now = new Date();
+  const pointsByZone = buildPointsByZone(
+    rateRows.map((r) => ({ ...r, points: effectiveZonePoints(r, now) }))
+  );
 
   for (const s of stops) {
     const points = pointsByZone.get(s.consignee.zone_code);

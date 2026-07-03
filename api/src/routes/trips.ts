@@ -25,7 +25,7 @@ import {
   mytDateKey,
 } from "../services/incentiveEngine";
 import { leaveDateFilter } from "../services/driverLeave";
-import { effectiveTruckRates } from "../services/pendingRates";
+import { effectiveTruckRates, effectiveZonePoints } from "../services/pendingRates";
 import { truckExpiryIssues } from "../services/truckEligibility";
 import { PLANT_ORIGIN, zoneCoord, getRoute, type LatLng } from "../lib/geo";
 import { loadHolidaySet } from "../lib/holidays";
@@ -624,7 +624,11 @@ async function assignTripInTx(
             const windowRates = await tx.destinationRate.findMany({
               where: { zone_code: { in: [...new Set(windowZones)] } },
             });
-            const windowPoints = new Map(windowRates.map((r) => [r.zone_code, r.points]));
+            // Points effective NOW (a staged next-day edit is invisible) — the
+            // same values the assignment snapshot will freeze below.
+            const windowPoints = new Map(
+              windowRates.map((r) => [r.zone_code, effectiveZonePoints(r, new Date())])
+            );
             const windowEst = estimateOperatingWindow({
               pickupDateTime: trip.pickup_datetime,
               stopCount: windowStops.length,
@@ -1459,13 +1463,23 @@ router.patch(
       // Rate lock: points and claim rates come from the ASSIGNMENT-time
       // snapshot (TripStop.zone_points / the trip's rate fields); the live
       // lookups below are only the fallback for trips assigned before the
-      // rate-lock migration or rows seeded directly into `assigned`.
+      // rate-lock migration or rows seeded directly into `assigned`. The
+      // fallback also respects the next-day cutoff: points effective NOW, not
+      // a staged edit.
       const zoneCodes = [...new Set(thisTripStops.map((s) => s.consignee.zone_code))];
       const rateRows = await prisma.destinationRate.findMany({
         where: { zone_code: { in: zoneCodes } },
-        select: { zone_code: true, location_name: true, points: true },
+        select: {
+          zone_code: true,
+          location_name: true,
+          points: true,
+          pending_points: true,
+          pending_points_effective: true,
+        },
       });
-      const pointsByZone = buildPointsByZone(rateRows);
+      const pointsByZone = buildPointsByZone(
+        rateRows.map((r) => ({ ...r, points: effectiveZonePoints(r, new Date()) }))
+      );
 
       // The incentive day keys on DELIVERY confirm time, not pickup (client
       // rule, Mr. Teh 3 Jul 2026: "points calculate on delivery confirm time;

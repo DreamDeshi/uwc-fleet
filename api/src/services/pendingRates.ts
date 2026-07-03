@@ -42,15 +42,17 @@ export function nextMytDayKey(now: Date): string {
   return mytDateKey(new Date(now.getTime() + 24 * 60 * 60 * 1000));
 }
 
-/** True once the staged rates' effective MYT day has arrived at instant `at`. String compare works because both are "YYYY-MM-DD". */
+/** True once a staged value's effective MYT day has arrived at instant `at`. String compare works because both are "YYYY-MM-DD". */
+export function stagedEffectiveReached(effectiveDate: string | null, at: Date): boolean {
+  return effectiveDate !== null && effectiveDate <= mytDateKey(at);
+}
+
+/** True once the staged truck rates' effective MYT day has arrived at instant `at`. */
 export function pendingMatured(
   truck: Pick<PendingRateFields, "pending_rates_effective">,
   at: Date
 ): boolean {
-  return (
-    truck.pending_rates_effective !== null &&
-    truck.pending_rates_effective <= mytDateKey(at)
-  );
+  return stagedEffectiveReached(truck.pending_rates_effective, at);
 }
 
 /**
@@ -85,6 +87,34 @@ export function effectiveTruckRates<T extends LiveRateFields & Partial<PendingRa
   };
 }
 
+// ── Zone points (DestinationRate) — same cutoff, same pattern ─────────────
+
+/** The staged-points fields on a DestinationRate row (extends client Q4 to zone points). */
+export interface PendingPointsFields {
+  pending_points: number | null;
+  pending_points_effective: string | null; // MYT "YYYY-MM-DD"
+}
+
+/**
+ * A destination's zone points EFFECTIVE at instant `at`: the staged pending
+ * value once its day has arrived, else the live `points`. The zone-points
+ * twin of effectiveTruckRates() — assignment snapshots (and the window
+ * estimates that scale on points) must read points THROUGH this, so a points
+ * edit made today is invisible until tomorrow 00:00 MYT.
+ */
+export function effectiveZonePoints<
+  T extends { points: number } & Partial<PendingPointsFields>
+>(row: T, at: Date): number {
+  const pendingPoints = row.pending_points ?? null;
+  if (
+    pendingPoints !== null &&
+    stagedEffectiveReached(row.pending_points_effective ?? null, at)
+  ) {
+    return pendingPoints;
+  }
+  return row.points;
+}
+
 // ── Maturation sweep ──────────────────────────────────────────────────────
 
 // Minimal slice of the Prisma client the sweep needs (testable without a DB).
@@ -100,24 +130,34 @@ export interface RateMaturationClient {
       data: Record<string, unknown>;
     }): Promise<unknown>;
   };
+  destinationRate: {
+    findMany(args: {
+      where: { pending_points_effective: { not: null; lte: string } };
+    }): Promise<({ id: string; points: number } & PendingPointsFields)[]>;
+    update(args: {
+      where: { id: string };
+      data: Record<string, unknown>;
+    }): Promise<unknown>;
+  };
 }
 
 /**
- * Fold every truck's matured pending rates into the base columns and clear
- * the staging fields. No audit row here — AuditLog rows require a real user,
+ * Fold every matured staged value into its live column and clear the staging
+ * fields — truck rates AND destination zone points (both follow the same
+ * next-day cutoff). No audit row here — AuditLog rows require a real user,
  * and the traceable action is the STAGING edit, whose audit row (written by
  * the admin who made it) already records the effective date. Returns the
- * plates folded (for logging/tests).
+ * records folded (for logging/tests).
  */
 export async function applyMaturedPendingRates(
   client: RateMaturationClient,
   now: Date
 ): Promise<string[]> {
-  const matured = await client.truck.findMany({
+  const maturedTrucks = await client.truck.findMany({
     where: { pending_rates_effective: { not: null, lte: mytDateKey(now) } },
   });
 
-  for (const t of matured) {
+  for (const t of maturedTrucks) {
     const effective = effectiveTruckRates(t, now);
     await client.truck.update({
       where: { plate: t.plate },
@@ -133,7 +173,25 @@ export async function applyMaturedPendingRates(
     });
   }
 
-  return matured.map((t) => t.plate);
+  const maturedPoints = await client.destinationRate.findMany({
+    where: { pending_points_effective: { not: null, lte: mytDateKey(now) } },
+  });
+
+  for (const r of maturedPoints) {
+    await client.destinationRate.update({
+      where: { id: r.id },
+      data: {
+        points: effectiveZonePoints(r, now),
+        pending_points: null,
+        pending_points_effective: null,
+      },
+    });
+  }
+
+  return [
+    ...maturedTrucks.map((t) => t.plate),
+    ...maturedPoints.map((r) => `zone-points:${r.id}`),
+  ];
 }
 
 /**

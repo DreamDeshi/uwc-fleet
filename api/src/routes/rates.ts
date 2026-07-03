@@ -5,6 +5,7 @@ import { ApiError } from "../lib/apiError";
 import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
+import { nextMytDayKey } from "../services/pendingRates";
 
 const router = Router();
 router.use(requireAuth, requireRole("admin"));
@@ -71,18 +72,25 @@ router.patch("/destinations/:id", validateBody(pointsSchema), async (req, res, n
     }
 
     const oldPoints = rate.points;
+    // Next-day cutoff (extends client Q4, 3 Jul 2026): the edit is STAGED,
+    // effective from tomorrow (MYT) — today's assignments keep snapshotting
+    // today's points; the maturation sweep folds these in when the day
+    // arrives. Same rule as the truck-rate editor.
+    //
     // Points are a PER-ZONE value (spec §10 — the zone table is zone-keyed):
     // K2 deliberately has two location rows (Kuala Ketil + Sungai Petani), so
-    // editing one must update every row of the same zone, or the engine's
+    // editing one must stage on every row of the same zone, or the engine's
     // per-zone lookup would depend on arbitrary row order. Rows without a zone
-    // (e.g. the orphan Kuala Lumpur row) update singly.
+    // (e.g. the orphan Kuala Lumpur row) stage singly.
+    const effective = nextMytDayKey(new Date());
+    const staged = { pending_points: req.body.points, pending_points_effective: effective };
     if (rate.zone_code) {
       await prisma.destinationRate.updateMany({
         where: { zone_code: rate.zone_code },
-        data: { points: req.body.points },
+        data: staged,
       });
     } else {
-      await prisma.destinationRate.update({ where: { id }, data: { points: req.body.points } });
+      await prisma.destinationRate.update({ where: { id }, data: staged });
     }
     const updated = await prisma.destinationRate.findUnique({
       where: { id },
@@ -90,17 +98,18 @@ router.patch("/destinations/:id", validateBody(pointsSchema), async (req, res, n
     });
 
     // Encode the old → new into `action` behind a stable "rate.updated" prefix
-    // (AuditLog has no free-text column). Only future ASSIGNMENTS are affected:
-    // each stop's zone points are snapshotted at assignment (rate lock), so
-    // in-flight trips finalize at their assignment-time points and completed
-    // trips keep their stored incentive_earned.
+    // (AuditLog has no free-text column). Only ASSIGNMENTS from the effective
+    // day onward are affected: each stop's zone points are snapshotted at
+    // assignment (rate lock), so in-flight trips finalize at their
+    // assignment-time points and completed trips keep their stored
+    // incentive_earned.
     await prisma.auditLog.create({
       data: {
         user_id: req.user!.id,
         action:
           oldPoints !== req.body.points
-            ? `rate.updated points ${oldPoints}→${req.body.points}${rate.zone_code ? ` (zone ${rate.zone_code}, all locations)` : ""}`
-            : "rate.updated",
+            ? `rate.updated points ${oldPoints}→${req.body.points}${rate.zone_code ? ` (zone ${rate.zone_code}, all locations)` : ""} (effective ${effective})`
+            : `rate.updated (effective ${effective})`,
         table_name: "DestinationRate",
         record_id: id,
       },

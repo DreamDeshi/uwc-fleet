@@ -339,6 +339,10 @@ export interface DestinationRate {
   zone_code: string | null;
   location_name: string;
   points: number;
+  // A staged points edit waiting for its next-MYT-day cutoff (same client
+  // rule as truck rates): today's assignments still snapshot `points` above.
+  pending_points: number | null;
+  pending_points_effective: string | null; // MYT "YYYY-MM-DD"
   zone: { code: string; name: string } | null;
 }
 

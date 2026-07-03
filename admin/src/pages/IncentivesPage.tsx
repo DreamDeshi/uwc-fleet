@@ -291,6 +291,12 @@ function DestinationPointsTab() {
                 <td style={{ ...tdStyle, fontWeight: 600 }}>
                   {r.location_name}
                   <UpdatedNote entry={auditById.get(r.id)} />
+                  {/* Staged next-day points edit (same cutoff as truck rates). */}
+                  {r.pending_points_effective !== null && r.pending_points !== null && (
+                    <div style={{ fontSize: 11, color: colors.amber, fontWeight: 600, marginTop: 3 }}>
+                      ⏳ New points {r.pending_points} — take effect {r.pending_points_effective} (MYT)
+                    </div>
+                  )}
                 </td>
                 <td style={tdStyle}>{r.zone_code ?? "—"}</td>
                 <td style={{ ...tdStyle, minWidth: 160 }}>
@@ -331,6 +337,11 @@ function EditPointsModal({ rate, onClose }: { rate: DestinationRate; onClose: ()
   return (
     <Modal open onClose={onClose} title={`Edit Points — ${rate.location_name}`} width={380}>
       {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+      <div style={{ background: colors.yellowTint, color: colors.amber, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12, fontWeight: 500 }}>
+        Point changes take effect <strong>tomorrow (MYT)</strong> — today's assignments and
+        running trips keep today's points.
+        {rate.zone_code ? " Applies to every location in the zone." : ""}
+      </div>
       <Input label="Destination Points" value={points} onChange={setPoints} type="number" />
       <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
         <Button variant="ghost" full onClick={onClose}>Cancel</Button>
