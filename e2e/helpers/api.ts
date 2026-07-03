@@ -227,6 +227,22 @@ export async function getTruckWeekdayRate(adminToken: string, plate: string): Pr
   return Number(t.entitled_claim_weekday);
 }
 
+/**
+ * The STAGED (next-MYT-day cutoff) weekday rate for one plate, or null when no
+ * edit is pending. Rate edits no longer change the live value same-day — they
+ * stage here and take effect tomorrow (client rule, 3 Jul 2026).
+ */
+export async function getTruckPendingWeekdayRate(
+  adminToken: string,
+  plate: string
+): Promise<number | null> {
+  const trucks = await getTrucks(adminToken);
+  const t = trucks.find((x) => x.plate === plate);
+  if (!t) throw new Error(`Truck ${plate} not found.`);
+  const pending = t.pending_rates as { entitled_claim_weekday: number | null } | null;
+  return pending?.entitled_claim_weekday ?? null;
+}
+
 export function patchTruckRates(
   adminToken: string,
   plate: string,
