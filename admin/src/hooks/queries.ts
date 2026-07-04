@@ -52,6 +52,10 @@ export function useTrips(filters: TripFilters = {}) {
     // Keep showing the prior results while a new filter combination loads, so the
     // board and the filter bar don't blank out / lose focus on each keystroke.
     placeholderData: keepPreviousData,
+    // Polled like the dashboard/fleet/alerts queries: new bookings, the sweep's
+    // auto-assignments, and other admins' changes must appear without an F5 —
+    // the dispatch panel reads trip state from this list.
+    refetchInterval: 20_000,
   });
 }
 
