@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   currentMytMonthBounds,
   inMytMonth,
+  mytDayBoundsForKey,
   mytDayIndex,
   mytMonthKey,
   mytMonthParts,
@@ -70,6 +71,35 @@ describe("mytMonthStart — normalises out-of-range month indices", () => {
   it("month - 5 crosses the year boundary correctly", () => {
     // 5 months before Feb 2026 = Sep 2025.
     expect(mytMonthStart(2026, 1 - 5).toISOString()).toBe("2025-08-31T16:00:00.000Z");
+  });
+});
+
+describe("mytDayBoundsForKey — the trip-board date filter's day bounds (audit #3)", () => {
+  it("a 'YYYY-MM-DD' key maps to the MYT calendar day as [start, end) UTC instants", () => {
+    const bounds = mytDayBoundsForKey("2026-07-05")!;
+    expect(bounds.start.toISOString()).toBe("2026-07-04T16:00:00.000Z"); // 00:00 MYT Jul 5
+    expect(bounds.end.toISOString()).toBe("2026-07-05T16:00:00.000Z"); // 00:00 MYT Jul 6
+  });
+
+  it("the early-morning trip the old UTC parse dropped is INSIDE its 'from' day", () => {
+    // 01:30 MYT on Jul 5 = 2026-07-04 17:30Z. The old new Date("2026-07-05")
+    // lower bound (00:00Z = 08:00 MYT) excluded it from "From 5 Jul".
+    const bounds = mytDayBoundsForKey("2026-07-05")!;
+    const earlyMorning = new Date("2026-07-04T17:30:00Z");
+    expect(earlyMorning >= bounds.start && earlyMorning < bounds.end).toBe(true);
+  });
+
+  it("a 23:59 MYT pickup is inside its 'to' day; midnight belongs to the next day", () => {
+    const bounds = mytDayBoundsForKey("2026-07-05")!;
+    expect(new Date("2026-07-05T15:59:00Z") < bounds.end).toBe(true); // 23:59 MYT
+    expect(new Date("2026-07-05T16:00:00Z") < bounds.end).toBe(false); // 00:00 MYT Jul 6
+  });
+
+  it("rejects malformed or impossible keys (route ignores the filter)", () => {
+    expect(mytDayBoundsForKey("05/07/2026")).toBeNull();
+    expect(mytDayBoundsForKey("2026-13-01")).toBeNull();
+    expect(mytDayBoundsForKey("2026-07-32")).toBeNull();
+    expect(mytDayBoundsForKey("2026-07-05T00:00:00Z")).toBeNull();
   });
 });
 

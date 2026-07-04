@@ -30,6 +30,7 @@ import {
 import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
+import { mytDayBoundsForKey } from "../lib/myt";
 import {
   calculateDeliveryIncentive,
   getTripDayStart,
@@ -305,17 +306,18 @@ router.get("/", async (req, res, next) => {
     // Zone matches any stop whose consignee sits in that zone.
     if (zone) filters.push({ stops: { some: { consignee: { zone_code: zone } } } });
 
-    // Pickup-date range (inclusive). date_to is stretched to end-of-day so the
-    // whole "to" date is covered. Invalid dates are ignored rather than erroring.
+    // Pickup-date range (inclusive), cut on MYT calendar days — the same
+    // wall clock the cards display (28d0e88). The old parse used
+    // new Date("YYYY-MM-DD") = UTC midnight = 08:00 MYT, so "From 5 Jul"
+    // silently excluded trips picked up 00:00–07:59 MYT that day, and the
+    // end-of-day stretch depended on the server's TZ env. Malformed keys are
+    // ignored rather than erroring (unchanged behaviour).
     const range: Prisma.DateTimeFilter = {};
-    const from = dateFrom ? new Date(dateFrom) : null;
-    const to = dateTo ? new Date(dateTo) : null;
-    if (from && !isNaN(+from)) range.gte = from;
-    if (to && !isNaN(+to)) {
-      to.setHours(23, 59, 59, 999);
-      range.lte = to;
-    }
-    if (range.gte || range.lte) filters.push({ pickup_datetime: range });
+    const fromDay = dateFrom ? mytDayBoundsForKey(dateFrom) : null;
+    const toDay = dateTo ? mytDayBoundsForKey(dateTo) : null;
+    if (fromDay) range.gte = fromDay.start;
+    if (toDay) range.lt = toDay.end; // [start, end) — covers the whole MYT "to" day
+    if (range.gte || range.lt) filters.push({ pickup_datetime: range });
 
     // Free-text: ticket number or any stop's consignee company name.
     if (q) {

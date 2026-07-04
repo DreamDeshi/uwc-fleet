@@ -60,6 +60,26 @@ export function mytMonthKey(d: Date): string {
 }
 
 /**
+ * [start, end) UTC instants for a "YYYY-MM-DD" MYT calendar day (the trip
+ * board's date-filter wire format). Returns null for anything that isn't a
+ * plausible key, so routes can ignore a malformed filter instead of silently
+ * cutting on the wrong boundary. Without this, `new Date("2026-07-05")` is
+ * UTC midnight = 08:00 MYT — a "From 5 Jul" filter dropped every trip picked
+ * up 00:00–07:59 MYT that day (audit 2026-07-05 #3, the input-side twin of
+ * the MYT display fix).
+ */
+export function mytDayBoundsForKey(key: string): { start: Date; end: Date } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const start = new Date(Date.UTC(year, month - 1, day) - MYT_OFFSET_MS);
+  return { start, end: new Date(start.getTime() + DAY_MS) };
+}
+
+/**
  * Serial index of the MYT calendar day containing the instant — for "same
  * MYT day or earlier" comparisons (the on-time rule).
  */
