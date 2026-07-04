@@ -171,8 +171,10 @@ function DispatchCard({ trip, drivers }: { trip: Trip; drivers: DriverPerf[] }) 
       <div style={{ fontSize: 14, fontWeight: 700, color: colors.text, marginTop: 8 }}>
         {ORIGIN_LABEL} → {tripDestination(trip)}
       </div>
+      {/* cargoSummary already includes the pallet count — appending it again
+          printed "3 pallets · 3 pallets" (audit 2026-07-05 #12). */}
       <div style={{ fontSize: 12.5, color: colors.textMuted, marginTop: 4 }}>
-        {cargoSummary(trip)} · {pallets} pallet{pallets === 1 ? "" : "s"}
+        {cargoSummary(trip)}
       </div>
 
       {!open ? (
