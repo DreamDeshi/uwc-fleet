@@ -199,9 +199,15 @@ export function useUpdateTripStatus() {
   return useMutation({
     mutationFn: async ({ tripId, action, stop_id }: StatusInput) =>
       (await api.patch<Trip>(`/trips/${tripId}/status`, { action, stop_id })).data,
-    onSuccess: (trip) => {
+    // Invalidate on SETTLED, not just success: on bad signal a status write
+    // can commit server-side while the response is lost — the driver's retry
+    // then 409s, and without an error-path refetch the screen keeps showing
+    // a stale button that "keeps failing" on a trip that's actually done.
+    // The tripId comes from the mutation variables (there's no response on
+    // the error path).
+    onSettled: (_trip, _err, vars) => {
       qc.invalidateQueries({ queryKey: ["trips"] });
-      qc.invalidateQueries({ queryKey: ["trip", trip.id] });
+      qc.invalidateQueries({ queryKey: ["trip", vars.tripId] });
       qc.invalidateQueries({ queryKey: ["incentives", "mine"] });
     },
   });
@@ -232,8 +238,9 @@ export function useUpdateStopDocs() {
     mutationFn: async ({ tripId, stopId, do_uploaded, k2_form_ack }: StopDocsInput) =>
       (await api.patch<Trip>(`/trips/${tripId}/stops/${stopId}/docs`, { do_uploaded, k2_form_ack }))
         .data,
-    onSuccess: (trip) => {
-      qc.invalidateQueries({ queryKey: ["trip", trip.id] });
+    // Settled, not success — see useUpdateTripStatus (lost-response reconcile).
+    onSettled: (_trip, _err, vars) => {
+      qc.invalidateQueries({ queryKey: ["trip", vars.tripId] });
       qc.invalidateQueries({ queryKey: ["trips"] });
     },
   });
@@ -290,8 +297,10 @@ export function useUploadPod() {
         })
       ).data;
     },
-    onSuccess: (trip) => {
-      qc.invalidateQueries({ queryKey: ["trip", trip.id] });
+    // Settled, not success — a POD upload can also commit while its response
+    // is lost; refetching shows the stored photo instead of an empty slot.
+    onSettled: (_trip, _err, vars) => {
+      qc.invalidateQueries({ queryKey: ["trip", vars.tripId] });
       qc.invalidateQueries({ queryKey: ["trips"] });
     },
   });
