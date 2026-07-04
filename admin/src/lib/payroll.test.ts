@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPayrollCsv, lastNMytMonthKeys, monthKeyLabel } from "./payroll";
+import { buildPayrollCsv, lastNMytMonthKeys, monthKeyLabel, payrollBusy } from "./payroll";
 import { formatMoney } from "./format";
 import type { PayrollDriverRow } from "@/types";
 
@@ -46,5 +46,17 @@ describe("payroll CSV ties exactly to the displayed figures", () => {
     expect(csv).toContain("H593");
     // 10:05Z = 18:05 MYT; formatDateTime output contains a comma → quoted cell.
     expect(csv).toMatch(/"04 Jul 2026, 0?6:05\s?pm MYT"/i);
+  });
+});
+
+describe("payrollBusy — export gate while a month switch settles (audit #1)", () => {
+  it("busy while the new month is fetching or the rows are still the previous month's placeholder", () => {
+    expect(payrollBusy({ isFetching: true, isPlaceholderData: true })).toBe(true);
+    expect(payrollBusy({ isFetching: true, isPlaceholderData: false })).toBe(true);
+    expect(payrollBusy({ isFetching: false, isPlaceholderData: true })).toBe(true);
+  });
+
+  it("settled once the selected month's own rows are on screen", () => {
+    expect(payrollBusy({ isFetching: false, isPlaceholderData: false })).toBe(false);
   });
 });

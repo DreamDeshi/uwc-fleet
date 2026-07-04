@@ -23,6 +23,18 @@ export function monthKeyLabel(key: string): string {
 }
 
 /**
+ * Whether the payroll rows on screen are still settling for the SELECTED
+ * month. The query keeps the PREVIOUS month's rows as placeholder data while
+ * a month-switch fetch is in flight (so isLoading stays false) — exporting in
+ * that window writes a CSV stamped with the new month key but containing the
+ * old month's totals (audit 2026-07-05 #1). The table dims and Export is
+ * disabled while this is true.
+ */
+export function payrollBusy(q: { isFetching: boolean; isPlaceholderData: boolean }): boolean {
+  return q.isFetching || q.isPlaceholderData;
+}
+
+/**
  * The month-end export: a per-driver payroll section (what the clerk pays
  * from), a per-trip detail section (what a dispute is traced through), and
  * the 6-month aggregate summary. Every money cell goes through money2dp so

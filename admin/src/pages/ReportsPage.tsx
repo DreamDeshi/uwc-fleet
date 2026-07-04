@@ -14,7 +14,7 @@ import { useMonthly, usePayroll, useTrips } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
 import { Button, Card, ErrorState, Loading, SectionTitle } from "@/components/ui";
 import { formatDateTime, formatMoney, formatNumber } from "@/lib/format";
-import { buildPayrollCsv, lastNMytMonthKeys, monthKeyLabel } from "@/lib/payroll";
+import { buildPayrollCsv, lastNMytMonthKeys, monthKeyLabel, payrollBusy } from "@/lib/payroll";
 import type { MonthlyRow, PayrollDriverRow } from "@/types";
 
 const PIE_COLORS = [colors.blue, colors.yellow, colors.green, colors.orange, "#9333ea", "#0891b2"];
@@ -41,6 +41,11 @@ export function ReportsPage() {
 
   const months = monthly.data ?? [];
   const payrollRows = payroll.data?.drivers ?? [];
+  // A month switch serves the PREVIOUS month's rows as placeholder while the
+  // new month fetches (isLoading stays false) — until it settles, the table
+  // dims and Export is disabled, or the clerk could save a CSV stamped with
+  // the selected month but holding the old month's totals (audit #1).
+  const payrollSettling = payrollBusy(payroll);
 
   const totalTrips = months.reduce((s, m) => s + m.trips, 0);
   const totalIncentive = months.reduce((s, m) => s + m.incentive, 0);
@@ -51,6 +56,9 @@ export function ReportsPage() {
   })();
 
   function exportCsv() {
+    // Belt-and-braces with the disabled button: never write a sheet while the
+    // rows on screen may still be another month's placeholder data.
+    if (payrollSettling) return;
     // The month-end export (lib/payroll, unit-tested): per-driver payroll
     // rows for the SELECTED month, per-trip detail for dispute tracing, and
     // the 6-month aggregates. Money cells tie exactly to the displayed
@@ -68,8 +76,10 @@ export function ReportsPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <Button variant="primary" size="sm" onClick={exportCsv}>
-          ⬇ Export CSV
+        {/* Disabled while the payroll month is settling — never export rows
+            that don't yet belong to the selected month. */}
+        <Button variant="primary" size="sm" onClick={exportCsv} disabled={payrollSettling}>
+          {payrollSettling ? "Loading payroll…" : "⬇ Export CSV"}
         </Button>
       </div>
 
@@ -129,15 +139,22 @@ export function ReportsPage() {
       <Card pad={0}>
         <div style={{ padding: 18, borderBottom: `1px solid ${colors.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
           <SectionTitle title="Driver Payroll" subtitle="Month totals from stored per-trip pay — click a driver for trip detail" />
-          <select value={month} onChange={(e) => setMonth(e.target.value)} style={monthSelectStyle}>
-            {monthOptions.map((k) => (
-              <option key={k} value={k}>
-                {monthKeyLabel(k)}
-              </option>
-            ))}
-          </select>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {payrollSettling && (
+              <span style={{ fontSize: 12, color: colors.textMuted }}>Loading {monthKeyLabel(month)}…</span>
+            )}
+            <select value={month} onChange={(e) => setMonth(e.target.value)} style={monthSelectStyle}>
+              {monthOptions.map((k) => (
+                <option key={k} value={k}>
+                  {monthKeyLabel(k)}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        {/* Dimmed while settling: the rows below may still be the previous
+            month's placeholder data. */}
+        <table style={{ width: "100%", borderCollapse: "collapse", opacity: payrollSettling ? 0.45 : 1, transition: "opacity 120ms" }}>
           <thead>
             <tr>
               {["Driver", "Employee No", "Trips", "Total"].map((h) => <th key={h} style={thStyle}>{h}</th>)}
@@ -147,7 +164,8 @@ export function ReportsPage() {
             {payrollRows.length === 0 ? (
               <tr>
                 <td colSpan={4} style={{ ...tdStyle, textAlign: "center", color: colors.textMuted }}>
-                  No completed trips in {monthKeyLabel(month)}.
+                  {/* Only claim "no trips" once the month has actually loaded. */}
+                  {payrollSettling ? "Loading…" : `No completed trips in ${monthKeyLabel(month)}.`}
                 </td>
               </tr>
             ) : (
