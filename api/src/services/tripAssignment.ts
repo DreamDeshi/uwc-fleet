@@ -110,3 +110,71 @@ export async function releaseAssignedTrip(
   });
   return res.count === 1;
 }
+
+// ── Start: the driver's assigned → in_progress transition ─────────────────
+
+export type StartTripOutcome = "started" | "driver_busy" | "state_changed";
+
+// Minimal client slice for the start CAS (same pattern as TripClaimClient).
+export interface TripStartClient {
+  trip: {
+    updateMany(args: {
+      where: {
+        id: string;
+        status: "assigned";
+        driver_id: string;
+        driver: {
+          is: { trips_driven: { none: { status: "in_progress"; id: { not: string } } } };
+        };
+      };
+      data: Record<string, unknown>;
+    }): Promise<{ count: number }>;
+    count(args: {
+      where: { driver_id: string; status: "in_progress"; id: { not: string } };
+    }): Promise<number>;
+  };
+}
+
+/**
+ * Start an assigned trip — enforcing the one-active-trip model at the START
+ * transition, not just at assignment: a driver may HOLD several `assigned`
+ * trips (assign ≠ start), but may be OUT on only ONE `in_progress` trip, so
+ * starting a second while one is rolling must fail. The one-active invariant
+ * matters to MONEY, not just ops: the finalize day-ledger relies on a
+ * driver's deliveries being serialised (a second concurrent trip is how the
+ * double-first-drop / double-deduction overpay arises).
+ *
+ * The whole guard lives INSIDE the conditional update's where — the trip must
+ * still be `assigned`, still this driver's, and the driver must have no OTHER
+ * `in_progress` trip — so check and write are one atomic statement: two
+ * interleaved starts can never both match. (For two starts hitting truly
+ * simultaneous snapshots the route additionally runs this under Serializable
+ * isolation, where one of them aborts with P2034 → 409.)
+ *
+ * On a lost CAS a follow-up read picks the precise error: `driver_busy` when
+ * another in_progress trip exists, else `state_changed` (the trip itself left
+ * `assigned` — e.g. an admin unassigned it, or this is a duplicate start).
+ */
+export async function startAssignedTripForDriver(
+  client: TripStartClient,
+  tripId: string,
+  driverId: string
+): Promise<StartTripOutcome> {
+  const res = await client.trip.updateMany({
+    where: {
+      id: tripId,
+      status: "assigned",
+      driver_id: driverId,
+      driver: {
+        is: { trips_driven: { none: { status: "in_progress", id: { not: tripId } } } },
+      },
+    },
+    data: { status: "in_progress" },
+  });
+  if (res.count === 1) return "started";
+
+  const otherActive = await client.trip.count({
+    where: { driver_id: driverId, status: "in_progress", id: { not: tripId } },
+  });
+  return otherActive > 0 ? "driver_busy" : "state_changed";
+}

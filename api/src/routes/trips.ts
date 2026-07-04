@@ -4,7 +4,12 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
 import { isSerializationConflict, isUniqueViolation } from "../lib/prismaErrors";
-import { claimPendingTripOrThrow, releaseAssignedTrip } from "../services/tripAssignment";
+import {
+  claimPendingTripOrThrow,
+  releaseAssignedTrip,
+  startAssignedTripForDriver,
+  type StartTripOutcome,
+} from "../services/tripAssignment";
 import { assertStopDeliverable, finalizeTripOnce } from "../services/tripCompletion";
 import {
   truckRateSnapshot,
@@ -1360,15 +1365,52 @@ router.patch(
         if (trip.status !== "assigned") {
           throw new ApiError(400, "INVALID_STATUS", "Only assigned trips can be started.");
         }
-        const updated = await prisma.trip.update({
-          where: { id },
-          data: { status: "in_progress" },
-          include: tripInclude,
-        });
-        await prisma.auditLog.create({
-          data: { user_id: req.user!.id, action: "trip.started", table_name: "Trip", record_id: id },
-        });
-        await recordTripEvent(prisma, { tripId: id, event: "started", actorId: req.user!.id });
+        // One-active-trip enforced at the START transition (not only at
+        // assignment): holding several assigned trips is fine, being OUT on
+        // two is not — a second concurrent in_progress trip is exactly the
+        // state that double-pays the finalize day-ledger. The CAS carries the
+        // whole guard in its where; Serializable isolation covers the
+        // residual simultaneous-snapshot race (P2034 → 409), same pattern as
+        // the approve transaction.
+        let outcome: StartTripOutcome;
+        try {
+          outcome = await prisma.$transaction(
+            async (tx) => {
+              const result = await startAssignedTripForDriver(tx, id, req.user!.id);
+              if (result !== "started") return result;
+              await tx.auditLog.create({
+                data: { user_id: req.user!.id, action: "trip.started", table_name: "Trip", record_id: id },
+              });
+              await recordTripEvent(tx, { tripId: id, event: "started", actorId: req.user!.id });
+              return result;
+            },
+            { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+          );
+        } catch (err) {
+          if (isSerializationConflict(err)) {
+            throw new ApiError(
+              409,
+              "TRIP_STATE_CHANGED",
+              "This trip was updated by someone else just now. Refresh and try again."
+            );
+          }
+          throw err;
+        }
+        if (outcome === "driver_busy") {
+          throw new ApiError(
+            409,
+            "DRIVER_ALREADY_ON_TRIP",
+            "You already have a trip in progress. Complete it before starting another."
+          );
+        }
+        if (outcome === "state_changed") {
+          throw new ApiError(
+            409,
+            "TRIP_STATE_CHANGED",
+            "This trip just changed state. Refresh and try again."
+          );
+        }
+        const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
         res.json(updated);
         return;
       }
