@@ -10,16 +10,34 @@ export function formatNumber(value: number | null | undefined): string {
   return Number(value ?? 0).toLocaleString("en-MY");
 }
 
+// All human-readable dates/times render in MYT (the timezone every business
+// rule — off-peak cutoff, day ledger, leave — is computed in), NOT the
+// browser's local timezone. An admin on a mis-set or overseas machine must
+// see the same instants the server bills by. Times carry an explicit "MYT"
+// label so boundary evidence (e.g. an 18:05 delivery) is unambiguous.
+const MYT = "Asia/Kuala_Lumpur";
+
 export function formatDate(value: string | Date | null | undefined): string {
   if (!value) return "—";
   const d = new Date(value);
-  return d.toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" });
+  return d.toLocaleDateString("en-MY", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: MYT,
+  });
 }
 
 export function formatTime(value: string | Date | null | undefined): string {
   if (!value) return "—";
   const d = new Date(value);
-  return d.toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit", hour12: true });
+  const t = d.toLocaleTimeString("en-MY", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: MYT,
+  });
+  return `${t} MYT`;
 }
 
 export function formatDateTime(value: string | Date | null | undefined): string {
@@ -41,6 +59,7 @@ export function formatFullDate(value: Date): string {
     day: "numeric",
     month: "long",
     year: "numeric",
+    timeZone: MYT,
   });
 }
 

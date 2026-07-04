@@ -2,6 +2,7 @@ import { Circle, MapContainer, Marker, TileLayer, Tooltip } from "react-leaflet"
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES, truckPosition } from "@/lib/zones";
+import { formatTime } from "@/lib/format";
 import { colors } from "@/theme";
 import type { LivePosition, Truck } from "@/types";
 
@@ -99,7 +100,7 @@ export function FleetMap({ trucks, live = [] }: { trucks: Truck[]; live?: LivePo
                 <br />
                 <span style={{ color: isLive ? colors.green : colors.textMuted, fontWeight: 700 }}>
                   {isLive
-                    ? `● Live · ${new Date(fix!.recorded_at).toLocaleTimeString()}`
+                    ? `● Live · ${formatTime(fix!.recorded_at)}`
                     : fix
                       ? "Signal lost (last fix stale)"
                       : "Approx. position (no GPS yet)"}
