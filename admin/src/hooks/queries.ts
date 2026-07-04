@@ -98,6 +98,8 @@ export function useUpdateConsignee() {
       company_name?: string;
       zone_code?: string;
       is_active?: boolean;
+      // Past a 409 warning (rename SIMILAR_EXISTS / deactivate CONSIGNEE_IN_USE).
+      force?: boolean;
     }) => {
       const { id, ...patch } = args;
       return (await api.patch<Consignee>(`/consignees/${id}`, patch)).data;

@@ -44,6 +44,21 @@ export function isSimilarCompanyName(a: string, b: string): boolean {
   return false;
 }
 
+// Similar-active candidates from a prefiltered row set: similarity rule
+// applied, self excluded (a rename must not collide with the row being
+// renamed), capped at 5 for the response. Shared by self-add (POST) and the
+// admin rename path (PATCH) so the directory can't be renamed into the very
+// near-duplicate the create path refuses. Exported for unit tests.
+export function pickSimilarCandidates<T extends { id: string; company_name: string }>(
+  rows: T[],
+  companyName: string,
+  excludeId?: string
+): T[] {
+  return rows
+    .filter((r) => r.id !== excludeId && isSimilarCompanyName(companyName, r.company_name))
+    .slice(0, 5);
+}
+
 // Strip the "SDN BHD" / "BHD" company suffix for display only — the full legal
 // name stays in the database; this just declutters the search list. Never
 // returns empty (falls back to the original if the name was only the suffix).
@@ -164,6 +179,29 @@ router.get("/", async (req, res, next) => {
   }
 });
 
+// SQL prefilter + similarity pass for "a similar active consignee already
+// exists" — shared by self-add (POST) and the admin rename path (PATCH).
+async function similarActiveConsignees(
+  companyName: string,
+  excludeId?: string
+): Promise<{ id: string; company_name: string; area: string | null; state: string | null; zone_code: string }[]> {
+  const ns = normalise(companyName);
+  if (ns.length === 0) return [];
+  const like = `%${ns}%`;
+  const nameNorm = Prisma.sql`regexp_replace(lower(c.company_name), ${PG_NORMALISE_REGEX}, '', 'g')`;
+  const rows = await prisma.$queryRaw<
+    { id: string; company_name: string; area: string | null; state: string | null; zone_code: string }[]
+  >(Prisma.sql`
+    SELECT c.id, c.company_name, c.area, c.state, c.zone_code
+    FROM "Consignee" c
+    WHERE c.is_active = true
+      AND (${nameNorm} LIKE ${like} OR ${ns} LIKE '%' || ${nameNorm} || '%')
+    ORDER BY c.company_name ASC
+    LIMIT 8
+  `);
+  return pickSimilarCandidates(rows, companyName, excludeId);
+}
+
 // ── POST /consignees — requestor self-adds a consignee not in the list ──
 const createConsigneeSchema = z.object({
   company_name: z.string().min(1, "Company name is required."),
@@ -201,31 +239,14 @@ router.post(
       // find similar actives; without force, return them as candidates so the
       // requestor can pick the existing entry instead.
       if (!force) {
-        const ns = normalise(company_name);
-        if (ns.length > 0) {
-          const like = `%${ns}%`;
-          const nameNorm = Prisma.sql`regexp_replace(lower(c.company_name), ${PG_NORMALISE_REGEX}, '', 'g')`;
-          const rows = await prisma.$queryRaw<
-            { id: string; company_name: string; area: string | null; state: string | null; zone_code: string }[]
-          >(Prisma.sql`
-            SELECT c.id, c.company_name, c.area, c.state, c.zone_code
-            FROM "Consignee" c
-            WHERE c.is_active = true
-              AND (${nameNorm} LIKE ${like} OR ${ns} LIKE '%' || ${nameNorm} || '%')
-            ORDER BY c.company_name ASC
-            LIMIT 8
-          `);
-          const candidates = rows
-            .filter((r) => isSimilarCompanyName(company_name, r.company_name))
-            .slice(0, 5);
-          if (candidates.length > 0) {
-            throw new ApiError(
-              409,
-              "SIMILAR_EXISTS",
-              "A similar consignee already exists — pick it from the list, or create anyway.",
-              { candidates }
-            );
-          }
+        const candidates = await similarActiveConsignees(company_name);
+        if (candidates.length > 0) {
+          throw new ApiError(
+            409,
+            "SIMILAR_EXISTS",
+            "A similar consignee already exists — pick it from the list, or create anyway.",
+            { candidates }
+          );
         }
       }
 
@@ -266,8 +287,12 @@ const updateConsigneeSchema = z
     company_name: z.string().min(1).optional(),
     zone_code: z.string().min(1).optional(),
     is_active: z.boolean().optional(),
+    // Re-submit with force=true past a SIMILAR_EXISTS rename warning.
+    force: z.boolean().optional(),
   })
-  .refine((b) => Object.keys(b).length > 0, { message: "Nothing to update." });
+  .refine((b) => b.company_name !== undefined || b.zone_code !== undefined || b.is_active !== undefined, {
+    message: "Nothing to update.",
+  });
 
 router.patch(
   "/:id",
@@ -275,7 +300,38 @@ router.patch(
   validateBody(updateConsigneeSchema),
   async (req, res, next) => {
     try {
-      await updateConsignee(prisma, req.params.id, req.body, req.user!.id);
+      // `force` is control flow, not consignee data (same as the create route).
+      const { force, ...patch } = req.body as {
+        force?: boolean;
+        company_name?: string;
+        zone_code?: string;
+        is_active?: boolean;
+      };
+
+      // A RENAME goes through the same dedupe the self-add path enforces —
+      // otherwise the directory could be renamed into the very near-duplicate
+      // the create path refuses (audit 2026-07-05 #9). Only an actual name
+      // CHANGE is checked (re-saving the modal with the same name is a no-op),
+      // and the row being renamed is excluded from its own candidates.
+      if (patch.company_name !== undefined && !force) {
+        const existing = await prisma.consignee.findUnique({
+          where: { id: req.params.id },
+          select: { company_name: true },
+        });
+        if (existing && existing.company_name !== patch.company_name) {
+          const candidates = await similarActiveConsignees(patch.company_name, req.params.id);
+          if (candidates.length > 0) {
+            throw new ApiError(
+              409,
+              "SIMILAR_EXISTS",
+              "A similar consignee already exists — is this rename creating a duplicate?",
+              { candidates }
+            );
+          }
+        }
+      }
+
+      await updateConsignee(prisma, req.params.id, patch, req.user!.id);
       const updated = await prisma.consignee.findUnique({
         where: { id: req.params.id },
         select: {

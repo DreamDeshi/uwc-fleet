@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useConsignees, useUpdateConsignee } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
 import { Button, Card, EmptyState, ErrorState, Loading, Modal, Pill, SearchInput } from "@/components/ui";
-import { apiErrorMessage } from "@/services/api";
+import { apiErrorCode, apiErrorMessage } from "@/services/api";
 import { ZONES } from "@/lib/zones";
 import type { Consignee } from "@/types";
 
@@ -104,8 +104,14 @@ function EditConsigneeModal({ consignee, onClose }: { consignee: Consignee; onCl
   const [zone, setZone] = useState(consignee.zone_code);
   const [active, setActive] = useState(consignee.is_active !== false);
   const [error, setError] = useState<string | null>(null);
+  // A 409 warning from the server (rename would create a near-duplicate /
+  // deactivating with active bookings) — shown with a "Save anyway" that
+  // re-submits force=true. Any field edit clears it back to a normal save.
+  const [needsForce, setNeedsForce] = useState(false);
 
-  const save = async () => {
+  const WARN_CODES = ["SIMILAR_EXISTS", "CONSIGNEE_IN_USE"];
+
+  const save = async (force = false) => {
     setError(null);
     try {
       await update.mutateAsync({
@@ -113,10 +119,12 @@ function EditConsigneeModal({ consignee, onClose }: { consignee: Consignee; onCl
         company_name: name.trim() || undefined,
         zone_code: zone,
         is_active: active,
+        ...(force ? { force: true } : {}),
       });
       onClose();
     } catch (e) {
       setError(apiErrorMessage(e, "Could not save. Try again."));
+      setNeedsForce(WARN_CODES.includes(apiErrorCode(e) ?? ""));
     }
   };
 
@@ -154,7 +162,17 @@ function EditConsigneeModal({ consignee, onClose }: { consignee: Consignee; onCl
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={save} disabled={update.isPending}>
+          {needsForce && (
+            <Button
+              variant="outline"
+              onClick={() => save(true)}
+              disabled={update.isPending}
+              style={{ color: colors.red, borderColor: colors.red }}
+            >
+              Save anyway
+            </Button>
+          )}
+          <Button variant="primary" onClick={() => save()} disabled={update.isPending}>
             {update.isPending ? "Saving…" : "Save"}
           </Button>
         </div>
