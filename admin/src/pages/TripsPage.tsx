@@ -31,6 +31,7 @@ import { DispatchToggle } from "@/components/DispatchToggle";
 import { StatusTimeline } from "@/components/StatusTimeline";
 import { apiErrorMessage, apiErrorCode, apiErrorConflicts } from "@/services/api";
 import { formatDateTime, formatMoney, mytDateKey } from "@/lib/format";
+import { byPickupUrgency } from "@/lib/pendingOrder";
 import {
   ORIGIN_LABEL,
   cargoSummary,
@@ -127,6 +128,9 @@ export function TripsPage() {
     const g: Record<string, Trip[]> = { pending: [], active: [], completed: [], cancelled: [] };
     const source = needsAttentionOnly ? (trips.data ?? []).filter(needsAttention) : trips.data ?? [];
     for (const t of source) g[tripGroup(t.status)].push(t);
+    // The dispatch queue is worked top-down: most-urgent pickup first, not
+    // newest-created first (which buries the longest-waiting booking).
+    g.pending.sort(byPickupUrgency);
     return g;
   }, [trips.data, needsAttentionOnly]);
 
