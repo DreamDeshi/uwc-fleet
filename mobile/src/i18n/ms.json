@@ -141,6 +141,11 @@
     "alreadyRecorded": "Sudah direkodkan — skrin dikemas kini.",
     "cameraBlocked": "Akses kamera disekat — benarkan dalam tetapan pelayar untuk memuat naik foto penghantaran.",
     "toastDelivered": "Hentian dihantar.",
+    "savedOffline": "Disimpan pada telefon ini — akan dimuat naik apabila talian kembali.",
+    "waitingSignal": "Menunggu isyarat",
+    "podQueued": "Foto disimpan — dimuat naik apabila dalam talian",
+    "outboxSynced": "Penghantaran tersimpan telah dimuat naik ({{count}})",
+    "outboxDropped": "Penghantaran tersimpan gagal dimuat naik ({{count}}) — sila semak perjalanan itu.",
     "noTrips": "Belum ada perjalanan."
   },
   "earnings": {

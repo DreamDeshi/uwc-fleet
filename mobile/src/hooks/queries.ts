@@ -256,7 +256,7 @@ import { DocumentType } from "../types";
 //   • Web: that object would serialize to the string "[object Object]" (no file
 //     bytes), so we fetch the uri into a real Blob/File and append that. The
 //     boundary is handled by UPLOAD_HEADERS below (see the note there).
-async function appendPhoto(form: FormData, field: string, photo: PickedPhoto) {
+export async function appendPhoto(form: FormData, field: string, photo: PickedPhoto) {
   if (Platform.OS === "web") {
     const blob = await (await fetch(photo.uri)).blob();
     form.append(field, new File([blob], photo.name, { type: photo.type }));
@@ -272,7 +272,7 @@ async function appendPhoto(form: FormData, field: string, photo: PickedPhoto) {
 // multipart/form-data prevents that: on native RN fills in the boundary, and on
 // web axios's XHR adapter strips this header for a FormData body so the browser
 // regenerates it with the correct boundary.
-const UPLOAD_HEADERS = { "Content-Type": "multipart/form-data" };
+export const UPLOAD_HEADERS = { "Content-Type": "multipart/form-data" };
 
 // POD photo for a stop. The API stores the Cloudinary URL on the stop and flips
 // do_uploaded, which satisfies the "Delivered" gate.

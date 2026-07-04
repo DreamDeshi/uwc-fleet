@@ -141,6 +141,11 @@
     "alreadyRecorded": "已记录——画面已更新。",
     "cameraBlocked": "相机权限被阻止——请在浏览器设置中允许相机，才能上传送货照片。",
     "toastDelivered": "停靠点已送达。",
+    "savedOffline": "已保存到本机——恢复网络后将自动上传。",
+    "waitingSignal": "等待信号",
+    "podQueued": "照片已保存——联网后上传",
+    "outboxSynced": "已上传保存的送货记录（{{count}}）",
+    "outboxDropped": "有保存的送货记录无法上传（{{count}}）——请检查该行程。",
     "noTrips": "暂无行程。"
   },
   "earnings": {

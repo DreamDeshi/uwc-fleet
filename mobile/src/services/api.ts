@@ -127,6 +127,19 @@ export function apiErrorCode(err: unknown): string | null {
   return ax?.response?.data?.error?.code ?? null;
 }
 
+/**
+ * A request that never got a server reply — offline, DNS failure, timeout
+ * (ECONNABORTED) or a connection torn down mid-flight. This is the "queue it
+ * and retry later" class: the POD outbox keeps items on these and only gives
+ * up on real API replies. Anything WITH a response is a server decision, not
+ * a connectivity problem.
+ */
+export function isNetworkError(err: unknown): boolean {
+  const ax = err as AxiosError;
+  if (!ax?.isAxiosError) return false;
+  return !ax.response;
+}
+
 /** Similar-consignee candidates from a 409 SIMILAR_EXISTS response. */
 export interface SimilarConsignee {
   id: string;

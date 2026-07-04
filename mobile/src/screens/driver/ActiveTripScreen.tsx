@@ -15,10 +15,12 @@ import {
   useTripRoute,
   useUploadPod,
 } from "../../hooks/queries";
-import { capturePodPhoto } from "../../lib/photo";
+import { capturePodPhoto, toDurablePhotoUri } from "../../lib/photo";
 import { useTripLocation, TripLocationState } from "../../hooks/useTripLocation";
 import { useToast } from "../../components/Toast";
-import { apiErrorCode, apiErrorMessage } from "../../services/api";
+import { apiErrorCode, apiErrorMessage, isNetworkError } from "../../services/api";
+import { enqueuePodItem, removePodItem, noteDirectPodUpload, findOutboxItem, type PodOutboxItem } from "../../lib/podOutbox";
+import { usePodOutboxItems } from "../../hooks/usePodOutbox";
 import { colors, radius, shadow } from "../../theme";
 import { Button } from "../../components/Button";
 import { LoadingState, ErrorState } from "../../components/States";
@@ -68,6 +70,10 @@ export function ActiveTripScreen() {
   const updateStatus = useUpdateTripStatus();
   const updateDocs = useUpdateStopDocs();
   const uploadPod = useUploadPod();
+  // POD offline outbox: deliveries saved on dead signal live here until the
+  // background flush (usePodOutboxFlush in DriverTabs) replays them. The
+  // per-stop queued item drives the "waiting for signal" UI below.
+  const outbox = usePodOutboxItems();
 
   // Web double-click can synthesize a second press before React re-renders
   // with isPending=true (the same RN-web double-fire class of bug as the
@@ -126,6 +132,18 @@ export function ActiveTripScreen() {
           await reconcile();
           return;
         }
+        // Dead signal: queue the arrival so the POD flow UNLOCKS (the photo +
+        // Delivered UI gates on arrived) — the whole stop can now complete
+        // offline and replay in order when signal returns.
+        if (isNetworkError(err)) {
+          try {
+            await enqueuePodItem({ tripId: trip.id, stopId: stop.id, markArrived: true });
+            toast(t("trip.savedOffline"), "info");
+            return;
+          } catch {
+            // storage full/unavailable — fall through to the normal error
+          }
+        }
         const msg = apiErrorMessage(err);
         setError(msg);
         // Toast too (same rationale as onCapturePod): the inline error sits in
@@ -140,7 +158,21 @@ export function ActiveTripScreen() {
     try {
       await updateDocs.mutateAsync({ tripId: trip.id, stopId: stop.id, [field]: value });
     } catch (err) {
-      setError(apiErrorMessage(err));
+      // Dead signal while TICKING the K2 ack: remember it in the outbox so the
+      // background flush sets the flag before confirming delivery. (Unticking
+      // offline isn't queued — the flush only ever asserts the ack.)
+      if (isNetworkError(err) && field === "k2_form_ack" && value) {
+        try {
+          await enqueuePodItem({ tripId: trip.id, stopId: stop.id, k2FormAck: true });
+          toast(t("trip.savedOffline"), "info");
+          return;
+        } catch {
+          // storage full/unavailable — fall through to the normal error
+        }
+      }
+      const msg = apiErrorMessage(err);
+      setError(msg);
+      toast(msg, "error");
     }
   };
 
@@ -148,6 +180,7 @@ export function ActiveTripScreen() {
   // do_uploaded, which (with the K2 ack where applicable) unlocks "Delivered".
   const onCapturePod = async (stop: TripStop) => {
     setError(null);
+    let captured: { uri: string; name: string; type: string } | null = null;
     try {
       const photo = await capturePodPhoto();
       if (photo === "permission_denied") {
@@ -161,9 +194,26 @@ export function ActiveTripScreen() {
         return;
       }
       if (!photo) return; // user cancelled — not an error
+      captured = photo;
       await uploadPod.mutateAsync({ tripId: trip.id, stopId: stop.id, photo });
+      // If this stop had a queued offline photo, the direct upload supersedes
+      // it — don't let the flush re-send a stale shot.
+      await noteDirectPodUpload(stop.id);
       toast(t("trip.podUploaded"), "success");
     } catch (err) {
+      // Dead signal with the photo ALREADY captured: queue it locally and let
+      // the driver carry on — this is a save, not a failure. The uri is made
+      // reload-durable first (web blob: URLs die with the page).
+      if (captured && isNetworkError(err)) {
+        try {
+          const durable = await toDurablePhotoUri(captured);
+          await enqueuePodItem({ tripId: trip.id, stopId: stop.id, photo: durable });
+          toast(t("trip.savedOffline"), "info");
+          return;
+        } catch {
+          // storage full/unavailable — fall through to the normal error
+        }
+      }
       const msg = apiErrorMessage(err);
       setError(msg);
       // Also surface via the toast overlay — the inline error sits inside the
@@ -173,15 +223,38 @@ export function ActiveTripScreen() {
     }
   };
 
+  // Queue the Delivered intent locally (photo/K2 already merged on the item if
+  // they were captured offline) — the background flush completes the stop.
+  const queueDeliveredOffline = async (stop: TripStop): Promise<boolean> => {
+    try {
+      await enqueuePodItem({ tripId: trip.id, stopId: stop.id, confirmDelivered: true });
+      toast(t("trip.savedOffline"), "info");
+      return true;
+    } catch {
+      return false; // storage full/unavailable — caller shows the normal error
+    }
+  };
+
   const onDelivered = (stop: TripStop) =>
     oncePerAction(async () => {
       setError(null);
+      // The server would reject this delivered confirm outright while the POD
+      // photo is still queued on the phone (DOCUMENTATION_INCOMPLETE — it has
+      // no photo yet), so don't even try: record the intent and let the flush
+      // run photo → ack → delivered in order once signal returns.
+      const queued = findOutboxItem(outbox, stop.id);
+      if (queued && (queued.photo || (queued.k2FormAck && !queued.k2Acked))) {
+        if (await queueDeliveredOffline(stop)) return;
+      }
       try {
         const updated = await updateStatus.mutateAsync({
           tripId: trip.id,
           action: "delivered",
           stop_id: stop.id,
         });
+        // Delivered through the normal online path — clear any leftover
+        // queued intent for this stop so the flush has nothing to replay.
+        await removePodItem(stop.id);
         if (updated.status === "completed") {
           setEarned(updated.incentive_earned);
         } else {
@@ -189,9 +262,12 @@ export function ActiveTripScreen() {
         }
       } catch (err) {
         if (DELIVERED_ALREADY_CODES.includes(apiErrorCode(err) ?? "")) {
+          await removePodItem(stop.id);
           await reconcile();
           return;
         }
+        // Dead signal on the confirm itself: save the tap instead of losing it.
+        if (isNetworkError(err) && (await queueDeliveredOffline(stop))) return;
         const msg = apiErrorMessage(err);
         setError(msg);
         // Delivered gates the driver's pay — a silently-lost tap here means an
@@ -252,6 +328,7 @@ export function ActiveTripScreen() {
               index={idx}
               busy={updateStatus.isPending || updateDocs.isPending}
               uploadingPod={uploadPod.isPending}
+              queued={findOutboxItem(outbox, stop.id)}
               onArrived={() => onArrived(stop)}
               onToggleDoc={(f, v) => toggleDoc(stop, f, v)}
               onCapturePod={() => onCapturePod(stop)}
@@ -353,6 +430,7 @@ function StopCard({
   index,
   busy,
   uploadingPod,
+  queued,
   onArrived,
   onToggleDoc,
   onCapturePod,
@@ -362,6 +440,7 @@ function StopCard({
   index: number;
   busy: boolean;
   uploadingPod: boolean;
+  queued?: PodOutboxItem;
   onArrived: () => void;
   onToggleDoc: (field: "do_uploaded" | "k2_form_ack", value: boolean) => void;
   onCapturePod: () => void;
@@ -369,8 +448,19 @@ function StopCard({
 }) {
   const { t } = useTranslation();
   const isK2 = stop.consignee?.zone_code === "K2";
+  // Offline-queued pieces count toward the gate: the arrival/photo/ack are
+  // safely on the phone and the flush replays them (in order) before the
+  // delivered confirm, so the driver isn't blocked by dead signal.
+  const queuedPhoto = queued?.photo != null || queued?.photoUploaded === true;
+  const queuedAck = queued?.k2FormAck === true;
+  // Arrived (server) or arrived-saved-on-phone — unlocks the POD section.
+  const arrivedLocal =
+    stop.status === "arrived" || (stop.status === "pending" && queued?.markArrived === true);
+  // Delivered already queued → the stop is done as far as the driver is
+  // concerned; show the waiting-for-signal state instead of buttons.
+  const deliveryQueued = queued?.confirmDelivered === true && stop.status !== "delivered";
   // do_uploaded is now driven by the POD photo upload, not a checkbox.
-  const docsComplete = stop.do_uploaded && (!isK2 || stop.k2_form_ack);
+  const docsComplete = (stop.do_uploaded || queuedPhoto) && (!isK2 || stop.k2_form_ack || queuedAck);
   // Translated stop-status label (was a raw, untranslated enum like "ARRIVED").
   const statusLabel: Record<string, string> = {
     pending: t("trip.stopPending"),
@@ -395,6 +485,11 @@ function StopCard({
             <Ionicons name="checkmark-circle" size={16} color={colors.green} />
             <Text style={styles.deliveredText}>{t("trip.markDelivered")}</Text>
           </View>
+        ) : deliveryQueued ? (
+          <View style={styles.queuedPill}>
+            <Ionicons name="cloud-upload-outline" size={16} color={colors.orange} />
+            <Text style={styles.queuedText}>{t("trip.waitingSignal")}</Text>
+          </View>
         ) : (
           <Text style={styles.stopStatus}>
             {(statusLabel[stop.status] ?? stop.status).toUpperCase()}
@@ -402,8 +497,14 @@ function StopCard({
         )}
       </View>
 
-      {/* pending → Arrived button */}
-      {stop.status === "pending" ? (
+      {/* Delivered is saved on this phone — nothing left for the driver to do
+          at this stop; the outbox completes it when signal returns. */}
+      {deliveryQueued ? (
+        <Text style={styles.queuedHint}>{t("trip.savedOffline")}</Text>
+      ) : null}
+
+      {/* pending → Arrived button (hidden once arrival is saved on-phone) */}
+      {stop.status === "pending" && !arrivedLocal && !deliveryQueued ? (
         <Button
           title={t("trip.arrivedAtPickup")}
           onPress={onArrived}
@@ -414,19 +515,30 @@ function StopCard({
         />
       ) : null}
 
-      {/* arrived → POD photo gate + Delivered button */}
-      {stop.status === "arrived" ? (
+      {/* arrived (server or saved-on-phone) → POD photo gate + Delivered.
+          Hidden once the delivery itself is queued — nothing left to do. */}
+      {arrivedLocal && !deliveryQueued ? (
         <View style={{ marginTop: 12 }}>
           <Text style={styles.gateHint}>{t("trip.podGateHint")}</Text>
 
-          {/* POD photo: capture (camera-first) or show the uploaded shot */}
-          {stop.pod_photo ? (
+          {/* POD photo: capture (camera-first), the uploaded shot, or the
+              offline-queued shot waiting for signal */}
+          {stop.pod_photo || queued?.photo ? (
             <View style={styles.podRow}>
-              <Image source={{ uri: stop.pod_photo }} style={styles.podThumb} />
+              <Image
+                source={{ uri: stop.pod_photo ?? queued!.photo!.uri }}
+                style={styles.podThumb}
+              />
               <View style={{ flex: 1 }}>
                 <View style={styles.podDoneRow}>
-                  <Ionicons name="checkmark-circle" size={16} color={colors.green} />
-                  <Text style={styles.podDoneText}>{t("trip.podUploaded")}</Text>
+                  <Ionicons
+                    name={stop.pod_photo ? "checkmark-circle" : "cloud-upload-outline"}
+                    size={16}
+                    color={stop.pod_photo ? colors.green : colors.orange}
+                  />
+                  <Text style={stop.pod_photo ? styles.podDoneText : styles.podQueuedText}>
+                    {stop.pod_photo ? t("trip.podUploaded") : t("trip.podQueued")}
+                  </Text>
                 </View>
                 <TouchableOpacity onPress={onCapturePod} hitSlop={8} disabled={uploadingPod}>
                   <Text style={styles.podRetake}>{t("trip.podRetake")}</Text>
@@ -447,7 +559,7 @@ function StopCard({
           {isK2 ? (
             <DocCheckbox
               label={t("trip.k2Form")}
-              checked={stop.k2_form_ack}
+              checked={stop.k2_form_ack || queuedAck}
               onToggle={(v) => onToggleDoc("k2_form_ack", v)}
             />
           ) : null}
@@ -547,6 +659,11 @@ const styles = StyleSheet.create({
   stopStatus: { fontSize: 10, fontWeight: "800", color: colors.orange },
   deliveredPill: { flexDirection: "row", alignItems: "center", gap: 4 },
   deliveredText: { fontSize: 11, fontWeight: "800", color: colors.green },
+  // Offline-outbox states: saved on this phone, waiting for signal.
+  queuedPill: { flexDirection: "row", alignItems: "center", gap: 4 },
+  queuedText: { fontSize: 11, fontWeight: "800", color: colors.orange },
+  queuedHint: { fontSize: 12.5, color: colors.orange, marginTop: 10, lineHeight: 17 },
+  podQueuedText: { fontSize: 13, fontWeight: "700", color: colors.orange },
 
   gateHint: { fontSize: 12, color: colors.textMuted, marginBottom: 10, lineHeight: 17 },
   podRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 4 },

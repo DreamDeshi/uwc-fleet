@@ -15,6 +15,7 @@ const TAB_BAR_STYLE = {
   paddingTop: 6,
   paddingBottom: Platform.OS === "web" ? 16 : 8,
 } as const;
+import { usePodOutboxFlush } from "../hooks/usePodOutbox";
 import { DriverDashboardScreen } from "../screens/driver/DriverDashboardScreen";
 import { TripsStack } from "./TripsStack";
 import { EarningsScreen } from "../screens/driver/EarningsScreen";
@@ -32,6 +33,10 @@ function tabBarStyleForTrips(route: RouteProp<DriverTabParamList, "TripsTab">) {
 
 export function DriverTabs() {
   const { t } = useTranslation();
+  // POD offline outbox: deliveries completed on dead signal replay from here
+  // (mount + reconnect + foreground + periodic), so they upload even after
+  // the driver leaves the active-trip screen.
+  usePodOutboxFlush();
   return (
     <Tab.Navigator
       screenOptions={{

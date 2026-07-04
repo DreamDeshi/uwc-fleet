@@ -19,6 +19,8 @@ function item(overrides: Partial<PodOutboxItem> = {}): PodOutboxItem {
   return {
     tripId: "t1",
     stopId: "s1",
+    markArrived: false,
+    arrivedMarked: false,
     photo: PHOTO,
     photoUploaded: false,
     k2FormAck: false,
@@ -32,6 +34,7 @@ function item(overrides: Partial<PodOutboxItem> = {}): PodOutboxItem {
 
 // A fake API that records calls and fails per-step on command.
 function fakeApi(opts: {
+  arrivedFails?: unknown;
   uploadFails?: unknown;
   ackFails?: unknown;
   confirmFails?: unknown;
@@ -39,6 +42,10 @@ function fakeApi(opts: {
   const calls: string[] = [];
   return {
     calls,
+    async markArrived() {
+      calls.push("arrived");
+      if (opts.arrivedFails) throw opts.arrivedFails;
+    },
     async uploadPod() {
       calls.push("upload");
       if (opts.uploadFails) throw opts.uploadFails;
@@ -87,12 +94,19 @@ describe("mergeOutboxItem — one item per stop, intents merge", () => {
 });
 
 describe("flushOutboxItems — replay when connectivity returns", () => {
-  it("runs photo → K2 ack → delivered in order and dequeues on success", async () => {
+  it("runs arrived → photo → K2 ack → delivered in order and dequeues on success", async () => {
     const api = fakeApi({});
-    const res = await flushOutboxItems([item({ k2FormAck: true })], api);
-    expect(api.calls).toEqual(["upload", "ack", "confirm"]);
+    const res = await flushOutboxItems([item({ markArrived: true, k2FormAck: true })], api);
+    expect(api.calls).toEqual(["arrived", "upload", "ack", "confirm"]);
     expect(res.synced).toBe(1);
     expect(res.outcomes[0].outcome).toBe("synced");
+  });
+
+  it("an arrived retry that hits 'already marked arrived' (INVALID_STATUS) continues to the next step", async () => {
+    const api = fakeApi({ arrivedFails: apiErr("INVALID_STATUS") });
+    const res = await flushOutboxItems([item({ markArrived: true })], api);
+    expect(api.calls).toEqual(["arrived", "upload", "confirm"]);
+    expect(res.synced).toBe(1);
   });
 
   it("keeps the item when the network is still down (enqueue survives)", async () => {

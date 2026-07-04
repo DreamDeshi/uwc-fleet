@@ -56,6 +56,24 @@ export async function capturePodPhoto(): Promise<PodCaptureResult> {
   return finalizePhoto(result.assets[0], "pod.jpg");
 }
 
+/**
+ * Make a photo's uri survive a page reload before it goes into the POD
+ * offline outbox. On web the picker hands back a blob: URL, which dies with
+ * the document — convert it to a data: URI (works in fetch(), so the upload
+ * path is unchanged). Native file:// URIs already persist in the app cache.
+ */
+export async function toDurablePhotoUri(photo: PickedPhoto): Promise<PickedPhoto> {
+  if (Platform.OS !== "web" || !photo.uri.startsWith("blob:")) return photo;
+  const blob = await (await fetch(photo.uri)).blob();
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+  return { ...photo, uri: dataUrl };
+}
+
 /** Pick a document (image) for a booking — DO / invoice from the gallery. */
 export async function pickDocumentImage(): Promise<PickedPhoto | null> {
   const lib = await ImagePicker.requestMediaLibraryPermissionsAsync();

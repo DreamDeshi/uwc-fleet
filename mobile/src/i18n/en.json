@@ -146,6 +146,11 @@
     "alreadyRecorded": "Already recorded — screen updated.",
     "cameraBlocked": "Camera access is blocked — enable it in your browser settings to upload the delivery photo.",
     "toastDelivered": "Stop delivered.",
+    "savedOffline": "Saved on this phone — will upload when you're back online.",
+    "waitingSignal": "Waiting for signal",
+    "podQueued": "Photo saved — uploads when online",
+    "outboxSynced": "Saved deliveries uploaded ({{count}})",
+    "outboxDropped": "A saved delivery could not be uploaded ({{count}}) — check the trip.",
     "noTrips": "No trips yet."
   },
   "earnings": {

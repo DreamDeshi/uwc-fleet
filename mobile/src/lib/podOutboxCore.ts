@@ -26,6 +26,10 @@ export interface OutboxPhoto {
 export interface PodOutboxItem {
   tripId: string;
   stopId: string; // one item per stop — the outbox's natural key
+  /** Driver tapped "Arrived" offline (it gates the POD UI, so it queues too). */
+  markArrived: boolean;
+  /** The arrived step committed server-side. */
+  arrivedMarked: boolean;
   /** Photo still to upload; null once uploaded (or never captured offline). */
   photo: OutboxPhoto | null;
   /** The photo step committed server-side — a re-flush must NOT repeat it. */
@@ -41,9 +45,13 @@ export interface PodOutboxItem {
   apiFailures: number;
 }
 
-// "Already recorded" — the server is at (or past) the state we wanted: dequeue
-// as success. Must stay in sync with ActiveTripScreen's DELIVERED_ALREADY_CODES.
-export const OUTBOX_ALREADY_CODES = [
+// Per-step "already recorded" replies — the server is at (or past) the state
+// that step wanted: mark the step committed and carry on. Step-scoped because
+// the SAME code means different things on different endpoints (INVALID_STATUS
+// is "already marked arrived" on the arrived action but a genuine refusal on
+// start). Must stay in sync with ActiveTripScreen's reconcile code sets.
+export const ARRIVED_STEP_ALREADY_CODES = ["INVALID_STATUS"] as const;
+export const DELIVERED_STEP_ALREADY_CODES = [
   "STOP_ALREADY_DELIVERED",
   "TRIP_ALREADY_FINALIZED",
   "TRIP_NOT_ACTIVE",
@@ -68,6 +76,7 @@ export const MAX_OUTBOX = 15;
 export interface OutboxPatch {
   tripId: string;
   stopId: string;
+  markArrived?: boolean;
   photo?: OutboxPhoto;
   k2FormAck?: boolean;
   confirmDelivered?: boolean;
@@ -87,6 +96,8 @@ export function mergeOutboxItem(
   const merged: PodOutboxItem = {
     tripId: patch.tripId,
     stopId: patch.stopId,
+    markArrived: patch.markArrived ?? existing?.markArrived ?? false,
+    arrivedMarked: existing?.arrivedMarked ?? false, // re-tapping Arrived is idempotent
     photo: patch.photo ?? existing?.photo ?? null,
     photoUploaded: patch.photo ? false : existing?.photoUploaded ?? false,
     k2FormAck: patch.k2FormAck ?? existing?.k2FormAck ?? false,
@@ -112,6 +123,8 @@ export function findOutboxItem(
 export type FlushOutcome = "synced" | "kept" | "dropped";
 
 export interface PodOutboxApi {
+  /** PATCH status=arrived for the stop. INVALID_STATUS = already arrived. */
+  markArrived(item: PodOutboxItem): Promise<void>;
   /** POST the queued photo. Server overwrites the same publicId — retry-safe. */
   uploadPod(item: PodOutboxItem): Promise<void>;
   /** PATCH k2_form_ack: true. Idempotent. */
@@ -130,24 +143,41 @@ export interface ItemOutcome {
 }
 
 /**
- * Replay one item's remaining steps in order: photo → K2 ack → delivered.
- * Each committed step is marked on the item so a later retry NEVER repeats it
- * (the idempotency requirement: a partial earlier success must not duplicate).
+ * Replay one item's remaining steps in order: arrived → photo → K2 ack →
+ * delivered. Each committed step is marked on the item so a later retry NEVER
+ * repeats it (the idempotency requirement: a partial earlier success must not
+ * duplicate). A step's "already recorded" reply counts as that step
+ * committing — a lost-response earlier attempt, not an error.
  */
 async function flushOneItem(input: PodOutboxItem, api: PodOutboxApi): Promise<ItemOutcome> {
   const item: PodOutboxItem = { ...input };
+
+  // Run one step; swallow its step-scoped already-recorded codes as success.
+  const step = async (fn: () => Promise<void>, alreadyCodes: readonly string[]) => {
+    try {
+      await fn();
+    } catch (err) {
+      if (!api.isNetworkError(err) && alreadyCodes.includes(api.errorCode(err) ?? "")) return;
+      throw err;
+    }
+  };
+
   try {
+    if (item.markArrived && !item.arrivedMarked) {
+      await step(() => api.markArrived(item), ARRIVED_STEP_ALREADY_CODES);
+      item.arrivedMarked = true;
+    }
     if (item.photo && !item.photoUploaded) {
-      await api.uploadPod(item);
+      await step(() => api.uploadPod(item), []);
       item.photoUploaded = true;
       item.photo = null; // free the (possibly large) queued image immediately
     }
     if (item.k2FormAck && !item.k2Acked) {
-      await api.ackK2(item);
+      await step(() => api.ackK2(item), []);
       item.k2Acked = true;
     }
     if (item.confirmDelivered) {
-      await api.confirmDelivered(item);
+      await step(() => api.confirmDelivered(item), DELIVERED_STEP_ALREADY_CODES);
     }
     return { item, outcome: "synced" };
   } catch (err) {
@@ -156,11 +186,6 @@ async function flushOneItem(input: PodOutboxItem, api: PodOutboxApi): Promise<It
       return { item, outcome: "kept" };
     }
     const code = api.errorCode(err);
-    if ((OUTBOX_ALREADY_CODES as readonly string[]).includes(code ?? "")) {
-      // The server is already where we wanted it (a lost-response earlier
-      // attempt committed) — success, not an error.
-      return { item, outcome: "synced" };
-    }
     if ((OUTBOX_STALE_CODES as readonly string[]).includes(code ?? "")) {
       return { item, outcome: "dropped" };
     }
