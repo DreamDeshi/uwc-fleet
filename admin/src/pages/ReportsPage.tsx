@@ -15,6 +15,7 @@ import { colors, radius } from "@/theme";
 import { Button, Card, ErrorState, Loading, SectionTitle } from "@/components/ui";
 import { formatDateTime, formatMoney, formatNumber } from "@/lib/format";
 import { buildPayrollCsv, lastNMytMonthKeys, monthKeyLabel, payrollBusy } from "@/lib/payroll";
+import { CSV_BOM } from "@/lib/csv";
 import type { MonthlyRow, PayrollDriverRow } from "@/types";
 
 const PIE_COLORS = [colors.blue, colors.yellow, colors.green, colors.orange, "#9333ea", "#0891b2"];
@@ -71,7 +72,8 @@ export function ReportsPage() {
     // the 6-month aggregates. Money cells tie exactly to the displayed
     // formatMoney values (2dp, float dust rounded away).
     const csv = buildPayrollCsv(month, payrollRows, months);
-    const blob = new Blob([csv], { type: "text/csv" });
+    // BOM so Excel decodes UTF-8 (non-ASCII names) instead of ANSI-mojibake.
+    const blob = new Blob([CSV_BOM + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
