@@ -1,24 +1,89 @@
 /**
- * Deployed targets and the pre-seeded Railway test accounts.
+ * Deployment targets and the pre-seeded test accounts.
  *
- * These accounts already exist in the Railway DB (see api/prisma/seed-clean.ts).
- * Tests never create users — they log in as these and drive trip state via the
- * API (see helpers/api.ts) so each spec can seed its own fixtures.
+ * TARGETS ARE ENV-DRIVEN — the suite no longer points at production by
+ * default. The e2e reset is destructive (cancels ALL pending/approved trips,
+ * drives the test driver's active trips to completion with a stub POD, and
+ * one spec edits a truck's rates), so hitting the live deployment must be a
+ * conscious choice:
+ *
+ *   - Default: local dev servers (start api/admin/mobile yourself).
+ *   - E2E_ALLOW_PROD=1        → targets the deployed Railway apps (the old
+ *     behaviour, used for post-deploy verification) with a loud warning.
+ *   - E2E_API_URL / E2E_ADMIN_URL / E2E_MOBILE_URL → explicit per-service
+ *     overrides (e.g. a staging deployment); a Railway host still requires
+ *     E2E_ALLOW_PROD=1.
+ *   - E2E_PASSWORD            → account password override (defaults to the
+ *     seeded Password123, which local seeds create; use this after the prod
+ *     credentials are rotated).
+ *
+ * The accounts already exist wherever the seeds ran (see api/prisma/seed.ts /
+ * seed-clean.ts). Tests never create users — they log in as these and drive
+ * trip state via the API (see helpers/api.ts) so each spec can seed its own
+ * fixtures.
  */
 
-export const MOBILE_URL = "https://uwc-mobile-production.up.railway.app";
-export const ADMIN_URL = "https://uwc-admin-production.up.railway.app";
-export const API_URL = "https://uwc-api-production.up.railway.app";
+const PROD_MOBILE_URL = "https://uwc-mobile-production.up.railway.app";
+const PROD_ADMIN_URL = "https://uwc-admin-production.up.railway.app";
+const PROD_API_URL = "https://uwc-api-production.up.railway.app";
+
+const LOCAL_MOBILE_URL = "http://localhost:8081"; // expo web dev server
+const LOCAL_ADMIN_URL = "http://localhost:5173"; // vite dev server
+const LOCAL_API_URL = "http://localhost:3000"; // api dev server
+
+const ALLOW_PROD = process.env.E2E_ALLOW_PROD === "1";
+
+export const MOBILE_URL =
+  process.env.E2E_MOBILE_URL ?? (ALLOW_PROD ? PROD_MOBILE_URL : LOCAL_MOBILE_URL);
+export const ADMIN_URL =
+  process.env.E2E_ADMIN_URL ?? (ALLOW_PROD ? PROD_ADMIN_URL : LOCAL_ADMIN_URL);
+export const API_URL = process.env.E2E_API_URL ?? (ALLOW_PROD ? PROD_API_URL : LOCAL_API_URL);
 export const API_BASE = `${API_URL}/api/v1`;
+
+// Any Railway host counts as production for the opt-in check.
+const isProdUrl = (url: string) => /railway\.app|rlwy\.net/i.test(new URL(url).hostname);
+const prodTargets = [API_URL, ADMIN_URL, MOBILE_URL].filter(isProdUrl);
+
+if (prodTargets.length > 0 && !ALLOW_PROD) {
+  throw new Error(
+    [
+      "e2e: refusing to run against PRODUCTION targets without an explicit opt-in:",
+      ...prodTargets.map((u) => `  - ${u}`),
+      "This suite CREATES AND MODIFIES REAL DATA: the per-spec reset cancels every",
+      "pending/approved trip, completes the test driver's active trips with a stub",
+      "POD photo, and the rate-reset spec edits a real truck's rates.",
+      "Set E2E_ALLOW_PROD=1 to consciously run against production, or point",
+      "E2E_API_URL / E2E_ADMIN_URL / E2E_MOBILE_URL at non-prod targets.",
+    ].join("\n")
+  );
+}
+
+if (prodTargets.length > 0) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    [
+      "",
+      "⚠⚠⚠  e2e: E2E_ALLOW_PROD=1 — RUNNING AGAINST THE LIVE PRODUCTION DEPLOYMENT.",
+      "     Real pending/approved trips WILL be cancelled, the test driver's active",
+      "     trips WILL be completed with a stub POD, and truck rates WILL be edited.",
+      "     Do not run this while the client trial has live work in flight.",
+      "",
+    ].join("\n")
+  );
+}
 
 export interface Account {
   phone: string;
   password: string;
 }
 
-export const ADMIN: Account = { phone: "+60100000001", password: "Password123" };
-export const DRIVER: Account = { phone: "+60100000101", password: "Password123" }; // the PLX 2406 driver
-export const REQUESTOR: Account = { phone: "+60199990001", password: "Password123" };
+// Password for all seeded test accounts; override with E2E_PASSWORD once the
+// deployed credentials are rotated away from the seed default.
+const PASSWORD = process.env.E2E_PASSWORD ?? "Password123";
+
+export const ADMIN: Account = { phone: "+60100000001", password: PASSWORD };
+export const DRIVER: Account = { phone: "+60100000101", password: PASSWORD }; // the PLX 2406 driver
+export const REQUESTOR: Account = { phone: "+60199990001", password: PASSWORD };
 
 // the PLX 2406 driver's assigned truck. The /approve endpoint requires truck_plate to match the
 // driver's assigned_truck_plate; helpers/api.ts resolves this live from

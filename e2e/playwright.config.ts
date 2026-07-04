@@ -3,11 +3,12 @@ import { defineConfig, devices } from "@playwright/test";
 /**
  * Playwright config for the UWC Fleet e2e suite.
  *
- * The apps under test are already deployed on Railway, so there is no local
- * webServer to boot — tests run straight against production URLs. The three
- * targets (mobile web for requestor + driver, admin dashboard) share one API,
- * so per-test isolation is done in code (see helpers/reset.ts), not by spinning
- * up fresh servers.
+ * Targets are env-driven (see helpers/accounts.ts): by default the suite
+ * points at LOCAL dev servers; running against the deployed Railway apps
+ * requires the explicit E2E_ALLOW_PROD=1 opt-in because the per-spec reset
+ * modifies real data. The three targets (mobile web for requestor + driver,
+ * admin dashboard) share one API, so per-test isolation is done in code
+ * (see helpers/reset.ts), not by spinning up fresh servers.
  *
  * Tests run serially (workers: 1). They share a single backend and a single
  * driver account whose "one active trip" rule makes parallel trip assignment

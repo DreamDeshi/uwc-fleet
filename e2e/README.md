@@ -1,29 +1,39 @@
 # UWC Fleet — End-to-End Tests (Playwright)
 
-Browser end-to-end tests covering the three real user roles against the **deployed**
-apps on Railway:
+Browser end-to-end tests covering the three real user roles.
 
-| Target | URL |
+**Targets are env-driven** (`helpers/accounts.ts`) — the suite defaults to
+**local dev servers** and refuses to touch the deployed Railway apps unless you
+explicitly opt in:
+
+| Env var | Effect |
 | --- | --- |
-| Mobile web (requestor + driver) | https://uwc-mobile-production.up.railway.app |
-| Admin dashboard | https://uwc-admin-production.up.railway.app |
-| API (used for seeding/reset) | https://uwc-api-production.up.railway.app |
+| *(none)* | Local targets: API `localhost:3000`, admin `localhost:5173`, mobile web `localhost:8081` — start them yourself. |
+| `E2E_ALLOW_PROD=1` | Targets the deployed Railway apps (post-deploy verification). Prints a loud warning. |
+| `E2E_API_URL` / `E2E_ADMIN_URL` / `E2E_MOBILE_URL` | Explicit per-service overrides (e.g. staging). A Railway host still requires `E2E_ALLOW_PROD=1`. |
+| `E2E_PASSWORD` | Account password override (default: the seeded `Password123`). Use after prod credentials are rotated. |
 
-There is **no local server to start** — the tests run straight against production.
-This folder is standalone (its own `package.json`, not part of the npm workspace),
-so install its dependencies separately.
+> ⚠ **The suite modifies real data on whatever backend it targets.** The
+> per-spec reset cancels **every** pending/approved trip, completes the test
+> driver's active trips with a stub POD photo, and the rate-reset spec edits a
+> truck's rates. Never run it against production while the client trial has
+> live work in flight — `E2E_ALLOW_PROD=1` is a conscious decision, not a
+> default.
+
+This folder is standalone (its own `package.json`, not part of the npm
+workspace), so install its dependencies separately.
 
 ## Prerequisites
 
 - Node 18+ (uses the global `fetch`).
-- The seeded test accounts must exist in the Railway DB (they are created by
-  `api/prisma/seed-clean.ts`):
+- The seeded test accounts must exist in the target DB (they are created by
+  `api/prisma/seed.ts` / kept by `seed-clean.ts`):
 
   | Role | Phone | Password |
   | --- | --- | --- |
-  | Admin | `+60100000001` | `Password123` |
-  | Driver (PLX 2406) | `+60100000101` | `Password123` |
-  | Requestor | `+60199990001` | `Password123` |
+  | Admin | `+60100000001` | `Password123` (or `E2E_PASSWORD`) |
+  | Driver (PLX 2406) | `+60100000101` | `Password123` (or `E2E_PASSWORD`) |
+  | Requestor | `+60199990001` | `Password123` (or `E2E_PASSWORD`) |
 
 ## Install
 
@@ -36,7 +46,7 @@ npm run install:browsers   # downloads Chromium for Playwright
 ## Run
 
 ```bash
-npm test                 # headless, all specs
+npm test                 # headless, all specs — LOCAL targets by default
 npm run test:headed      # watch it drive a real browser
 npm run test:ui          # Playwright UI mode (pick/inspect tests)
 npm run report           # open the HTML report from the last run
@@ -45,7 +55,14 @@ npm run report           # open the HTML report from the last run
 npm run test:requestor
 npm run test:admin
 npm run test:driver
+
+# post-deploy verification against the live Railway apps (conscious opt-in;
+# modifies real data — see the warning above)
+E2E_ALLOW_PROD=1 npm test
 ```
+
+On PowerShell, set the variable first: `$env:E2E_ALLOW_PROD = "1"; npm test`
+(and `Remove-Item Env:E2E_ALLOW_PROD` afterwards).
 
 ## What's covered
 
@@ -85,7 +102,9 @@ because they share the single driver account.
 > Trips already **assigned to other drivers** can't be cancelled via the API
 > (only pending/approved can), so they may linger between tests without affecting
 > the (ticket-scoped) assertions. For a guaranteed blank slate, run
-> `npx tsx prisma/seed-clean.ts` in the `api` workspace.
+> `ALLOW_DESTRUCTIVE=1 npx tsx prisma/seed-clean.ts` in the `api` workspace —
+> it refuses to run against the production DB host (see
+> `api/prisma/destructive-guard.ts`).
 
 ## Selector strategy (no test IDs)
 
