@@ -32,6 +32,7 @@ import { DispatchToggle } from "@/components/DispatchToggle";
 import { StatusTimeline } from "@/components/StatusTimeline";
 import { apiErrorMessage, apiErrorCode, apiErrorConflicts } from "@/services/api";
 import { formatDateTime, formatMoney, formatTime, mytDateKey } from "@/lib/format";
+import { ZONES as ZONE_INFOS } from "@/lib/zones";
 import { byPickupUrgency } from "@/lib/pendingOrder";
 import {
   ORIGIN_LABEL,
@@ -52,8 +53,11 @@ const GROUP_META: Record<string, { label: string; dot: string }> = {
   cancelled: { label: "Cancelled / Rejected", dot: "#9ca3af" },
 };
 
-// The 7 fixed delivery zones (Zone model @id codes).
-const ZONES = ["P1", "P2", "P3", "K1", "K2", "A1", "A2"];
+// Every bookable zone (Zone model @id codes) — derived from the shared zone
+// table so the filter can't drift from it again. The old hardcoded 7-zone
+// list omitted the KL/JH/SL long-hauls, making 8-point bookings unfilterable
+// (audit 2026-07-05 #11).
+const ZONES = ZONE_INFOS.map((z) => z.code);
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "", label: "All" },
@@ -825,7 +829,11 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
 
 function ExternalForm({ trip, onDone }: { trip: Trip; onDone: () => void }) {
   const [company, setCompany] = useState("");
-  const [date, setDate] = useState(trip.pickup_datetime.slice(0, 10));
+  // Default to the MYT calendar day of the pickup — slicing the ISO string
+  // takes the UTC day, which is YESTERDAY for any 00:00–07:59 MYT pickup,
+  // pre-filling a booking date that contradicts the MYT pickup shown above
+  // (audit 2026-07-05 #8).
+  const [date, setDate] = useState(mytDateKey(trip.pickup_datetime));
   const [rate, setRate] = useState("");
   const [cargo, setCargo] = useState(`${totalPallets(trip)} pallets`);
   const [error, setError] = useState<string | null>(null);

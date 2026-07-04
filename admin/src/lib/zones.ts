@@ -22,6 +22,10 @@ export const ZONES: ZoneInfo[] = [
   { code: "K2", name: "Sg. Petani / Kuala Ketil", lat: 5.6497, lng: 100.4878, color: "#0891b2" },
   { code: "A1", name: "Taiping", lat: 4.8501, lng: 100.738, color: colors.amber },
   { code: "A2", name: "Ipoh", lat: 4.5975, lng: 101.0901, color: colors.red },
+  // Long-haul extension zones (8 points, bookable — spec §10). KL was missing
+  // here entirely, which also left the trip board's zone filter unable to
+  // find long-haul bookings (audit 2026-07-05 #11).
+  { code: "KL", name: "Kuala Lumpur", lat: 3.139, lng: 101.6869, color: "#be185d" },
   { code: "JH", name: "Johor", lat: 1.4927, lng: 103.7414, color: "#0d9488" },
   { code: "SL", name: "Selangor", lat: 3.0738, lng: 101.5183, color: "#7c3aed" },
 ];
