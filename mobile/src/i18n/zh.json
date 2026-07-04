@@ -241,7 +241,7 @@
     "rebookLast": "重新预订上一次行程",
     "recentConsignees": "最近",
     "truckConfirmNote": "管理员将根据您的货物尺寸确认卡车可用性。",
-    "largeLoadWarning": "这是大批量货物（{{count}} 个托盘）。管理员可能会将其分配给多辆卡车。",
+    "largeLoadWarning": "这是大批量货物（按 4×4 托盘计 {{count}} 个）。管理员可能会将其分配给多辆卡车。",
     "documents": "文件（可选）",
     "documentsHint": "现在附上您的送货单或发票，或稍后从预订详情上传。",
     "attachDocument": "附加文件",

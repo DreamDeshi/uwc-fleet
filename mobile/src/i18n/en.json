@@ -306,7 +306,7 @@
     "rebookLast": "Rebook last trip",
     "recentConsignees": "Recent",
     "truckConfirmNote": "Admin will confirm truck availability based on your cargo size.",
-    "largeLoadWarning": "That's a large load ({{count}} pallets). Admin may split it across more than one truck.",
+    "largeLoadWarning": "That's a large load ({{count}} pallets in 4×4 terms). Admin may split it across more than one truck.",
     "documents": "Documents (Optional)",
     "documentsHint": "Attach your DO or invoice now, or upload it later from the booking details.",
     "attachDocument": "Attach document",

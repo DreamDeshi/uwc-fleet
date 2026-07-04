@@ -31,6 +31,7 @@ import { NewConsigneeModal } from "../../components/NewConsigneeModal";
 import { LoadingState } from "../../components/States";
 import { useToast } from "../../components/Toast";
 import { pickDocumentImage, PickedPhoto } from "../../lib/photo";
+import { palletEquivalents } from "../../lib/pallets";
 import { formatDate, formatTime } from "../../lib/format";
 import { Consignee, Trip } from "../../types";
 
@@ -41,9 +42,12 @@ type Nav = BottomTabNavigationProp<RequestorTabParamList>;
 const STEPS = ["stepWhere", "stepWhat", "stepConfirm"] as const;
 const PALLET_SIZES = ["4×4", "3×4", "4×8", "5×10", "2×2"];
 
-// Soft cap: the largest truck (PLX 2406) holds 16 pallets. We don't hard-block —
-// admin picks the actual truck and can split a load — but we warn past this so
-// the requestor knows a big order may need more than one truck.
+// Soft cap: the largest truck (PLX 2406) holds 16 pallets measured in
+// 4×4-EQUIVALENTS — the same units the server enforces (a 5×10 occupies
+// ~3 slots, a 2×2 a quarter). We don't hard-block — admin picks the actual
+// truck and can split a load — but we warn past this so the requestor knows
+// a big order may need more than one truck instead of hitting
+// CARGO_EXCEEDS_FLEET at submit.
 const LARGEST_TRUCK_PALLETS = 16;
 
 // Recent-consignee chips truncate long company names so they don't overflow the
@@ -150,6 +154,11 @@ export function BookingFormScreen() {
   );
 
   const totalPallets = palletQtys.reduce((a, b) => a + b, 0);
+  // Capacity is judged in 4×4-equivalents (mirrors the server): 6× 5×10 is
+  // 18.75 slots (warn!), 16× 2×2 only 4 (don't).
+  const totalEquivalents = palletEquivalents(
+    PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] }))
+  );
 
   const isLastStep = step === STEPS.length - 1;
 
@@ -334,6 +343,7 @@ export function BookingFormScreen() {
             othersText={othersText}
             setOthersText={setOthersText}
             totalPallets={totalPallets}
+            totalEquivalents={totalEquivalents}
           />
         )}
         {step === 2 && (
@@ -586,6 +596,7 @@ function StepWhat({
   othersText,
   setOthersText,
   totalPallets,
+  totalEquivalents,
 }: {
   cargoType: "pallet" | "carton" | "others";
   setCargoType: (v: "pallet" | "carton" | "others") => void;
@@ -596,6 +607,7 @@ function StepWhat({
   othersText: string;
   setOthersText: (v: string) => void;
   totalPallets: number;
+  totalEquivalents: number;
 }) {
   const { t } = useTranslation();
   // On react-native-web a single tap on a TouchableOpacity can synthesize several
@@ -658,11 +670,11 @@ function StepWhat({
             <Ionicons name="cube" size={16} color={colors.blue} />
             <Text style={styles.totalPillText}>{t("booking.totalPallets", { count: totalPallets })}</Text>
           </View>
-          {totalPallets > LARGEST_TRUCK_PALLETS ? (
+          {totalEquivalents > LARGEST_TRUCK_PALLETS ? (
             <View style={styles.warnNote}>
               <Ionicons name="warning-outline" size={18} color="#b45309" />
               <Text style={styles.warnNoteText}>
-                {t("booking.largeLoadWarning", { count: totalPallets })}
+                {t("booking.largeLoadWarning", { count: totalEquivalents })}
               </Text>
             </View>
           ) : null}
