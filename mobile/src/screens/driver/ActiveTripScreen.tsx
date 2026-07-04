@@ -21,6 +21,7 @@ import { useToast } from "../../components/Toast";
 import { apiErrorCode, apiErrorMessage, isNetworkError } from "../../services/api";
 import { enqueuePodItem, removePodItem, noteDirectPodUpload, findOutboxItem, type PodOutboxItem } from "../../lib/podOutbox";
 import { usePodOutboxItems } from "../../hooks/usePodOutbox";
+import { WebRefreshButton } from "../../components/WebRefreshButton";
 import { colors, radius, shadow } from "../../theme";
 import { Button } from "../../components/Button";
 import { LoadingState, ErrorState } from "../../components/States";
@@ -172,22 +173,32 @@ export function ActiveTripScreen() {
       }
       const msg = apiErrorMessage(err);
       setError(msg);
+      // Toast too (audit #14, same rationale as Arrived/Delivered/POD): the
+      // inline error sits in the often-collapsed bottom sheet, and the K2 ack
+      // GATES Delivered — a silent failure reads as a dead checkbox.
       toast(msg, "error");
     }
   };
 
   // Camera-first POD capture → compress ≤500KB → upload. The API flips
   // do_uploaded, which (with the K2 ack where applicable) unlocks "Delivered".
-  const onCapturePod = async (stop: TripStop) => {
+  // Same synchronous double-fire guard as Arrived/Delivered (audit #6): a web
+  // double-click otherwise launches the picker twice — on native the second
+  // call rejects ("Different image picking in progress") into a spurious
+  // "Something went wrong" toast mid-capture. Holding the guard across the
+  // picker also stops a Delivered tap landing while the camera is open.
+  const onCapturePod = (stop: TripStop) =>
+    oncePerAction(async () => {
     setError(null);
     let captured: { uri: string; name: string; type: string } | null = null;
     try {
       const photo = await capturePodPhoto();
       if (photo === "permission_denied") {
         // Without a POD the Delivered gate never unlocks — the driver must be
-        // told the fix is enabling camera access (a dismissed browser prompt
-        // counts as denied on the web build). A cancel, by contrast, is a
-        // deliberate non-event and shows nothing.
+        // told the fix is enabling camera access. Only reachable on NATIVE
+        // (the web picker never prompts for permission), so the copy points
+        // at the phone's Settings. A cancel, by contrast, is a deliberate
+        // non-event and shows nothing.
         const msg = t("trip.cameraBlocked");
         setError(msg);
         toast(msg, "error");
@@ -221,7 +232,7 @@ export function ActiveTripScreen() {
       // happened after the photo was picked.
       toast(msg, "error");
     }
-  };
+    });
 
   // Queue the Delivered intent locally (photo/K2 already merged on the item if
   // they were captured offline) — the background flush completes the stop.
@@ -318,6 +329,9 @@ export function ActiveTripScreen() {
         >
           <View style={styles.sheetHandleRow}>
             <Text style={styles.sheetTitle}>{t("trip.stops")}</Text>
+            {/* Browsers have no pull-to-refresh gesture (RN-web renders
+                RefreshControl as a plain View) — web drivers resync here. */}
+            <WebRefreshButton refreshing={isRefetching} onRefresh={refetch} />
             <Text style={styles.sheetTicket}>{trip.ticket_number}</Text>
           </View>
 
