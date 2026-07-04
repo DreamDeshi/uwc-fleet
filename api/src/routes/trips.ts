@@ -30,6 +30,7 @@ import {
   mytDateKey,
 } from "../services/incentiveEngine";
 import { leaveDateFilter } from "../services/driverLeave";
+import { priorDeliveredDropsWhere } from "../services/dayLedger";
 import { effectiveTruckRates, effectiveZonePoints } from "../services/pendingRates";
 import { truckExpiryIssues } from "../services/truckEligibility";
 import { PLANT_ORIGIN, zoneCoord, getRoute, type LatLng } from "../lib/geo";
@@ -1548,18 +1549,21 @@ router.patch(
       let incentiveThisTrip = 0;
       for (const group of dayGroups) {
         // Per-day ledger: drops this driver already DELIVERED on this group's
-        // MYT day, on OTHER (completed) trips — regardless of when those trips
-        // were picked up. A stop whose zone is already on the ledger scores
+        // MYT day BEFORE this group's first confirm, on OTHER trips that are
+        // in_progress OR completed — regardless of when those trips were
+        // picked up. A stop whose zone is already on the ledger scores
         // 1 point; the day's FIRST drop is the one the daily deduction lands
         // on, so isFirstDeliveredDropOfDay is true only when the ledger is
-        // empty. (One-active-trip serialises a driver's deliveries, so every
-        // earlier drop today belongs to an already-completed trip.)
+        // empty. Counting in_progress siblings + bounding by delivered-time
+        // order keeps the money right even if trips overlap (see dayLedger.ts
+        // — the RM88-instead-of-RM55 double-first-drop hole).
         const priorStopsToday = await prisma.tripStop.findMany({
-          where: {
-            status: "delivered",
-            delivered_at: { gte: group.dayStart, lt: group.dayEnd },
-            trip: { driver_id: req.user!.id, status: "completed", id: { not: id } },
-          },
+          where: priorDeliveredDropsWhere({
+            driverId: req.user!.id,
+            excludeTripId: id,
+            dayStart: group.dayStart,
+            anchor: group.anchor,
+          }),
           select: { consignee: { select: { zone_code: true } } },
         });
         const zonesDeliveredEarlierToday = priorStopsToday.map((s) => s.consignee.zone_code);
