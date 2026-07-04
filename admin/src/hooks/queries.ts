@@ -43,8 +43,19 @@ export interface TripFilters {
   date_to?: string;
 }
 
-export function useTrips(filters: TripFilters = {}) {
-  const params: Record<string, string> = {};
+// Every mounted useTrips re-downloads its window (full include) on the 20s
+// poll, so each page requests only what it renders (audit #6): the board's
+// working window, the dashboard's recent handful, MobileLite's phone screen.
+// Filters always search the FULL history server-side — the limit caps the
+// result, not the search. True pagination is the noted bigger follow-up.
+const BOARD_LIMIT = 300;
+
+export function useTrips(
+  filters: TripFilters = {},
+  opts: { poll?: boolean; limit?: number } = {}
+) {
+  const { poll = true, limit = BOARD_LIMIT } = opts;
+  const params: Record<string, string> = { limit: String(limit) };
   for (const [k, v] of Object.entries(filters)) if (v) params[k] = v;
   return useQuery({
     // Params are part of the key so each filter combination caches separately;
@@ -56,8 +67,10 @@ export function useTrips(filters: TripFilters = {}) {
     placeholderData: keepPreviousData,
     // Polled like the dashboard/fleet/alerts queries: new bookings, the sweep's
     // auto-assignments, and other admins' changes must appear without an F5 —
-    // the dispatch panel reads trip state from this list.
-    refetchInterval: 20_000,
+    // the dispatch panel reads trip state from this list. Pages that only
+    // aggregate (ReportsPage's pie) opt out of the poll entirely.
+    refetchInterval: poll ? 20_000 : false,
+    ...(poll ? {} : { staleTime: 5 * 60_000 }),
   });
 }
 

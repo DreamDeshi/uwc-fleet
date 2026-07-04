@@ -97,7 +97,8 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const dash = useDashboard();
   const trucks = useTrucks();
-  const trips = useTrips();
+  // Only the "recent trips" strip reads this — a small window is plenty.
+  const trips = useTrips({}, { limit: 25 });
   const drivers = useDrivers();
   const live = useFleetLive();
   const attention = useAttention();

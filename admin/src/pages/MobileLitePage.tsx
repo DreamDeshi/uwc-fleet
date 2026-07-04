@@ -23,7 +23,8 @@ import type { Trip, DriverPerf, AdminUser } from "@/types";
 export function MobileLitePage() {
   const { user, logout } = useAuth();
   const dash = useDashboard();
-  const trips = useTrips();
+  // A phone-sized triage list — the most recent 100 covers it.
+  const trips = useTrips({}, { limit: 100 });
   const drivers = useDrivers();
   const pendingUsers = usePendingUsers();
 

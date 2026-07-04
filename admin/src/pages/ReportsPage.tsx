@@ -21,7 +21,10 @@ const PIE_COLORS = [colors.blue, colors.yellow, colors.green, colors.orange, "#9
 
 export function ReportsPage() {
   const monthly = useMonthly();
-  const trips = useTrips();
+  // Feeds ONLY the route-type pie — no reason to re-download the trip list
+  // (full include) every 20s from a reports page. One fetch, 5-min stale,
+  // recent-500 window (the pie subtitle states the trip count it covers).
+  const trips = useTrips({}, { poll: false, limit: 500 });
   // Month-end payroll: any MYT month selectable (the clerk closes LAST month
   // in the first days of the next one, so "current month only" was useless).
   const monthOptions = useMemo(() => lastNMytMonthKeys(new Date(), 12), []);

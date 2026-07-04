@@ -296,6 +296,16 @@ router.get("/", async (req, res, next) => {
     const zone = typeof req.query.zone === "string" ? req.query.zone : "";
     const dateFrom = typeof req.query.date_from === "string" ? req.query.date_from : "";
     const dateTo = typeof req.query.date_to === "string" ? req.query.date_to : "";
+    // Optional window on the (created_at-desc) list — the admin board polls
+    // this endpoint every 20s with the full include, so an ever-growing trial
+    // history must not be re-downloaded 3×/minute (audit 2026-07-05 #6).
+    // Filters above still search the FULL table; the limit only caps how many
+    // matching rows come back. Hard server cap 500; absent/invalid = legacy
+    // unlimited (mobile's role-scoped lists stay small and unchanged).
+    // TRUE pagination (cursor + total) is the noted bigger follow-up.
+    const rawLimit = typeof req.query.limit === "string" ? Number(req.query.limit) : NaN;
+    const limit =
+      Number.isInteger(rawLimit) && rawLimit >= 1 ? Math.min(rawLimit, 500) : undefined;
 
     const filters: Prisma.TripWhereInput[] = [];
 
@@ -337,6 +347,7 @@ router.get("/", async (req, res, next) => {
       where,
       include: tripInclude,
       orderBy: { created_at: "desc" },
+      ...(limit !== undefined ? { take: limit } : {}),
     });
     res.json(trips);
   } catch (err) {
