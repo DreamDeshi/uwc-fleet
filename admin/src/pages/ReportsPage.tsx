@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -10,19 +10,23 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { useDrivers, useMonthly, useTrips } from "@/hooks/queries";
+import { useMonthly, usePayroll, useTrips } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
 import { Button, Card, ErrorState, Loading, SectionTitle } from "@/components/ui";
-import { formatMoney, formatNumber, money2dp } from "@/lib/format";
-import { toCsv } from "@/lib/csv";
-import type { DriverPerf, MonthlyRow } from "@/types";
+import { formatDateTime, formatMoney, formatNumber } from "@/lib/format";
+import { buildPayrollCsv, lastNMytMonthKeys, monthKeyLabel } from "@/lib/payroll";
+import type { MonthlyRow, PayrollDriverRow } from "@/types";
 
 const PIE_COLORS = [colors.blue, colors.yellow, colors.green, colors.orange, "#9333ea", "#0891b2"];
 
 export function ReportsPage() {
   const monthly = useMonthly();
-  const drivers = useDrivers();
   const trips = useTrips();
+  // Month-end payroll: any MYT month selectable (the clerk closes LAST month
+  // in the first days of the next one, so "current month only" was useless).
+  const monthOptions = useMemo(() => lastNMytMonthKeys(new Date(), 12), []);
+  const [month, setMonth] = useState(monthOptions[0]);
+  const payroll = usePayroll(month);
 
   const routeSplit = useMemo(() => {
     const map = new Map<string, number>();
@@ -32,11 +36,11 @@ export function ReportsPage() {
     return [...map.entries()].map(([name, value]) => ({ name, value }));
   }, [trips.data]);
 
-  if (monthly.isLoading || drivers.isLoading) return <Loading />;
+  if (monthly.isLoading || payroll.isLoading) return <Loading />;
   if (monthly.isError) return <ErrorState message="Could not load reports." onRetry={() => monthly.refetch()} />;
 
   const months = monthly.data ?? [];
-  const driverRows = (drivers.data ?? []).slice().sort((a, b) => b.incentive_this_month - a.incentive_this_month);
+  const payrollRows = payroll.data?.drivers ?? [];
 
   const totalTrips = months.reduce((s, m) => s + m.trips, 0);
   const totalIncentive = months.reduce((s, m) => s + m.incentive, 0);
@@ -47,31 +51,16 @@ export function ReportsPage() {
   })();
 
   function exportCsv() {
-    // Two sections: the per-driver month figures (the payroll sheet the clerk
-    // pays from — previously only visible on screen) and the monthly
-    // aggregates. Money goes through money2dp so the exported number ties
-    // exactly to the displayed formatMoney value (raw sums carry float dust
-    // like 143.99999999999997).
-    const csv = toCsv([
-      ["Driver Incentive Summary (this month)"],
-      ["Driver", "Trips (mo.)", "Trips (total)", "Earned (mo.) (RM)", "Avg / Trip (RM)"],
-      ...driverRows.map((d) => [
-        d.name,
-        d.trips_this_month,
-        d.trips_total,
-        money2dp(d.incentive_this_month),
-        money2dp(d.trips_this_month ? d.incentive_this_month / d.trips_this_month : 0),
-      ]),
-      [],
-      ["Monthly Performance Summary"],
-      ["Month", "Trips", "Completed", "Incentive (RM)", "External"],
-      ...months.map((m) => [m.label, m.trips, m.completed, money2dp(m.incentive), m.external]),
-    ]);
+    // The month-end export (lib/payroll, unit-tested): per-driver payroll
+    // rows for the SELECTED month, per-trip detail for dispute tracing, and
+    // the 6-month aggregates. Money cells tie exactly to the displayed
+    // formatMoney values (2dp, float dust rounded away).
+    const csv = buildPayrollCsv(month, payrollRows, months);
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "uwc-monthly-report.csv";
+    a.download = `uwc-payroll-${month}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -135,27 +124,35 @@ export function ReportsPage() {
         </Card>
       </div>
 
-      {/* Driver performance table */}
+      {/* Payroll table — the clerk's month-end sheet. Click a row to trace
+          the total down to individual trips (dispute path). */}
       <Card pad={0}>
-        <div style={{ padding: 18, borderBottom: `1px solid ${colors.border}` }}>
-          <SectionTitle title="Driver Incentive Summary" subtitle="This month" />
+        <div style={{ padding: 18, borderBottom: `1px solid ${colors.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <SectionTitle title="Driver Payroll" subtitle="Month totals from stored per-trip pay — click a driver for trip detail" />
+          <select value={month} onChange={(e) => setMonth(e.target.value)} style={monthSelectStyle}>
+            {monthOptions.map((k) => (
+              <option key={k} value={k}>
+                {monthKeyLabel(k)}
+              </option>
+            ))}
+          </select>
         </div>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              {["Driver", "Trips (mo.)", "Trips (total)", "Earned (mo.)", "Avg / Trip"].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+              {["Driver", "Employee No", "Trips", "Total"].map((h) => <th key={h} style={thStyle}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
-            {driverRows.map((d: DriverPerf, i) => (
-              <tr key={d.id} style={{ background: i % 2 ? colors.blueTint : "transparent" }}>
-                <td style={{ ...tdStyle, fontWeight: 600 }}>{d.name}</td>
-                <td style={tdStyle}>{d.trips_this_month}</td>
-                <td style={tdStyle}>{d.trips_total}</td>
-                <td style={{ ...tdStyle, color: colors.green, fontWeight: 700 }}>{formatMoney(d.incentive_this_month)}</td>
-                <td style={tdStyle}>{formatMoney(d.trips_this_month ? d.incentive_this_month / d.trips_this_month : 0)}</td>
+            {payrollRows.length === 0 ? (
+              <tr>
+                <td colSpan={4} style={{ ...tdStyle, textAlign: "center", color: colors.textMuted }}>
+                  No completed trips in {monthKeyLabel(month)}.
+                </td>
               </tr>
-            ))}
+            ) : (
+              payrollRows.map((d, i) => <PayrollRow key={d.driver_id} row={d} striped={i % 2 === 1} />)
+            )}
           </tbody>
         </table>
       </Card>
@@ -193,6 +190,51 @@ export function ReportsPage() {
     </div>
   );
 }
+
+// One payroll row, expandable to the per-trip lines the month total is the
+// sum of — a pay dispute is settled by reading exactly these.
+function PayrollRow({ row, striped }: { row: PayrollDriverRow; striped: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <tr
+        onClick={() => setOpen(!open)}
+        style={{ background: striped ? colors.blueTint : "transparent", cursor: "pointer" }}
+      >
+        <td style={{ ...tdStyle, fontWeight: 600 }}>
+          <span style={{ display: "inline-block", width: 14, color: colors.textMuted }}>{open ? "▾" : "▸"}</span>
+          {row.name}
+        </td>
+        <td style={tdStyle}>{row.employee_number ?? "—"}</td>
+        <td style={tdStyle}>{row.trip_count}</td>
+        <td style={{ ...tdStyle, color: colors.green, fontWeight: 700 }}>{formatMoney(row.total)}</td>
+      </tr>
+      {open &&
+        row.trips.map((t) => (
+          <tr key={t.id} style={{ background: colors.panel }}>
+            <td style={{ ...tdStyle, paddingLeft: 40, fontSize: 12.5 }} colSpan={2}>
+              {t.ticket_number}
+            </td>
+            <td style={{ ...tdStyle, fontSize: 12.5, color: colors.textMuted }}>
+              {/* The pay-deciding delivery-confirm instant (MYT). */}
+              {formatDateTime(t.delivered_at ?? t.pickup_datetime)}
+            </td>
+            <td style={{ ...tdStyle, fontSize: 12.5 }}>{formatMoney(t.incentive_earned)}</td>
+          </tr>
+        ))}
+    </>
+  );
+}
+
+const monthSelectStyle: React.CSSProperties = {
+  height: 34,
+  borderRadius: radius.sm,
+  border: `1px solid ${colors.border}`,
+  padding: "0 8px",
+  fontSize: 13,
+  color: colors.text,
+  background: colors.card,
+};
 
 function MiniKpi({ label, value, bg, fg }: { label: string; value: string; bg: string; fg: string }) {
   return (

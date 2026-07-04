@@ -54,6 +54,29 @@ export interface Consignee {
   is_active?: boolean;
 }
 
+// ── Payroll (GET /reports/payroll) ────────────────────────────────────
+export interface PayrollTripRow {
+  id: string;
+  ticket_number: string;
+  pickup_datetime: string;
+  delivered_at: string | null; // first delivery confirm — the pay-deciding instant
+  incentive_earned: number; // stored per-trip marginal
+}
+
+export interface PayrollDriverRow {
+  driver_id: string;
+  name: string;
+  employee_number: string | null;
+  trip_count: number;
+  total: number; // month total RM, cents-rounded server-side
+  trips: PayrollTripRow[];
+}
+
+export interface PayrollResponse {
+  month: string; // YYYY-MM (MYT)
+  drivers: PayrollDriverRow[];
+}
+
 export interface CargoDetail {
   id: string;
   pallet_type: string;

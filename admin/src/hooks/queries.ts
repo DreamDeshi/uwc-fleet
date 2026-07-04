@@ -12,6 +12,7 @@ import type {
   FuelLog,
   LivePosition,
   MonthlyRow,
+  PayrollResponse,
   PublicHoliday,
   RateAuditEntry,
   RateResetResult,
@@ -204,6 +205,16 @@ export function useMonthly() {
   return useQuery({
     queryKey: ["reports", "monthly"],
     queryFn: async () => (await api.get<MonthlyRow[]>("/reports/monthly")).data,
+  });
+}
+
+// The clerk's month-end payroll sheet — any month selectable (YYYY-MM, MYT).
+export function usePayroll(month: string) {
+  return useQuery({
+    queryKey: ["reports", "payroll", month],
+    queryFn: async () =>
+      (await api.get<PayrollResponse>("/reports/payroll", { params: { month } })).data,
+    placeholderData: keepPreviousData,
   });
 }
 
