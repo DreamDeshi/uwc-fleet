@@ -91,10 +91,22 @@ export function TripsPage() {
   // The dashboard's "⚠ N auto-dispatch failed" badge deep-links here with
   // ?attention=1 so the click lands directly on the filtered view instead of
   // dumping the dispatcher on the full board to find the chip themselves.
-  const [searchParams] = useSearchParams();
-  const [needsAttentionOnly, setNeedsAttentionOnly] = useState(
-    searchParams.get("attention") === "1"
-  );
+  const [searchParams, setSearchParams] = useSearchParams();
+  // The URL is the single source of truth for this filter (audit #5: a
+  // mount-time useState copy desynchronized — F5 re-armed a filter the user
+  // had cleared, and navigating to /trips stripped the param while the
+  // filter stayed on). Toggling writes the param; reading derives from it.
+  const needsAttentionOnly = searchParams.get("attention") === "1";
+  const setNeedsAttentionOnly = (on: boolean) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (on) next.set("attention", "1");
+        else next.delete("attention");
+        return next;
+      },
+      { replace: true }
+    );
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedQ(q), 300);
@@ -145,6 +157,9 @@ export function TripsPage() {
   if (trips.isError) return <ErrorState message="Could not load trips." onRetry={() => trips.refetch()} />;
 
   const all = trips.data ?? [];
+  // What the board actually shows after the client-side attention filter —
+  // zero while `all` is non-empty means "filtered everything out".
+  const boardCount = GROUP_ORDER.reduce((sum, g) => sum + grouped[g].length, 0);
   const selected = all.find((t) => t.id === selectedId) ?? null;
 
   return (
@@ -182,7 +197,7 @@ export function TripsPage() {
                 always renders so the count is visible at a glance; it turns solid
                 red when active. */}
             <button
-              onClick={() => setNeedsAttentionOnly((v) => !v)}
+              onClick={() => setNeedsAttentionOnly(!needsAttentionOnly)}
               title="Show only bookings auto-dispatch could not place"
               style={{
                 display: "inline-flex",
@@ -236,9 +251,21 @@ export function TripsPage() {
               </div>
             );
           })}
-          {all.length === 0 && (
+          {/* Two distinct empties: no trips at all vs. trips exist but the
+              board filtered to zero — the needs-attention deep-link often
+              lands AFTER the self-clearing flag already cleared, which used
+              to render a bare blank column (audit #5). */}
+          {all.length === 0 ? (
             <EmptyState message={hasFilters ? "No trips match these filters." : "No trips yet."} />
-          )}
+          ) : boardCount === 0 ? (
+            <EmptyState
+              message={
+                needsAttentionOnly
+                  ? "No trips need attention right now — every pending booking has been placed."
+                  : "No trips match these filters."
+              }
+            />
+          ) : null}
         </div>
 
         {/* ── Right: detail / dispatch ── */}
