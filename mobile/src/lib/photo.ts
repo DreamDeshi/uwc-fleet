@@ -17,12 +17,21 @@ export interface PickedPhoto {
 export type PhotoSource = "camera" | "library";
 
 /**
+ * Distinguishes the two "no photo" outcomes: a user CANCEL is a non-event,
+ * but PERMISSION DENIED must be told to the driver — without a POD photo the
+ * Delivered gate never unlocks and the trip can never complete, and on the
+ * web build a dismissed browser permission prompt counts as denied, so this
+ * is easy to hit without realising it.
+ */
+export type PodCaptureResult = PickedPhoto | "permission_denied" | null;
+
+/**
  * Capture a photo for proof-of-delivery. Camera first (the normal flow for a
  * driver at the dropoff); if the camera permission is denied we fall back to
- * the photo library so the driver is never fully blocked. Returns null if the
- * driver cancels or grants neither permission.
+ * the photo library so the driver is never fully blocked. Returns null on a
+ * user cancel, "permission_denied" when BOTH permissions are refused.
  */
-export async function capturePodPhoto(): Promise<PickedPhoto | null> {
+export async function capturePodPhoto(): Promise<PodCaptureResult> {
   const cam = await ImagePicker.requestCameraPermissionsAsync();
 
   let result: ImagePicker.ImagePickerResult;
@@ -34,7 +43,7 @@ export async function capturePodPhoto(): Promise<PickedPhoto | null> {
     });
   } else {
     const lib = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!lib.granted) return null;
+    if (!lib.granted) return "permission_denied";
     result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       quality: 0.8,
