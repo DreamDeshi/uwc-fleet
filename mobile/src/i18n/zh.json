@@ -227,6 +227,8 @@
     "newConsigneeTitle": "添加新收货人",
     "companyName": "公司名称",
     "zone": "送货区域",
+    "zonePlaceholder": "选择送货区域",
+    "zoneHint": "货物送达的区域——请选择与地址相符的城镇/地区。",
     "contactPerson": "联系人",
     "phone": "电话",
     "area": "地区",

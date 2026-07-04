@@ -110,12 +110,17 @@ export function NewConsigneeModal({
           </View>
           <ScrollView keyboardShouldPersistTaps="handled">
             <TextField label={t("booking.companyName")} value={company} onChangeText={setCompany} placeholder="Sdn Bhd…" />
+            {/* The zone drives BOTH auto-dispatch and driver pay, chosen by the
+                one persona who doesn't know what a zone is — so the field must
+                say what it wants (the old placeholder wrongly reused the
+                department picker's copy) and echo the code + area name. */}
             <PressableField
               label={t("booking.zone")}
-              value={zoneName}
-              placeholder={t("register.departmentPlaceholder")}
+              value={zone ? `${zone} — ${zoneName}` : undefined}
+              placeholder={t("booking.zonePlaceholder")}
               onPress={() => setZoneOpen(true)}
             />
+            <Text style={styles.zoneHint}>{t("booking.zoneHint")}</Text>
             <TextField label={t("booking.contactPerson")} value={contact} onChangeText={setContact} />
             <TextField label={t("booking.phone")} value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
             <TextField label={t("booking.area")} value={area} onChangeText={setArea} />
@@ -170,4 +175,5 @@ const styles = StyleSheet.create({
   similarName: { fontSize: 13.5, fontWeight: "700", color: colors.navy },
   similarSub: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
   similarUse: { fontSize: 12.5, fontWeight: "800", color: colors.blue, marginLeft: 10 },
+  zoneHint: { fontSize: 11.5, color: colors.textMuted, marginTop: -6, marginBottom: 10 },
 });

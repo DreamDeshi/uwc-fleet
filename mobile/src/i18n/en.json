@@ -292,6 +292,8 @@
     "newConsigneeTitle": "Add New Consignee",
     "companyName": "Company Name",
     "zone": "Delivery Zone",
+    "zonePlaceholder": "Select delivery zone",
+    "zoneHint": "The area the goods are delivered to — pick the town/district that matches the address.",
     "contactPerson": "Contact Person",
     "phone": "Phone",
     "area": "Area",

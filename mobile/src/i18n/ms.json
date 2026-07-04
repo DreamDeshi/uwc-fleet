@@ -227,6 +227,8 @@
     "newConsigneeTitle": "Tambah Penerima Baru",
     "companyName": "Nama Syarikat",
     "zone": "Zon Penghantaran",
+    "zonePlaceholder": "Pilih zon penghantaran",
+    "zoneHint": "Kawasan barang dihantar — pilih bandar/daerah yang sepadan dengan alamat.",
     "contactPerson": "Orang untuk Dihubungi",
     "phone": "Telefon",
     "area": "Kawasan",
