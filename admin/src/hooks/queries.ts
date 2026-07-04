@@ -3,6 +3,7 @@ import { api } from "@/services/api";
 import type {
   AdminUser,
   AttentionReport,
+  Consignee,
   DashboardKpis,
   DestinationRate,
   DriverLeaveEntry,
@@ -66,6 +67,41 @@ export function useTrip(id: string | null) {
     queryKey: ["trips", "detail", id],
     queryFn: async () => (await api.get<Trip>(`/trips/${id}`)).data,
     enabled: !!id,
+  });
+}
+
+// Consignee directory management (admin). include_inactive lets the admin
+// find deactivated rows to reactivate; the API caps results at 10, so the
+// search box is the primary navigation.
+export function useConsignees(search: string, includeInactive: boolean) {
+  return useQuery({
+    queryKey: ["consignees", search, includeInactive],
+    queryFn: async () =>
+      (
+        await api.get<Consignee[]>("/consignees", {
+          params: {
+            ...(search ? { search } : {}),
+            ...(includeInactive ? { include_inactive: "1" } : {}),
+          },
+        })
+      ).data,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useUpdateConsignee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: {
+      id: string;
+      company_name?: string;
+      zone_code?: string;
+      is_active?: boolean;
+    }) => {
+      const { id, ...patch } = args;
+      return (await api.patch<Consignee>(`/consignees/${id}`, patch)).data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["consignees"] }),
   });
 }
 

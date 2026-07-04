@@ -44,10 +44,14 @@ export interface Department {
 export interface Consignee {
   id: string;
   company_name: string;
+  // Full legal name (company_name is suffix-stripped for display) — the
+  // consignee editor must initialise from and save this one.
+  company_name_full?: string;
   vendor_code: string | null;
   area: string | null;
   state: string | null;
   zone_code: string;
+  is_active?: boolean;
 }
 
 export interface CargoDetail {

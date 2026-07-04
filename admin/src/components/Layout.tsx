@@ -88,6 +88,16 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    to: "/consignees",
+    label: "Consignees",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+        <path d="M3 21h18M5 21V7l7-4 7 4v14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M9 21v-6h6v6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     to: "/reports",
     label: "Reports",
     icon: (
@@ -106,6 +116,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/trucks": { title: "Truck Management", subtitle: "Fleet & document expiries" },
   "/incentives": { title: "Incentive Rate Management", subtitle: "Claim rates & destination points" },
   "/approvals": { title: "User Approval Queue", subtitle: "New account registrations" },
+  "/consignees": { title: "Consignee Directory", subtitle: "Fix zones, rename, deactivate" },
   "/reports": { title: "Reports & Analytics", subtitle: "Trips, incentives & utilisation" },
 };
 
