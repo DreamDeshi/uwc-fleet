@@ -123,6 +123,15 @@ async function generateTicketNumber(now: Date, attempt = 0): Promise<string> {
 // the requestor's device and the server.
 export const PICKUP_GRACE_MS = 15 * 60 * 1000;
 
+// Booking targets must exist AND be active: a consignee an admin deactivated
+// (e.g. a wrong-zone duplicate) stays reachable through stale references —
+// recent-consignee chips and "Rebook last trip" hold old IDs — so search-level
+// filtering alone can't stop it being re-booked. Exported for unit tests.
+export const bookableConsigneesWhere = (ids: string[]) => ({
+  id: { in: ids },
+  is_active: true,
+});
+
 // Exported for unit tests (tests/tripValidation.test.ts).
 export const createTripSchema = z.object({
   route_type_id: z.string().min(1),
@@ -167,9 +176,15 @@ router.post(
       }
 
       const consigneeIds = stops.map((s: { consignee_id: string }) => s.consignee_id);
-      const foundConsignees = await prisma.consignee.findMany({ where: { id: { in: consigneeIds } } });
+      const foundConsignees = await prisma.consignee.findMany({
+        where: bookableConsigneesWhere(consigneeIds),
+      });
       if (foundConsignees.length !== new Set(consigneeIds).size) {
-        throw new ApiError(400, "CONSIGNEE_NOT_FOUND", "One or more consignees do not exist.");
+        throw new ApiError(
+          400,
+          "CONSIGNEE_NOT_FOUND",
+          "One or more consignees do not exist or are no longer active."
+        );
       }
 
       // Cargo bigger than the biggest truck can NEVER be dispatched internally —
