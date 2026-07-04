@@ -141,6 +141,8 @@ export interface Trip {
   // Phase 2: true when auto-dispatch couldn't place this booking. Self-clearing.
   // "Needs attention" UI shows for (status === "pending" && auto_dispatch_failed).
   auto_dispatch_failed: boolean;
+  // WHY the engine couldn't place it — cleared together with the flag.
+  auto_dispatch_note: string | null;
   created_at: string;
   stops: TripStop[];
   cargo_details: CargoDetail[];

@@ -91,6 +91,7 @@ export const RELEASE_TRIP_DATA = {
   daily_deduction_points: null,
   pending_alert_sent: false,
   auto_dispatch_failed: false,
+  auto_dispatch_note: null,
 } as const;
 
 /**
@@ -144,7 +145,12 @@ export async function rejectPendingTrip(
   const res = await client.trip.updateMany({
     where: { id: tripId, status: { in: ["pending"] } },
     // Leaving pending clears the needs-attention flag (Phase 2 self-clearing).
-    data: { status: "rejected", rejection_reason: reason, auto_dispatch_failed: false },
+    data: {
+      status: "rejected",
+      rejection_reason: reason,
+      auto_dispatch_failed: false,
+      auto_dispatch_note: null,
+    },
   });
   return res.count === 1;
 }
@@ -160,7 +166,7 @@ export async function cancelBookedTrip(
 ): Promise<boolean> {
   const res = await client.trip.updateMany({
     where: { id: tripId, status: { in: ["pending", "approved"] } },
-    data: { status: "cancelled", auto_dispatch_failed: false },
+    data: { status: "cancelled", auto_dispatch_failed: false, auto_dispatch_note: null },
   });
   return res.count === 1;
 }
@@ -179,7 +185,12 @@ export async function outsourcePendingTrip(
 ): Promise<boolean> {
   const res = await client.trip.updateMany({
     where: { id: tripId, status: { in: ["pending"] } },
-    data: { status: "assigned", is_external: true, auto_dispatch_failed: false },
+    data: {
+      status: "assigned",
+      is_external: true,
+      auto_dispatch_failed: false,
+      auto_dispatch_note: null,
+    },
   });
   return res.count === 1;
 }

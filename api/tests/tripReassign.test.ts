@@ -98,6 +98,7 @@ describe("releaseAssignedTrip — the unassign primitive (CLIENT CASE: back to p
       daily_deduction_points: null,
       pending_alert_sent: false,
       auto_dispatch_failed: false,
+      auto_dispatch_note: null, // travels with the flag it annotates
     });
   });
 });

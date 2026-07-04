@@ -254,6 +254,11 @@ model Trip {
   // cancelled/rejected), so the admin "needs attention" signal is never sticky.
   // Displayed state = (status == pending AND auto_dispatch_failed == true).
   auto_dispatch_failed Boolean @default(false)
+  // WHY auto-dispatch couldn't place it (operating window / no capacity /
+  // missing zone rate) — written and cleared in exactly the same places as
+  // auto_dispatch_failed so it inherits the self-clearing lifecycle.
+  // Display-only: no dispatch or incentive logic ever reads it.
+  auto_dispatch_note   String?
   created_at       DateTime   @default(now())
 
   stops               TripStop[]

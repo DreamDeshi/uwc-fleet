@@ -279,8 +279,15 @@ function TripCard({ trip, selected, onClick }: { trip: Trip; selected: boolean; 
       }}
     >
       {needsAttention && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7, color: colors.red, fontSize: 11.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>
-          ⚠ Needs attention — auto-dispatch failed
+        <div style={{ marginBottom: 7 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: colors.red, fontSize: 11.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>
+            ⚠ Needs attention — auto-dispatch failed
+          </div>
+          {trip.auto_dispatch_note && (
+            <div style={{ marginTop: 3, color: colors.red, fontSize: 12 }}>
+              {trip.auto_dispatch_note}
+            </div>
+          )}
         </div>
       )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7 }}>

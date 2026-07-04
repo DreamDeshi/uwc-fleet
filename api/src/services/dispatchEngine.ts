@@ -205,6 +205,24 @@ export function autoAssignNote(
   return `${who} (auto — ${reason})`;
 }
 
+/**
+ * The failure mirror of autoAssignNote: WHY the engine could not place a
+ * booking, persisted to Trip.auto_dispatch_note alongside the
+ * auto_dispatch_failed flag so the board's "needs attention" card tells the
+ * dispatcher the remedy (override the window / free capacity / fix rates)
+ * instead of a bare "failed". Pure; unit-tested in tests/dispatch.test.ts.
+ */
+export function autoDispatchFailureNote(
+  windowExceeded: OperatingWindowEstimate | null
+): string {
+  if (windowExceeded) {
+    return windowExceeded.reason === "pickup_outside_window"
+      ? `Pickup is outside the operating window (${formatMinutesToHm(windowExceeded.windowStartMin)}–${formatMinutesToHm(windowExceeded.windowEndMin)}).`
+      : `Estimated completion ${windowExceeded.completionLabel} exceeds the ${formatMinutesToHm(windowExceeded.windowEndMin)} operating window.`;
+  }
+  return "No available truck has capacity for this order.";
+}
+
 // ── DB helpers ─────────────────────────────────────────────────────────
 
 // What counts as "this driver/truck is already out on a job" for auto-dispatch.
@@ -435,6 +453,7 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
           truck_plate: sel.plate,
           pending_alert_sent: true, // it's handled now; don't ping admins about it
           auto_dispatch_failed: false, // self-clearing: a later sweep placed it
+          auto_dispatch_note: null, // cleared with the flag it annotates
           ...(selTruck ? truckRateSnapshot(effectiveTruckRates(selTruck, new Date())) : {}),
         });
         if (!won) {
@@ -483,7 +502,7 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
       // fixes the rates instead of the booking vanishing into a log line.
       await prisma.trip.updateMany({
         where: { id: tripId, status: "pending" },
-        data: { auto_dispatch_failed: true },
+        data: { auto_dispatch_failed: true, auto_dispatch_note: err.message },
       });
       return { assigned: false, reason: err.message };
     }
@@ -500,17 +519,15 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
     // pending trip. The status==pending guard means we never flag a trip a
     // concurrent writer just assigned; the flag self-clears on any transition
     // out of pending (manual assign / later sweep / cancel / reject).
+    // Distinguish the operating-window breach (Phase 3) from a plain no-truck
+    // failure. The note is persisted next to the flag (same guard, same
+    // self-clearing lifecycle) so the board can show the dispatcher WHY —
+    // repeated sweep retries simply overwrite it, never accumulate.
+    const reason = autoDispatchFailureNote(windowExceeded);
     await prisma.trip.updateMany({
       where: { id: tripId, status: "pending" },
-      data: { auto_dispatch_failed: true },
+      data: { auto_dispatch_failed: true, auto_dispatch_note: reason },
     });
-    // Distinguish the operating-window breach (Phase 3) from a plain no-truck
-    // failure in the reason text the dashboard/board can surface.
-    const reason = windowExceeded
-      ? windowExceeded.reason === "pickup_outside_window"
-        ? `Pickup is outside the operating window (${formatMinutesToHm(windowExceeded.windowStartMin)}–${formatMinutesToHm(windowExceeded.windowEndMin)}).`
-        : `Estimated completion ${windowExceeded.completionLabel} exceeds the ${formatMinutesToHm(windowExceeded.windowEndMin)} operating window.`
-      : "No available truck has capacity for this order.";
     return { assigned: false, reason };
   }
 

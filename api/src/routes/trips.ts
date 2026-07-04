@@ -671,6 +671,7 @@ async function assignTripInTx(
               driver_id,
               truck_plate,
               auto_dispatch_failed: false,
+              auto_dispatch_note: null,
               ...truckRateSnapshot(effectiveTruckRates(truck, new Date())),
             });
             await snapshotStopZonePoints(tx, id);

@@ -3,8 +3,10 @@ import {
   selectTruck,
   enRouteZones,
   autoAssignNote,
+  autoDispatchFailureNote,
   type TruckCandidate,
 } from "../src/services/dispatchEngine";
+import { estimateOperatingWindow } from "../src/services/operatingWindow";
 
 // Adjacency from the seed (Mr. Teh's email): P2↔K1, P2↔A1.
 const ADJACENCY: Record<string, string[]> = {
@@ -207,6 +209,44 @@ describe("autoAssignNote — the persisted decision log", () => {
   it("falls back to the plate when the driver name is unknown", () => {
     expect(autoAssignNote(null, "PND 1888", "adjacent-zone driver for K1; fits 1/14 pallets")).toBe(
       "PND 1888 (auto — adjacent-zone driver for K1; fits 1/14 pallets)"
+    );
+  });
+});
+
+describe("autoDispatchFailureNote — the persisted failure reason", () => {
+  // Built with the real estimator so the note stays in lockstep with the
+  // OperatingWindowEstimate shape the engine actually produces.
+  it("names the operating window when the pickup falls outside it", () => {
+    const est = estimateOperatingWindow({
+      pickupDateTime: new Date("2026-07-05T21:00:00Z"), // 05:00 MYT on 6 Jul
+      stopCount: 1,
+      stopPoints: [1],
+      windowStart: "07:00",
+      windowEnd: "18:00",
+    });
+    expect(est.reason).toBe("pickup_outside_window");
+    expect(autoDispatchFailureNote(est)).toBe(
+      "Pickup is outside the operating window (07:00–18:00)."
+    );
+  });
+
+  it("names the estimated completion when the route would finish past the window", () => {
+    const est = estimateOperatingWindow({
+      pickupDateTime: new Date("2026-07-06T09:30:00Z"), // 17:30 MYT
+      stopCount: 2,
+      stopPoints: [6, 6], // two long A2-grade legs — cannot finish by 18:00
+      windowStart: "07:00",
+      windowEnd: "18:00",
+    });
+    expect(est.reason).toBe("completion_past_window");
+    expect(autoDispatchFailureNote(est)).toMatch(
+      /^Estimated completion \d{2}:\d{2} exceeds the 18:00 operating window\.$/
+    );
+  });
+
+  it("falls back to the no-capacity message when no window was breached", () => {
+    expect(autoDispatchFailureNote(null)).toBe(
+      "No available truck has capacity for this order."
     );
   });
 });
