@@ -533,21 +533,43 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
 
   const updated = await loadTripWithRelations(tripId);
 
-  // Notify the assigned driver (best-effort, never blocks).
-  const driverDevice = await prisma.user.findUnique({
-    where: { id: selection.driverId },
-    select: { expo_push_token: true },
-  });
+  // Notify the assigned driver AND the requestor (best-effort, never blocks) —
+  // mirrors the manual-approve path. Auto mode is the default, so without the
+  // requestor leg the person who booked would only hear about their driver by
+  // WhatsApping the dispatcher — the workflow this system replaces. NOTE: Expo
+  // pushes only reach native installs; web users still see the assignment on
+  // the next in-app refresh, and the payload keeps parity for installed apps.
+  const [driverDevice, requestorDevice] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: selection.driverId },
+      select: { expo_push_token: true },
+    }),
+    updated
+      ? prisma.user.findUnique({
+          where: { id: updated.requestor.id },
+          select: { expo_push_token: true },
+        })
+      : null,
+  ]);
   const destLabel =
     updated?.stops[0]?.consignee.area ||
     updated?.stops[0]?.consignee.company_name ||
     order.zone ||
     "destination";
-  await sendPushNotifications([driverDevice?.expo_push_token], {
-    title: "New trip assigned",
-    body: `New trip assigned: ${destLabel}`,
-    data: { type: "trip_assigned", tripId },
-  });
+  await Promise.all([
+    sendPushNotifications([driverDevice?.expo_push_token], {
+      title: "New trip assigned",
+      body: `New trip assigned: ${destLabel}`,
+      data: { type: "trip_assigned", tripId },
+    }),
+    updated
+      ? sendPushNotifications([requestorDevice?.expo_push_token], {
+          title: "Booking approved",
+          body: `Your booking ${updated.ticket_number} has been approved`,
+          data: { type: "booking_approved", tripId },
+        })
+      : Promise.resolve(),
+  ]);
 
   // Return-trip matching: pending orders en-route to the assigned zone, offered
   // to the same driver (not auto-assigned — the admin/driver decides).

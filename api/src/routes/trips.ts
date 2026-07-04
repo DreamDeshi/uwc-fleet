@@ -1200,6 +1200,24 @@ router.patch("/:id/cancel", async (req, res, next) => {
       await recordTripEvent(tx, { tripId: id, event: "cancelled", actorId: req.user!.id });
     });
     const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
+
+    // An admin cancelling someone else's booking mirrors reject: tell the
+    // requestor, who would otherwise assume the delivery is still coming.
+    // Self-cancels are not echoed back. Best-effort, never blocks. NOTE: Expo
+    // pushes only reach native installs — web users still see the change on
+    // the next in-app refresh.
+    if (isAdmin && trip.requestor_id !== req.user!.id) {
+      const requestorDevice = await prisma.user.findUnique({
+        where: { id: trip.requestor_id },
+        select: { expo_push_token: true },
+      });
+      await sendPushNotifications([requestorDevice?.expo_push_token], {
+        title: "Booking cancelled",
+        body: `Your booking ${trip.ticket_number} was cancelled by the dispatcher`,
+        data: { type: "booking_cancelled", tripId: id },
+      });
+    }
+
     res.json(updated);
   } catch (err) {
     next(err);
