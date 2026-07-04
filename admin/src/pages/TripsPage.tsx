@@ -1064,6 +1064,10 @@ function ReassignDialog({ trip, onClose, onDone }: { trip: Trip; onClose: () => 
 
 // ── Completed ─────────────────────────────────────────────────────────
 function CompletedPanel({ trip }: { trip: Trip }) {
+  const stops = [...trip.stops].sort((a, b) => a.sequence - b.sequence);
+  // Per-drop evidence exists only on trips finalized after the breakdown
+  // feature; older completed trips show an honest "not recorded" note.
+  const hasBreakdown = stops.some((s) => s.points_awarded !== null && s.points_awarded !== undefined);
   return (
     <div>
       <div style={{ background: colors.greenTint, borderRadius: radius.md, padding: 14, marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
@@ -1074,6 +1078,47 @@ function CompletedPanel({ trip }: { trip: Trip }) {
         <InfoTile label="Driver" value={trip.driver?.name ?? "—"} />
         <InfoTile label="Truck" value={trip.truck_plate ?? "—"} />
         <InfoTile label="Incentive" value={formatMoney(trip.incentive_earned)} />
+      </div>
+
+      {/* Pay breakdown — the engine's finalize-time evidence, so "why did this
+          trip pay RM44?" is answerable without re-running the rule by hand. */}
+      <div style={{ marginTop: 16 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: colors.textMuted, marginBottom: 8 }}>
+          Pay breakdown
+        </div>
+        {hasBreakdown ? (
+          <div style={{ background: colors.panel, borderRadius: radius.sm, padding: "10px 12px", fontSize: 12.5, display: "flex", flexDirection: "column", gap: 5 }}>
+            {stops.map((s) => (
+              <div key={s.id} style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                <span>
+                  Stop {s.sequence} · {s.zone_code ?? s.consignee.zone_code}
+                  <span style={{ color: colors.textMuted }}>
+                    {s.was_repeat ? " — repeat zone today (flat 1)" : " — first in zone today (full points)"}
+                  </span>
+                </span>
+                <span style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+                  {s.points_awarded} pt{s.points_awarded === 1 ? "" : "s"}
+                </span>
+              </div>
+            ))}
+            <div style={{ borderTop: `1px solid ${colors.border}`, marginTop: 3, paddingTop: 7, display: "flex", justifyContent: "space-between", gap: 10, color: colors.textMuted }}>
+              <span>
+                {trip.rate_used != null
+                  ? `Rate ${formatMoney(trip.rate_used)}/pt (${trip.off_peak ? "off-peak" : "weekday"})`
+                  : "Rate varies (trip spans two pay days)"}
+                {" · daily deduction −"}
+                {trip.deduction_applied ?? 0} pt{(trip.deduction_applied ?? 0) === 1 ? "" : "s"}
+              </span>
+              <span style={{ fontWeight: 800, color: colors.text, whiteSpace: "nowrap" }}>
+                {formatMoney(trip.incentive_earned)}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: 12.5, color: colors.textMuted }}>
+            Breakdown not recorded (trip completed before per-drop pay history was kept).
+          </div>
+        )}
       </div>
     </div>
   );

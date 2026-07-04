@@ -168,10 +168,21 @@ export interface ScoredDrop {
   zonePoints: number; // the zone's full destination points
 }
 
-export function scoreDrops(
+/** One drop's score plus WHY: whether the repeat rule (flat 1) fired. */
+export interface ScoredDropResult {
+  points: number;
+  /**
+   * True iff the flat-1 repeat branch was taken — NOT derivable from points
+   * alone (a 1-point zone's FIRST drop also scores 1, but is not a repeat).
+   * Persisted at finalization so the clerk can answer "why only 1 point?".
+   */
+  wasRepeat: boolean;
+}
+
+export function scoreDropsDetailed(
   drops: ScoredDrop[],
   zonesAlreadyHitToday: Iterable<string> = []
-): number[] {
+): ScoredDropResult[] {
   // `seen` starts pre-loaded with every zone the driver already delivered to
   // earlier today (on previous trips), so a repeat zone scores 1 even when the
   // first visit happened on a different trip.
@@ -180,10 +191,19 @@ export function scoreDrops(
     // First visit to a zone today → the zone's full points. Any repeat → flat 1.
     // Different zones don't affect each other: three drops in three new zones
     // all earn full points.
-    const points = seen.has(d.zoneCode) ? 1 : d.zonePoints;
+    const wasRepeat = seen.has(d.zoneCode);
+    const points = wasRepeat ? 1 : d.zonePoints;
     seen.add(d.zoneCode); // remember it, so the NEXT drop here counts as a repeat
-    return points;
+    return { points, wasRepeat };
   });
+}
+
+/** Points-only view of scoreDropsDetailed — the original public shape. */
+export function scoreDrops(
+  drops: ScoredDrop[],
+  zonesAlreadyHitToday: Iterable<string> = []
+): number[] {
+  return scoreDropsDetailed(drops, zonesAlreadyHitToday).map((d) => d.points);
 }
 
 /**
@@ -213,6 +233,8 @@ export interface DeliveryIncentiveResult {
   rateUsed: number;
   /** Points each of THIS trip's drops earned, pre-deduction (per-zone rule). */
   dropPoints: number[];
+  /** Whether each drop scored as a same-zone repeat (index-aligned with dropPoints). */
+  wasRepeat: boolean[];
   /** Sum of dropPoints (pre-deduction) for this trip. */
   pointsThisTrip: number;
   /** Deduction points actually subtracted (0 unless this trip holds the day's first drop). */
@@ -273,7 +295,8 @@ export function calculateDeliveryIncentive(params: {
   // off-peak), so picking the rate is just a field lookup.
   const rate = offPeak ? params.truck.entitled_claim_offpeak : params.truck.entitled_claim_weekday;
 
-  const dropPoints = scoreDrops(params.drops, params.zonesDeliveredEarlierToday);
+  const scored = scoreDropsDetailed(params.drops, params.zonesDeliveredEarlierToday);
+  const dropPoints = scored.map((d) => d.points);
 
   // Daily deduction applied once/day on the first drop ('daily' per client). If
   // it should apply per new-zone instead, change here.
@@ -298,6 +321,7 @@ export function calculateDeliveryIncentive(params: {
     isOffPeak: offPeak,
     rateUsed: rate,
     dropPoints,
+    wasRepeat: scored.map((d) => d.wasRepeat),
     pointsThisTrip: dropPoints.reduce((a, b) => a + b, 0),
     deductionApplied,
     // Rounded to cents so the persisted RM value is clean (money is Decimal in

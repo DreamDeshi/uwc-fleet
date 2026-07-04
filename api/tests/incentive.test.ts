@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   isOffPeak,
   scoreDrops,
+  scoreDropsDetailed,
   isDocumentationComplete,
   calculateDeliveryIncentive,
   getTripDayStart,
@@ -503,5 +504,52 @@ describe("delivery-day attribution — ledger and deduction follow the delivery 
       truck: PLX2406,
     });
     expect(r.incentiveThisTrip).toBe(44);
+  });
+});
+
+describe("scoreDropsDetailed - the persisted repeat evidence", () => {
+  it("flags the flat-1 branch, not the value 1: a 1-point zone's FIRST drop is not a repeat", () => {
+    const scored = scoreDropsDetailed([
+      { zoneCode: "P2", zonePoints: 1 }, // first P2 today: full points (1) - NOT a repeat
+      { zoneCode: "P2", zonePoints: 1 }, // second P2 today: the repeat rule fires (also 1)
+      { zoneCode: "A2", zonePoints: 6 },
+    ]);
+    expect(scored.map((s) => s.points)).toEqual([1, 1, 6]);
+    expect(scored.map((s) => s.wasRepeat)).toEqual([false, true, false]);
+  });
+
+  it("counts a zone already hit earlier today (on another trip) as a repeat", () => {
+    const scored = scoreDropsDetailed([{ zoneCode: "K1", zonePoints: 3 }], ["K1"]);
+    expect(scored[0]).toEqual({ points: 1, wasRepeat: true });
+  });
+
+  it("matches scoreDrops exactly (same algorithm, one implementation)", () => {
+    const drops = [
+      { zoneCode: "A2", zonePoints: 6 },
+      { zoneCode: "K1", zonePoints: 3 },
+      { zoneCode: "A2", zonePoints: 6 },
+    ];
+    expect(scoreDropsDetailed(drops, ["K1"]).map((s) => s.points)).toEqual(
+      scoreDrops(drops, ["K1"])
+    );
+  });
+});
+
+describe("calculateDeliveryIncentive - breakdown fields persisted at finalization", () => {
+  it("RM44 anchor: the evidence matches the money exactly, and the money is unchanged", () => {
+    const r = calculateDeliveryIncentive({
+      rateDateTime: weekdayMorning,
+      drops: [{ zoneCode: "A2", zonePoints: 6 }],
+      zonesDeliveredEarlierToday: [],
+      isFirstDeliveredDropOfDay: true,
+      publicHolidays: NO_HOLIDAYS,
+      truck: PLX2406,
+    });
+    expect(r.incentiveThisTrip).toBe(44); // the anchor - unchanged by this feature
+    expect(r.dropPoints).toEqual([6]);
+    expect(r.wasRepeat).toEqual([false]);
+    expect(r.rateUsed).toBe(11);
+    expect(r.isOffPeak).toBe(false);
+    expect(r.deductionApplied).toBe(2);
   });
 });

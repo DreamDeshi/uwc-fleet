@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import { ApiError } from "../src/lib/apiError";
 import {
   assertStopDeliverable,
+  collectFinalizeBreakdown,
   finalizeTripOnce,
+  type FinalizeBreakdown,
   type TripFinalizeClient,
 } from "../src/services/tripCompletion";
 
@@ -59,43 +61,82 @@ describe("assertStopDeliverable", () => {
   });
 });
 
+// The RM44 anchor case's breakdown: one Ipoh drop, full 6 points, weekday
+// RM11, deduction 2 → (6−2)×11 = RM44.
+function anchorBreakdown(): FinalizeBreakdown {
+  return collectFinalizeBreakdown([
+    {
+      stops: [{ id: "s1", zoneCode: "A2" }],
+      result: {
+        dropPoints: [6],
+        wasRepeat: [false],
+        rateUsed: 11,
+        isOffPeak: false,
+        deductionApplied: 2,
+      },
+    },
+  ]);
+}
+
 describe("finalizeTripOnce (write-once compare-and-set)", () => {
-  // In-memory model of the status-guarded conditional update: the row only
-  // matches while it is in_progress with no incentive written yet.
+  // In-memory model of the status-guarded conditional update: the trip row
+  // only matches while it is in_progress with no incentive written yet, and
+  // stop rows record whatever breakdown the winner persisted.
   function fakeTrip(initial: { status: string; incentive_earned: number | null }) {
-    const row: { status: string; incentive_earned: number | null } = { ...initial };
+    const row: Record<string, unknown> = { ...initial };
+    const stopRows: Record<string, Record<string, unknown>> = {};
     const client: TripFinalizeClient = {
       trip: {
         async updateMany({ data }) {
           if (row.status !== "in_progress" || row.incentive_earned !== null) {
             return { count: 0 };
           }
-          row.status = data.status as string;
-          row.incentive_earned = data.incentive_earned as number;
+          Object.assign(row, data);
+          return { count: 1 };
+        },
+      },
+      tripStop: {
+        async updateMany({ where, data }) {
+          stopRows[where.id] = { ...(stopRows[where.id] ?? {}), ...data };
           return { count: 1 };
         },
       },
     };
-    return { row, client };
+    return { row, stopRows, client };
   }
 
-  it("finalizes an in_progress trip exactly once", async () => {
-    const { row, client } = fakeTrip({ status: "in_progress", incentive_earned: null });
-    expect(await finalizeTripOnce(client, "t1", 44)).toBe(true);
-    expect(row).toEqual({ status: "completed", incentive_earned: 44 });
+  it("finalizes an in_progress trip exactly once, persisting pay + evidence atomically", async () => {
+    const { row, stopRows, client } = fakeTrip({ status: "in_progress", incentive_earned: null });
+    expect(await finalizeTripOnce(client, "t1", 44, anchorBreakdown())).toBe(true);
+    expect(row).toEqual({
+      status: "completed",
+      incentive_earned: 44,
+      rate_used: 11,
+      off_peak: false,
+      deduction_applied: 2,
+    });
+    expect(stopRows["s1"]).toEqual({ points_awarded: 6, was_repeat: false, zone_code: "A2" });
   });
 
-  it("a second finalization loses and never overwrites the stored incentive", async () => {
-    const { row, client } = fakeTrip({ status: "in_progress", incentive_earned: null });
-    await finalizeTripOnce(client, "t1", 44);
+  it("a second finalization loses and never overwrites the stored incentive OR evidence", async () => {
+    const { row, stopRows, client } = fakeTrip({ status: "in_progress", incentive_earned: null });
+    await finalizeTripOnce(client, "t1", 44, anchorBreakdown());
     // Re-delivery scenario: rates/day-ledger have changed, recompute says 66.
-    expect(await finalizeTripOnce(client, "t1", 66)).toBe(false);
+    const rerun = collectFinalizeBreakdown([
+      {
+        stops: [{ id: "s1", zoneCode: "A2" }],
+        result: { dropPoints: [6], wasRepeat: [false], rateUsed: 13, isOffPeak: true, deductionApplied: 0 },
+      },
+    ]);
+    expect(await finalizeTripOnce(client, "t1", 66, rerun)).toBe(false);
     expect(row.incentive_earned).toBe(44); // pay unchanged
+    expect(row.rate_used).toBe(11); // evidence unchanged
+    expect(stopRows["s1"].points_awarded).toBe(6); // loser never touched stop rows
   });
 
   it("never finalizes a trip that is not in_progress", async () => {
     const { row, client } = fakeTrip({ status: "completed", incentive_earned: 44 });
-    expect(await finalizeTripOnce(client, "t1", 66)).toBe(false);
+    expect(await finalizeTripOnce(client, "t1", 66, anchorBreakdown())).toBe(false);
     expect(row.incentive_earned).toBe(44);
   });
 
@@ -105,8 +146,53 @@ describe("finalizeTripOnce (write-once compare-and-set)", () => {
     // the decision ran exactly once at finalization — the CAS refuses a rerun
     // and the stored pay stays RM44 (readers only ever sum the stored value).
     const { row, client } = fakeTrip({ status: "in_progress", incentive_earned: null });
-    await finalizeTripOnce(client, "t1", 44);
-    expect(await finalizeTripOnce(client, "t1", 52)).toBe(false);
-    expect(row).toEqual({ status: "completed", incentive_earned: 44 });
+    await finalizeTripOnce(client, "t1", 44, anchorBreakdown());
+    expect(await finalizeTripOnce(client, "t1", 52, anchorBreakdown())).toBe(false);
+    expect(row.status).toBe("completed");
+    expect(row.incentive_earned).toBe(44);
+  });
+});
+
+describe("collectFinalizeBreakdown (the engine's outputs → persisted evidence)", () => {
+  it("keeps stops index-aligned with the engine's per-drop scores", () => {
+    const b = collectFinalizeBreakdown([
+      {
+        stops: [
+          { id: "s1", zoneCode: "A2" },
+          { id: "s2", zoneCode: "K1" },
+          { id: "s3", zoneCode: "A2" },
+        ],
+        result: {
+          dropPoints: [6, 3, 1],
+          wasRepeat: [false, false, true],
+          rateUsed: 11,
+          isOffPeak: false,
+          deductionApplied: 2,
+        },
+      },
+    ]);
+    expect(b.stopRows).toEqual([
+      { id: "s1", points_awarded: 6, was_repeat: false, zone_code: "A2" },
+      { id: "s2", points_awarded: 3, was_repeat: false, zone_code: "K1" },
+      { id: "s3", points_awarded: 1, was_repeat: true, zone_code: "A2" },
+    ]);
+    expect(b.tripData).toEqual({ rate_used: 11, off_peak: false, deduction_applied: 2 });
+  });
+
+  it("midnight-straddler (two day groups): per-stop rows exact, trip-level tier NULL, deductions sum", () => {
+    const b = collectFinalizeBreakdown([
+      {
+        stops: [{ id: "s1", zoneCode: "A2" }],
+        result: { dropPoints: [6], wasRepeat: [false], rateUsed: 13, isOffPeak: true, deductionApplied: 2 },
+      },
+      {
+        stops: [{ id: "s2", zoneCode: "K1" }],
+        result: { dropPoints: [3], wasRepeat: [false], rateUsed: 11, isOffPeak: false, deductionApplied: 2 },
+      },
+    ]);
+    expect(b.stopRows.map((s) => s.points_awarded)).toEqual([6, 3]);
+    // A single trip-level rate would be wrong for half the drops → NULL, while
+    // each group's own-day deduction is well-defined and sums.
+    expect(b.tripData).toEqual({ rate_used: null, off_peak: null, deduction_applied: 4 });
   });
 });

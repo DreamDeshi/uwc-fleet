@@ -73,6 +73,11 @@ export interface TripStop {
   // (Q2, 3 Jul 2026): pay is automatic once the mandatory photo is uploaded;
   // admin only does random SPOT-CHECKS — this link is that view.
   pod_photo: string | null;
+  // Finalize-time scoring evidence (per-drop points, repeat flag, zone
+  // snapshot). Null = trip completed before the breakdown feature.
+  points_awarded?: number | null;
+  was_repeat?: boolean | null;
+  zone_code?: string | null;
 }
 
 export interface RouteType {
@@ -136,6 +141,12 @@ export interface Trip {
   status: TripStatus;
   pickup_datetime: string;
   incentive_earned: string | null;
+  // Finalize-time pay evidence (engine outputs persisted with the incentive).
+  // Null on pre-feature trips; rate_used/off_peak also null on the rare
+  // midnight-straddling trip (per-stop rows remain exact).
+  rate_used?: string | null; // Decimal serialises as string
+  off_peak?: boolean | null;
+  deduction_applied?: number | null;
   is_external: boolean;
   rejection_reason: string | null;
   // Phase 2: true when auto-dispatch couldn't place this booking. Self-clearing.

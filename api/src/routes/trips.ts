@@ -13,7 +13,12 @@ import {
   outsourcePendingTrip,
   type StartTripOutcome,
 } from "../services/tripAssignment";
-import { assertStopDeliverable, finalizeTripOnce } from "../services/tripCompletion";
+import {
+  assertStopDeliverable,
+  collectFinalizeBreakdown,
+  finalizeTripOnce,
+  type FinalizedGroup,
+} from "../services/tripCompletion";
 import {
   truckRateSnapshot,
   finalizationRateParams,
@@ -1598,6 +1603,9 @@ router.patch(
       });
 
       let incentiveThisTrip = 0;
+      // Each group's stops + the engine's own outputs, kept index-aligned so
+      // the per-drop breakdown can be persisted verbatim (no recomputation).
+      const finalizedGroups: FinalizedGroup[] = [];
       for (const group of dayGroups) {
         // Per-day ledger: drops this driver already DELIVERED on this group's
         // MYT day BEFORE this group's first confirm, on OTHER trips that are
@@ -1634,6 +1642,10 @@ router.patch(
           truck: truckRates,
         });
         incentiveThisTrip += incentive.incentiveThisTrip;
+        finalizedGroups.push({
+          stops: group.stops.map((s) => ({ id: s.id, zoneCode: s.consignee.zone_code })),
+          result: incentive,
+        });
       }
       // Guard against float dust from summing per-group marginals.
       incentiveThisTrip = Math.round(incentiveThisTrip * 100) / 100;
@@ -1641,8 +1653,13 @@ router.patch(
       // Store the MARGINAL (per-trip) incentive, not the running day total,
       // so the endpoints that SUM incentive_earned across a day are correct.
       // Write-once compare-and-set: a concurrent (or repeated) finalization
-      // loses the guard and must never overwrite the stored pay.
-      const finalized = await finalizeTripOnce(prisma, id, incentiveThisTrip);
+      // loses the guard and must never overwrite the stored pay. The per-drop
+      // breakdown (the engine's own outputs) commits atomically with it —
+      // one transaction, so pay and its evidence can't diverge.
+      const breakdown = collectFinalizeBreakdown(finalizedGroups);
+      const finalized = await prisma.$transaction((tx) =>
+        finalizeTripOnce(tx, id, incentiveThisTrip, breakdown)
+      );
       if (!finalized) {
         throw new ApiError(
           409,

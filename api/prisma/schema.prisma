@@ -233,6 +233,15 @@ model Trip {
   status           TripStatus @default(pending)
   pickup_datetime  DateTime
   incentive_earned Decimal?   @db.Decimal(10, 2)
+  // Finalize-time pay EVIDENCE (written once, atomically with
+  // incentive_earned; the engine's own outputs — display/verification only,
+  // never read by any calculation). NULL on trips completed before this
+  // feature ("breakdown not recorded"). rate_used/off_peak are also NULL on
+  // the rare midnight-straddling trip whose delivery-day groups used
+  // different tiers — the per-stop rows stay exact; deduction_applied sums.
+  rate_used         Decimal?  @db.Decimal(10, 2) // RM/point actually paid
+  off_peak          Boolean? // which tier picked rate_used
+  deduction_applied Int? // deduction points actually subtracted (may be < the truck's figure when floored at 0)
   // Rate-lock snapshot, written at ASSIGNMENT time (manual approve and
   // auto-dispatch both claim through it): a trip finalizes at the rates it was
   // dispatched under — a later admin rate edit affects future assignments only.
@@ -290,6 +299,15 @@ model TripStop {
   // same rationale as the Trip claim-rate snapshot). Null = pre-migration stop;
   // finalization falls back to the live DestinationRate points.
   zone_points  Int?
+  // Finalize-time scoring EVIDENCE (the engine's own outputs, written once
+  // with the trip's incentive): the points this drop actually earned
+  // (pre-deduction), whether it scored as a same-zone repeat (flat 1 — not
+  // derivable from points alone: a 1-point zone's first drop also scores 1),
+  // and the zone it was scored against (snapshot — a later consignee zone
+  // correction must not rewrite pay history). NULL = completed pre-feature.
+  points_awarded Int?
+  was_repeat     Boolean?
+  zone_code      String?
 }
 
 // ── 8b. PublicHoliday ────────────────────────────────────────────────
