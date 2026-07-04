@@ -6,11 +6,13 @@ import { ApiError } from "../lib/apiError";
  * then mis-dispatches and mispays, compounding forever).
  *
  * Scope: zone_code, company_name, is_active. The change affects FUTURE
- * bookings only — past pay is protected twice over: assignment snapshots each
- * stop's zone_points (rate lock) and finalization snapshots the scored
- * zone_code + points_awarded per stop, so no reader ever re-derives historic
- * pay from the live consignee row. See the unit test proving a zone
- * correction leaves a finalized trip untouched.
+ * bookings only — pay is protected twice over: assignment snapshots each
+ * stop's zone_points AND zone_code (rate + identity lock, so an in-flight
+ * trip scores and records the zone it was DISPATCHED under), and
+ * finalization persists the scored zone_code + points_awarded per stop, so
+ * no reader ever re-derives historic pay from the live consignee row. See
+ * the unit tests proving a zone correction leaves both a finalized trip and
+ * an in-flight trip's scoring untouched.
  *
  * Factored like tripAssignment/tripCompletion: a minimal client slice so the
  * behaviour is unit-testable without a database.

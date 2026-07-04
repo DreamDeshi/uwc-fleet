@@ -23,6 +23,7 @@ import {
   truckRateSnapshot,
   finalizationRateParams,
   dropZonePoints,
+  dropZoneCode,
   snapshotStopZonePoints,
   buildPointsByZone,
 } from "../services/rateSnapshot";
@@ -885,7 +886,9 @@ router.patch(
         }
         // Drop the per-stop zone-point snapshots too — they belong to the old
         // assignment; the next assignment re-takes them.
-        await tx.tripStop.updateMany({ where: { trip_id: id }, data: { zone_points: null } });
+        // Clear BOTH stop snapshots (points + zone identity): back in pending,
+        // the trip must re-snapshot whatever is true at its NEXT assignment.
+        await tx.tripStop.updateMany({ where: { trip_id: id }, data: { zone_points: null, zone_code: null } });
         await tx.auditLog.create({
           data: {
             user_id: req.user!.id,
@@ -1574,13 +1577,16 @@ router.patch(
         orderBy: { delivered_at: "asc" },
         include: { consignee: { select: { zone_code: true } } },
       });
-      // Rate lock: points and claim rates come from the ASSIGNMENT-time
-      // snapshot (TripStop.zone_points / the trip's rate fields); the live
-      // lookups below are only the fallback for trips assigned before the
-      // rate-lock migration or rows seeded directly into `assigned`. The
-      // fallback also respects the next-day cutoff: points effective NOW, not
-      // a staged edit.
-      const zoneCodes = [...new Set(thisTripStops.map((s) => s.consignee.zone_code))];
+      // Rate lock: points, claim rates AND the zone identity come from the
+      // ASSIGNMENT-time snapshot (TripStop.zone_points + zone_code / the
+      // trip's rate fields); the live lookups below are only the fallback for
+      // trips assigned before the snapshots existed or rows seeded directly
+      // into `assigned`. Scoring against the snapshotted zone_code keeps the
+      // ledger key and the persisted evidence consistent with the snapshotted
+      // points even if an admin corrects the consignee's zone mid-flight
+      // (audit #4). The fallback also respects the next-day cutoff: points
+      // effective NOW, not a staged edit.
+      const zoneCodes = [...new Set(thisTripStops.map((s) => dropZoneCode(s, s.consignee.zone_code)))];
       const rateRows = await prisma.destinationRate.findMany({
         where: { zone_code: { in: zoneCodes } },
         select: {
@@ -1638,15 +1644,24 @@ router.patch(
             dayStart: group.dayStart,
             anchor: group.anchor,
           }),
-          select: { consignee: { select: { zone_code: true } } },
+          // Prior drops carry their own scored zone identity: snapshotted at
+          // assignment (in_progress siblings) or stamped at finalization
+          // (completed trips) — prefer it over the live consignee zone so the
+          // whole day's ledger keys on the zones the drops were PAID under.
+          select: { zone_code: true, consignee: { select: { zone_code: true } } },
         });
-        const zonesDeliveredEarlierToday = priorStopsToday.map((s) => s.consignee.zone_code);
+        const zonesDeliveredEarlierToday = priorStopsToday.map((s) =>
+          dropZoneCode(s, s.consignee.zone_code)
+        );
         const isFirstDeliveredDropOfDay = zonesDeliveredEarlierToday.length === 0;
 
-        const drops = group.stops.map((s) => ({
-          zoneCode: s.consignee.zone_code,
-          zonePoints: dropZonePoints(s, pointsByZone.get(s.consignee.zone_code), s.consignee.zone_code),
-        }));
+        const drops = group.stops.map((s) => {
+          const zone = dropZoneCode(s, s.consignee.zone_code);
+          return {
+            zoneCode: zone,
+            zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone),
+          };
+        });
 
         const incentive = calculateDeliveryIncentive({
           rateDateTime: group.anchor,
@@ -1658,7 +1673,7 @@ router.patch(
         });
         incentiveThisTrip += incentive.incentiveThisTrip;
         finalizedGroups.push({
-          stops: group.stops.map((s) => ({ id: s.id, zoneCode: s.consignee.zone_code })),
+          stops: group.stops.map((s) => ({ id: s.id, zoneCode: dropZoneCode(s, s.consignee.zone_code) })),
           result: incentive,
         });
       }

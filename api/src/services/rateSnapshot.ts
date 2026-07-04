@@ -95,6 +95,27 @@ export function dropZonePoints(
 }
 
 /**
+ * The zone IDENTITY a drop is scored under at finalization: the assignment-time
+ * snapshot when present, else the consignee's live zone (legacy fallback for
+ * stops assigned before the identity snapshot existed).
+ *
+ * Without this, an admin consignee ZONE correction (PATCH /consignees/:id)
+ * landing while a trip is in flight split the evidence from the pay: points
+ * stayed snapshotted (old zone's value) but the day-ledger key and the
+ * persisted zone_code evidence read the consignee's NEW zone — e.g. evidence
+ * saying "K1 — 6 pts" when K1 is 3, and same-day repeats misclassified in
+ * both directions (audit 2026-07-05 #4). Snapshotting the identity next to
+ * the points makes a correction affect FUTURE bookings only — the entire
+ * point of the correction feature.
+ */
+export function dropZoneCode(
+  stop: { zone_code: string | null },
+  liveZoneCode: string
+): string {
+  return stop.zone_code ?? liveZoneCode;
+}
+
+/**
  * Per-zone points map from DestinationRate rows, built DETERMINISTICALLY: rows
  * are sorted (zone, then location name) before the last-wins Map insert, so
  * two rows sharing a zone (K2's Kuala Ketil + Sungai Petani pair) always
@@ -118,9 +139,12 @@ export function buildPointsByZone(
 }
 
 /**
- * Snapshot every stop's destination-zone points for a just-claimed trip. Runs
- * inside the SAME transaction as the assignment claim (both call sites hold a
- * Serializable tx), and only after the claim was won — losers never write.
+ * Snapshot every stop's destination-zone points AND zone identity for a
+ * just-claimed trip. Runs inside the SAME transaction as the assignment claim
+ * (both call sites hold a Serializable tx), and only after the claim was won —
+ * losers never write. The zone_code written here is what finalization scores
+ * against (ledger key + evidence), so a later consignee zone correction can
+ * never split the evidence from the snapshotted points (dropZoneCode above).
  */
 export async function snapshotStopZonePoints(
   tx: Prisma.TransactionClient,
@@ -166,7 +190,8 @@ export async function snapshotStopZonePoints(
     }
     await tx.tripStop.update({
       where: { id: s.id },
-      data: { zone_points: points },
+      // zone_code: the identity lock, written next to the points it explains.
+      data: { zone_points: points, zone_code: s.consignee.zone_code },
     });
   }
 }

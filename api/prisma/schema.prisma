@@ -301,12 +301,17 @@ model TripStop {
   zone_points  Int?
   // Finalize-time scoring EVIDENCE (the engine's own outputs, written once
   // with the trip's incentive): the points this drop actually earned
-  // (pre-deduction), whether it scored as a same-zone repeat (flat 1 — not
-  // derivable from points alone: a 1-point zone's first drop also scores 1),
-  // and the zone it was scored against (snapshot — a later consignee zone
-  // correction must not rewrite pay history). NULL = completed pre-feature.
+  // (pre-deduction), and whether it scored as a same-zone repeat (flat 1 —
+  // not derivable from points alone: a 1-point zone's first drop also
+  // scores 1). NULL = completed pre-feature.
   points_awarded Int?
   was_repeat     Boolean?
+  // The zone IDENTITY this drop is scored under. Snapshotted at ASSIGNMENT
+  // next to zone_points (identity lock, audit 2026-07-05 #4: a mid-flight
+  // consignee zone correction must not split the ledger key / evidence from
+  // the snapshotted points), confirmed by the finalize evidence write, and
+  // cleared with zone_points on unassign. NULL = assigned pre-snapshot →
+  // finalization falls back to the consignee's live zone.
   zone_code      String?
 }
 
