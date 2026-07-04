@@ -15,14 +15,18 @@
  * DELETED: every other user — all test-registered requestors/drivers/admins —
  * so after a reset only the 8 seeded logins remain.
  *
- * Idempotent and safe to run anytime, including against prod: it only deletes
- * trips + non-allowlisted users, never base data, and clears each deleted
- * user's dependent rows first so foreign keys never block it. Re-running on an
- * already-clean DB is a no-op.
+ * ⚠ DESTRUCTIVE — NOT prod-safe. It permanently deletes every trip in the
+ * target database (plus all non-allowlisted users and trip audit rows). It is
+ * guarded (destructive-guard.ts): a production DATABASE_URL host is refused
+ * outright, and any other target requires ALLOW_DESTRUCTIVE=1. Re-running on
+ * an already-clean DB is a no-op, but idempotent ≠ harmless — never point it
+ * at live data.
  *
- * Run with: npx tsx prisma/seed-clean.ts   (from the api/ workspace)
+ * Run with: ALLOW_DESTRUCTIVE=1 npx tsx prisma/seed-clean.ts
+ *           (from the api/ workspace, non-prod DATABASE_URL only)
  */
 import { prisma } from "../src/lib/prisma";
+import { assertDestructiveAllowed } from "./destructive-guard";
 
 // Allowlist: the ONLY user accounts kept. Every other user is deleted. Keep in
 // sync with seed.ts if the seeded admin/driver/requestor phone numbers change.
@@ -38,6 +42,9 @@ const SEEDED_PHONES = [
 ];
 
 async function main() {
+  // Refuses production outright; elsewhere requires ALLOW_DESTRUCTIVE=1.
+  assertDestructiveAllowed("seed-clean");
+
   // ── 0. Before counts (so the wipe is visibly verifiable) ────────────────
   const before = {
     trips: await prisma.trip.count(),

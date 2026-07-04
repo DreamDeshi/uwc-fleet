@@ -11,10 +11,17 @@
  *   5. rejected      — with an admin reason shown to the requestor
  *
  * All consignees are real companies from the seeded UWC list (no fake names).
- * Idempotent: safe to re-run. Run with:
- *   npx tsx prisma/seed-demo-trips.ts   (from the api/ workspace)
+ *
+ * ⚠ DESTRUCTIVE — NOT prod-safe. Step 1 deletes EVERY trip in the target
+ * database before inserting the 5 demo rows (and renames the oldest
+ * requestor). Guarded (destructive-guard.ts): a production DATABASE_URL host
+ * is refused outright, and any other target requires ALLOW_DESTRUCTIVE=1.
+ *
+ * Run with: ALLOW_DESTRUCTIVE=1 npx tsx prisma/seed-demo-trips.ts
+ *           (from the api/ workspace, non-prod DATABASE_URL only)
  */
 import { prisma } from "../src/lib/prisma";
+import { assertDestructiveAllowed } from "./destructive-guard";
 
 const DEMO_DRIVER_PHONE = "+60100000101"; // the PLX 2406 driver
 const TRUCK = "PLX 2406";
@@ -36,6 +43,9 @@ async function deleteTripsByIds(ids: string[]) {
 }
 
 async function main() {
+  // Refuses production outright; elsewhere requires ALLOW_DESTRUCTIVE=1.
+  assertDestructiveAllowed("seed-demo-trips");
+
   // ── References ────────────────────────────────────────────────────────
   const driver = await prisma.user.findUnique({ where: { phone: DEMO_DRIVER_PHONE } });
   if (!driver) throw new Error(`Demo driver ${DEMO_DRIVER_PHONE} not found — run the main seed first.`);

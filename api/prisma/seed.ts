@@ -19,6 +19,7 @@ import bcrypt from "bcrypt";
 import * as xlsx from "xlsx";
 import { prisma } from "../src/lib/prisma";
 import { PUBLIC_HOLIDAYS_2026 } from "../src/data/publicHolidays2026";
+import { assertNotProduction } from "./destructive-guard";
 
 const BCRYPT_COST = 10;
 const SEED_PASSWORD = "Password123"; // placeholder — change after first login
@@ -318,6 +319,12 @@ async function seedConsignees() {
 }
 
 async function main() {
+  // Guard: seeding deletes nothing, but seedTrucks() re-syncs rates/deductions/
+  // expiries from the spec IMMEDIATELY — on prod that would bypass the client's
+  // next-day rate cutoff and clobber admin edits, so a production DATABASE_URL
+  // host is refused (destructive-guard.ts). Dev/local targets run as before.
+  assertNotProduction("seed");
+
   // Everything here upserts, so re-running the seed is safe: it fills gaps and
   // re-syncs spec values without duplicating rows or wiping live data.
   //
