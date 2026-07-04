@@ -12,6 +12,7 @@ import { Header } from "../../components/Header";
 import { Card } from "../../components/Card";
 import { WeeklyEarningsChart } from "../../components/WeeklyEarningsChart";
 import { LoadingState, ErrorState, EmptyState } from "../../components/States";
+import { WebRefreshButton } from "../../components/WebRefreshButton";
 import { formatMoney, formatDate, formatDateTime, monthYear, weekdayShortNames } from "../../lib/format";
 
 export function EarningsScreen() {
@@ -71,6 +72,12 @@ export function EarningsScreen() {
           contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         >
+          {/* Browsers can't pull-to-refresh — web drivers resync here. */}
+          <WebRefreshButton
+            refreshing={isRefetching}
+            onRefresh={refetch}
+            style={{ marginBottom: 12 }}
+          />
           {/* Gradient summary card */}
           <LinearGradient
             colors={[colors.blueDark, colors.blue]}
