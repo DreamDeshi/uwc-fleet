@@ -39,6 +39,20 @@ export function inMytMonth(instant: Date, bounds: { start: Date; end: Date }): b
   return instant >= bounds.start && instant < bounds.end;
 }
 
+/**
+ * [start, end) UTC instants for a "YYYY-MM" MYT month key (the payroll month
+ * selector's wire format). Returns null for anything that isn't a plausible
+ * key, so routes can 400 instead of silently binning a typo into NaN-land.
+ */
+export function mytMonthBoundsForKey(key: string): { start: Date; end: Date } | null {
+  const m = /^(\d{4})-(\d{2})$/.exec(key);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  if (month < 1 || month > 12) return null;
+  return { start: mytMonthStart(year, month - 1), end: mytMonthStart(year, month) };
+}
+
 /** "YYYY-MM" of the MYT month containing the instant. */
 export function mytMonthKey(d: Date): string {
   const { year, month } = mytMonthParts(d);

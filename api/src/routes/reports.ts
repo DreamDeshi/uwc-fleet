@@ -3,7 +3,18 @@ import { prisma } from "../lib/prisma";
 import { getTripDayStart, getTripDayEnd, mytDateKey } from "../services/incentiveEngine";
 import { palletEquivalents } from "../lib/pallets";
 import { leaveCoversDate } from "../services/driverLeave";
-import { currentMytMonthBounds, inMytMonth, mytDayIndex, mytMonthKey, mytMonthParts, mytMonthStart } from "../lib/myt";
+import {
+  currentMytMonthBounds,
+  inMytMonth,
+  mytDayIndex,
+  mytMonthBoundsForKey,
+  mytMonthKey,
+  mytMonthParts,
+  mytMonthStart,
+} from "../lib/myt";
+import { ApiError } from "../lib/apiError";
+import { buildPayrollRows } from "../services/payroll";
+import { firstDeliveredAt } from "../services/tripCompletion";
 import { attentionConfig, hoursSince } from "../services/attention";
 
 import { requireAuth } from "../middleware/auth";
@@ -369,6 +380,66 @@ router.get("/monthly", async (_req, res, next) => {
     }
 
     res.json(Object.values(buckets));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /reports/payroll?month=YYYY-MM — the clerk's month-end sheet ─────
+// One row per driver (name, employee no, trip count, RM total) plus per-trip
+// lines for dispute tracing. Defaults to the current MYT month; any month is
+// selectable. Totals are sums of the STORED per-trip incentive_earned — this
+// endpoint never computes pay.
+router.get("/payroll", async (req, res, next) => {
+  try {
+    const monthKey =
+      typeof req.query.month === "string" && req.query.month.length > 0
+        ? req.query.month
+        : mytMonthKey(new Date());
+    const bounds = mytMonthBoundsForKey(monthKey);
+    if (!bounds) {
+      throw new ApiError(400, "INVALID_MONTH", "month must be YYYY-MM.");
+    }
+
+    const drivers = await prisma.user.findMany({
+      where: { role: "driver" },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        employee_number: true,
+        trips_driven: {
+          // SQL-bounded for efficiency; buildPayrollRows re-applies the same
+          // [start, end) predicate, so the figures match the other reports.
+          where: { status: "completed", pickup_datetime: { gte: bounds.start, lt: bounds.end } },
+          select: {
+            id: true,
+            ticket_number: true,
+            pickup_datetime: true,
+            incentive_earned: true,
+            stops: { select: { delivered_at: true } },
+          },
+        },
+      },
+    });
+
+    const rows = buildPayrollRows(
+      drivers.map((d) => ({
+        id: d.id,
+        name: d.name,
+        employee_number: d.employee_number,
+        trips: d.trips_driven.map((t) => ({
+          id: t.id,
+          ticket_number: t.ticket_number,
+          pickup_datetime: t.pickup_datetime,
+          delivered_at: firstDeliveredAt(t.stops),
+          incentive_earned: t.incentive_earned,
+        })),
+      })),
+      bounds
+    );
+
+    res.json({ month: monthKey, drivers: rows });
   } catch (err) {
     next(err);
   }
