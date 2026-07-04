@@ -38,6 +38,10 @@ export function ReportsPage() {
 
   if (monthly.isLoading || payroll.isLoading) return <Loading />;
   if (monthly.isError) return <ErrorState message="Could not load reports." onRetry={() => monthly.refetch()} />;
+  // A payroll fetch error must NOT fall through to rows=[] — that renders as
+  // "No completed trips in <month>" (a false claim about pay) with a live
+  // Export button emitting an empty pay sheet (audit 2026-07-05 #2).
+  if (payroll.isError) return <ErrorState message="Could not load payroll." onRetry={() => payroll.refetch()} />;
 
   const months = monthly.data ?? [];
   const payrollRows = payroll.data?.drivers ?? [];
