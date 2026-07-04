@@ -84,7 +84,12 @@ export function ActiveTripScreen() {
       await updateStatus.mutateAsync({ tripId: trip.id, action: "arrived", stop_id: stop.id });
       toast(t("trip.toastArrived"), "success");
     } catch (err) {
-      setError(apiErrorMessage(err));
+      const msg = apiErrorMessage(err);
+      setError(msg);
+      // Toast too (same rationale as onCapturePod): the inline error sits in
+      // the often-collapsed bottom sheet — on bad signal a silent failure
+      // looks like the tap registered when it didn't.
+      toast(msg, "error");
     }
   };
 
@@ -130,7 +135,11 @@ export function ActiveTripScreen() {
         toast(t("trip.toastDelivered"), "success");
       }
     } catch (err) {
-      setError(apiErrorMessage(err));
+      const msg = apiErrorMessage(err);
+      setError(msg);
+      // Delivered gates the driver's pay — a silently-lost tap here means an
+      // unfinalized incentive, so the failure must be impossible to miss.
+      toast(msg, "error");
     }
   };
 
