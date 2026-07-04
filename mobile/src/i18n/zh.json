@@ -233,6 +233,8 @@
     "contactPerson": "联系人",
     "phone": "电话",
     "area": "地区",
+    "state": "州属（可选）",
+    "postalCode": "邮编（可选）",
     "addConsigneeBtn": "添加收货人",
     "consigneeRequired": "公司名称和送货区域为必填项。",
         "consigneeAdded": "收货人已添加。",

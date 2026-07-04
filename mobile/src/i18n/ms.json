@@ -233,6 +233,8 @@
     "contactPerson": "Orang untuk Dihubungi",
     "phone": "Telefon",
     "area": "Kawasan",
+    "state": "Negeri (pilihan)",
+    "postalCode": "Poskod (pilihan)",
     "addConsigneeBtn": "Tambah Penerima",
     "consigneeRequired": "Nama syarikat dan zon penghantaran diperlukan.",
         "consigneeAdded": "Penerima ditambah.",

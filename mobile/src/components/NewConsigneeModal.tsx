@@ -13,6 +13,11 @@ import { Consignee } from "../types";
 
 // UWC zones (Development Brief §4 + long-haul Johor/Selangor per spec REQUESTOR
 // INTERFACE). Used here and in the booking form.
+export function zoneLabel(code: string): string {
+  const name = ZONES.find((z) => z.code === code)?.name;
+  return name ? `${code} — ${name}` : code;
+}
+
 export const ZONES: { code: string; name: string }[] = [
   { code: "P1", name: "Penang Island" },
   { code: "P2", name: "Juru & Perai" },
@@ -42,6 +47,8 @@ export function NewConsigneeModal({
   const [contact, setContact] = useState("");
   const [phone, setPhone] = useState("");
   const [area, setArea] = useState("");
+  const [stateName, setStateName] = useState("");
+  const [postcode, setPostcode] = useState("");
   const [zoneOpen, setZoneOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 409 SIMILAR_EXISTS candidates ("did you mean?") — the requestor can tap an
@@ -49,7 +56,8 @@ export function NewConsigneeModal({
   const [similar, setSimilar] = useState<SimilarConsignee[] | null>(null);
 
   const reset = () => {
-    setCompany(""); setZone(undefined); setContact(""); setPhone(""); setArea(""); setError(null); setSimilar(null);
+    setCompany(""); setZone(undefined); setContact(""); setPhone(""); setArea("");
+    setStateName(""); setPostcode(""); setError(null); setSimilar(null);
   };
 
   const submit = async (force = false) => {
@@ -66,6 +74,10 @@ export function NewConsigneeModal({
         contact_person: contact.trim() || undefined,
         phone: phone.trim() || undefined,
         area: area.trim() || undefined,
+        // State + postcode enrich search/dedupe and give the admin a locality
+        // datum to sanity-check the guessed zone against (audit 4.4).
+        state: stateName.trim() || undefined,
+        postal_code: postcode.trim() || undefined,
         force,
       });
       onCreatedDone(c);
@@ -124,6 +136,13 @@ export function NewConsigneeModal({
             <TextField label={t("booking.contactPerson")} value={contact} onChangeText={setContact} />
             <TextField label={t("booking.phone")} value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
             <TextField label={t("booking.area")} value={area} onChangeText={setArea} />
+            <TextField label={t("booking.state")} value={stateName} onChangeText={setStateName} />
+            <TextField
+              label={t("booking.postalCode")}
+              value={postcode}
+              onChangeText={setPostcode}
+              keyboardType="number-pad"
+            />
             {error ? <Text style={styles.error}>{error}</Text> : null}
             {similar && similar.length > 0 && (
               <View style={styles.similarBox}>
@@ -133,7 +152,9 @@ export function NewConsigneeModal({
                     <View style={{ flex: 1 }}>
                       <Text style={styles.similarName}>{c.company_name}</Text>
                       <Text style={styles.similarSub}>
-                        {[c.area, c.state, c.zone_code].filter(Boolean).join(" · ")}
+                        {/* Human-readable zone ("K1 — Kulim"), not the bare code a
+                            requestor can't evaluate when deciding "is this mine?". */}
+                        {[c.area, c.state, zoneLabel(c.zone_code)].filter(Boolean).join(" · ")}
                       </Text>
                     </View>
                     <Text style={styles.similarUse}>{t("booking.similarUse")}</Text>

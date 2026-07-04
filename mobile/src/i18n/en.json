@@ -298,6 +298,8 @@
     "contactPerson": "Contact Person",
     "phone": "Phone",
     "area": "Area",
+    "state": "State (optional)",
+    "postalCode": "Postcode (optional)",
     "addConsigneeBtn": "Add Consignee",
     "consigneeRequired": "Company name and delivery zone are required.",
         "consigneeAdded": "Consignee added.",
