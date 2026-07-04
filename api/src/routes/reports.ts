@@ -3,7 +3,7 @@ import { prisma } from "../lib/prisma";
 import { getTripDayStart, getTripDayEnd, mytDateKey } from "../services/incentiveEngine";
 import { palletEquivalents } from "../lib/pallets";
 import { leaveCoversDate } from "../services/driverLeave";
-import { currentMytMonthBounds, mytDayIndex, mytMonthKey, mytMonthParts, mytMonthStart } from "../lib/myt";
+import { currentMytMonthBounds, inMytMonth, mytDayIndex, mytMonthKey, mytMonthParts, mytMonthStart } from "../lib/myt";
 import { attentionConfig, hoursSince } from "../services/attention";
 
 import { requireAuth } from "../middleware/auth";
@@ -33,7 +33,9 @@ router.get("/dashboard", async (_req, res, next) => {
     const now = new Date();
     const dayStart = getTripDayStart(now);
     const dayEnd = getTripDayEnd(now);
-    const { start: monthStart } = currentMytMonthBounds(now);
+    // Both bounds: a lower bound alone lets a booked-ahead trip completed
+    // early leak next month's figure into this month's KPI (finding 1.3).
+    const { start: monthStart, end: monthEnd } = currentMytMonthBounds(now);
 
     const [
       totalTrucks,
@@ -68,7 +70,7 @@ router.get("/dashboard", async (_req, res, next) => {
         select: { insurance_expiry: true, permit_expiry: true, road_tax_expiry: true },
       }),
       prisma.trip.findMany({
-        where: { status: "completed", pickup_datetime: { gte: monthStart } },
+        where: { status: "completed", pickup_datetime: { gte: monthStart, lt: monthEnd } },
         select: { pickup_datetime: true, stops: { select: { delivered_at: true } } },
       }),
     ]);
@@ -120,7 +122,7 @@ router.get("/drivers", async (_req, res, next) => {
     const now = new Date();
     const dayStart = getTripDayStart(now);
     const dayEnd = getTripDayEnd(now);
-    const { start: monthStart } = currentMytMonthBounds(now);
+    const monthBounds = currentMytMonthBounds(now);
 
     const todayKey = mytDateKey(now);
     const drivers = await prisma.user.findMany({
@@ -175,8 +177,11 @@ router.get("/drivers", async (_req, res, next) => {
         (sum, t) => sum + palletEquivalents(t.cargo_details),
         0
       );
+      // Same [start, end) predicate as buildDriverPerformance (users.ts), so
+      // the "Earned (mo.)" figure here and the performance page can never
+      // disagree on which trips are "this month" (finding 1.3).
       const monthTrips = d.trips_driven.filter(
-        (t) => t.status === "completed" && new Date(t.pickup_datetime) >= monthStart
+        (t) => t.status === "completed" && inMytMonth(new Date(t.pickup_datetime), monthBounds)
       );
       const tripsToday = d.trips_driven.filter((t) => {
         const p = new Date(t.pickup_datetime);

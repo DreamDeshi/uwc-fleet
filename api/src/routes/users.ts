@@ -13,7 +13,7 @@ import {
   type DriverTripStats,
 } from "../lib/performanceScore";
 import { estimateTripDistanceKm } from "../lib/geo";
-import { currentMytMonthBounds } from "../lib/myt";
+import { currentMytMonthBounds, inMytMonth } from "../lib/myt";
 
 const router = Router();
 
@@ -83,7 +83,9 @@ async function buildDriverPerformance() {
     },
   });
 
-  const inMonth = (d: Date) => d >= monthStart && d < monthEnd;
+  // Shared [start, end) predicate (lib/myt) — reports.ts and incentives.ts use
+  // the same one, so no endpoint can disagree on "this month" (finding 1.3).
+  const inMonth = (d: Date) => inMytMonth(d, { start: monthStart, end: monthEnd });
 
   const reduced = drivers.map((d) => {
     const completed = d.trips_driven.filter((t) => t.status === "completed");

@@ -3,7 +3,7 @@ import { prisma } from "../lib/prisma";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { estimateTripDistanceKm } from "../lib/geo";
-import { currentMytMonthBounds, mytMonthKey } from "../lib/myt";
+import { currentMytMonthBounds, inMytMonth, mytMonthKey } from "../lib/myt";
 
 const router = Router();
 router.use(requireAuth);
@@ -56,8 +56,10 @@ router.get("/mine", requireRole("driver"), async (req, res, next) => {
     // Current-month aggregate in explicit MYT (lib/myt.ts) — the month bucket
     // must match the engine's MYT trip-days regardless of the server's TZ env.
     const now = new Date();
-    const { start: monthStart } = currentMytMonthBounds(now);
-    const monthTrips = trips.filter((t) => new Date(t.pickup_datetime) >= monthStart);
+    // Both bounds ([start, end)) — the same predicate the admin reports use,
+    // so the driver's own month total always matches theirs (finding 1.3).
+    const monthBounds = currentMytMonthBounds(now);
+    const monthTrips = trips.filter((t) => inMytMonth(new Date(t.pickup_datetime), monthBounds));
     const monthTotal = monthTrips.reduce((sum, t) => sum + Number(t.incentive_earned ?? 0), 0);
     const monthDistance = monthTrips.reduce((sum, t) => sum + t.distance_km, 0);
 

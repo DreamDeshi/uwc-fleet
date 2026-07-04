@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   currentMytMonthBounds,
+  inMytMonth,
   mytDayIndex,
   mytMonthKey,
   mytMonthParts,
@@ -37,6 +38,31 @@ describe("currentMytMonthBounds", () => {
     const { start } = currentMytMonthBounds(new Date("2026-07-15T04:00:00Z"));
     const juneLateNight = new Date("2026-06-30T15:00:00Z"); // 23:00 MYT June 30
     expect(juneLateNight.getTime() < start.getTime()).toBe(true);
+  });
+});
+
+describe("inMytMonth — the ONE shared 'this month' predicate (finding 1.3)", () => {
+  // July 2026, seen mid-month.
+  const bounds = currentMytMonthBounds(new Date("2026-07-15T04:00:00Z"));
+
+  it("a trip dated NEXT month is excluded (was leaking into unbounded >= filters)", () => {
+    // Booked-ahead trip with an August pickup, completed early: before the
+    // fix, /reports/drivers and /incentives/mine counted it in July while the
+    // performance page didn't — two different totals for the same driver.
+    expect(inMytMonth(new Date("2026-08-03T02:00:00Z"), bounds)).toBe(false);
+  });
+
+  it("start is inclusive, end is exclusive ([start, end))", () => {
+    expect(inMytMonth(bounds.start, bounds)).toBe(true);
+    expect(inMytMonth(bounds.end, bounds)).toBe(false);
+    expect(inMytMonth(new Date(bounds.end.getTime() - 1), bounds)).toBe(true);
+  });
+
+  it("binning follows the MYT calendar, not UTC", () => {
+    // 2026-06-30 17:00Z = 2026-07-01 01:00 MYT → July.
+    expect(inMytMonth(new Date("2026-06-30T17:00:00Z"), bounds)).toBe(true);
+    // 2026-07-31 17:00Z = 2026-08-01 01:00 MYT → August.
+    expect(inMytMonth(new Date("2026-07-31T17:00:00Z"), bounds)).toBe(false);
   });
 });
 

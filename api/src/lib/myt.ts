@@ -28,6 +28,17 @@ export function currentMytMonthBounds(now: Date): { start: Date; end: Date } {
   return { start: mytMonthStart(year, month), end: mytMonthStart(year, month + 1) };
 }
 
+/**
+ * Whether an instant falls inside [start, end) month bounds. The ONE
+ * "this month" predicate every money endpoint must share: a lower bound
+ * alone lets a trip dated next month leak into the current month's figure
+ * in one endpoint but not another, and the clerk sees two different totals
+ * for the same driver (audit finding 1.3).
+ */
+export function inMytMonth(instant: Date, bounds: { start: Date; end: Date }): boolean {
+  return instant >= bounds.start && instant < bounds.end;
+}
+
 /** "YYYY-MM" of the MYT month containing the instant. */
 export function mytMonthKey(d: Date): string {
   const { year, month } = mytMonthParts(d);
