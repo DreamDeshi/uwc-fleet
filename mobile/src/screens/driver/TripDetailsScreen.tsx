@@ -24,6 +24,7 @@ import { RouteLine } from "../../components/RouteLine";
 import { LiveTripMap } from "../../components/LiveTripMap";
 import { StatusTimeline } from "../../components/StatusTimeline";
 import { LoadingState, ErrorState } from "../../components/States";
+import { WebRefreshButton } from "../../components/WebRefreshButton";
 import { formatMoney, formatDate, formatTime } from "../../lib/format";
 import {
   tripDestination,
@@ -61,11 +62,14 @@ export function TripDetailsScreen() {
   // that, show an estimate (destination points × truck rate) marked "Estimated".
   const finalized = trip.incentive_earned !== null && trip.incentive_earned !== undefined;
   const estimate = finalized ? null : estimateIncentive(trip, holidays);
+  // No estimate computable (missing truck/rate/zone) → "—", never a green
+  // "RM 0" that reads as "this run pays nothing" (audit 2026-07-05 #5 —
+  // same rule TripCard applies by hiding the row).
   const incentiveValue = finalized
     ? formatMoney(trip.incentive_earned)
     : estimate !== null
       ? formatMoney(estimate)
-      : formatMoney(trip.incentive_earned);
+      : "—";
   const incentiveSub = !finalized && estimate !== null ? t("trip.estimated") : undefined;
 
   const onStart = async () => {
@@ -131,6 +135,8 @@ export function TripDetailsScreen() {
                 <Text style={styles.typeChipText}>{trip.route_type.name}</Text>
               </View>
             ) : null}
+            {/* Browsers can't pull-to-refresh — web drivers resync here. */}
+            <WebRefreshButton refreshing={isRefetching} onRefresh={refetch} />
           </View>
 
           {/* Route */}
@@ -147,7 +153,13 @@ export function TripDetailsScreen() {
           <View style={styles.infoRow}>
             <InfoCard icon="calendar-outline" label={t("booking.pickupDate")} value={formatDate(trip.pickup_datetime)} sub={formatTime(trip.pickup_datetime)} />
             <InfoCard icon="cube-outline" label={t("trip.cargo")} value={`${totalPallets(trip)}`} sub={t("booking.pallet")} />
-            <InfoCard icon="cash-outline" label={t("trip.incentive")} value={incentiveValue} sub={incentiveSub} valueColor={colors.green} />
+            <InfoCard
+              icon="cash-outline"
+              label={t("trip.incentive")}
+              value={incentiveValue}
+              sub={incentiveSub}
+              valueColor={incentiveValue === "—" ? undefined : colors.green}
+            />
           </View>
 
           {/* Consignee */}

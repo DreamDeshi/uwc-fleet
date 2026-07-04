@@ -182,11 +182,13 @@ function AssignmentCard({
   // TripDetailsScreen — never a bare RM 0 on an active assignment.
   const finalized = trip.incentive_earned !== null && trip.incentive_earned !== undefined;
   const estimate = finalized ? null : estimateIncentive(trip, holidays);
+  // No estimate computable → "—", never a green "RM 0" on an active
+  // assignment (audit 2026-07-05 #5 — TripCard's rule).
   const rmValue = finalized
     ? formatMoney(trip.incentive_earned)
     : estimate !== null
       ? formatMoney(estimate)
-      : formatMoney(trip.incentive_earned);
+      : "—";
   const showEst = !finalized && estimate !== null;
   return (
     <View style={[styles.assignCard, isNext && styles.assignCardNext]}>
