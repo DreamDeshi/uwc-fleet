@@ -316,5 +316,11 @@
     "rerouted": "已改道",
     "stopPrefix": "第 {{n}} 站",
     "pending": "待定"
+  },
+  "cargo": {
+    "carton": "纸箱 × {{qty}}",
+    "pallet": "托盘 {{size}} × {{qty}}",
+    "custom": "自定义",
+    "more": "（另 {{qty}} 项）"
   }
 }

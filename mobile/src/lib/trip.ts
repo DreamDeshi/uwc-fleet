@@ -1,4 +1,6 @@
+import i18n from "i18next";
 import { Trip } from "../types";
+import { palletFactor } from "./pallets";
 
 // Most trips originate at the UWC plant; the schema doesn't model the origin
 // explicitly, so we label it consistently.
@@ -22,36 +24,25 @@ export function tripConsigneeName(trip: Trip): string {
   return firstStop(trip)?.consignee?.company_name || "—";
 }
 
-// "Pallet 4×4 × 3  (+1 more)" style summary from the cargo lines.
+// "Pallet 4×4 × 3  (+1 more)" style summary from the cargo lines. Localised
+// (these lines sit on the driver's pay-adjacent cards) via i18n.t directly —
+// same lib-level pattern as format.ts. "{{qty}}" not "{{count}}" on purpose:
+// count triggers i18next plural-key lookup these keys don't define.
 export function cargoSummary(trip: Trip): string {
   const lines = trip.cargo_details ?? [];
   if (lines.length === 0) return "—";
   const first = lines[0];
   const label =
     first.pallet_type === "carton"
-      ? `Carton × ${first.cartons ?? first.quantity}`
+      ? i18n.t("cargo.carton", { qty: first.cartons ?? first.quantity })
       : first.pallet_type === "custom"
-        ? first.custom_size || "Custom"
-        : `Pallet ${first.pallet_type} × ${first.quantity}`;
-  return lines.length > 1 ? `${label}  (+${lines.length - 1} more)` : label;
+        ? first.custom_size || i18n.t("cargo.custom")
+        : i18n.t("cargo.pallet", { size: first.pallet_type, qty: first.quantity });
+  return lines.length > 1 ? `${label}  ${i18n.t("cargo.more", { qty: lines.length - 1 })}` : label;
 }
 
-// 4×4-pallet-equivalent conversion (spec AUTO DISPATCH LOGIC — all capacity is
-// measured in 4×4 slots). Mirrors api/src/lib/pallets.ts; "×" is U+00D7 to match
-// the pallet sizes the booking form stores. Cartons/custom occupy no slot.
-const PALLET_FACTORS: Record<string, number> = {
-  "2×2": 0.25,
-  "3×4": 0.75,
-  "4×4": 1,
-  "4×8": 2,
-  "5×10": 3.125,
-};
-
-function palletFactor(palletType: string): number {
-  if (palletType in PALLET_FACTORS) return PALLET_FACTORS[palletType];
-  if (palletType === "carton" || palletType === "custom") return 0;
-  return 1;
-}
+// 4×4-pallet-equivalent conversion lives in lib/pallets.ts (single mirror of
+// api/src/lib/pallets.ts, unit-tested) — imported above.
 
 // ── Estimated incentive (pre-completion display only) ──────────────────────
 // Destination points per zone (spec INTERNAL LORRY RATE / DestinationRate seed).

@@ -19,19 +19,47 @@ const FALLBACK_LONG = [
 ];
 const monthCache: Record<string, string[]> = {};
 
+// App languages are exactly en/ms/zh (Profile picker); zh previously fell
+// through to English on the Earnings summary and every date line.
+function activeLang(): "en" | "ms" | "zh" {
+  const l = i18n.language ?? "en";
+  return l.startsWith("ms") ? "ms" : l.startsWith("zh") ? "zh" : "en";
+}
+
+const INTL_TAGS = { en: "en-GB", ms: "ms-MY", zh: "zh-CN" } as const;
+
 function monthNames(style: "short" | "long"): string[] {
-  const lang = i18n.language === "ms" ? "ms" : "en";
+  const lang = activeLang();
   const key = `${lang}-${style}`;
   if (monthCache[key]) return monthCache[key];
   let names: string[];
   try {
-    const tag = lang === "ms" ? "ms-MY" : "en-GB";
-    const fmt = new Intl.DateTimeFormat(tag, { month: style });
+    const fmt = new Intl.DateTimeFormat(INTL_TAGS[lang], { month: style });
     names = Array.from({ length: 12 }, (_, i) => fmt.format(new Date(Date.UTC(2021, i, 15))));
   } catch {
     names = style === "long" ? FALLBACK_LONG : FALLBACK_SHORT;
   }
   monthCache[key] = names;
+  return names;
+}
+
+// Mon-first short weekday labels (the Earnings chart axis), localised the same
+// way as monthNames instead of a hardcoded English array.
+const FALLBACK_WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const weekdayCache: Record<string, string[]> = {};
+
+export function weekdayShortNames(): string[] {
+  const lang = activeLang();
+  if (weekdayCache[lang]) return weekdayCache[lang];
+  let names: string[];
+  try {
+    const fmt = new Intl.DateTimeFormat(INTL_TAGS[lang], { weekday: "short", timeZone: "UTC" });
+    // 2021-03-01 was a Monday; +i days walks Mon → Sun.
+    names = Array.from({ length: 7 }, (_, i) => fmt.format(new Date(Date.UTC(2021, 2, 1 + i))));
+  } catch {
+    names = FALLBACK_WEEKDAYS;
+  }
+  weekdayCache[lang] = names;
   return names;
 }
 

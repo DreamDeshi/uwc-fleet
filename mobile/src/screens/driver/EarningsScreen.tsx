@@ -12,12 +12,14 @@ import { Header } from "../../components/Header";
 import { Card } from "../../components/Card";
 import { WeeklyEarningsChart } from "../../components/WeeklyEarningsChart";
 import { LoadingState, ErrorState, EmptyState } from "../../components/States";
-import { formatMoney, formatDate, monthYear } from "../../lib/format";
-
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+import { formatMoney, formatDate, monthYear, weekdayShortNames } from "../../lib/format";
 
 export function EarningsScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  // Localised Mon-first axis labels (were a hardcoded English array — a Malay/
+  // Chinese driver saw English on his own pay screen). i18n.language in the
+  // memo deps so the chart relabels on a live language switch.
+  const WEEKDAYS = useMemo(() => weekdayShortNames(), [i18n.language]);
   const navigation = useNavigation<BottomTabNavigationProp<DriverTabParamList>>();
   const { data, isLoading, isError, refetch, isRefetching } = useIncentives();
 
@@ -43,7 +45,7 @@ export function EarningsScreen() {
       }
     }
     return buckets.map((amount, x) => ({ x, amount, label: WEEKDAYS[x] }));
-  }, [data]);
+  }, [data, WEEKDAYS]);
 
   const weekMax = Math.max(...week.map((d) => d.amount), 0);
   const hasWeekData = weekMax > 0;

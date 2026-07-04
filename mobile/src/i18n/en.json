@@ -381,5 +381,11 @@
     "rerouted": "Rerouted",
     "stopPrefix": "Stop {{n}}",
     "pending": "Pending"
+  },
+  "cargo": {
+    "carton": "Carton × {{qty}}",
+    "pallet": "Pallet {{size}} × {{qty}}",
+    "custom": "Custom",
+    "more": "(+{{qty}} more)"
   }
 }

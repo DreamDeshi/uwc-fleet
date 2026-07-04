@@ -316,5 +316,11 @@
     "rerouted": "Dialih laluan",
     "stopPrefix": "Hentian {{n}}",
     "pending": "Belum"
+  },
+  "cargo": {
+    "carton": "Karton × {{qty}}",
+    "pallet": "Palet {{size}} × {{qty}}",
+    "custom": "Tersuai",
+    "more": "(+{{qty}} lagi)"
   }
 }
