@@ -13,7 +13,8 @@ import {
 import { useDrivers, useMonthly, useTrips } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
 import { Button, Card, ErrorState, Loading, SectionTitle } from "@/components/ui";
-import { formatMoney, formatNumber } from "@/lib/format";
+import { formatMoney, formatNumber, money2dp } from "@/lib/format";
+import { toCsv } from "@/lib/csv";
 import type { DriverPerf, MonthlyRow } from "@/types";
 
 const PIE_COLORS = [colors.blue, colors.yellow, colors.green, colors.orange, "#9333ea", "#0891b2"];
@@ -46,9 +47,26 @@ export function ReportsPage() {
   })();
 
   function exportCsv() {
-    const header = ["Month", "Trips", "Completed", "Incentive (RM)", "External"];
-    const rows = months.map((m) => [m.label, m.trips, m.completed, m.incentive, m.external]);
-    const csv = [header, ...rows].map((r) => r.join(",")).join("\n");
+    // Two sections: the per-driver month figures (the payroll sheet the clerk
+    // pays from — previously only visible on screen) and the monthly
+    // aggregates. Money goes through money2dp so the exported number ties
+    // exactly to the displayed formatMoney value (raw sums carry float dust
+    // like 143.99999999999997).
+    const csv = toCsv([
+      ["Driver Incentive Summary (this month)"],
+      ["Driver", "Trips (mo.)", "Trips (total)", "Earned (mo.) (RM)", "Avg / Trip (RM)"],
+      ...driverRows.map((d) => [
+        d.name,
+        d.trips_this_month,
+        d.trips_total,
+        money2dp(d.incentive_this_month),
+        money2dp(d.trips_this_month ? d.incentive_this_month / d.trips_this_month : 0),
+      ]),
+      [],
+      ["Monthly Performance Summary"],
+      ["Month", "Trips", "Completed", "Incentive (RM)", "External"],
+      ...months.map((m) => [m.label, m.trips, m.completed, money2dp(m.incentive), m.external]),
+    ]);
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

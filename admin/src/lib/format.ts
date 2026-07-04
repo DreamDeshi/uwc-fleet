@@ -3,7 +3,20 @@
 
 export function formatMoney(value: string | number | null | undefined): string {
   const n = Number(value ?? 0);
-  return `RM ${n.toLocaleString("en-MY", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  // Always 2 decimals: payroll columns are reconciled line-by-line, and mixed
+  // "RM 44 / RM 44.5 / RM 44.55" is ambiguous (is "RM 44" exactly 44.00?).
+  return `RM ${n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/**
+ * Money as a plain 2-dp string for CSV cells — no "RM", no thousands
+ * separators (a locale comma would split the CSV column). Rounds away float
+ * dust so the exported number ties exactly to the displayed formatMoney value
+ * (raw sums can carry artifacts like 143.99999999999997).
+ */
+export function money2dp(value: string | number | null | undefined): string {
+  const n = Number(value ?? 0);
+  return (Math.round(n * 100) / 100).toFixed(2);
 }
 
 export function formatNumber(value: number | null | undefined): string {
