@@ -218,9 +218,11 @@ export function useCancelTrip() {
   return useMutation({
     mutationFn: async (tripId: string) =>
       (await api.patch<Trip>(`/trips/${tripId}/cancel`)).data,
-    onSuccess: (trip) => {
+    // Settled, not success — see useUpdateTripStatus (lost-response reconcile).
+    // The tripId comes from the variables: there's no response on the error path.
+    onSettled: (_trip, _err, tripId) => {
       qc.invalidateQueries({ queryKey: ["trips"] });
-      qc.invalidateQueries({ queryKey: ["trip", trip.id] });
+      qc.invalidateQueries({ queryKey: ["trip", tripId] });
     },
   });
 }
@@ -329,8 +331,14 @@ export function useUploadTripDocument() {
         })
       ).data;
     },
-    onSuccess: (trip) => {
-      qc.invalidateQueries({ queryKey: ["trip", trip.id] });
+    // Settled, not success — THE duplicate-document guard (audit 2026-07-05):
+    // each POST creates a new TripDocument row, so a commit-with-lost-response
+    // that only refetched on success left the requestor staring at an "empty"
+    // slot, retrying, and filing the DO twice. Refetching on the error path
+    // shows the document that actually landed, so there's nothing to retry.
+    // The tripId comes from the variables: there's no response on errors.
+    onSettled: (_trip, _err, vars) => {
+      qc.invalidateQueries({ queryKey: ["trip", vars.tripId] });
       qc.invalidateQueries({ queryKey: ["trips"] });
     },
   });

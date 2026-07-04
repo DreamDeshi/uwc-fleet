@@ -76,12 +76,17 @@ export function TripDetailsScreen() {
       await startTrip.mutateAsync({ tripId: trip.id, action: "start" });
       navigation.replace("ActiveTrip", { tripId: trip.id });
     } catch (err) {
-      // TRIP_STATE_CHANGED after a lost response usually means THIS start
-      // already committed — refetch, and if the trip is out, proceed to the
-      // active screen exactly as if the tap had succeeded. (A genuine change
-      // by someone else — e.g. admin unassigned it — falls through to the
-      // error message with the screen refreshed to the real state.)
-      if (apiErrorCode(err) === "TRIP_STATE_CHANGED") {
+      // A committed-start-then-lost-response retry usually comes back as
+      // 400 INVALID_STATUS ("Only assigned trips can be started" — the plain
+      // pre-read fires before the CAS), and only the tight read-to-CAS race
+      // returns TRIP_STATE_CHANGED. Reconcile BOTH: refetch, and if the trip
+      // is out, proceed to the active screen exactly as if the tap had
+      // succeeded (audit 2026-07-05 #7). The status===in_progress recheck is
+      // what keeps this safe — a genuine refusal (admin unassigned it, or
+      // another trip is already running) falls through to the error message
+      // with the screen refreshed to the real state.
+      const code = apiErrorCode(err);
+      if (code === "TRIP_STATE_CHANGED" || code === "INVALID_STATUS") {
         const fresh = await refetch();
         if (fresh.data?.status === "in_progress") {
           navigation.replace("ActiveTrip", { tripId: trip.id });
