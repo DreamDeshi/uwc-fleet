@@ -6,6 +6,7 @@ import { ApiError } from "../lib/apiError";
 import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
+import { updateConsignee } from "../services/consigneeUpdate";
 
 const router = Router();
 router.use(requireAuth);
@@ -66,12 +67,16 @@ interface ConsigneeRow {
   state: string | null;
   zone_code: string;
   zone_name: string | null;
+  is_active: boolean;
 }
 
 router.get("/", async (req, res, next) => {
   try {
     const rawSearch = typeof req.query.search === "string" ? req.query.search.trim() : "";
     const zone = typeof req.query.zone === "string" ? req.query.zone : undefined;
+    // Admin directory management needs to see (and reactivate) deactivated
+    // consignees; requestor search never does — the flag is admin-gated.
+    const includeInactive = req.query.include_inactive === "1" && req.user!.role === "admin";
     const ns = normalise(rawSearch);
     // Only search once there are 2+ real characters AND something survives
     // normalisation (typing just "--" shouldn't match the whole directory).
@@ -91,10 +96,10 @@ router.get("/", async (req, res, next) => {
         Prisma.sql`regexp_replace(lower(coalesce(${col}, '')), ${PG_NORMALISE_REGEX}, '', 'g')`;
       rows = await prisma.$queryRaw<ConsigneeRow[]>(Prisma.sql`
         SELECT c.id, c.company_name, c.vendor_code, c.contact_person, c.phone,
-               c.area, c.state, c.zone_code, z.name AS zone_name
+               c.area, c.state, c.zone_code, z.name AS zone_name, c.is_active
         FROM "Consignee" c
         LEFT JOIN "Zone" z ON z.code = c.zone_code
-        WHERE c.is_active = true
+        WHERE ${includeInactive ? Prisma.sql`1 = 1` : Prisma.sql`c.is_active = true`}
           ${zone ? Prisma.sql`AND c.zone_code = ${zone}` : Prisma.empty}
           AND (
             ${nameNorm} LIKE ${like}
@@ -116,7 +121,7 @@ router.get("/", async (req, res, next) => {
       `);
     } else {
       const head = await prisma.consignee.findMany({
-        where: { is_active: true, ...(zone ? { zone_code: zone } : {}) },
+        where: { ...(includeInactive ? {} : { is_active: true }), ...(zone ? { zone_code: zone } : {}) },
         select: {
           id: true,
           company_name: true,
@@ -126,6 +131,7 @@ router.get("/", async (req, res, next) => {
           area: true,
           state: true,
           zone_code: true,
+          is_active: true,
           zone: { select: { name: true } },
         },
         orderBy: { company_name: "asc" },
@@ -140,12 +146,16 @@ router.get("/", async (req, res, next) => {
       rows.map((r) => ({
         id: r.id,
         company_name: stripCompanySuffix(r.company_name),
+        // The FULL legal name — the admin editor must initialise from this,
+        // or saving would write the display-stripped name back to the DB.
+        company_name_full: r.company_name,
         vendor_code: r.vendor_code,
         contact_person: r.contact_person,
         phone: r.phone,
         area: r.area,
         state: r.state,
         zone_code: r.zone_code,
+        is_active: r.is_active,
         zone: r.zone_name ? { code: r.zone_code, name: r.zone_name } : null,
       }))
     );
@@ -241,6 +251,44 @@ router.post(
       });
 
       res.status(201).json(consignee);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ── PATCH /consignees/:id — admin corrects a consignee (zone/name/active) ──
+// The correction path for wrong-zone self-adds. Affects FUTURE bookings only:
+// past pay is protected by the assignment + finalization snapshots (see
+// services/consigneeUpdate.ts and its tests).
+const updateConsigneeSchema = z
+  .object({
+    company_name: z.string().min(1).optional(),
+    zone_code: z.string().min(1).optional(),
+    is_active: z.boolean().optional(),
+  })
+  .refine((b) => Object.keys(b).length > 0, { message: "Nothing to update." });
+
+router.patch(
+  "/:id",
+  requireRole("admin"),
+  validateBody(updateConsigneeSchema),
+  async (req, res, next) => {
+    try {
+      await updateConsignee(prisma, req.params.id, req.body, req.user!.id);
+      const updated = await prisma.consignee.findUnique({
+        where: { id: req.params.id },
+        select: {
+          id: true,
+          company_name: true,
+          area: true,
+          state: true,
+          zone_code: true,
+          is_active: true,
+          zone: { select: { code: true, name: true } },
+        },
+      });
+      res.json(updated);
     } catch (err) {
       next(err);
     }
