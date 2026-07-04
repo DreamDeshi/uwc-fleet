@@ -8,6 +8,9 @@ import {
   claimPendingTripOrThrow,
   releaseAssignedTrip,
   startAssignedTripForDriver,
+  rejectPendingTrip,
+  cancelBookedTrip,
+  outsourcePendingTrip,
   type StartTripOutcome,
 } from "../services/tripAssignment";
 import { assertStopDeliverable, finalizeTripOnce } from "../services/tripCompletion";
@@ -1042,31 +1045,40 @@ router.patch(
       }
 
       const { reason } = req.body;
-      const updated = await prisma.trip.update({
-        where: { id },
-        // Leaving pending clears the needs-attention flag (Phase 2 self-clearing).
-        data: { status: "rejected", rejection_reason: reason ?? null, auto_dispatch_failed: false },
-        include: tripInclude,
+      // Status-guarded CAS (mirrors approve/unassign): the reject applies only
+      // while the trip is still pending — a collision with the auto-dispatch
+      // sweep (which just claimed it) or another admin loses cleanly instead
+      // of stamping "rejected" over an assigned trip.
+      await prisma.$transaction(async (tx) => {
+        const rejected = await rejectPendingTrip(tx, id, reason ?? null);
+        if (!rejected) {
+          throw new ApiError(
+            409,
+            "TRIP_STATE_CHANGED",
+            "This booking just changed state (it may have been assigned or cancelled). Refresh and try again."
+          );
+        }
+        await tx.auditLog.create({
+          data: { user_id: req.user!.id, action: "trip.rejected", table_name: "Trip", record_id: id },
+        });
+        await recordTripEvent(tx, {
+          tripId: id,
+          event: "rejected",
+          actorId: req.user!.id,
+          note: reason ?? null,
+        });
       });
-      await prisma.auditLog.create({
-        data: { user_id: req.user!.id, action: "trip.rejected", table_name: "Trip", record_id: id },
-      });
-      await recordTripEvent(prisma, {
-        tripId: id,
-        event: "rejected",
-        actorId: req.user!.id,
-        note: reason ?? null,
-      });
+      const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
 
       const requestorDevice = await prisma.user.findUnique({
-        where: { id: updated.requestor_id },
+        where: { id: trip.requestor_id },
         select: { expo_push_token: true },
       });
       const reasonSuffix = reason ? `: ${reason}` : "";
       await sendPushNotifications([requestorDevice?.expo_push_token], {
         title: "Booking rejected",
-        body: `Your booking ${updated.ticket_number} was rejected${reasonSuffix}`,
-        data: { type: "booking_rejected", tripId: updated.id },
+        body: `Your booking ${trip.ticket_number} was rejected${reasonSuffix}`,
+        data: { type: "booking_rejected", tripId: id },
       });
 
       res.json(updated);
@@ -1101,31 +1113,42 @@ router.patch(
         throw new ApiError(400, "INVALID_STATUS", "Only pending trips can be assigned.");
       }
 
-      await prisma.externalForwarder.upsert({
-        where: { trip_id: id },
-        create: { trip_id: id, company_name, booking_date, rate, cargo_size },
-        update: { company_name, booking_date, rate, cargo_size },
+      // Status-guarded CAS FIRST, forwarder details second, one transaction
+      // (mirrors approve/unassign): a collision with the auto-dispatch sweep
+      // used to stamp assigned+is_external over a trip that had just been
+      // given an internal driver + rate snapshot — an "outsourced" trip a
+      // driver was still rolling on. Now the losing side gets a 409 and no
+      // forwarder row is left behind.
+      await prisma.$transaction(async (tx) => {
+        const outsourced = await outsourcePendingTrip(tx, id);
+        if (!outsourced) {
+          throw new ApiError(
+            409,
+            "TRIP_STATE_CHANGED",
+            "This booking just changed state (auto-dispatch or another admin may have assigned it). Refresh and try again."
+          );
+        }
+        await tx.externalForwarder.upsert({
+          where: { trip_id: id },
+          create: { trip_id: id, company_name, booking_date, rate, cargo_size },
+          update: { company_name, booking_date, rate, cargo_size },
+        });
+        await tx.auditLog.create({
+          data: {
+            user_id: req.user!.id,
+            action: "trip.assigned_external",
+            table_name: "Trip",
+            record_id: id,
+          },
+        });
+        await recordTripEvent(tx, {
+          tripId: id,
+          event: "assigned_external",
+          actorId: req.user!.id,
+          note: company_name,
+        });
       });
-      const updated = await prisma.trip.update({
-        where: { id },
-        // Outsourcing resolves the booking → clear the needs-attention flag.
-        data: { status: "assigned", is_external: true, auto_dispatch_failed: false },
-        include: tripInclude,
-      });
-      await prisma.auditLog.create({
-        data: {
-          user_id: req.user!.id,
-          action: "trip.assigned_external",
-          table_name: "Trip",
-          record_id: id,
-        },
-      });
-      await recordTripEvent(prisma, {
-        tripId: id,
-        event: "assigned_external",
-        actorId: req.user!.id,
-        note: company_name,
-      });
+      const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
       res.json(updated);
     } catch (err) {
       next(err);
@@ -1157,16 +1180,25 @@ router.patch("/:id/cancel", async (req, res, next) => {
       );
     }
 
-    const updated = await prisma.trip.update({
-      where: { id },
-      // Cancelling clears the needs-attention flag (Phase 2 self-clearing).
-      data: { status: "cancelled", auto_dispatch_failed: false },
-      include: tripInclude,
+    // Status-guarded CAS (mirrors approve/unassign): cancel applies only while
+    // the trip is still pending/approved — if auto-dispatch or an admin just
+    // assigned it, the cancel loses with a 409 instead of producing a
+    // cancelled trip that still has a driver and truck attached.
+    await prisma.$transaction(async (tx) => {
+      const cancelled = await cancelBookedTrip(tx, id);
+      if (!cancelled) {
+        throw new ApiError(
+          409,
+          "TRIP_STATE_CHANGED",
+          "This booking just changed state (a driver may have just been assigned). Refresh and try again."
+        );
+      }
+      await tx.auditLog.create({
+        data: { user_id: req.user!.id, action: "trip.cancelled", table_name: "Trip", record_id: id },
+      });
+      await recordTripEvent(tx, { tripId: id, event: "cancelled", actorId: req.user!.id });
     });
-    await prisma.auditLog.create({
-      data: { user_id: req.user!.id, action: "trip.cancelled", table_name: "Trip", record_id: id },
-    });
-    await recordTripEvent(prisma, { tripId: id, event: "cancelled", actorId: req.user!.id });
+    const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
     res.json(updated);
   } catch (err) {
     next(err);

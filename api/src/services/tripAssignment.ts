@@ -111,6 +111,79 @@ export async function releaseAssignedTrip(
   return res.count === 1;
 }
 
+// ── Exits: reject / cancel / assign-external, status-guarded like the claim ──
+//
+// These three used to be plain update-by-id behind a pre-check, which loses to
+// the 60s auto-dispatch sweep (or another admin): the sweep claims the trip
+// pending → assigned with a driver + rate snapshot, and the blind update then
+// stamps rejected/cancelled/outsourced ON TOP — leaving e.g. an "outsourced"
+// trip that still carries an internal driver and frozen rates, or a cancelled
+// trip with a driver attached. Same CAS discipline as claim/release: the
+// mutation applies only while the trip is still in the expected status; a
+// lost race returns false and the route answers 409 TRIP_STATE_CHANGED.
+
+// Minimal client slice for the exit CASes (same pattern as TripClaimClient).
+export interface TripExitClient {
+  trip: {
+    updateMany(args: {
+      where: { id: string; status: { in: ("pending" | "approved")[] } };
+      data: Record<string, unknown>;
+    }): Promise<{ count: number }>;
+  };
+}
+
+/**
+ * Reject a still-pending booking. Returns true iff THIS caller flipped it —
+ * a trip auto-dispatch just assigned (or anyone else moved) never matches.
+ */
+export async function rejectPendingTrip(
+  client: TripExitClient,
+  tripId: string,
+  reason: string | null
+): Promise<boolean> {
+  const res = await client.trip.updateMany({
+    where: { id: tripId, status: { in: ["pending"] } },
+    // Leaving pending clears the needs-attention flag (Phase 2 self-clearing).
+    data: { status: "rejected", rejection_reason: reason, auto_dispatch_failed: false },
+  });
+  return res.count === 1;
+}
+
+/**
+ * Cancel a booking that has not been dispatched (pending/approved — the same
+ * statuses the route's pre-check allows). A trip that just went `assigned`
+ * never matches, so a cancelled trip can never end up with a driver attached.
+ */
+export async function cancelBookedTrip(
+  client: TripExitClient,
+  tripId: string
+): Promise<boolean> {
+  const res = await client.trip.updateMany({
+    where: { id: tripId, status: { in: ["pending", "approved"] } },
+    data: { status: "cancelled", auto_dispatch_failed: false },
+  });
+  return res.count === 1;
+}
+
+/**
+ * Outsource a still-pending booking to an external forwarder. Guarded like
+ * the internal claim it races against: if auto-dispatch (or another admin)
+ * won, this returns false — the trip keeps its internal driver + rate
+ * snapshot and no external flag is stamped over them. Run it INSIDE the same
+ * transaction as the forwarder-detail upsert, and first, so a lost race
+ * leaves no orphaned forwarder row either.
+ */
+export async function outsourcePendingTrip(
+  client: TripExitClient,
+  tripId: string
+): Promise<boolean> {
+  const res = await client.trip.updateMany({
+    where: { id: tripId, status: { in: ["pending"] } },
+    data: { status: "assigned", is_external: true, auto_dispatch_failed: false },
+  });
+  return res.count === 1;
+}
+
 // ── Start: the driver's assigned → in_progress transition ─────────────────
 
 export type StartTripOutcome = "started" | "driver_busy" | "state_changed";
