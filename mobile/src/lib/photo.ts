@@ -19,9 +19,12 @@ export type PhotoSource = "camera" | "library";
 /**
  * Distinguishes the two "no photo" outcomes: a user CANCEL is a non-event,
  * but PERMISSION DENIED must be told to the driver — without a POD photo the
- * Delivered gate never unlocks and the trip can never complete, and on the
- * web build a dismissed browser permission prompt counts as denied, so this
- * is easy to hit without realising it.
+ * Delivered gate never unlocks and the trip can never complete.
+ *
+ * Platform reality (audit 2026-07-05 #8): "permission_denied" is only
+ * reachable on NATIVE — expo-image-picker's web implementation always grants
+ * (browser capture is an <input type=file>, no permission prompt at all), so
+ * the guidance copy points at the phone's Settings, not the browser.
  */
 export type PodCaptureResult = PickedPhoto | "permission_denied" | null;
 
