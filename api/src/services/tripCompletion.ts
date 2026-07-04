@@ -94,6 +94,20 @@ export function collectFinalizeBreakdown(groups: FinalizedGroup[]): FinalizeBrea
   };
 }
 
+/**
+ * The trip's FIRST delivery confirm — the day-group anchor the rate tier
+ * (weekday/off-peak) and pay-day attribution keyed on at finalization.
+ * Surfaced on earnings payloads so an 18:05-boundary dispute is resolvable
+ * without digging through status history. Pure; display-only.
+ */
+export function firstDeliveredAt(stops: { delivered_at: Date | null }[]): Date | null {
+  return stops.reduce<Date | null>(
+    (earliest, s) =>
+      s.delivered_at && (!earliest || s.delivered_at < earliest) ? s.delivered_at : earliest,
+    null
+  );
+}
+
 // Minimal slice of the Prisma client the finalize needs. Lets tests substitute
 // an in-memory store that models the atomic conditional update.
 export interface TripFinalizeClient {

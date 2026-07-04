@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { estimateTripDistanceKm } from "../lib/geo";
 import { currentMytMonthBounds, inMytMonth, mytMonthKey } from "../lib/myt";
+import { firstDeliveredAt } from "../services/tripCompletion";
 
 const router = Router();
 router.use(requireAuth);
@@ -27,8 +28,10 @@ router.get("/mine", requireRole("driver"), async (req, res, next) => {
         route_type: { select: { name: true } },
         stops: {
           orderBy: { sequence: "asc" },
-          take: 1,
-          select: { consignee: { select: { company_name: true, area: true, zone_code: true } } },
+          select: {
+            delivered_at: true,
+            consignee: { select: { company_name: true, area: true, zone_code: true } },
+          },
         },
         cargo_details: { select: { quantity: true } },
       },
@@ -39,6 +42,9 @@ router.get("/mine", requireRole("driver"), async (req, res, next) => {
       id: t.id,
       ticket_number: t.ticket_number,
       pickup_datetime: t.pickup_datetime,
+      // The first delivery confirm — the instant the rate tier and pay-day
+      // attribution actually keyed on (display-only, for boundary disputes).
+      delivered_at: firstDeliveredAt(t.stops),
       incentive_earned: t.incentive_earned, // Decimal | null
       truck_plate: t.truck_plate,
       route_type: t.route_type?.name ?? null,

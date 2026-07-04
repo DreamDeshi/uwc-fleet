@@ -4,6 +4,7 @@ import {
   assertStopDeliverable,
   collectFinalizeBreakdown,
   finalizeTripOnce,
+  firstDeliveredAt,
   type FinalizeBreakdown,
   type TripFinalizeClient,
 } from "../src/services/tripCompletion";
@@ -194,5 +195,20 @@ describe("collectFinalizeBreakdown (the engine's outputs → persisted evidence)
     // A single trip-level rate would be wrong for half the drops → NULL, while
     // each group's own-day deduction is well-defined and sums.
     expect(b.tripData).toEqual({ rate_used: null, off_peak: null, deduction_applied: 4 });
+  });
+});
+
+describe("firstDeliveredAt - the surfaced pay-deciding timestamp (finding 1.5)", () => {
+  it("returns the earliest delivery confirm - the day-group anchor the rate tier keyed on", () => {
+    const first = new Date("2026-07-04T10:05:00Z"); // 18:05 MYT - the boundary case
+    const later = new Date("2026-07-04T11:40:00Z");
+    expect(
+      firstDeliveredAt([{ delivered_at: later }, { delivered_at: first }, { delivered_at: null }])
+    ).toBe(first);
+  });
+
+  it("returns null when no stop has a delivered record", () => {
+    expect(firstDeliveredAt([{ delivered_at: null }])).toBeNull();
+    expect(firstDeliveredAt([])).toBeNull();
   });
 });

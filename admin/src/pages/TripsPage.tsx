@@ -31,7 +31,7 @@ import {
 import { DispatchToggle } from "@/components/DispatchToggle";
 import { StatusTimeline } from "@/components/StatusTimeline";
 import { apiErrorMessage, apiErrorCode, apiErrorConflicts } from "@/services/api";
-import { formatDateTime, formatMoney, mytDateKey } from "@/lib/format";
+import { formatDateTime, formatMoney, formatTime, mytDateKey } from "@/lib/format";
 import { byPickupUrgency } from "@/lib/pendingOrder";
 import {
   ORIGIN_LABEL,
@@ -1094,6 +1094,9 @@ function CompletedPanel({ trip }: { trip: Trip }) {
                   Stop {s.sequence} · {s.zone_code ?? s.consignee.zone_code}
                   <span style={{ color: colors.textMuted }}>
                     {s.was_repeat ? " — repeat zone today (flat 1)" : " — first in zone today (full points)"}
+                    {/* The delivery-confirm instant is what the rate tier and
+                        pay day keyed on — shown in MYT for boundary disputes. */}
+                    {s.delivered_at ? ` · delivered ${formatTime(s.delivered_at)}` : ""}
                   </span>
                 </span>
                 <span style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
@@ -1104,7 +1107,7 @@ function CompletedPanel({ trip }: { trip: Trip }) {
             <div style={{ borderTop: `1px solid ${colors.border}`, marginTop: 3, paddingTop: 7, display: "flex", justifyContent: "space-between", gap: 10, color: colors.textMuted }}>
               <span>
                 {trip.rate_used != null
-                  ? `Rate ${formatMoney(trip.rate_used)}/pt (${trip.off_peak ? "off-peak" : "weekday"})`
+                  ? `Rate ${formatMoney(trip.rate_used)}/pt (${trip.off_peak ? "off-peak" : "weekday"} — by first delivery confirm)`
                   : "Rate varies (trip spans two pay days)"}
                 {" · daily deduction −"}
                 {trip.deduction_applied ?? 0} pt{(trip.deduction_applied ?? 0) === 1 ? "" : "s"}

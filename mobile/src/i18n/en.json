@@ -149,6 +149,7 @@
   "earnings": {
     "title": "My Earnings",
     "thisMonth": "{{month}}",
+    "deliveredMeta": "Delivered {{when}}",
     "tripsCount": "{{count}} trips",
     "breakdown": "Trip Breakdown",
     "noEarnings": "No completed trips yet.",

@@ -12,7 +12,7 @@ import { Header } from "../../components/Header";
 import { Card } from "../../components/Card";
 import { WeeklyEarningsChart } from "../../components/WeeklyEarningsChart";
 import { LoadingState, ErrorState, EmptyState } from "../../components/States";
-import { formatMoney, formatDate, monthYear, weekdayShortNames } from "../../lib/format";
+import { formatMoney, formatDate, formatDateTime, monthYear, weekdayShortNames } from "../../lib/format";
 
 export function EarningsScreen() {
   const { t, i18n } = useTranslation();
@@ -143,7 +143,14 @@ export function EarningsScreen() {
                       {tr.destination ?? tr.ticket_number}
                     </Text>
                     <View style={styles.rowMetaLine}>
-                      <Text style={styles.rowMeta}>{formatDate(tr.pickup_datetime)}</Text>
+                      {/* The delivery-confirm time is what the pay keyed on
+                          (rate tier + pay day) — show it when recorded so a
+                          boundary dispute is checkable from this screen. */}
+                      <Text style={styles.rowMeta}>
+                        {tr.delivered_at
+                          ? t("earnings.deliveredMeta", { when: formatDateTime(tr.delivered_at) })
+                          : formatDate(tr.pickup_datetime)}
+                      </Text>
                       {tr.truck_plate ? (
                         <>
                           <Text style={styles.rowDot}>·</Text>

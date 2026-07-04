@@ -144,6 +144,7 @@
   "earnings": {
     "title": "Pendapatan Saya",
     "thisMonth": "{{month}}",
+    "deliveredMeta": "Dihantar {{when}}",
     "tripsCount": "{{count}} perjalanan",
     "breakdown": "Pecahan Perjalanan",
     "noEarnings": "Belum ada perjalanan selesai.",

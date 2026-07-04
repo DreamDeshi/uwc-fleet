@@ -144,6 +144,7 @@
   "earnings": {
     "title": "我的收入",
     "thisMonth": "{{month}}",
+    "deliveredMeta": "送达于 {{when}}",
     "tripsCount": "{{count}} 个行程",
     "breakdown": "行程明细",
     "noEarnings": "暂无已完成的行程。",

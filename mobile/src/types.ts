@@ -163,6 +163,9 @@ export interface IncentiveTrip {
   id: string;
   ticket_number: string;
   pickup_datetime: string;
+  // First delivery confirm — the instant the rate tier and pay-day
+  // attribution keyed on. Null on trips without a delivered stop record.
+  delivered_at: string | null;
   incentive_earned: string | number | null;
   truck_plate: string | null;
   route_type: string | null;
