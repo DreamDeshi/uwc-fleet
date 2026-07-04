@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   useApproveTrip,
   useAssignExternal,
@@ -87,7 +88,13 @@ export function TripsPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   // Phase 2: show ONLY pending bookings the auto-dispatcher couldn't place.
-  const [needsAttentionOnly, setNeedsAttentionOnly] = useState(false);
+  // The dashboard's "⚠ N auto-dispatch failed" badge deep-links here with
+  // ?attention=1 so the click lands directly on the filtered view instead of
+  // dumping the dispatcher on the full board to find the chip themselves.
+  const [searchParams] = useSearchParams();
+  const [needsAttentionOnly, setNeedsAttentionOnly] = useState(
+    searchParams.get("attention") === "1"
+  );
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedQ(q), 300);

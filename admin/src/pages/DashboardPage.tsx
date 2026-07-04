@@ -125,7 +125,7 @@ export function DashboardPage() {
               into the plain "awaiting manual" count (Phase 2). */}
           {k.auto_dispatch_failed > 0 && (
             <button
-              onClick={() => navigate("/trips")}
+              onClick={() => navigate("/trips?attention=1")}
               style={{ display: "inline-flex", alignItems: "center", gap: 6, background: colors.redTint, color: colors.red, border: `1px solid ${colors.red}`, borderRadius: radius.pill, padding: "5px 11px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}
             >
               ⚠ {k.auto_dispatch_failed} auto-dispatch failed
