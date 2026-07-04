@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { ApiError } from "../lib/apiError";
 
 /**
@@ -23,6 +24,34 @@ export interface ConsigneePatch {
   zone_code?: string;
   is_active?: boolean;
 }
+
+/**
+ * Trip statuses that still ROUTE to a consignee — a deactivation should warn
+ * about these (audit 2026-07-05 #10): the bookings keep dispatching and
+ * delivering to the deactivated entry with no signal at either end.
+ * Deliberately a WARNING (409 + force), not a block: deactivation never
+ * changes dispatch behaviour for existing bookings.
+ */
+export const ACTIVE_BOOKING_STATUSES = ["pending", "approved", "assigned", "in_progress"] as const;
+
+// Concrete shape (not the wide Prisma type) so the test can pin the exact
+// semantics; compile-time-checked assignable below (dayLedger's pattern).
+export interface ActiveBookingsForConsigneeWhere {
+  status: { in: ("pending" | "approved" | "assigned" | "in_progress")[] };
+  stops: { some: { consignee_id: string } };
+}
+
+/** Where-clause counting the live bookings still routed to this consignee. */
+export function activeBookingsForConsigneeWhere(consigneeId: string): ActiveBookingsForConsigneeWhere {
+  return {
+    status: { in: [...ACTIVE_BOOKING_STATUSES] },
+    stops: { some: { consignee_id: consigneeId } },
+  };
+}
+
+// Compile-time proof the concrete shape stays a valid Prisma where input.
+const _assignable: Prisma.TripWhereInput = {} as ActiveBookingsForConsigneeWhere;
+void _assignable;
 
 export interface ConsigneeUpdateClient {
   consignee: {

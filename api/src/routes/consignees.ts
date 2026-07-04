@@ -6,7 +6,7 @@ import { ApiError } from "../lib/apiError";
 import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
-import { updateConsignee } from "../services/consigneeUpdate";
+import { activeBookingsForConsigneeWhere, updateConsignee } from "../services/consigneeUpdate";
 
 const router = Router();
 router.use(requireAuth);
@@ -328,6 +328,25 @@ router.patch(
               { candidates }
             );
           }
+        }
+      }
+
+      // DEACTIVATING while live bookings still route here deserves a warning
+      // (audit #10): those trips keep dispatching and delivering to the
+      // deactivated entry with no signal at either end. Warning, not a block —
+      // force proceeds, and dispatch behaviour for existing bookings is
+      // deliberately unchanged either way.
+      if (patch.is_active === false && !force) {
+        const activeBookings = await prisma.trip.count({
+          where: activeBookingsForConsigneeWhere(req.params.id),
+        });
+        if (activeBookings > 0) {
+          throw new ApiError(
+            409,
+            "CONSIGNEE_IN_USE",
+            `${activeBookings} active booking${activeBookings === 1 ? " still routes" : "s still route"} to this consignee — they will keep delivering here after deactivation. Deactivate anyway?`,
+            { count: activeBookings }
+          );
         }
       }
 

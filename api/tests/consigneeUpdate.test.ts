@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { ApiError } from "../src/lib/apiError";
 import {
+  activeBookingsForConsigneeWhere,
   consigneeAuditAction,
   updateConsignee,
   type ConsigneeUpdateClient,
@@ -100,5 +101,27 @@ describe("updateConsignee — the admin correction path", () => {
       'consignee.updated renamed "ACE"→"ACE Engineering"'
     );
     expect(consigneeAuditAction(before, { zone_code: "K1" })).toBe("consignee.updated (no-op)");
+  });
+});
+
+/**
+ * The deactivate warning (audit 2026-07-05 #10) counts bookings still ROUTED
+ * to the consignee. This where-shape is what decides "still routed", so pin
+ * it: live statuses only — completed/cancelled/rejected trips must never
+ * make a deactivation warn.
+ */
+describe("activeBookingsForConsigneeWhere — the deactivate-warning scope", () => {
+  it("counts pending/approved/assigned/in_progress trips with a stop at this consignee", () => {
+    expect(activeBookingsForConsigneeWhere("c1")).toEqual({
+      status: { in: ["pending", "approved", "assigned", "in_progress"] },
+      stops: { some: { consignee_id: "c1" } },
+    });
+  });
+
+  it("terminal statuses are excluded (a delivered/cancelled history never blocks cleanup)", () => {
+    const statuses = activeBookingsForConsigneeWhere("c1").status.in as string[];
+    for (const s of ["completed", "cancelled", "rejected"]) {
+      expect(statuses).not.toContain(s);
+    }
   });
 });
