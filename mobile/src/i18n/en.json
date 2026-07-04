@@ -143,6 +143,8 @@
     "stopArrived": "Arrived",
     "stopDelivered": "Delivered",
     "toastArrived": "Marked as arrived.",
+    "alreadyRecorded": "Already recorded — screen updated.",
+    "cameraBlocked": "Camera access is blocked — enable it in your browser settings to upload the delivery photo.",
     "toastDelivered": "Stop delivered.",
     "noTrips": "No trips yet."
   },

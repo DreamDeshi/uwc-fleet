@@ -15,7 +15,7 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { TripsStackParamList } from "../../navigation/types";
 import { useTrip, useUpdateTripStatus, useHolidaySet } from "../../hooks/queries";
-import { apiErrorMessage } from "../../services/api";
+import { apiErrorCode, apiErrorMessage } from "../../services/api";
 import { colors, radius, shadow } from "../../theme";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
@@ -48,6 +48,9 @@ export function TripDetailsScreen() {
   const startTrip = useUpdateTripStatus();
   const holidays = useHolidaySet();
   const [error, setError] = React.useState<string | null>(null);
+  // Synchronous double-fire guard (web double-click lands before isPending
+  // re-renders) — same pattern as ActiveTripScreen's oncePerAction.
+  const startInFlight = React.useRef(false);
 
   if (isLoading) return <View style={styles.fill}><LoadingState /></View>;
   if (isError || !trip) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
@@ -66,12 +69,28 @@ export function TripDetailsScreen() {
   const incentiveSub = !finalized && estimate !== null ? t("trip.estimated") : undefined;
 
   const onStart = async () => {
+    if (startInFlight.current) return;
+    startInFlight.current = true;
     setError(null);
     try {
       await startTrip.mutateAsync({ tripId: trip.id, action: "start" });
       navigation.replace("ActiveTrip", { tripId: trip.id });
     } catch (err) {
+      // TRIP_STATE_CHANGED after a lost response usually means THIS start
+      // already committed — refetch, and if the trip is out, proceed to the
+      // active screen exactly as if the tap had succeeded. (A genuine change
+      // by someone else — e.g. admin unassigned it — falls through to the
+      // error message with the screen refreshed to the real state.)
+      if (apiErrorCode(err) === "TRIP_STATE_CHANGED") {
+        const fresh = await refetch();
+        if (fresh.data?.status === "in_progress") {
+          navigation.replace("ActiveTrip", { tripId: trip.id });
+          return;
+        }
+      }
       setError(apiErrorMessage(err));
+    } finally {
+      startInFlight.current = false;
     }
   };
 

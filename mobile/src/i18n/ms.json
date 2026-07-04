@@ -138,6 +138,8 @@
     "stopArrived": "Tiba",
     "stopDelivered": "Dihantar",
     "toastArrived": "Ditanda sebagai tiba.",
+    "alreadyRecorded": "Sudah direkodkan — skrin dikemas kini.",
+    "cameraBlocked": "Akses kamera disekat — benarkan dalam tetapan pelayar untuk memuat naik foto penghantaran.",
     "toastDelivered": "Hentian dihantar.",
     "noTrips": "Belum ada perjalanan."
   },

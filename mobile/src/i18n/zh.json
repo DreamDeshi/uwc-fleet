@@ -138,6 +138,8 @@
     "stopArrived": "已到达",
     "stopDelivered": "已送达",
     "toastArrived": "已标记为到达。",
+    "alreadyRecorded": "已记录——画面已更新。",
+    "cameraBlocked": "相机权限被阻止——请在浏览器设置中允许相机，才能上传送货照片。",
     "toastDelivered": "停靠点已送达。",
     "noTrips": "暂无行程。"
   },

@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import { Image, Linking, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, Linking, Modal, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,7 +18,7 @@ import {
 import { capturePodPhoto } from "../../lib/photo";
 import { useTripLocation, TripLocationState } from "../../hooks/useTripLocation";
 import { useToast } from "../../components/Toast";
-import { apiErrorMessage } from "../../services/api";
+import { apiErrorCode, apiErrorMessage } from "../../services/api";
 import { colors, radius, shadow } from "../../theme";
 import { Button } from "../../components/Button";
 import { LoadingState, ErrorState } from "../../components/States";
@@ -31,13 +31,26 @@ import { TripStop } from "../../types";
 type Nav = NativeStackNavigationProp<TripsStackParamList, "ActiveTrip">;
 type Rt = RouteProp<TripsStackParamList, "ActiveTrip">;
 
+// Error codes that mean the server is ALREADY in (or past) the state the tap
+// was trying to reach — the committed-but-lost-response pattern on bad
+// signal. These are reconciles, not failures: refetch and let the screen
+// catch up to reality instead of leaving a "stuck" button that keeps erroring.
+const ARRIVED_ALREADY_CODES = ["INVALID_STATUS"]; // this endpoint's "already marked arrived"
+const DELIVERED_ALREADY_CODES = [
+  "STOP_ALREADY_DELIVERED",
+  "TRIP_ALREADY_FINALIZED",
+  // The trip left in_progress — for a delivered tap on this screen that means
+  // the lost write was the FINAL stop and the trip completed.
+  "TRIP_NOT_ACTIVE",
+];
+
 export function ActiveTripScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
   const toast = useToast();
   const { params } = useRoute<Rt>();
-  const { data: trip, isLoading, isError, refetch } = useTrip(params.tripId);
+  const { data: trip, isLoading, isError, refetch, isRefetching } = useTrip(params.tripId);
 
   // Phase 5: track this phone's GPS while the trip is active, and fetch the
   // real road path. Both hooks run unconditionally (before the early returns
@@ -55,6 +68,30 @@ export function ActiveTripScreen() {
   const updateStatus = useUpdateTripStatus();
   const updateDocs = useUpdateStopDocs();
   const uploadPod = useUploadPod();
+
+  // Web double-click can synthesize a second press before React re-renders
+  // with isPending=true (the same RN-web double-fire class of bug as the
+  // booking form's oncePerTap). The ref flips SYNCHRONOUSLY, so the second
+  // tap is swallowed client-side before it fires a duplicate request — the
+  // server is idempotent anyway, but the 409 it returns reads as a scary
+  // error to a driver.
+  const actionInFlight = useRef(false);
+  const oncePerAction = async (fn: () => Promise<void>) => {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
+    try {
+      await fn();
+    } finally {
+      actionInFlight.current = false;
+    }
+  };
+
+  // A "you already did this" reply after a lost response: resync the screen
+  // to server truth and tell the driver it's recorded — never an error toast.
+  const reconcile = async () => {
+    await refetch();
+    toast(t("trip.alreadyRecorded"), "success");
+  };
 
   if (isLoading) return <View style={styles.fill}><LoadingState /></View>;
   if (isError || !trip) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
@@ -78,20 +115,25 @@ export function ActiveTripScreen() {
     );
   };
 
-  const onArrived = async (stop: TripStop) => {
-    setError(null);
-    try {
-      await updateStatus.mutateAsync({ tripId: trip.id, action: "arrived", stop_id: stop.id });
-      toast(t("trip.toastArrived"), "success");
-    } catch (err) {
-      const msg = apiErrorMessage(err);
-      setError(msg);
-      // Toast too (same rationale as onCapturePod): the inline error sits in
-      // the often-collapsed bottom sheet — on bad signal a silent failure
-      // looks like the tap registered when it didn't.
-      toast(msg, "error");
-    }
-  };
+  const onArrived = (stop: TripStop) =>
+    oncePerAction(async () => {
+      setError(null);
+      try {
+        await updateStatus.mutateAsync({ tripId: trip.id, action: "arrived", stop_id: stop.id });
+        toast(t("trip.toastArrived"), "success");
+      } catch (err) {
+        if (ARRIVED_ALREADY_CODES.includes(apiErrorCode(err) ?? "")) {
+          await reconcile();
+          return;
+        }
+        const msg = apiErrorMessage(err);
+        setError(msg);
+        // Toast too (same rationale as onCapturePod): the inline error sits in
+        // the often-collapsed bottom sheet — on bad signal a silent failure
+        // looks like the tap registered when it didn't.
+        toast(msg, "error");
+      }
+    });
 
   const toggleDoc = async (stop: TripStop, field: "do_uploaded" | "k2_form_ack", value: boolean) => {
     setError(null);
@@ -108,7 +150,17 @@ export function ActiveTripScreen() {
     setError(null);
     try {
       const photo = await capturePodPhoto();
-      if (!photo) return; // cancelled or permission denied
+      if (photo === "permission_denied") {
+        // Without a POD the Delivered gate never unlocks — the driver must be
+        // told the fix is enabling camera access (a dismissed browser prompt
+        // counts as denied on the web build). A cancel, by contrast, is a
+        // deliberate non-event and shows nothing.
+        const msg = t("trip.cameraBlocked");
+        setError(msg);
+        toast(msg, "error");
+        return;
+      }
+      if (!photo) return; // user cancelled — not an error
       await uploadPod.mutateAsync({ tripId: trip.id, stopId: stop.id, photo });
       toast(t("trip.podUploaded"), "success");
     } catch (err) {
@@ -121,27 +173,32 @@ export function ActiveTripScreen() {
     }
   };
 
-  const onDelivered = async (stop: TripStop) => {
-    setError(null);
-    try {
-      const updated = await updateStatus.mutateAsync({
-        tripId: trip.id,
-        action: "delivered",
-        stop_id: stop.id,
-      });
-      if (updated.status === "completed") {
-        setEarned(updated.incentive_earned);
-      } else {
-        toast(t("trip.toastDelivered"), "success");
+  const onDelivered = (stop: TripStop) =>
+    oncePerAction(async () => {
+      setError(null);
+      try {
+        const updated = await updateStatus.mutateAsync({
+          tripId: trip.id,
+          action: "delivered",
+          stop_id: stop.id,
+        });
+        if (updated.status === "completed") {
+          setEarned(updated.incentive_earned);
+        } else {
+          toast(t("trip.toastDelivered"), "success");
+        }
+      } catch (err) {
+        if (DELIVERED_ALREADY_CODES.includes(apiErrorCode(err) ?? "")) {
+          await reconcile();
+          return;
+        }
+        const msg = apiErrorMessage(err);
+        setError(msg);
+        // Delivered gates the driver's pay — a silently-lost tap here means an
+        // unfinalized incentive, so the failure must be impossible to miss.
+        toast(msg, "error");
       }
-    } catch (err) {
-      const msg = apiErrorMessage(err);
-      setError(msg);
-      // Delivered gates the driver's pay — a silently-lost tap here means an
-      // unfinalized incentive, so the failure must be impossible to miss.
-      toast(msg, "error");
-    }
-  };
+    });
 
   return (
     <View style={styles.fill}>
@@ -177,7 +234,12 @@ export function ActiveTripScreen() {
 
       {/* Bottom sheet with the stop list + action buttons */}
       <BottomSheet ref={sheetRef} index={0} snapPoints={snapPoints}>
-        <BottomSheetScrollView contentContainerStyle={styles.sheetContent}>
+        <BottomSheetScrollView
+          contentContainerStyle={styles.sheetContent}
+          // Manual resync for the lost-response case the reconcile codes miss
+          // (e.g. the driver backgrounds the tab mid-write and comes back).
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+        >
           <View style={styles.sheetHandleRow}>
             <Text style={styles.sheetTitle}>{t("trip.stops")}</Text>
             <Text style={styles.sheetTicket}>{trip.ticket_number}</Text>
