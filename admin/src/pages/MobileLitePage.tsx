@@ -10,6 +10,7 @@ import {
   useApproveUser,
 } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
+import { apiErrorMessage } from "@/services/api";
 import { Button, Pill, Avatar, TripStatusBadge, Loading, ErrorState, EmptyState } from "@/components/ui";
 import { ORIGIN_LABEL, tripDestination, totalPallets, cargoSummary } from "@/lib/trip";
 import { initials } from "@/lib/format";
@@ -140,8 +141,11 @@ function DispatchCard({ trip, drivers }: { trip: Trip; drivers: DriverPerf[] }) 
     setError(null);
     try {
       await approve.mutateAsync({ id: trip.id, driver_id: driverId, truck_plate: plate });
-    } catch {
-      setError("Could not assign. Try again.");
+    } catch (e) {
+      // Surface the server's specific block (driver on leave, truck overloaded,
+      // scheduling conflict, …) — a generic "try again" invites retrying an
+      // assignment that can never succeed.
+      setError(apiErrorMessage(e, "Could not assign. Try again."));
     }
   };
 
@@ -150,8 +154,8 @@ function DispatchCard({ trip, drivers }: { trip: Trip; drivers: DriverPerf[] }) 
     setError(null);
     try {
       await reject.mutateAsync({ id: trip.id });
-    } catch {
-      setError("Could not reject. Try again.");
+    } catch (e) {
+      setError(apiErrorMessage(e, "Could not reject. Try again."));
     }
   };
 
@@ -239,8 +243,8 @@ function ApprovalCard({ user }: { user: AdminUser }) {
     setError(null);
     try {
       await approveUser.mutateAsync({ id: user.id, status });
-    } catch {
-      setError("Could not update. Try again.");
+    } catch (e) {
+      setError(apiErrorMessage(e, "Could not update. Try again."));
     }
   };
 
