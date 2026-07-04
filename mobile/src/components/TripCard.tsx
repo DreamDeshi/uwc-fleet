@@ -1,9 +1,11 @@
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useTranslation } from "react-i18next";
 import { colors, radius, shadow } from "../theme";
 import { StatusBadge } from "./StatusBadge";
+import { useHolidaySet } from "../hooks/queries";
 import { dayMonth, formatMoney } from "../lib/format";
-import { tripDestination, ORIGIN_LABEL } from "../lib/trip";
+import { tripDestination, estimateIncentive, ORIGIN_LABEL } from "../lib/trip";
 import { Trip } from "../types";
 
 // Shared compact trip row — date block + route + status badge + optional meta
@@ -22,8 +24,21 @@ export function TripCard({
   meta?: string;
   showIncentive?: boolean;
 }) {
+  const { t } = useTranslation();
+  const holidays = useHolidaySet();
   const dm = dayMonth(trip.pickup_datetime);
   const dim = trip.status === "cancelled" || trip.status === "rejected";
+  // incentive_earned is null until the trip completes, so an assigned /
+  // in-progress trip must show the "Est." estimate (mirroring the dashboard's
+  // AssignmentCard) — never a bare green "RM 0", which reads as "this run pays
+  // nothing". Cancelled/rejected trips pay nothing and show no amount at all.
+  const finalized = trip.incentive_earned !== null && trip.incentive_earned !== undefined;
+  const estimate = finalized || dim ? null : estimateIncentive(trip, holidays);
+  const rmValue = finalized
+    ? formatMoney(trip.incentive_earned)
+    : estimate !== null
+      ? formatMoney(estimate)
+      : null;
   return (
     <TouchableOpacity
       activeOpacity={0.85}
@@ -42,10 +57,11 @@ export function TripCard({
           <StatusBadge status={trip.status} small />
         </View>
         {meta ? <Text style={styles.meta}>{meta}</Text> : null}
-        {showIncentive ? (
-          <Text style={[styles.rm, dim && { color: colors.textFaint }]}>
-            {formatMoney(trip.incentive_earned)}
-          </Text>
+        {showIncentive && rmValue !== null ? (
+          <View style={styles.rmWrap}>
+            {!finalized ? <Text style={styles.est}>{t("trip.est")}</Text> : null}
+            <Text style={[styles.rm, dim && { color: colors.textFaint }]}>{rmValue}</Text>
+          </View>
         ) : null}
       </View>
     </TouchableOpacity>
@@ -61,5 +77,7 @@ const styles = StyleSheet.create({
   cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
   route: { flex: 1, fontSize: 13, fontWeight: "700", color: colors.navy },
   meta: { fontSize: 11, color: colors.textFaint, marginTop: 4 },
-  rm: { fontSize: 15, fontWeight: "800", color: colors.green, marginTop: 8 },
+  rmWrap: { flexDirection: "row", alignItems: "baseline", gap: 5, marginTop: 8 },
+  est: { fontSize: 10, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
+  rm: { fontSize: 15, fontWeight: "800", color: colors.green },
 });
