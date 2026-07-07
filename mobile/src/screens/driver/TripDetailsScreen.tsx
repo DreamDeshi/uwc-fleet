@@ -225,13 +225,15 @@ export function TripDetailsScreen() {
             onPress={onStart}
             loading={startTrip.isPending}
             variant="success"
-            icon={<Ionicons name="play" size={18} color={colors.white} />}
+            size="xl"
+            icon={<Ionicons name="play" size={20} color={colors.white} />}
           />
         ) : trip.status === "in_progress" ? (
           <Button
             title={t("trip.openMap")}
             onPress={() => navigation.navigate("ActiveTrip", { tripId: trip.id })}
-            icon={<Ionicons name="navigate" size={18} color={colors.white} />}
+            size="xl"
+            icon={<Ionicons name="navigate" size={20} color={colors.white} />}
           />
         ) : null}
       </View>

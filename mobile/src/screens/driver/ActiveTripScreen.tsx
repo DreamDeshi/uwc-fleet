@@ -397,6 +397,7 @@ export function ActiveTripScreen() {
             <Text style={styles.modalAmount}>{formatMoney(earned)}</Text>
             <Button
               title={t("trip.backToDashboard")}
+              size="xl"
               onPress={() => {
                 setEarned(null);
                 // Reset the Trips stack, then switch to the Home (Dashboard) tab
@@ -482,11 +483,27 @@ function StopCard({
     delivered: t("trip.stopDelivered"),
   };
 
+  // Visual state of this stop in the run: done (green ✓), current (violet —
+  // the in-progress family; active stops sort to the top so index 0 is the
+  // one being worked), or upcoming (muted).
+  const isDone = stop.status === "delivered";
+  const isCurrent = !isDone && index === 0;
+
   return (
-    <View style={styles.stopCard}>
+    <View style={[styles.stopCard, isCurrent && styles.stopCardCurrent]}>
       <View style={styles.stopHead}>
-        <View style={styles.stopSeq}>
-          <Text style={styles.stopSeqText}>{index + 1}</Text>
+        <View
+          style={[
+            styles.stopSeq,
+            isDone && { backgroundColor: colors.green },
+            !isDone && !isCurrent && styles.stopSeqUpcoming,
+          ]}
+        >
+          {isDone ? (
+            <Ionicons name="checkmark" size={16} color={colors.white} />
+          ) : (
+            <Text style={[styles.stopSeqText, !isCurrent && { color: colors.navy }]}>{index + 1}</Text>
+          )}
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.stopName}>{stop.consignee?.company_name ?? t("trip.stop", { n: index + 1 })}</Text>
@@ -505,7 +522,13 @@ function StopCard({
             <Text style={styles.queuedText}>{t("trip.waitingSignal")}</Text>
           </View>
         ) : (
-          <Text style={styles.stopStatus}>
+          <Text
+            style={[
+              styles.stopStatus,
+              // Arrived wears the in-progress violet; not-yet-reached stays muted.
+              { color: stop.status === "arrived" ? colors.violet : colors.textMuted },
+            ]}
+          >
             {(statusLabel[stop.status] ?? stop.status).toUpperCase()}
           </Text>
         )}
@@ -524,8 +547,9 @@ function StopCard({
           onPress={onArrived}
           loading={busy}
           variant="primary"
+          size="xl"
           style={{ marginTop: 12 }}
-          icon={<Ionicons name="location" size={18} color={colors.white} />}
+          icon={<Ionicons name="location" size={20} color={colors.white} />}
         />
       ) : null}
 
@@ -565,8 +589,9 @@ function StopCard({
               onPress={onCapturePod}
               loading={uploadingPod}
               variant="outline"
+              size="xl"
               style={{ marginTop: 4 }}
-              icon={<Ionicons name="camera" size={18} color={colors.blue} />}
+              icon={<Ionicons name="camera" size={20} color={colors.blue} />}
             />
           )}
 
@@ -583,8 +608,9 @@ function StopCard({
             loading={busy}
             disabled={!docsComplete}
             variant="accent"
+            size="xl"
             style={{ marginTop: 8 }}
-            icon={<Ionicons name="checkmark" size={18} color={colors.navy} />}
+            icon={<Ionicons name="checkmark" size={20} color={colors.navy} />}
           />
         </View>
       ) : null}
@@ -665,12 +691,16 @@ const styles = StyleSheet.create({
   sheetTicket: { fontSize: 13, fontWeight: "700", color: colors.blue },
 
   stopCard: { backgroundColor: colors.white, borderRadius: radius.md, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: colors.borderLight },
+  // The stop being worked right now — violet ring (the in-progress family)
+  // so "where am I in this run" reads before any text does.
+  stopCardCurrent: { borderColor: colors.violet, borderWidth: 1.5, borderLeftWidth: 5, ...shadow.card },
   stopHead: { flexDirection: "row", alignItems: "center", gap: 12 },
-  stopSeq: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center" },
+  stopSeq: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.violet, alignItems: "center", justifyContent: "center" },
+  stopSeqUpcoming: { backgroundColor: colors.fieldBg, borderWidth: 1.5, borderColor: colors.border },
   stopSeqText: { color: colors.white, fontWeight: "800", fontSize: 14 },
   stopName: { fontSize: 14, fontWeight: "700", color: colors.navy },
   stopArea: { fontSize: 13, color: colors.textFaint, marginTop: 2 },
-  stopStatus: { fontSize: 12, fontWeight: "800", color: colors.orange },
+  stopStatus: { fontSize: 12, fontWeight: "800", letterSpacing: 0.4 },
   deliveredPill: { flexDirection: "row", alignItems: "center", gap: 4 },
   deliveredText: { fontSize: 12, fontWeight: "800", color: colors.green },
   // Offline-outbox states: saved on this phone, waiting for signal.

@@ -244,9 +244,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   brand: { color: colors.white, fontSize: 14, fontWeight: "700" },
-  date: { color: "rgba(255,255,255,0.55)", fontSize: 13, marginTop: 12 },
-  greeting: { color: colors.white, fontSize: 20, fontWeight: "700", marginTop: 4 },
-  sub: { color: "rgba(255,255,255,0.75)", fontSize: 14, marginTop: 2 },
+  date: { color: "rgba(255,255,255,0.65)", fontSize: 13, marginTop: 12 },
+  // Same greeting scale as the requestor home (owner-approved balance).
+  greeting: { color: colors.white, fontSize: 26, fontWeight: "800", marginTop: 4 },
+  sub: { color: "rgba(255,255,255,0.85)", fontSize: 15, fontWeight: "600", marginTop: 3 },
   section: { paddingHorizontal: 16, paddingTop: 16 },
   sectionHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
@@ -293,7 +294,7 @@ const styles = StyleSheet.create({
   assignRm: { backgroundColor: colors.yellow, color: colors.navy, fontSize: 14, fontWeight: "800", paddingHorizontal: 14, paddingVertical: 4, borderRadius: radius.pill, overflow: "hidden" },
   detailBtn: {
     marginTop: 12,
-    height: 42,
+    height: 48, // glove-friendly touch floor
     backgroundColor: colors.blue,
     borderRadius: radius.md,
     flexDirection: "row",
