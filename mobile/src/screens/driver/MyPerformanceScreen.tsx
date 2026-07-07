@@ -138,7 +138,7 @@ const styles = StyleSheet.create({
   heroTierRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   heroTier: { color: colors.white, fontSize: 15, fontWeight: "800", letterSpacing: 0.5 },
   heroScore: { color: colors.white, fontSize: 56, fontWeight: "900", letterSpacing: -2, marginTop: 6 },
-  heroOutOf: { color: "rgba(255,255,255,0.85)", fontSize: 13, fontWeight: "600", marginTop: -2 },
+  heroOutOf: { color: "rgba(255,255,255,0.85)", fontSize: 14, fontWeight: "600", marginTop: -2 },
 
   band: {
     flexDirection: "row",
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     marginTop: 14,
   },
-  bandText: { flex: 1, color: colors.green, fontSize: 13.5, fontWeight: "700" },
+  bandText: { flex: 1, color: colors.green, fontSize: 14, fontWeight: "700" },
 
   statGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 16 },
   statCard: {
@@ -163,10 +163,10 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   statValue: { fontSize: 22, fontWeight: "900", color: colors.navy, marginTop: 8 },
-  statLabel: { fontSize: 10.5, color: colors.textFaint, fontWeight: "700", textTransform: "uppercase", marginTop: 4, textAlign: "center", letterSpacing: 0.3 },
+  statLabel: { fontSize: 12, color: colors.textFaint, fontWeight: "700", textTransform: "uppercase", marginTop: 4, textAlign: "center", letterSpacing: 0.3 },
 
-  howText: { fontSize: 12.5, color: colors.textMuted, lineHeight: 18 },
+  howText: { fontSize: 13, color: colors.textMuted, lineHeight: 18 },
 
   emptyTitle: { fontSize: 16, fontWeight: "800", color: colors.navy, marginTop: 12 },
-  emptyBody: { fontSize: 13, color: colors.textMuted, textAlign: "center", lineHeight: 19, marginTop: 6 },
+  emptyBody: { fontSize: 14, color: colors.textMuted, textAlign: "center", lineHeight: 19, marginTop: 6 },
 });

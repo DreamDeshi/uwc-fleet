@@ -28,5 +28,5 @@ const styles = StyleSheet.create({
   badge: { backgroundColor: colors.yellow, alignItems: "center", justifyContent: "center" },
   uwc: { color: colors.yellow, fontSize: 20, fontWeight: "800", letterSpacing: -0.5 },
   trucking: { color: colors.white, fontSize: 20, fontWeight: "700" },
-  tagline: { color: "rgba(255,255,255,0.6)", fontSize: 11, fontWeight: "500", letterSpacing: 0.5 },
+  tagline: { color: "rgba(255,255,255,0.6)", fontSize: 12, fontWeight: "500", letterSpacing: 0.5 },
 });

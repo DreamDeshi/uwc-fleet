@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
   subtitle: { color: "rgba(255,255,255,0.55)", fontSize: 14, marginTop: 4 },
   form: { flex: 1, padding: 24 },
   label: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700",
     color: colors.navy,
     letterSpacing: 0.6,
@@ -170,6 +170,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   pwInput: { flex: 1, paddingVertical: 15, fontSize: 15, color: colors.navy },
-  error: { color: colors.red, fontSize: 13, marginTop: 14, fontWeight: "600" },
-  footer: { marginTop: "auto", paddingTop: 28, textAlign: "center", color: "#bbb", fontSize: 12 },
+  error: { color: colors.red, fontSize: 14, marginTop: 14, fontWeight: "600" },
+  footer: { marginTop: "auto", paddingTop: 28, textAlign: "center", color: "#bbb", fontSize: 13 },
 });

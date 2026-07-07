@@ -53,5 +53,5 @@ const styles = StyleSheet.create({
     borderColor: colors.blue,
     backgroundColor: colors.tintBlue,
   },
-  text: { fontSize: 12, fontWeight: "700", color: colors.blue },
+  text: { fontSize: 13, fontWeight: "700", color: colors.blue },
 });

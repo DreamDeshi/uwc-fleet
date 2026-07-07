@@ -25,7 +25,7 @@ export function StatusBadge({ status, small }: { status: TripStatus; small?: boo
         small && { paddingVertical: 3, paddingHorizontal: 10 },
       ]}
     >
-      <Text style={[styles.text, { color: c.fg }, small && { fontSize: 10 }]}>
+      <Text style={[styles.text, { color: c.fg }, small && { fontSize: 12 }]}>
         {t(LABEL_KEY[status] ?? "trip.statusPending").toUpperCase()}
       </Text>
     </View>
@@ -39,5 +39,5 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignSelf: "flex-start",
   },
-  text: { fontSize: 11, fontWeight: "800", letterSpacing: 0.4 },
+  text: { fontSize: 12, fontWeight: "800", letterSpacing: 0.4 },
 });

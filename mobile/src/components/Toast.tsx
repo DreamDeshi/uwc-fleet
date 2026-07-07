@@ -64,8 +64,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           pointerEvents="none"
           style={[styles.wrap, { bottom: insets.bottom + 24, opacity, transform: [{ translateY }] }]}
         >
-          <View style={styles.toast}>
-            <Ionicons name={ICON[toast.type]} size={20} color={TONE[toast.type]} />
+          <View style={[styles.toast, { borderLeftColor: TONE[toast.type] }]}>
+            <Ionicons name={ICON[toast.type]} size={22} color={TONE[toast.type]} />
             <Text style={styles.text}>{toast.message}</Text>
           </View>
         </Animated.View>
@@ -82,10 +82,13 @@ const styles = StyleSheet.create({
     gap: 10,
     backgroundColor: colors.white,
     borderRadius: radius.md,
+    // Type-colored accent bar so success/error/info reads at a glance —
+    // the icon alone was the only signal before.
+    borderLeftWidth: 5,
     paddingHorizontal: 16,
     paddingVertical: 14,
     maxWidth: 460,
     ...shadow.floating,
   },
-  text: { flex: 1, fontSize: 14, fontWeight: "700", color: colors.navy },
+  text: { flex: 1, fontSize: 15, fontWeight: "700", color: colors.navy },
 });

@@ -29,8 +29,8 @@ export function RequestorTabs() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.blue,
-        tabBarInactiveTintColor: "#999",
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
+        tabBarInactiveTintColor: colors.textFaint,
+        tabBarLabelStyle: { fontSize: 12, fontWeight: "700" },
         tabBarStyle: TAB_BAR_STYLE,
       }}
     >

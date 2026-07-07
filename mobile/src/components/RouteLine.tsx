@@ -39,7 +39,7 @@ const styles = StyleSheet.create({
   dot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.blue, marginTop: 3 },
   line: { width: 2, flex: 1, backgroundColor: colors.yellow, minHeight: 28, marginVertical: 2 },
   smallLabel: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.textFaint,
     fontWeight: "600",
     marginBottom: 2,

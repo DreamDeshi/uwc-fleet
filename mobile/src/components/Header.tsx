@@ -41,9 +41,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.blue,
     paddingHorizontal: 20,
     paddingBottom: 18,
+    // The admin header's signature corporate-yellow underline.
+    borderBottomWidth: 4,
+    borderBottomColor: colors.yellow,
   },
   row: { flexDirection: "row", alignItems: "center" },
   back: { marginRight: 8, marginLeft: -4 },
-  title: { color: colors.white, fontSize: 20, fontWeight: "700" },
-  subtitle: { color: "rgba(255,255,255,0.6)", fontSize: 13, marginTop: 2 },
+  title: { color: colors.white, fontSize: 20, fontWeight: "800" },
+  subtitle: { color: "rgba(255,255,255,0.7)", fontSize: 14, marginTop: 2 },
 });

@@ -59,8 +59,22 @@ export function TripCard({
         {meta ? <Text style={styles.meta}>{meta}</Text> : null}
         {showIncentive && rmValue !== null ? (
           <View style={styles.rmWrap}>
-            {!finalized ? <Text style={styles.est}>{t("trip.est")}</Text> : null}
-            <Text style={[styles.rm, dim && { color: colors.textFaint }]}>{rmValue}</Text>
+            {/* Estimated pay wears an amber chip so it can never be mistaken
+                for the finalized green figure (driver design goal). */}
+            {!finalized ? (
+              <View style={styles.estChip}>
+                <Text style={styles.est}>{t("trip.est")}</Text>
+              </View>
+            ) : null}
+            <Text
+              style={[
+                styles.rm,
+                !finalized && { color: colors.textMuted },
+                dim && { color: colors.textFaint },
+              ]}
+            >
+              {rmValue}
+            </Text>
           </View>
         ) : null}
       </View>
@@ -72,12 +86,18 @@ const styles = StyleSheet.create({
   card: { flexDirection: "row", backgroundColor: colors.white, borderRadius: radius.lg, overflow: "hidden", marginBottom: 10, ...shadow.card },
   dateBlock: { width: 56, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center", paddingVertical: 16 },
   dateDay: { color: colors.white, fontSize: 22, fontWeight: "800" },
-  dateMon: { color: colors.yellow, fontSize: 10, fontWeight: "700", letterSpacing: 0.6 },
+  dateMon: { color: colors.yellow, fontSize: 12, fontWeight: "700", letterSpacing: 0.6 },
   cardBody: { flex: 1, padding: 12 },
   cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
-  route: { flex: 1, fontSize: 13, fontWeight: "700", color: colors.navy },
-  meta: { fontSize: 11, color: colors.textFaint, marginTop: 4 },
-  rmWrap: { flexDirection: "row", alignItems: "baseline", gap: 5, marginTop: 8 },
-  est: { fontSize: 10, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
-  rm: { fontSize: 15, fontWeight: "800", color: colors.green },
+  route: { flex: 1, fontSize: 15, fontWeight: "700", color: colors.navy },
+  meta: { fontSize: 12, color: colors.textMuted, marginTop: 4 },
+  rmWrap: { flexDirection: "row", alignItems: "center", gap: 7, marginTop: 8 },
+  estChip: {
+    backgroundColor: colors.tintYellow,
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  est: { fontSize: 12, fontWeight: "800", color: "#A16207", textTransform: "uppercase", letterSpacing: 0.4 },
+  rm: { fontSize: 17, fontWeight: "800", color: colors.green },
 });

@@ -19,7 +19,9 @@ export function ErrorState({ message, onRetry }: { message?: string; onRetry?: (
   const { t } = useTranslation();
   return (
     <View style={styles.center}>
-      <Ionicons name="cloud-offline-outline" size={48} color={colors.textFaint} />
+      <View style={[styles.iconCircle, { backgroundColor: colors.tintRed }]}>
+        <Ionicons name="cloud-offline-outline" size={40} color={colors.red} />
+      </View>
       <Text style={styles.errorText}>{message ?? t("common.errorGeneric")}</Text>
       {onRetry ? (
         <Button title={t("common.retry")} onPress={onRetry} variant="outline" style={{ marginTop: 16, paddingHorizontal: 28 }} />
@@ -32,7 +34,9 @@ export function EmptyState({ message, icon = "file-tray-outline" }: { message?: 
   const { t } = useTranslation();
   return (
     <View style={styles.center}>
-      <Ionicons name={icon} size={48} color={colors.textFaint} />
+      <View style={styles.iconCircle}>
+        <Ionicons name={icon} size={40} color={colors.blue} />
+      </View>
       <Text style={styles.muted}>{message ?? t("common.noData")}</Text>
     </View>
   );
@@ -40,6 +44,16 @@ export function EmptyState({ message, icon = "file-tray-outline" }: { message?: 
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
-  muted: { marginTop: 12, fontSize: 14, color: colors.textMuted, textAlign: "center" },
-  errorText: { marginTop: 12, fontSize: 14, color: colors.textMuted, textAlign: "center", lineHeight: 20 },
+  // The bare gray glyph read as "something broke" even on healthy empty
+  // screens — a tinted circle makes both states look deliberate.
+  iconCircle: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: colors.tintBlue,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  muted: { marginTop: 14, fontSize: 15, color: colors.textMuted, textAlign: "center" },
+  errorText: { marginTop: 14, fontSize: 15, color: colors.textMuted, textAlign: "center", lineHeight: 21 },
 });

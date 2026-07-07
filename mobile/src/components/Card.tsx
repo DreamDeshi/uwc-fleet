@@ -18,6 +18,9 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.white,
     borderRadius: radius.lg,
+    // Hairline border for definition on white-ish backgrounds (admin cards).
+    borderWidth: 1,
+    borderColor: colors.borderLight,
     ...shadow.card,
   },
   padded: { padding: 16 },

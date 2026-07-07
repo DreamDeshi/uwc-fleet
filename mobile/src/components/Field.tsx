@@ -76,7 +76,7 @@ export function PressableField({
 const styles = StyleSheet.create({
   block: { marginBottom: 16 },
   label: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700",
     color: colors.navy,
     letterSpacing: 0.6,

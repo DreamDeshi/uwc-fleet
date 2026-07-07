@@ -97,5 +97,5 @@ const styles = StyleSheet.create({
   inner: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.white },
   line: { width: 2, flex: 1, minHeight: 22, marginTop: 2 },
   label: { fontSize: 14, fontWeight: "700", paddingTop: 4 },
-  sub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  sub: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
 });

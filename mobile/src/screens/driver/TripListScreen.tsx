@@ -86,10 +86,10 @@ export function TripListScreen() {
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
   countPill: { backgroundColor: colors.yellow, paddingHorizontal: 12, paddingVertical: 4, borderRadius: radius.pill },
-  countText: { color: colors.navy, fontSize: 12, fontWeight: "800" },
+  countText: { color: colors.navy, fontSize: 13, fontWeight: "800" },
   tabs: { flexDirection: "row", backgroundColor: colors.white, margin: 16, marginBottom: 8, borderRadius: radius.md, padding: 4, ...shadow.card },
   tab: { flex: 1, height: 36, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
   tabActive: { backgroundColor: colors.blue },
-  tabText: { fontSize: 12, fontWeight: "700", color: colors.textMuted },
+  tabText: { fontSize: 13, fontWeight: "700", color: colors.textMuted },
   tabTextActive: { color: colors.white },
 });

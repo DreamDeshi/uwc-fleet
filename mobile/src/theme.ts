@@ -9,8 +9,10 @@ export const colors = {
   bg: "#f4f6fb", // app background
   green: "#3DAA35", // success / completed
   red: "#E53935", // error / rejected
-  orange: "#F97316", // warning / assigned
+  orange: "#F97316", // warning / offline-queued
   grey: "#64748b", // neutral / cancelled
+  violet: "#6D28D9", // in-progress (live) — admin design-system family
+  teal: "#0F766E", // approved — admin design-system family
   white: "#ffffff",
   // greys
   text: "#1A1F5E",
@@ -22,17 +24,23 @@ export const colors = {
   tintBlue: "#EBF3FB", // pale blue surface
   tintGreen: "#E8F5E9",
   tintYellow: "#FFF8E1",
+  tintOrange: "#FFF3E0",
+  tintRed: "#FFEBEE",
+  tintViolet: "#EDE9FE",
+  tintTeal: "#E0F5F2",
 } as const;
 
-// Status → color mapping used across trip/booking badges. Every status gets a
-// DISTINCT swatch so they're tellable apart at a glance in sunlight (audit fix):
-//   pending=yellow(wait) · approved=pale-blue · assigned=orange(go) ·
-//   in_progress=blue(moving) · completed=green(done) · rejected=red · cancelled=grey
+// Status → color mapping used across trip/booking badges. SAME semantic hues
+// as the admin design system (7 Jul 2026: pending amber · approved teal ·
+// assigned blue · in-progress violet · completed green · cancelled gray ·
+// rejected red) so a booking reads the same color on the driver's phone and
+// the dispatcher's board — but kept as SOLID, high-contrast fills because
+// drivers read these outdoors in sunlight. Labels always accompany color.
 export const statusColors: Record<string, { bg: string; fg: string }> = {
   pending: { bg: colors.yellow, fg: colors.navy },
-  approved: { bg: colors.tintBlue, fg: colors.blue },
-  assigned: { bg: colors.orange, fg: colors.white },
-  in_progress: { bg: colors.blue, fg: colors.white },
+  approved: { bg: colors.teal, fg: colors.white },
+  assigned: { bg: colors.blue, fg: colors.white },
+  in_progress: { bg: colors.violet, fg: colors.white },
   completed: { bg: colors.green, fg: colors.white },
   rejected: { bg: colors.red, fg: colors.white },
   cancelled: { bg: colors.grey, fg: colors.white },
@@ -81,3 +89,49 @@ export const font = {
   weightBold: "700" as const,
   weightHeavy: "800" as const,
 };
+
+// Type scale (px) — mirrors the admin bump (7 Jul 2026): a hard readable
+// floor of 12 (drivers read this in sunlight; office staff shouldn't squint
+// either). Legacy inline sizes were bulk-aligned: ≤11.5 → 12, 12/12.5 → 13,
+// 13/13.5 → 14; 14+ untouched. Use these tokens for new work.
+export const type = {
+  xs: 12, // badges, micro-labels, chart ticks — the floor
+  sm: 13, // captions, secondary/meta text
+  md: 14, // body
+  lg: 16, // emphasized body / sheet titles
+  xl: 20, // screen titles
+  hero: 42, // the one big RM figure on a screen
+} as const;
+
+// Same-hue action shadows (RN shape; react-native-web maps these to
+// box-shadow) — the money buttons float the way admin's filled buttons do.
+export const actionShadow = {
+  blue: {
+    shadowColor: colors.blue,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  yellow: {
+    shadowColor: "#D69E00",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  green: {
+    shadowColor: "#2A7F24",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  red: {
+    shadowColor: "#B71C1C",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+} as const;

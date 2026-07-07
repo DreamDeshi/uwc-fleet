@@ -205,21 +205,21 @@ function StatCard({
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
   summaryCard: { borderRadius: radius.xl, padding: 22, ...shadow.card },
-  summaryMonth: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: "600", marginBottom: 4 },
+  summaryMonth: { color: "rgba(255,255,255,0.7)", fontSize: 14, fontWeight: "600", marginBottom: 4 },
   summaryAmount: { color: colors.white, fontSize: 42, fontWeight: "900", letterSpacing: -1 },
-  summaryMeta: { color: "rgba(255,255,255,0.8)", fontSize: 13, marginTop: 4 },
+  summaryMeta: { color: "rgba(255,255,255,0.8)", fontSize: 14, marginTop: 4 },
 
   cardTitle: { fontSize: 14, fontWeight: "700", color: colors.navy, marginBottom: 12 },
   weekLabels: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 18, marginTop: 6 },
-  weekDay: { flex: 1, textAlign: "center", fontSize: 11, fontWeight: "700", color: colors.textFaint },
-  chartEmpty: { fontSize: 13, color: colors.textMuted, paddingVertical: 24, textAlign: "center" },
+  weekDay: { flex: 1, textAlign: "center", fontSize: 12, fontWeight: "700", color: colors.textFaint },
+  chartEmpty: { fontSize: 14, color: colors.textMuted, paddingVertical: 24, textAlign: "center" },
 
   statRow: { flexDirection: "row", gap: 10, marginTop: 16 },
   statCard: { flex: 1, backgroundColor: colors.white, borderRadius: radius.md, padding: 14, alignItems: "center", ...shadow.card },
   statValueRow: { flexDirection: "row", alignItems: "flex-end", marginTop: 8, gap: 3 },
   statValue: { fontSize: 20, fontWeight: "900", color: colors.navy },
-  statUnit: { fontSize: 11, fontWeight: "700", color: colors.textFaint, marginBottom: 3 },
-  statLabel: { fontSize: 10, color: colors.textFaint, fontWeight: "700", textTransform: "uppercase", marginTop: 4, textAlign: "center", letterSpacing: 0.3 },
+  statUnit: { fontSize: 12, fontWeight: "700", color: colors.textFaint, marginBottom: 3 },
+  statLabel: { fontSize: 12, color: colors.textFaint, fontWeight: "700", textTransform: "uppercase", marginTop: 4, textAlign: "center", letterSpacing: 0.3 },
 
   breakdownTitle: { fontSize: 15, fontWeight: "700", color: colors.navy, marginTop: 20, marginBottom: 12 },
   row: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 14, gap: 10 },
@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
   divider: { borderBottomWidth: 1, borderBottomColor: colors.bg },
   rowRoute: { fontSize: 14, fontWeight: "700", color: colors.navy },
   rowMetaLine: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 3 },
-  rowMeta: { fontSize: 11, color: colors.textFaint },
-  rowDot: { fontSize: 11, color: colors.textFaint, marginHorizontal: 1 },
+  rowMeta: { fontSize: 12, color: colors.textFaint },
+  rowDot: { fontSize: 12, color: colors.textFaint, marginHorizontal: 1 },
   rowRm: { fontSize: 15, fontWeight: "800", color: colors.green },
 });

@@ -31,7 +31,7 @@ const styles = StyleSheet.create({
   },
   text: {
     color: colors.textMuted,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
     paddingHorizontal: 24,
