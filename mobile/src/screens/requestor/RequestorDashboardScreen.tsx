@@ -9,7 +9,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { BookingFilter, RequestorStackParamList, RequestorTabParamList } from "../../navigation/types";
 import { useAuth } from "../../context/AuthContext";
 import { useTrips } from "../../hooks/queries";
-import { colors, radius, shadow, statusColors } from "../../theme";
+import { colors, radius, shadow } from "../../theme";
 import { Card } from "../../components/Card";
 import { StatusBadge } from "../../components/StatusBadge";
 import { LoadingState, ErrorState } from "../../components/States";
@@ -111,22 +111,14 @@ export function RequestorDashboardScreen() {
       {active ? (
         <View style={styles.section}>
           <TouchableOpacity activeOpacity={0.9} onPress={() => openDetail(active.id)}>
-            {/* Light surface with a status-colored accent bar — the heavy
-                navy block read as a different design system from the rest
-                of the screen (owner feedback, round 1). */}
-            <View
-              style={[
-                styles.activeCard,
-                { borderLeftColor: (statusColors[active.status] ?? statusColors.assigned).bg },
-              ]}
-            >
+            <View style={styles.activeCard}>
               <View style={styles.activeTop}>
                 <Text style={styles.activeLabel}>{t("requestor.activeTrip")}</Text>
                 <StatusBadge status={active.status} small />
               </View>
               <Text style={styles.activeTicket}>{active.ticket_number}</Text>
               <View style={styles.routeMini}>
-                <View style={[styles.miniDot, { backgroundColor: colors.blue }]} />
+                <View style={[styles.miniDot, { backgroundColor: colors.white }]} />
                 <Text style={styles.miniPlace}>{ORIGIN_LABEL}</Text>
                 <Text style={styles.miniArrow}>→</Text>
                 <View style={[styles.miniDot, { backgroundColor: colors.yellow }]} />
@@ -154,6 +146,7 @@ export function RequestorDashboardScreen() {
         <View style={styles.section}>
           <TouchableOpacity activeOpacity={0.9} onPress={() => openDetail(pending.id)}>
             <View style={styles.pendingCard}>
+              <View style={styles.pendingStripe} />
               <View style={{ flex: 1, padding: 14 }}>
                 <View style={styles.pendingHead}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -245,42 +238,25 @@ const styles = StyleSheet.create({
   section: { paddingHorizontal: 16, paddingTop: 12 },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
 
-  activeCard: {
-    backgroundColor: colors.white,
-    borderRadius: radius.lg,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    borderLeftWidth: 5, // accent color set inline from the trip's status
-    ...shadow.card,
-  },
+  // Owner call (feedback round 2): the dark navy active card and the dashed
+  // pending card are the PREFERRED look — kept exactly as originally shipped.
+  activeCard: { backgroundColor: colors.blueDark, borderRadius: radius.xl, padding: 18, ...shadow.card },
   activeTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  activeLabel: { fontSize: 12, fontWeight: "800", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 1 },
-  activeTicket: { fontSize: 13, fontWeight: "800", color: colors.blue, marginBottom: 10 },
+  activeLabel: { fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: 1 },
+  activeTicket: { fontSize: 13, fontWeight: "700", color: "rgba(255,255,255,0.5)", marginBottom: 10 },
   routeMini: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" },
   miniDot: { width: 8, height: 8, borderRadius: 4 },
-  miniPlace: { fontSize: 15, fontWeight: "700", color: colors.navy },
-  miniArrow: { color: colors.textFaint },
-  driverRow: { flexDirection: "row", alignItems: "center", gap: 10, borderTopWidth: 1, borderTopColor: colors.borderLight, paddingTop: 12 },
-  driverAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
-  driverAvatarText: { color: colors.blue, fontSize: 12, fontWeight: "800" },
-  driverName: { fontSize: 14, fontWeight: "600", color: colors.navy },
-  driverPlate: { fontSize: 13, color: colors.textMuted },
-  track: { fontSize: 13, fontWeight: "700", color: colors.blue },
+  miniPlace: { fontSize: 14, fontWeight: "700", color: colors.white },
+  miniArrow: { color: "rgba(255,255,255,0.3)" },
+  driverRow: { flexDirection: "row", alignItems: "center", gap: 10, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.1)", paddingTop: 12 },
+  driverAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
+  driverAvatarText: { color: colors.yellow, fontSize: 12, fontWeight: "800" },
+  driverName: { fontSize: 14, fontWeight: "600", color: colors.white },
+  driverPlate: { fontSize: 13, color: "rgba(255,255,255,0.5)" },
+  track: { fontSize: 13, color: "rgba(255,255,255,0.7)" },
 
-  pendingCard: {
-    backgroundColor: colors.white,
-    borderRadius: radius.lg,
-    flexDirection: "row",
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    // Solid card with the pending-amber accent bar — same language as the
-    // active card above (dashed outline dropped, owner feedback round 1).
-    borderLeftWidth: 5,
-    borderLeftColor: "#F59E0B",
-    ...shadow.card,
-  },
+  pendingCard: { backgroundColor: colors.white, borderRadius: radius.lg, flexDirection: "row", overflow: "hidden", borderWidth: 2, borderStyle: "dashed", borderColor: "#FFB74D" },
+  pendingStripe: { width: 5, backgroundColor: colors.yellow },
   pendingHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   pendingLabel: { fontSize: 13, fontWeight: "700", color: "#d97706", textTransform: "uppercase" },
   awaitPill: { backgroundColor: "#fffbeb", paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.pill },
