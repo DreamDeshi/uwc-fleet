@@ -7,10 +7,12 @@ import { formatDate, formatMoney } from "@/lib/format";
 import { apiErrorMessage } from "@/services/api";
 import type { DriverLeaveEntry, DriverPerf, DriverPerformance, DriverStatus } from "@/types";
 
-const STATUS_META: Record<DriverStatus, { label: string; bg: string; fg: string }> = {
-  on_trip: { label: "On Trip", bg: colors.blueTint, fg: colors.blue },
-  available: { label: "Available", bg: colors.greenTint, fg: colors.green },
-  off_duty: { label: "Off Duty", bg: "#f3f4f6", fg: "#6b7280" },
+// Driver status wears the same badge language as trip statuses: tinted
+// fill, dot, and an accent used as the card's left bar.
+const STATUS_META: Record<DriverStatus, { label: string; bg: string; fg: string; dot: string }> = {
+  on_trip: { label: "On Trip", bg: colors.blueTint, fg: colors.blue, dot: "#2563EB" },
+  available: { label: "Available", bg: colors.greenTint, fg: "#2E7D32", dot: colors.green },
+  off_duty: { label: "Off Duty", bg: "#f3f4f6", fg: "#4B5563", dot: "#9CA3AF" },
 };
 
 // FR-FM7 — score → badge colour. green ≥75, amber 50–74, red <50.
@@ -121,15 +123,15 @@ function LeaveManager({ drivers }: { drivers: DriverPerf[] }) {
           No leave recorded — every active driver is in the dispatch pool.
         </div>
       ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <table className="uwc-table" style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr>{["Driver", "From", "To", "Note", ""].map((h) => (
-              <th key={h} style={{ textAlign: "left", fontSize: 12, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: colors.textMuted, padding: "12px 16px", borderBottom: `1px solid ${colors.border}`, background: colors.panel }}>{h}</th>
+            <tr style={{ background: colors.panel }}>{["Driver", "From", "To", "Note", ""].map((h) => (
+              <th key={h} style={{ textAlign: "left", fontSize: 11, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: "#475467", padding: "11px 20px", borderBottom: `1px solid ${colors.border}` }}>{h}</th>
             ))}</tr>
           </thead>
           <tbody>
-            {leaves.data!.map((l, i) => (
-              <tr key={l.id} style={{ background: i % 2 ? colors.blueTint : "transparent" }}>
+            {leaves.data!.map((l) => (
+              <tr key={l.id}>
                 <td style={leaveTd}>
                   <span style={{ fontWeight: 700 }}>{l.driver.name}</span>
                   {l.driver.assigned_truck_plate ? ` · ${l.driver.assigned_truck_plate}` : ""}
@@ -153,7 +155,7 @@ function LeaveManager({ drivers }: { drivers: DriverPerf[] }) {
 const leaveTd: React.CSSProperties = {
   fontSize: 14,
   color: colors.text,
-  padding: "11px 16px",
+  padding: "13px 20px",
   borderBottom: `1px solid ${colors.divider}`,
 };
 
@@ -194,9 +196,10 @@ function AddLeaveForm({ drivers }: { drivers: DriverPerf[] }) {
         <label style={{ display: "block" }}>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: colors.text }}>Driver</div>
           <select
+            className="uwc-input"
             value={driverId}
             onChange={(e) => setDriverId(e.target.value)}
-            style={{ padding: "11px 13px", borderRadius: radius.md, border: `1px solid ${colors.border}`, fontSize: 14, minWidth: 220, background: colors.card, color: colors.text }}
+            style={{ padding: "11px 13px", borderRadius: radius.md, border: `1px solid ${colors.border}`, fontSize: 14, minWidth: 220, background: colors.card, color: colors.text, outline: "none" }}
           >
             <option value="">Select a driver…</option>
             {drivers.map((d) => (
@@ -272,7 +275,7 @@ function DriverCard({
 }) {
   const meta = STATUS_META[d.status];
   return (
-    <Card>
+    <Card style={{ borderLeft: `5px solid ${meta.dot}` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <Avatar name={d.name} size={46} />
         <div style={{ flex: 1, overflow: "hidden" }}>
@@ -285,11 +288,11 @@ function DriverCard({
         {perf && <ScoreBadge perf={perf} onClick={onOpenPerf} />}
         {/* Leave is date-scoped, so it's a badge alongside status, not a status:
             an on-leave-today driver can still hold trips for other dates. */}
-        {d.on_leave_today && <Pill bg={colors.yellowTint} fg={colors.amber}>On leave</Pill>}
-        <Pill bg={meta.bg} fg={meta.fg}>{meta.label}</Pill>
+        {d.on_leave_today && <Pill bg={colors.yellowTint} fg={colors.amber} dot={colors.orange}>On leave</Pill>}
+        <Pill bg={meta.bg} fg={meta.fg} dot={meta.dot}>{meta.label}</Pill>
       </div>
 
-      <div style={{ display: "flex", border: `1px solid ${colors.divider}`, borderRadius: radius.md, overflow: "hidden" }}>
+      <div style={{ display: "flex", background: colors.panel, border: `1px solid ${colors.divider}`, borderRadius: radius.md, overflow: "hidden" }}>
         <Stat label="Trips (total)" value={String(d.trips_total)} />
         <Stat label="This Month" value={String(d.trips_this_month)} divider />
         <Stat label="Earned (mo.)" value={formatMoney(d.incentive_this_month)} divider />
