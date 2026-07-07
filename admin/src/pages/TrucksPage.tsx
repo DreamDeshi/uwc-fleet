@@ -8,10 +8,12 @@ import { apiErrorMessage } from "@/services/api";
 import { formatDate, formatMoney, relativeExpiry } from "@/lib/format";
 import type { DocExpiry, ExpiryStatus, Truck, TruckAlert, TruckExpiryAlert } from "@/types";
 
-const STATUS_META: Record<string, { label: string; bg: string; fg: string }> = {
-  active: { label: "Active", bg: colors.greenTint, fg: colors.green },
-  idle: { label: "Idle", bg: colors.blueTint, fg: colors.blue },
-  maintenance: { label: "Maintenance", bg: colors.orangeTint, fg: colors.orange },
+// Truck status wears the same badge language as trip/driver statuses:
+// tinted fill + dot, with the dot color doubling as the card's accent bar.
+const STATUS_META: Record<string, { label: string; bg: string; fg: string; dot: string }> = {
+  active: { label: "Active", bg: colors.greenTint, fg: "#2E7D32", dot: colors.green },
+  idle: { label: "Idle", bg: colors.blueTint, fg: colors.blue, dot: "#2563EB" },
+  maintenance: { label: "Maintenance", bg: colors.orangeTint, fg: "#B45309", dot: colors.orange },
 };
 
 type Filter = "all" | "active" | "idle" | "maintenance";
@@ -122,7 +124,7 @@ function AlertsPanel() {
   if (list.length === 0) return null;
 
   return (
-    <Card style={{ padding: 0, overflow: "hidden" }}>
+    <Card style={{ padding: 0, overflow: "hidden", borderLeft: `5px solid ${colors.orange}` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", background: colors.orangeTint, borderBottom: `1px solid ${colors.border}` }}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 3l9 16H3l9-16z" stroke={colors.orange} strokeWidth="1.8" strokeLinejoin="round" /><path d="M12 10v4M12 17v.5" stroke={colors.orange} strokeWidth="1.8" strokeLinecap="round" /></svg>
         <div style={{ fontSize: 14, fontWeight: 800, color: colors.text }}>Document Alerts</div>
@@ -186,14 +188,21 @@ function TruckCard({ truck: t }: { truck: Truck }) {
   // modal is the renewal path that un-bricks the truck.
   const [editingDocs, setEditingDocs] = useState(false);
   return (
-    <Card style={hasAlert ? { border: `1px solid #FFB74D`, boxShadow: "0 2px 12px rgba(249,115,22,0.12)" } : undefined}>
+    <Card
+      style={{
+        // Accent bar carries the status; an expiring/expired document
+        // escalates the whole card to the alert treatment.
+        borderLeft: `5px solid ${hasAlert ? colors.orange : meta.dot}`,
+        ...(hasAlert ? { border: "1px solid #FFB74D", borderLeft: `5px solid ${colors.orange}`, boxShadow: "0 2px 12px rgba(249,115,22,0.12)" } : {}),
+      }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <Avatar size={46} glyph={truckGlyph} />
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: 0.3 }}>{t.plate}</div>
           <div style={{ fontSize: 13, color: colors.textMuted }}>{t.type} · {t.max_pallets} pallets</div>
         </div>
-        <Pill bg={meta.bg} fg={meta.fg}>{meta.label}</Pill>
+        <Pill bg={meta.bg} fg={meta.fg} dot={meta.dot}>{meta.label}</Pill>
       </div>
 
       {/* Load visualiser */}
@@ -202,7 +211,7 @@ function TruckCard({ truck: t }: { truck: Truck }) {
       </div>
 
       {/* Stats */}
-      <div style={{ display: "flex", border: `1px solid ${colors.divider}`, borderRadius: radius.md, overflow: "hidden", marginBottom: 12 }}>
+      <div style={{ display: "flex", background: colors.panel, border: `1px solid ${colors.divider}`, borderRadius: radius.md, overflow: "hidden", marginBottom: 12 }}>
         <Mini label="Trips Today" value={String(t.trips_today)} />
         <Mini label="Driver" value={t.driver?.name ?? "None"} divider wrap />
         <Mini label="Zone" value={t.priority_zones[0] ?? "—"} divider />
