@@ -262,13 +262,7 @@ export function RegisterScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    backgroundColor: colors.blue,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    borderBottomWidth: 4,
-    borderBottomColor: colors.yellow,
-  },
+  header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 20 },
   headerTitle: { color: colors.white, fontSize: 20, fontWeight: "800" },
   headerSub: { color: "rgba(255,255,255,0.7)", fontSize: 14, marginTop: 8 },
   progressWrap: { paddingHorizontal: 20, paddingTop: 16 },

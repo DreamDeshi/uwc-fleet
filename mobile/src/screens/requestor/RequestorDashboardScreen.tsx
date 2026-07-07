@@ -9,7 +9,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { BookingFilter, RequestorStackParamList, RequestorTabParamList } from "../../navigation/types";
 import { useAuth } from "../../context/AuthContext";
 import { useTrips } from "../../hooks/queries";
-import { colors, radius, shadow } from "../../theme";
+import { colors, radius, shadow, statusColors } from "../../theme";
 import { Card } from "../../components/Card";
 import { StatusBadge } from "../../components/StatusBadge";
 import { LoadingState, ErrorState } from "../../components/States";
@@ -87,7 +87,12 @@ export function RequestorDashboardScreen() {
           </View>
         </View>
 
-        {/* Grab-style CTA */}
+      </View>
+
+      {/* Grab-style CTA — real layout overlap (negative margin) instead of a
+          translateY transform, which left a subpixel blue seam along the
+          card's edge on react-native-web. */}
+      <View style={styles.ctaWrap}>
         <TouchableOpacity style={styles.cta} activeOpacity={0.9} onPress={() => navigation.navigate("NewBooking")}>
           <View style={styles.ctaIcon}>
             <MaterialCommunityIcons name="truck" size={22} color={colors.blue} />
@@ -100,20 +105,28 @@ export function RequestorDashboardScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={{ height: 28 }} />
+      <View style={{ height: 16 }} />
 
       {/* Active booking */}
       {active ? (
         <View style={styles.section}>
           <TouchableOpacity activeOpacity={0.9} onPress={() => openDetail(active.id)}>
-            <View style={styles.activeCard}>
+            {/* Light surface with a status-colored accent bar — the heavy
+                navy block read as a different design system from the rest
+                of the screen (owner feedback, round 1). */}
+            <View
+              style={[
+                styles.activeCard,
+                { borderLeftColor: (statusColors[active.status] ?? statusColors.assigned).bg },
+              ]}
+            >
               <View style={styles.activeTop}>
                 <Text style={styles.activeLabel}>{t("requestor.activeTrip")}</Text>
                 <StatusBadge status={active.status} small />
               </View>
               <Text style={styles.activeTicket}>{active.ticket_number}</Text>
               <View style={styles.routeMini}>
-                <View style={[styles.miniDot, { backgroundColor: colors.white }]} />
+                <View style={[styles.miniDot, { backgroundColor: colors.blue }]} />
                 <Text style={styles.miniPlace}>{ORIGIN_LABEL}</Text>
                 <Text style={styles.miniArrow}>→</Text>
                 <View style={[styles.miniDot, { backgroundColor: colors.yellow }]} />
@@ -141,7 +154,6 @@ export function RequestorDashboardScreen() {
         <View style={styles.section}>
           <TouchableOpacity activeOpacity={0.9} onPress={() => openDetail(pending.id)}>
             <View style={styles.pendingCard}>
-              <View style={styles.pendingStripe} />
               <View style={{ flex: 1, padding: 14 }}>
                 <View style={styles.pendingHead}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -216,38 +228,59 @@ function StatBox({ value, label, color, bg, onPress }: { value: number; label: s
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
-  header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 16 },
-  headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
-  greetingTime: { color: "rgba(255,255,255,0.75)", fontSize: 14, fontWeight: "600" },
-  hi: { color: colors.white, fontSize: 20, fontWeight: "800", marginTop: 2 },
-  deptRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 3 },
-  dept: { color: "rgba(255,255,255,0.65)", fontSize: 14 },
-  avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
-  avatarText: { color: colors.white, fontSize: 14, fontWeight: "700" },
-  cta: { backgroundColor: colors.white, borderRadius: radius.lg, padding: 14, flexDirection: "row", alignItems: "center", gap: 14, ...shadow.floating, transform: [{ translateY: 14 }] },
+  header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 44 },
+  headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  // Bigger, bolder greeting so the header reads balanced (owner feedback).
+  greetingTime: { color: "rgba(255,255,255,0.85)", fontSize: 16, fontWeight: "700" },
+  hi: { color: colors.white, fontSize: 26, fontWeight: "800", marginTop: 3 },
+  deptRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 5 },
+  dept: { color: "rgba(255,255,255,0.7)", fontSize: 14 },
+  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 2, borderColor: colors.yellow, alignItems: "center", justifyContent: "center" },
+  avatarText: { color: colors.white, fontSize: 15, fontWeight: "800" },
+  ctaWrap: { paddingHorizontal: 20, marginTop: -28 },
+  cta: { backgroundColor: colors.white, borderRadius: radius.lg, padding: 14, flexDirection: "row", alignItems: "center", gap: 14, ...shadow.floating },
   ctaIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: colors.yellow, alignItems: "center", justifyContent: "center" },
   ctaTitle: { fontSize: 16, fontWeight: "700", color: colors.navy },
   ctaSub: { fontSize: 14, color: colors.textFaint },
   section: { paddingHorizontal: 16, paddingTop: 12 },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
 
-  activeCard: { backgroundColor: colors.blueDark, borderRadius: radius.xl, padding: 18, ...shadow.card },
+  activeCard: {
+    backgroundColor: colors.white,
+    borderRadius: radius.lg,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderLeftWidth: 5, // accent color set inline from the trip's status
+    ...shadow.card,
+  },
   activeTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  activeLabel: { fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: 1 },
-  activeTicket: { fontSize: 13, fontWeight: "700", color: "rgba(255,255,255,0.5)", marginBottom: 10 },
+  activeLabel: { fontSize: 12, fontWeight: "800", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 1 },
+  activeTicket: { fontSize: 13, fontWeight: "800", color: colors.blue, marginBottom: 10 },
   routeMini: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" },
   miniDot: { width: 8, height: 8, borderRadius: 4 },
-  miniPlace: { fontSize: 14, fontWeight: "700", color: colors.white },
-  miniArrow: { color: "rgba(255,255,255,0.3)" },
-  driverRow: { flexDirection: "row", alignItems: "center", gap: 10, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.1)", paddingTop: 12 },
-  driverAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
-  driverAvatarText: { color: colors.yellow, fontSize: 12, fontWeight: "800" },
-  driverName: { fontSize: 14, fontWeight: "600", color: colors.white },
-  driverPlate: { fontSize: 13, color: "rgba(255,255,255,0.5)" },
-  track: { fontSize: 13, color: "rgba(255,255,255,0.7)" },
+  miniPlace: { fontSize: 15, fontWeight: "700", color: colors.navy },
+  miniArrow: { color: colors.textFaint },
+  driverRow: { flexDirection: "row", alignItems: "center", gap: 10, borderTopWidth: 1, borderTopColor: colors.borderLight, paddingTop: 12 },
+  driverAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
+  driverAvatarText: { color: colors.blue, fontSize: 12, fontWeight: "800" },
+  driverName: { fontSize: 14, fontWeight: "600", color: colors.navy },
+  driverPlate: { fontSize: 13, color: colors.textMuted },
+  track: { fontSize: 13, fontWeight: "700", color: colors.blue },
 
-  pendingCard: { backgroundColor: colors.white, borderRadius: radius.lg, flexDirection: "row", overflow: "hidden", borderWidth: 2, borderStyle: "dashed", borderColor: "#FFB74D" },
-  pendingStripe: { width: 5, backgroundColor: colors.yellow },
+  pendingCard: {
+    backgroundColor: colors.white,
+    borderRadius: radius.lg,
+    flexDirection: "row",
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    // Solid card with the pending-amber accent bar — same language as the
+    // active card above (dashed outline dropped, owner feedback round 1).
+    borderLeftWidth: 5,
+    borderLeftColor: "#F59E0B",
+    ...shadow.card,
+  },
   pendingHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   pendingLabel: { fontSize: 13, fontWeight: "700", color: "#d97706", textTransform: "uppercase" },
   awaitPill: { backgroundColor: "#fffbeb", paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.pill },

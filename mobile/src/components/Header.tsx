@@ -41,9 +41,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.blue,
     paddingHorizontal: 20,
     paddingBottom: 18,
-    // The admin header's signature corporate-yellow underline.
-    borderBottomWidth: 4,
-    borderBottomColor: colors.yellow,
   },
   row: { flexDirection: "row", alignItems: "center" },
   back: { marginRight: 8, marginLeft: -4 },
