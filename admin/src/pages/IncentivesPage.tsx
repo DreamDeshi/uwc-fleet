@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useAddHoliday, useDeleteHoliday, useDestinationRates, useHolidays, useRateAudit, useResetTruckRates, useTrucks, useUpdateDestinationRate, useUpdateTruckRates } from "@/hooks/queries";
-import { colors, radius } from "@/theme";
+import { colors, gradients, radius } from "@/theme";
 import { Button, Card, ErrorState, Input, Loading, Modal, Pill, SectionTitle } from "@/components/ui";
 import { formatDate, formatMoney } from "@/lib/format";
 import { apiErrorMessage } from "@/services/api";
@@ -44,15 +44,17 @@ export function IncentivesPage() {
           <button
             key={v}
             onClick={() => setTab(v)}
+            className="uwc-lift"
             style={{
-              padding: "9px 16px",
-              borderRadius: radius.md,
-              border: `1px solid ${tab === v ? colors.blue : colors.border}`,
+              padding: "9px 18px",
+              borderRadius: radius.pill,
+              border: `1.5px solid ${tab === v ? colors.blue : colors.border}`,
               background: tab === v ? colors.blue : colors.card,
               color: tab === v ? "#fff" : colors.textMuted,
               fontWeight: 700,
               fontSize: 14,
               cursor: "pointer",
+              boxShadow: tab === v ? "0 6px 14px -6px rgba(0,48,135,0.5)" : undefined,
             }}
           >
             {label}
@@ -60,7 +62,7 @@ export function IncentivesPage() {
         ))}
       </div>
 
-      <div style={{ background: colors.blueTint, borderRadius: radius.md, padding: "11px 15px", fontSize: 13, color: colors.blue, fontWeight: 500 }}>
+      <div style={{ background: colors.blueTint, borderLeft: `4px solid ${colors.blue}`, borderRadius: radius.md, padding: "11px 15px", fontSize: 13, color: colors.blue, fontWeight: 500 }}>
         Every rate change is recorded in the audit log. Source of truth: UWC Internal Lorry Rate (Development Brief §3).
       </div>
 
@@ -104,7 +106,7 @@ function TruckRatesTab() {
         />
         {resetResult && <ResetResultBanner result={resetResult} onDismiss={() => setResetResult(null)} />}
       </div>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <table className="uwc-table" style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
             {["Truck", "Type", "Max Load", "Weekday Rate", "Weekend Rate", "Daily Deduction", ""].map((h) => (
@@ -113,8 +115,8 @@ function TruckRatesTab() {
           </tr>
         </thead>
         <tbody>
-          {trucks.data!.map((t, i) => (
-            <tr key={t.plate} style={{ background: i % 2 ? colors.blueTint : "transparent" }}>
+          {trucks.data!.map((t) => (
+            <tr key={t.plate}>
               <td style={{ ...tdStyle, fontWeight: 700 }}>
                 {t.plate}
                 <UpdatedNote entry={auditByPlate.get(t.plate)} />
@@ -277,17 +279,17 @@ function DestinationPointsTab() {
       <div style={{ padding: 18, borderBottom: `1px solid ${colors.border}` }}>
         <SectionTitle title="Destination Point Values" subtitle={`${rates.data!.length} destinations · first-trip-of-day points`} />
       </div>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <table className="uwc-table" style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
             {["Destination", "Zone", "Points", "Tier", ""].map((h) => <th key={h} style={thStyle}>{h}</th>)}
           </tr>
         </thead>
         <tbody>
-          {rates.data!.map((r, i) => {
+          {rates.data!.map((r) => {
             const ti = tier(r.points);
             return (
-              <tr key={r.id} style={{ background: i % 2 ? colors.blueTint : "transparent" }}>
+              <tr key={r.id}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>
                   {r.location_name}
                   <UpdatedNote entry={auditById.get(r.id)} />
@@ -386,13 +388,13 @@ function HolidaysTab() {
             No holidays in the calendar — every weekday pays the weekday rate until dates are added.
           </div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table className="uwc-table" style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>{["Date", "Day", "Holiday", ""].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
             </thead>
             <tbody>
-              {rows.map((h, i) => (
-                <tr key={h.id} style={{ background: i % 2 ? colors.blueTint : "transparent" }}>
+              {rows.map((h) => (
+                <tr key={h.id}>
                   <td style={{ ...tdStyle, fontWeight: 700, whiteSpace: "nowrap" }}>{h.date}</td>
                   <td style={tdStyle}>{weekdayName(h.date)}</td>
                   <td style={tdStyle}>{h.name}</td>
@@ -488,7 +490,7 @@ function DeleteHolidayConfirm({ holiday, onClose }: { holiday: PublicHoliday; on
 function FormulaTab() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ background: `linear-gradient(135deg, ${colors.blue}, #001a4d)`, borderRadius: radius.lg, padding: 26, color: "#fff", textAlign: "center" }}>
+      <div style={{ background: gradients.blue, borderRadius: radius.xl, padding: 26, color: "#fff", textAlign: "center", boxShadow: "0 14px 28px -12px rgba(0, 48, 135, 0.55)" }}>
         <div style={{ fontSize: 13, letterSpacing: 1, opacity: 0.7, textTransform: "uppercase", marginBottom: 10 }}>Incentive Formula</div>
         <div style={{ fontSize: 19, fontWeight: 700 }}>
           Entitled Claim Rate (RM) × <span style={{ color: colors.yellow }}>Destination Points</span>
@@ -530,18 +532,18 @@ function FormulaTab() {
 
 const thStyle: React.CSSProperties = {
   textAlign: "left",
-  fontSize: 12,
-  fontWeight: 700,
-  letterSpacing: 0.5,
+  fontSize: 11,
+  fontWeight: 800,
+  letterSpacing: 0.7,
   textTransform: "uppercase",
-  color: colors.textMuted,
-  padding: "12px 16px",
+  color: "#475467",
+  padding: "11px 20px",
   borderBottom: `1px solid ${colors.border}`,
   background: colors.panel,
 };
 const tdStyle: React.CSSProperties = {
   fontSize: 14,
   color: colors.text,
-  padding: "12px 16px",
+  padding: "13px 20px",
   borderBottom: `1px solid ${colors.divider}`,
 };
