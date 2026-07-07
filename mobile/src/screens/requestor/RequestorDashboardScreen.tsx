@@ -165,7 +165,7 @@ export function RequestorDashboardScreen() {
                   {pending.route_type?.name} · {formatDate(pending.pickup_datetime)}, {formatTime(pending.pickup_datetime)}
                 </Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color="#ccc" style={{ alignSelf: "center", marginRight: 12 }} />
+              <Ionicons name="chevron-forward" size={18} color={colors.textFaint} style={{ alignSelf: "center", marginRight: 12 }} />
             </View>
           </TouchableOpacity>
         </View>
@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
   awaitText: { color: "#d97706", fontSize: 13, fontWeight: "700" },
   pendingTicket: { fontSize: 13, fontWeight: "700", color: colors.blue, marginBottom: 4 },
   pendingRoute: { fontSize: 14, fontWeight: "600", color: colors.navy },
-  pendingMeta: { fontSize: 13, color: "#888", marginTop: 4 },
+  pendingMeta: { fontSize: 13, color: colors.textMuted, marginTop: 4 },
 
   statRow: { flexDirection: "row", gap: 10, marginTop: 12 },
   statBox: { flex: 1, borderRadius: radius.md, padding: 14, alignItems: "center" },

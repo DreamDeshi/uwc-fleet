@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { useMyAnalytics } from "../../hooks/queries";
-import { colors, radius } from "../../theme";
+import { colors, radius, statusColors } from "../../theme";
 import { Card } from "../../components/Card";
 import { LoadingState, ErrorState } from "../../components/States";
 import { WeeklyEarningsChart, WeekDatum } from "../../components/WeeklyEarningsChart";
@@ -68,12 +68,14 @@ export function AnalyticsScreen() {
   // ── Status breakdown → coloured proportional bars (victory-native v41 has no
   // pie, so we render a labelled breakdown per the spec fallback) ──
   const sb = data.status_breakdown;
+  // Bar colors come from the shared status map so the breakdown, the badges
+  // and the admin board all speak the same hue per status.
   const statuses = [
-    { label: t("analytics.statusCompleted"), color: colors.green, value: sb.completed },
-    { label: t("analytics.statusInProgress"), color: colors.blue, value: sb.in_progress },
-    { label: t("analytics.statusAssigned"), color: colors.orange, value: sb.assigned },
-    { label: t("analytics.statusPending"), color: colors.yellow, value: sb.pending },
-    { label: t("analytics.statusCancelled"), color: colors.grey, value: sb.cancelled },
+    { label: t("analytics.statusCompleted"), color: statusColors.completed.bg, value: sb.completed },
+    { label: t("analytics.statusInProgress"), color: statusColors.in_progress.bg, value: sb.in_progress },
+    { label: t("analytics.statusAssigned"), color: statusColors.assigned.bg, value: sb.assigned },
+    { label: t("analytics.statusPending"), color: statusColors.pending.bg, value: sb.pending },
+    { label: t("analytics.statusCancelled"), color: statusColors.cancelled.bg, value: sb.cancelled },
   ];
 
   return (
