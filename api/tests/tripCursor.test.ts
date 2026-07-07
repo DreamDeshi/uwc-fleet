@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import fs from "fs";
+import path from "path";
 import {
   TRIP_LIST_MAX_TAKE,
   TRIP_PAGE_SIZE_DEFAULT,
@@ -270,5 +272,29 @@ describe("keyset walk — no overlap, no gaps", () => {
 describe("list order", () => {
   it("TRIP_LIST_ORDER is (created_at desc, id desc) — the cursor's exact order", () => {
     expect(TRIP_LIST_ORDER).toEqual([{ created_at: "desc" }, { id: "desc" }]);
+  });
+});
+
+describe("keyset index migration", () => {
+  it("is purely additive — CREATE INDEX only, no table/column/data change", () => {
+    const sql = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../prisma/migrations/20260707100000_trip_list_keyset_index/migration.sql"
+      ),
+      "utf-8"
+    );
+    const statements = sql
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith("--"));
+    expect(statements.length).toBeGreaterThan(0);
+    for (const stmt of statements) {
+      expect(stmt).toMatch(/^CREATE INDEX /);
+    }
+    // And it creates exactly the index the keyset order needs.
+    expect(sql).toContain(
+      'CREATE INDEX "Trip_created_at_id_idx" ON "Trip"("created_at", "id");'
+    );
   });
 });

@@ -276,6 +276,12 @@ model Trip {
   location_logs       LocationLog[]
   external_forwarder  ExternalForwarder?
   status_history      TripStatusHistory[]
+
+  // Keyset scan for the paged trip list (lib/tripCursor): the list orders by
+  // (created_at DESC, id DESC) — same-direction columns, so this one ASC
+  // composite serves it via a backward index scan. Also covers the legacy
+  // newest-N limit window the other admin pages still use.
+  @@index([created_at, id])
 }
 
 // ── 8. TripStop ──────────────────────────────────────────────────────
