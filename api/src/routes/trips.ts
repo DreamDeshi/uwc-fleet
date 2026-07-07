@@ -32,6 +32,12 @@ import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { mytDayBoundsForKey } from "../lib/myt";
 import {
+  TRIP_LIST_ORDER,
+  buildTripPage,
+  parseTripListQuery,
+  tripKeysetWhere,
+} from "../lib/tripCursor";
+import {
   calculateDeliveryIncentive,
   getTripDayStart,
   getTripDayEnd,
@@ -296,16 +302,24 @@ router.get("/", async (req, res, next) => {
     const zone = typeof req.query.zone === "string" ? req.query.zone : "";
     const dateFrom = typeof req.query.date_from === "string" ? req.query.date_from : "";
     const dateTo = typeof req.query.date_to === "string" ? req.query.date_to : "";
-    // Optional window on the (created_at-desc) list — the admin board polls
-    // this endpoint every 20s with the full include, so an ever-growing trial
-    // history must not be re-downloaded 3×/minute (audit 2026-07-05 #6).
-    // Filters above still search the FULL table; the limit only caps how many
-    // matching rows come back. Hard server cap 500; absent/invalid = legacy
-    // unlimited (mobile's role-scoped lists stay small and unchanged).
-    // TRUE pagination (cursor + total) is the noted bigger follow-up.
-    const rawLimit = typeof req.query.limit === "string" ? Number(req.query.limit) : NaN;
-    const limit =
-      Number.isInteger(rawLimit) && rawLimit >= 1 ? Math.min(rawLimit, 500) : undefined;
+    // List mode (lib/tripCursor):
+    //  - legacy: plain array, optional newest-N `limit` window (cb6bd55) —
+    //    mobile's role-scoped lists and the admin Dashboard/MobileLite/
+    //    Reports windows, unchanged.
+    //  - paged (`page_size`/`cursor` present): {items, next_cursor, total}
+    //    keyset pages under (created_at DESC, id DESC) — the admin board
+    //    polls the first page as its live head and loads older pages on
+    //    demand instead of re-downloading a capped window every 20s.
+    // Filters below always search the FULL table in both modes; the window/
+    // page only caps how many matching rows come back per request.
+    const listQuery = parseTripListQuery(req.query);
+    if (listQuery.mode === "invalid_cursor") {
+      throw new ApiError(
+        400,
+        "INVALID_CURSOR",
+        "The pagination cursor is not valid. Reload the list and try again."
+      );
+    }
 
     const filters: Prisma.TripWhereInput[] = [];
 
@@ -343,11 +357,32 @@ router.get("/", async (req, res, next) => {
       ? { AND: [roleWhere, ...filters] }
       : roleWhere;
 
+    if (listQuery.mode === "paged") {
+      // Keyset page: the cursor predicate ANDs onto the role scope + filters,
+      // so a cursor taken from a filtered page continues that same filtered
+      // sequence. `total` counts the filtered set (cursor excluded) — the
+      // board shows "N of total" and sizes its Load-older button from it.
+      const pageWhere: Prisma.TripWhereInput = listQuery.cursor
+        ? { AND: [where, tripKeysetWhere(listQuery.cursor)] }
+        : where;
+      const [rows, total] = await Promise.all([
+        prisma.trip.findMany({
+          where: pageWhere,
+          include: tripInclude,
+          orderBy: [...TRIP_LIST_ORDER],
+          take: listQuery.pageSize + 1, // +1 = "does a next page exist"
+        }),
+        prisma.trip.count({ where }),
+      ]);
+      res.json({ ...buildTripPage(rows, listQuery.pageSize), total });
+      return;
+    }
+
     const trips = await prisma.trip.findMany({
       where,
       include: tripInclude,
-      orderBy: { created_at: "desc" },
-      ...(limit !== undefined ? { take: limit } : {}),
+      orderBy: [...TRIP_LIST_ORDER],
+      ...(listQuery.limit !== undefined ? { take: listQuery.limit } : {}),
     });
     res.json(trips);
   } catch (err) {
