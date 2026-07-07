@@ -85,6 +85,9 @@ export function EarningsScreen() {
             end={{ x: 1, y: 1 }}
             style={styles.summaryCard}
           >
+            {/* Decorative corner discs — same depth cue as the login header. */}
+            <View style={styles.discBig} pointerEvents="none" />
+            <View style={styles.discSmall} pointerEvents="none" />
             <Text style={styles.summaryMonth}>{monthYear(data.summary.month)}</Text>
             <Text style={styles.summaryAmount}>{formatMoney(data.summary.total)}</Text>
             <Text style={styles.summaryMeta}>
@@ -204,10 +207,12 @@ function StatCard({
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
-  summaryCard: { borderRadius: radius.xl, padding: 22, ...shadow.card },
-  summaryMonth: { color: "rgba(255,255,255,0.7)", fontSize: 14, fontWeight: "600", marginBottom: 4 },
+  summaryCard: { borderRadius: radius.xl, padding: 22, overflow: "hidden", ...shadow.card },
+  discBig: { position: "absolute", right: -50, top: -50, width: 170, height: 170, borderRadius: 85, backgroundColor: "rgba(255,255,255,0.07)" },
+  discSmall: { position: "absolute", right: 30, bottom: -46, width: 110, height: 110, borderRadius: 55, backgroundColor: "rgba(255,204,0,0.10)" },
+  summaryMonth: { color: "rgba(255,255,255,0.75)", fontSize: 13, fontWeight: "800", marginBottom: 4, textTransform: "uppercase", letterSpacing: 1 },
   summaryAmount: { color: colors.white, fontSize: 42, fontWeight: "900", letterSpacing: -1 },
-  summaryMeta: { color: "rgba(255,255,255,0.8)", fontSize: 14, marginTop: 4 },
+  summaryMeta: { color: "rgba(255,255,255,0.85)", fontSize: 14, fontWeight: "600", marginTop: 4 },
 
   cardTitle: { fontSize: 14, fontWeight: "700", color: colors.navy, marginBottom: 12 },
   weekLabels: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 18, marginTop: 6 },
@@ -229,5 +234,5 @@ const styles = StyleSheet.create({
   rowMetaLine: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 3 },
   rowMeta: { fontSize: 12, color: colors.textFaint },
   rowDot: { fontSize: 12, color: colors.textFaint, marginHorizontal: 1 },
-  rowRm: { fontSize: 15, fontWeight: "800", color: colors.green },
+  rowRm: { fontSize: 17, fontWeight: "800", color: colors.green },
 });
