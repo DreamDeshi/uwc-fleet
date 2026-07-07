@@ -62,19 +62,19 @@ export function LoginPage() {
           </div>
           <div>
             <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", letterSpacing: 0.5 }}>UWC TRUCKING</div>
-            <div style={{ fontSize: 11, color: colors.yellow, fontWeight: 600, letterSpacing: 1.5 }}>FLEET MANAGEMENT</div>
+            <div style={{ fontSize: 12, color: colors.yellow, fontWeight: 600, letterSpacing: 1.5 }}>FLEET MANAGEMENT</div>
           </div>
         </div>
 
         <div style={{ background: colors.card, borderRadius: radius.xl, padding: 30, boxShadow: shadow.floating }}>
           <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Administrator Sign In</div>
-          <div style={{ fontSize: 13.5, color: colors.textMuted, marginBottom: 22 }}>
+          <div style={{ fontSize: 14, color: colors.textMuted, marginBottom: 22 }}>
             Fleet management dashboard — admin access only.
           </div>
 
           <form onSubmit={submit}>
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Phone Number</div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Phone Number</div>
               <input
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
@@ -84,7 +84,7 @@ export function LoginPage() {
               />
             </div>
             <div style={{ marginBottom: 18 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Password</div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Password</div>
               <div style={{ position: "relative" }}>
                 <input
                   type={showPw ? "text" : "password"}
@@ -104,7 +104,7 @@ export function LoginPage() {
                     border: "none",
                     background: "transparent",
                     color: colors.textMuted,
-                    fontSize: 12.5,
+                    fontSize: 13,
                     fontWeight: 600,
                     cursor: "pointer",
                   }}
@@ -121,7 +121,7 @@ export function LoginPage() {
                   color: colors.red,
                   borderRadius: radius.md,
                   padding: "10px 12px",
-                  fontSize: 13,
+                  fontSize: 14,
                   fontWeight: 500,
                   marginBottom: 16,
                 }}
@@ -136,7 +136,7 @@ export function LoginPage() {
           </form>
         </div>
 
-        <div style={{ textAlign: "center", fontSize: 12, color: "rgba(255,255,255,0.6)", marginTop: 16 }}>
+        <div style={{ textAlign: "center", fontSize: 13, color: "rgba(255,255,255,0.6)", marginTop: 16 }}>
           UWC Trucking Management System
         </div>
       </div>

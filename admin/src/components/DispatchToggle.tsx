@@ -14,7 +14,7 @@ export function DispatchToggle({ compact = false }: { compact?: boolean }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
       {!compact && (
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: colors.textMuted }}>Dispatch Mode</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: colors.textMuted }}>Dispatch Mode</span>
       )}
       <div style={{ display: "inline-flex", background: colors.panel, border: `1px solid ${colors.border}`, borderRadius: radius.pill, padding: 3 }}>
         {options.map((o) => {
@@ -29,7 +29,7 @@ export function DispatchToggle({ compact = false }: { compact?: boolean }) {
                 borderRadius: radius.pill,
                 border: "none",
                 cursor: pending ? "wait" : "pointer",
-                fontSize: 12.5,
+                fontSize: 13,
                 fontWeight: 700,
                 opacity: pending ? 0.7 : 1,
                 background: active ? (o.value === "auto" ? colors.green : colors.blue) : "transparent",
@@ -42,7 +42,7 @@ export function DispatchToggle({ compact = false }: { compact?: boolean }) {
         })}
       </div>
       {mode === "auto" && (
-        <span style={{ fontSize: 11.5, color: colors.green, fontWeight: 600 }}>
+        <span style={{ fontSize: 12, color: colors.green, fontWeight: 600 }}>
           Engine active — new orders auto-assign
         </span>
       )}

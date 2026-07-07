@@ -51,7 +51,7 @@ export function SectionTitle({ title, subtitle, right }: { title: string; subtit
         />
         <div>
           <div style={{ fontSize: 16, fontWeight: 800, color: colors.text, letterSpacing: -0.2 }}>{title}</div>
-          {subtitle && <div style={{ fontSize: 12.5, color: colors.textMuted, marginTop: 2 }}>{subtitle}</div>}
+          {subtitle && <div style={{ fontSize: 13, color: colors.textMuted, marginTop: 2 }}>{subtitle}</div>}
         </div>
       </div>
       {right}
@@ -105,7 +105,7 @@ export function KpiCard({
       <div style={{ position: "absolute", right: -34, top: -34, width: 130, height: 130, borderRadius: "50%", background: "rgba(255,255,255,0.09)", pointerEvents: "none" }} />
       <div style={{ position: "absolute", right: 26, bottom: -48, width: 96, height: 96, borderRadius: "50%", background: "rgba(255,255,255,0.07)", pointerEvents: "none" }} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", position: "relative" }}>
-        <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: 1.2, textTransform: "uppercase", opacity: 0.9 }}>
+        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: "uppercase", opacity: 0.9 }}>
           {label}
         </div>
         {icon && (
@@ -128,18 +128,20 @@ export function KpiCard({
       <div style={{ fontSize: 44, fontWeight: 800, marginTop: 8, lineHeight: 1, letterSpacing: -1, position: "relative" }}>
         {value}
       </div>
-      {sub && <div style={{ fontSize: 12.5, fontWeight: 600, opacity: 0.9, marginTop: 9, position: "relative" }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 13, fontWeight: 600, opacity: 0.9, marginTop: 9, position: "relative" }}>{sub}</div>}
     </div>
   );
 }
 
 // ── Button ───────────────────────────────────────────────────────────
 type ButtonVariant = "primary" | "accent" | "success" | "danger" | "outline" | "ghost";
+// Filled variants sit on a soft same-hue shadow so primary actions read as
+// the raised element on the page; outline/ghost stay flat by design.
 const buttonStyles: Record<ButtonVariant, CSSProperties> = {
-  primary: { background: colors.blue, color: "#fff" },
-  accent: { background: colors.yellow, color: colors.navy },
-  success: { background: colors.green, color: "#fff" },
-  danger: { background: colors.red, color: "#fff" },
+  primary: { background: colors.blue, color: "#fff", boxShadow: "0 6px 14px -6px rgba(0,48,135,0.5)" },
+  accent: { background: colors.yellow, color: colors.navy, boxShadow: "0 6px 14px -6px rgba(214,158,0,0.5)" },
+  success: { background: colors.green, color: "#fff", boxShadow: "0 6px 14px -6px rgba(46,127,36,0.45)" },
+  danger: { background: colors.red, color: "#fff", boxShadow: "0 6px 14px -6px rgba(183,28,28,0.45)" },
   outline: { background: "transparent", color: colors.blue, border: `1.5px solid ${colors.blue}` },
   ghost: { background: colors.panel, color: colors.text, border: `1px solid ${colors.border}` },
 };
@@ -174,7 +176,7 @@ export function Button({
         borderRadius: radius.md,
         border: buttonStyles[variant].border ?? "none",
         fontWeight: 700,
-        fontSize: size === "sm" ? 13 : 14,
+        fontSize: size === "sm" ? 13.5 : 14,
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.5 : 1,
         width: full ? "100%" : undefined,
@@ -216,7 +218,7 @@ export function Pill({
         border: border ? `1px solid ${border}` : undefined,
         padding: "4px 10px",
         borderRadius: radius.pill,
-        fontSize: 12,
+        fontSize: 13,
         fontWeight: 700,
         whiteSpace: "nowrap",
       }}
@@ -244,7 +246,7 @@ export function TripStatusBadge({ status }: { status: string }) {
         border: `1.5px solid ${c.border}`,
         padding: "4px 10px",
         borderRadius: radius.pill,
-        fontSize: 10.5,
+        fontSize: 11.5,
         fontWeight: 800,
         letterSpacing: 0.6,
         textTransform: "uppercase",
@@ -293,6 +295,7 @@ export function SearchInput({
 }) {
   return (
     <div
+      className="uwc-input"
       style={{
         display: "flex",
         alignItems: "center",
@@ -347,7 +350,7 @@ export function SegmentedFilter<T extends string>({
               background: active ? colors.blue : colors.card,
               color: active ? "#fff" : colors.textMuted,
               fontWeight: 700,
-              fontSize: 13,
+              fontSize: 14,
               cursor: "pointer",
               boxShadow: active ? "0 6px 14px -6px rgba(0,48,135,0.5)" : undefined,
             }}
@@ -360,7 +363,7 @@ export function SegmentedFilter<T extends string>({
                   color: active ? "#fff" : colors.textMuted,
                   borderRadius: radius.pill,
                   padding: "1px 7px",
-                  fontSize: 11.5,
+                  fontSize: 12,
                   fontWeight: 700,
                 }}
               >
@@ -405,7 +408,8 @@ export function Modal({
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(16,24,40,0.45)",
+        background: "rgba(16,24,40,0.5)",
+        backdropFilter: "blur(3px)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -417,7 +421,7 @@ export function Modal({
         onClick={(e) => e.stopPropagation()}
         style={{
           background: colors.card,
-          borderRadius: radius.lg,
+          borderRadius: radius.xl,
           width,
           maxWidth: "100%",
           maxHeight: "90vh",
@@ -432,9 +436,13 @@ export function Modal({
             justifyContent: "space-between",
             padding: "16px 20px",
             borderBottom: `1px solid ${colors.border}`,
+            background: colors.panel,
           }}
         >
-          <div style={{ fontSize: 16, fontWeight: 700 }}>{title}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ width: 4, height: 16, borderRadius: 2, background: colors.yellow, flexShrink: 0 }} />
+            <div style={{ fontSize: 16, fontWeight: 800 }}>{title}</div>
+          </div>
           <button
             onClick={onClose}
             style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 20, color: colors.textMuted, lineHeight: 1 }}
@@ -469,7 +477,7 @@ export function ConfirmDialog({
 }) {
   return (
     <Modal open onClose={onClose} title={title} width={420}>
-      <div style={{ fontSize: 13.5, color: colors.text, lineHeight: 1.6, marginBottom: 14 }}>
+      <div style={{ fontSize: 14, color: colors.text, lineHeight: 1.6, marginBottom: 14 }}>
         {body}
       </div>
       <div style={{ display: "flex", gap: 10 }}>
@@ -500,8 +508,9 @@ export function Input({
 }) {
   return (
     <label style={{ display: "block", marginBottom: 14 }}>
-      {label && <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: colors.text }}>{label}</div>}
+      {label && <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: colors.text }}>{label}</div>}
       <input
+        className="uwc-input"
         type={type}
         value={value}
         placeholder={placeholder}
@@ -548,7 +557,7 @@ export function Loading({ label = "Loading…" }: { label?: string }) {
   return (
     <CenterState>
       <Spinner />
-      <div style={{ fontSize: 13 }}>{label}</div>
+      <div style={{ fontSize: 14 }}>{label}</div>
     </CenterState>
   );
 }

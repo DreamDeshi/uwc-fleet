@@ -117,14 +117,14 @@ function LeaveManager({ drivers }: { drivers: DriverPerf[] }) {
           <ErrorState message="Could not load leave entries." onRetry={() => leaves.refetch()} />
         </div>
       ) : (leaves.data ?? []).length === 0 ? (
-        <div style={{ padding: 20, fontSize: 13, color: colors.textMuted }}>
+        <div style={{ padding: 20, fontSize: 14, color: colors.textMuted }}>
           No leave recorded — every active driver is in the dispatch pool.
         </div>
       ) : (
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>{["Driver", "From", "To", "Note", ""].map((h) => (
-              <th key={h} style={{ textAlign: "left", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: colors.textMuted, padding: "12px 16px", borderBottom: `1px solid ${colors.border}`, background: colors.panel }}>{h}</th>
+              <th key={h} style={{ textAlign: "left", fontSize: 12, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: colors.textMuted, padding: "12px 16px", borderBottom: `1px solid ${colors.border}`, background: colors.panel }}>{h}</th>
             ))}</tr>
           </thead>
           <tbody>
@@ -151,7 +151,7 @@ function LeaveManager({ drivers }: { drivers: DriverPerf[] }) {
 }
 
 const leaveTd: React.CSSProperties = {
-  fontSize: 13,
+  fontSize: 14,
   color: colors.text,
   padding: "11px 16px",
   borderBottom: `1px solid ${colors.divider}`,
@@ -189,10 +189,10 @@ function AddLeaveForm({ drivers }: { drivers: DriverPerf[] }) {
 
   return (
     <div style={{ marginTop: 12 }}>
-      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 10 }}>{error}</div>}
+      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 13, marginBottom: 10 }}>{error}</div>}
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
         <label style={{ display: "block" }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: colors.text }}>Driver</div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: colors.text }}>Driver</div>
           <select
             value={driverId}
             onChange={(e) => setDriverId(e.target.value)}
@@ -246,8 +246,8 @@ function DeleteLeaveConfirm({ leave, onClose }: { leave: DriverLeaveEntry; onClo
 
   return (
     <Modal open onClose={onClose} title="Remove this leave entry?" width={420}>
-      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
-      <div style={{ fontSize: 13.5, color: colors.text, lineHeight: 1.6, marginBottom: 14 }}>
+      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+      <div style={{ fontSize: 14, color: colors.text, lineHeight: 1.6, marginBottom: 14 }}>
         Remove <strong>{leave.driver.name}</strong>'s leave ({range})? The driver goes
         straight back into the dispatch pool for those dates.
       </div>
@@ -277,7 +277,7 @@ function DriverCard({
         <Avatar name={d.name} size={46} />
         <div style={{ flex: 1, overflow: "hidden" }}>
           <div style={{ fontSize: 15, fontWeight: 700 }}>{d.name}</div>
-          <div style={{ fontSize: 12, color: colors.textMuted }}>
+          <div style={{ fontSize: 13, color: colors.textMuted }}>
             {d.phone}
             {d.assigned_truck ? ` · ${d.assigned_truck.plate}` : ""}
           </div>
@@ -296,7 +296,7 @@ function DriverCard({
       </div>
 
       {d.current_route && (
-        <div style={{ marginTop: 12, background: colors.blueTint, color: colors.blue, borderRadius: radius.pill, padding: "6px 12px", fontSize: 12, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <div style={{ marginTop: 12, background: colors.blueTint, color: colors.blue, borderRadius: radius.pill, padding: "6px 12px", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 21s7-6.3 7-11a7 7 0 10-14 0c0 4.7 7 11 7 11z" stroke={colors.blue} strokeWidth="2" /></svg>
           En route: {d.current_route}
         </div>
@@ -306,7 +306,7 @@ function DriverCard({
           "Available" for dispatch — only an in_progress trip marks them On Trip —
           so surface the queued count here to explain the status. */}
       {d.scheduled_trips > 0 && (
-        <div style={{ marginTop: d.current_route ? 8 : 12, background: colors.panel, color: colors.textMuted, borderRadius: radius.pill, padding: "6px 12px", fontSize: 12, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <div style={{ marginTop: d.current_route ? 8 : 12, background: colors.panel, color: colors.textMuted, borderRadius: radius.pill, padding: "6px 12px", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
           🗓 {d.scheduled_trips} scheduled trip{d.scheduled_trips === 1 ? "" : "s"}
         </div>
       )}
@@ -318,7 +318,7 @@ function Stat({ label, value, divider }: { label: string; value: string; divider
   return (
     <div style={{ flex: 1, padding: "10px 12px", borderLeft: divider ? `1px solid ${colors.divider}` : undefined, textAlign: "center" }}>
       <div style={{ fontSize: 15, fontWeight: 700, color: colors.text }}>{value}</div>
-      <div style={{ fontSize: 10.5, color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>{label}</div>
+      <div style={{ fontSize: 11.5, color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>{label}</div>
     </div>
   );
 }
@@ -338,7 +338,7 @@ function ScoreBadge({ perf, onClick }: { perf: DriverPerformance; onClick: () =>
           color: "#6b7280",
           padding: "4px 10px",
           borderRadius: radius.pill,
-          fontSize: 11.5,
+          fontSize: 12,
           fontWeight: 700,
           whiteSpace: "nowrap",
         }}
@@ -362,14 +362,14 @@ function ScoreBadge({ perf, onClick }: { perf: DriverPerformance; onClick: () =>
         border: "none",
         padding: "4px 10px",
         borderRadius: radius.pill,
-        fontSize: 12.5,
+        fontSize: 13,
         fontWeight: 800,
         cursor: "pointer",
         whiteSpace: "nowrap",
       }}
     >
       {perf.total_score.toFixed(1)}
-      <span style={{ fontSize: 9.5, fontWeight: 700, opacity: 0.75 }}>/100</span>
+      <span style={{ fontSize: 10.5, fontWeight: 700, opacity: 0.75 }}>/100</span>
     </button>
   );
 }

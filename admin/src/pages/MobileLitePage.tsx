@@ -45,7 +45,7 @@ export function MobileLitePage() {
           </div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 800, color: "#fff" }}>UWC Admin</div>
-            <div style={{ fontSize: 10, color: colors.yellow, fontWeight: 700, letterSpacing: 1 }}>MOBILE</div>
+            <div style={{ fontSize: 11, color: colors.yellow, fontWeight: 700, letterSpacing: 1 }}>MOBILE</div>
           </div>
         </div>
         <button onClick={logout} style={styles.signOut}>
@@ -103,7 +103,7 @@ export function MobileLitePage() {
           )}
         </section>
 
-        <div style={{ textAlign: "center", fontSize: 11.5, color: colors.textFaint, paddingBottom: 8 }}>
+        <div style={{ textAlign: "center", fontSize: 12, color: colors.textFaint, paddingBottom: 8 }}>
           Signed in as {user?.name ?? "Admin"} · Full tools on the desktop dashboard
         </div>
       </div>
@@ -115,7 +115,7 @@ function StatTile({ label, value, tone }: { label: string; value: number | strin
   return (
     <div style={{ background: colors.card, border: `1px solid ${colors.border}`, borderRadius: radius.md, padding: "12px 10px" }}>
       <div style={{ fontSize: 24, fontWeight: 800, color: tone, lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: 10.5, fontWeight: 700, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 5 }}>
+      <div style={{ fontSize: 11.5, fontWeight: 700, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 5 }}>
         {label}
       </div>
     </div>
@@ -165,7 +165,7 @@ function DispatchCard({ trip, drivers }: { trip: Trip; drivers: DriverPerf[] }) 
   return (
     <div style={{ background: colors.card, border: `1px solid ${colors.border}`, borderRadius: radius.lg, padding: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-        <div style={{ fontWeight: 800, color: colors.blue, fontSize: 13 }}>{trip.ticket_number}</div>
+        <div style={{ fontWeight: 800, color: colors.blue, fontSize: 14 }}>{trip.ticket_number}</div>
         <TripStatusBadge status={trip.status} />
       </div>
       <div style={{ fontSize: 14, fontWeight: 700, color: colors.text, marginTop: 8 }}>
@@ -173,7 +173,7 @@ function DispatchCard({ trip, drivers }: { trip: Trip; drivers: DriverPerf[] }) 
       </div>
       {/* cargoSummary already includes the pallet count — appending it again
           printed "3 pallets · 3 pallets" (audit 2026-07-05 #12). */}
-      <div style={{ fontSize: 12.5, color: colors.textMuted, marginTop: 4 }}>
+      <div style={{ fontSize: 13, color: colors.textMuted, marginTop: 4 }}>
         {cargoSummary(trip)}
       </div>
 
@@ -188,11 +188,11 @@ function DispatchCard({ trip, drivers }: { trip: Trip; drivers: DriverPerf[] }) 
         </div>
       ) : (
         <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 11.5, color: colors.textMuted, marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: colors.textMuted, marginBottom: 8 }}>
             Drivers with capacity ≥ {pallets} pallets can take this trip.
           </div>
           {available.length === 0 ? (
-            <div style={{ fontSize: 13, color: colors.textMuted, padding: "6px 0" }}>No available drivers right now.</div>
+            <div style={{ fontSize: 14, color: colors.textMuted, padding: "6px 0" }}>No available drivers right now.</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {available.map((d) => {
@@ -201,10 +201,10 @@ function DispatchCard({ trip, drivers }: { trip: Trip; drivers: DriverPerf[] }) 
                   <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <Avatar name={d.name} size={34} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: colors.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: colors.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {d.name}
                       </div>
-                      <div style={{ fontSize: 11.5, color: colors.textMuted }}>
+                      <div style={{ fontSize: 12, color: colors.textMuted }}>
                         {d.assigned_truck!.plate} · {d.current_load}/{d.assigned_truck!.max_pallets}p
                       </div>
                     </div>
@@ -227,7 +227,7 @@ function DispatchCard({ trip, drivers }: { trip: Trip; drivers: DriverPerf[] }) 
         </div>
       )}
 
-      {error && <div style={{ color: colors.red, fontSize: 12.5, fontWeight: 600, marginTop: 8 }}>{error}</div>}
+      {error && <div style={{ color: colors.red, fontSize: 13, fontWeight: 600, marginTop: 8 }}>{error}</div>}
     </div>
   );
 }
@@ -260,7 +260,7 @@ function ApprovalCard({ user }: { user: AdminUser }) {
             <span style={{ fontSize: 14, fontWeight: 700, color: colors.text }}>{user.name}</span>
             <Pill bg={roleTone.bg} fg={roleTone.fg}>{user.role}</Pill>
           </div>
-          <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>
+          <div style={{ fontSize: 13, color: colors.textMuted, marginTop: 2 }}>
             {user.phone}
             {user.employee_number ? ` · Emp #${user.employee_number}` : ""}
           </div>
@@ -274,7 +274,7 @@ function ApprovalCard({ user }: { user: AdminUser }) {
           Approve
         </Button>
       </div>
-      {error && <div style={{ color: colors.red, fontSize: 12.5, fontWeight: 600, marginTop: 8 }}>{error}</div>}
+      {error && <div style={{ color: colors.red, fontSize: 13, fontWeight: 600, marginTop: 8 }}>{error}</div>}
     </div>
   );
 }
@@ -298,7 +298,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     borderRadius: radius.md,
     padding: "8px 14px",
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 700,
     cursor: "pointer",
   },
@@ -307,7 +307,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: colors.orange,
     color: "#fff",
     borderRadius: radius.pill,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 800,
     padding: "1px 8px",
   },

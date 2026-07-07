@@ -17,7 +17,7 @@ export function ApprovalsPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <Card pad={14} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 13.5, color: colors.text }}>
+        <span style={{ fontSize: 14, color: colors.text }}>
           {users.length === 0
             ? "No accounts are waiting for approval."
             : `${users.length} account${users.length === 1 ? "" : "s"} awaiting approval. Approving sets the account to active so the person can log in.`}
@@ -65,11 +65,11 @@ function ApprovalRow({ user }: { user: AdminUser }) {
           <span style={{ fontSize: 15, fontWeight: 700 }}>{user.name}</span>
           <Pill bg={`${roleColor}1a`} fg={roleColor}>{user.role}</Pill>
         </div>
-        <div style={{ fontSize: 12.5, color: colors.textMuted, marginTop: 2 }}>
+        <div style={{ fontSize: 13, color: colors.textMuted, marginTop: 2 }}>
           {user.phone}
           {user.employee_number ? ` · Emp #${user.employee_number}` : ""} · Registered {formatDate(user.created_at)}
         </div>
-        {error && <div style={{ fontSize: 12, color: colors.red, marginTop: 4 }}>{error}</div>}
+        {error && <div style={{ fontSize: 13, color: colors.red, marginTop: 4 }}>{error}</div>}
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         <Button variant="ghost" size="sm" disabled={approve.isPending} onClick={() => setConfirmingReject(true)} style={{ color: colors.red, borderColor: colors.red }}>

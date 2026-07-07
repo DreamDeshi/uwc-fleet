@@ -179,7 +179,7 @@ export function Layout() {
           </div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", letterSpacing: 0.4 }}>UWC TRUCKING</div>
-            <div style={{ fontSize: 9.5, color: colors.yellow, fontWeight: 700, letterSpacing: 1.8 }}>FLEET MANAGEMENT</div>
+            <div style={{ fontSize: 10.5, color: colors.yellow, fontWeight: 700, letterSpacing: 1.8 }}>FLEET MANAGEMENT</div>
           </div>
         </div>
 
@@ -190,7 +190,7 @@ export function Layout() {
             <div key={g.heading}>
               <div
                 style={{
-                  fontSize: 10.5,
+                  fontSize: 11.5,
                   fontWeight: 800,
                   letterSpacing: 1.8,
                   color: "rgba(255,255,255,0.32)",
@@ -217,7 +217,7 @@ export function Layout() {
                         background: isActive ? colors.yellow : "transparent",
                         color: isActive ? colors.navy : "rgba(255,255,255,0.62)",
                         fontWeight: isActive ? 800 : 500,
-                        fontSize: 13.5,
+                        fontSize: 14,
                         marginBottom: 3,
                         boxShadow: isActive ? "0 8px 18px -8px rgba(255,204,0,0.55)" : undefined,
                       }}
@@ -231,7 +231,7 @@ export function Layout() {
                             background: isActive ? colors.navy : colors.yellow,
                             color: isActive ? colors.yellow : colors.navy,
                             borderRadius: radius.pill,
-                            fontSize: 11,
+                            fontSize: 12,
                             fontWeight: 800,
                             padding: "1px 7px",
                           }}
@@ -247,7 +247,7 @@ export function Layout() {
                             background: colors.red,
                             color: "#fff",
                             borderRadius: radius.pill,
-                            fontSize: 11,
+                            fontSize: 12,
                             fontWeight: 800,
                             padding: "1px 7px",
                           }}
@@ -279,7 +279,7 @@ export function Layout() {
               background: "transparent",
               cursor: "pointer",
               color: "rgba(255,255,255,0.6)",
-              fontSize: 13.5,
+              fontSize: 14,
               fontWeight: 600,
             }}
           >
@@ -302,7 +302,7 @@ export function Layout() {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 13,
+              fontSize: 14,
               fontWeight: 700,
               flexShrink: 0,
             }}
@@ -310,10 +310,10 @@ export function Layout() {
             {user ? initials(user.name) : "?"}
           </div>
           <div style={{ overflow: "hidden" }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
               {user?.name ?? "Admin"}
             </div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>Fleet Administrator</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Fleet Administrator</div>
           </div>
         </div>
       </aside>
@@ -337,12 +337,12 @@ export function Layout() {
         >
           <div>
             <div style={{ fontSize: 21, fontWeight: 800, color: "#fff", letterSpacing: -0.2 }}>{page.title}</div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", marginTop: -1 }}>{page.subtitle}</div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginTop: -1 }}>{page.subtitle}</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div
               style={{
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: 600,
                 color: "rgba(255,255,255,0.85)",
                 background: "rgba(255,255,255,0.12)",
@@ -383,7 +383,7 @@ export function Layout() {
                     borderRadius: 8,
                     border: `1.5px solid ${colors.blue}`,
                     color: "#fff",
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: 800,
                     display: "flex",
                     alignItems: "center",

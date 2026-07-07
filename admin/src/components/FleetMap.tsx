@@ -68,7 +68,7 @@ export function FleetMap({ trucks, live = [] }: { trucks: Truck[]; live?: LivePo
           pathOptions={{ color: z.color, fillColor: z.color, fillOpacity: 0.12, weight: 1.5 }}
         >
           <Tooltip permanent direction="center" className="uwc-zone-label">
-            <span style={{ color: z.color, fontWeight: 800, fontSize: 13 }}>{z.code}</span>
+            <span style={{ color: z.color, fontWeight: 800, fontSize: 14 }}>{z.code}</span>
           </Tooltip>
         </Circle>
       ))}
@@ -91,7 +91,7 @@ export function FleetMap({ trucks, live = [] }: { trucks: Truck[]; live?: LivePo
             icon={truckIcon(t.plate, truckColor[t.status] ?? colors.blue, isLive)}
           >
             <Tooltip direction="top" offset={[0, -30]}>
-              <div style={{ fontSize: 12 }}>
+              <div style={{ fontSize: 13 }}>
                 <strong>{t.plate}</strong> · {t.type}
                 <br />
                 {t.driver?.name ?? "No driver"}

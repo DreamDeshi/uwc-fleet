@@ -36,7 +36,7 @@ export function ConsigneesPage() {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <Card pad={12} style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <SearchInput value={q} onChange={setQ} placeholder="Search company, area, state…" />
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: colors.textMuted, cursor: "pointer" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: colors.textMuted, cursor: "pointer" }}>
           <input
             type="checkbox"
             checked={includeInactive}
@@ -44,7 +44,7 @@ export function ConsigneesPage() {
           />
           Include deactivated
         </label>
-        <span style={{ fontSize: 12, color: colors.textFaint }}>
+        <span style={{ fontSize: 13, color: colors.textFaint }}>
           Showing {rows.length} result{rows.length === 1 ? "" : "s"} (max 10 — refine the search)
         </span>
       </Card>
@@ -67,15 +67,15 @@ export function ConsigneesPage() {
                 }}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 700, color: colors.text }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: colors.text }}>
                     {c.company_name}
                     {c.is_active === false && (
-                      <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: colors.red }}>
+                      <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, color: colors.red }}>
                         DEACTIVATED
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>
+                  <div style={{ fontSize: 13, color: colors.textMuted, marginTop: 2 }}>
                     {[c.area, c.state].filter(Boolean).join(" · ") || "—"}
                   </div>
                 </div>
@@ -148,16 +148,16 @@ function EditConsigneeModal({ consignee, onClose }: { consignee: Consignee; onCl
           </select>
         </label>
         {zoneChanged && (
-          <div style={{ fontSize: 12, color: colors.orange, background: colors.orangeTint, borderRadius: radius.sm, padding: "8px 10px" }}>
+          <div style={{ fontSize: 13, color: colors.orange, background: colors.orangeTint, borderRadius: radius.sm, padding: "8px 10px" }}>
             Zone changes apply to FUTURE bookings only — completed trips keep the
             pay they were finalized at (snapshotted), and the change is audit-logged.
           </div>
         )}
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: colors.text, cursor: "pointer" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: colors.text, cursor: "pointer" }}>
           <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
           Active (bookable by requestors)
         </label>
-        {error && <div style={{ color: colors.red, fontSize: 12.5, fontWeight: 600 }}>{error}</div>}
+        {error && <div style={{ color: colors.red, fontSize: 13, fontWeight: 600 }}>{error}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
           <Button variant="ghost" onClick={onClose}>
             Cancel
@@ -185,7 +185,7 @@ const fieldLabel: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 5,
-  fontSize: 12,
+  fontSize: 13,
   fontWeight: 700,
   color: colors.textMuted,
 };
@@ -194,7 +194,7 @@ const inputStyle: React.CSSProperties = {
   borderRadius: radius.sm,
   border: `1px solid ${colors.border}`,
   padding: "0 10px",
-  fontSize: 13.5,
+  fontSize: 14,
   color: colors.text,
   background: colors.card,
 };

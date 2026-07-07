@@ -94,6 +94,17 @@ textarea {
   transform: translateY(-1px);
   box-shadow: 0 8px 20px rgba(16, 24, 40, 0.1);
 }
+/* Focus ring for form fields (inputs, selects, the search box wrapper).
+   !important because the resting border is inline-styled. */
+.uwc-input {
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.uwc-input:focus,
+.uwc-input:focus-within {
+  border-color: #003087 !important;
+  box-shadow: 0 0 0 3px rgba(0, 48, 135, 0.12);
+  outline: none;
+}
 
 @keyframes uwc-pulse {
   0% {

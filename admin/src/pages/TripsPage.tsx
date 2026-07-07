@@ -184,25 +184,25 @@ export function TripsPage() {
       <Card pad={12} style={{ display: "flex", flexDirection: "column", gap: 12, flexShrink: 0 }}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <SearchInput value={q} onChange={setQ} placeholder="Search ticket # or consignee…" />
-          <select value={driverId} onChange={(e) => setDriverId(e.target.value)} style={controlStyle}>
+          <select value={driverId} onChange={(e) => setDriverId(e.target.value)} className="uwc-input" style={controlStyle}>
             <option value="">All drivers</option>
             {(drivers.data ?? []).map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
             ))}
           </select>
-          <select value={zone} onChange={(e) => setZone(e.target.value)} style={controlStyle}>
+          <select value={zone} onChange={(e) => setZone(e.target.value)} className="uwc-input" style={controlStyle}>
             <option value="">All zones</option>
             {ZONES.map((z) => (
               <option key={z} value={z}>{z}</option>
             ))}
           </select>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 12, color: colors.textMuted }}>From</span>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={controlStyle} />
+            <span style={{ fontSize: 13, color: colors.textMuted }}>From</span>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="uwc-input" style={controlStyle} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 12, color: colors.textMuted }}>To</span>
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={controlStyle} />
+            <span style={{ fontSize: 13, color: colors.textMuted }}>To</span>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="uwc-input" style={controlStyle} />
           </div>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
             {/* Phase 2: one-click filter to the auto-dispatch failures. The chip
@@ -217,7 +217,7 @@ export function TripsPage() {
                 gap: 6,
                 borderRadius: radius.pill,
                 padding: "5px 11px",
-                fontSize: 12.5,
+                fontSize: 13,
                 fontWeight: 700,
                 cursor: "pointer",
                 border: `1px solid ${colors.red}`,
@@ -227,7 +227,7 @@ export function TripsPage() {
             >
               ⚠ Needs attention{attentionCount > 0 ? ` · ${attentionCount}` : ""}
             </button>
-            <span style={{ fontSize: 12.5, color: colors.textMuted }}>
+            <span style={{ fontSize: 13, color: colors.textMuted }}>
               {olderCount > 0
                 ? `${all.length} of ${total} results`
                 : `${all.length} result${all.length === 1 ? "" : "s"}`}
@@ -258,7 +258,7 @@ export function TripsPage() {
                       boxShadow: `0 0 0 3px ${GROUP_META[group].tint}`,
                     }}
                   />
-                  <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: colors.text }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: colors.text }}>
                     {GROUP_META[group].label}
                   </span>
                   <span
@@ -267,7 +267,7 @@ export function TripsPage() {
                       color: GROUP_META[group].fg,
                       borderRadius: radius.pill,
                       padding: "2px 9px",
-                      fontSize: 11.5,
+                      fontSize: 12,
                       fontWeight: 800,
                     }}
                   >
@@ -359,18 +359,18 @@ function TripCard({ trip, selected, onClick }: { trip: Trip; selected: boolean; 
     >
       {needsAttention && (
         <div style={{ marginBottom: 7 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, color: colors.red, fontSize: 11.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: colors.red, fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>
             ⚠ Needs attention — auto-dispatch failed
           </div>
           {trip.auto_dispatch_note && (
-            <div style={{ marginTop: 3, color: colors.red, fontSize: 12 }}>
+            <div style={{ marginTop: 3, color: colors.red, fontSize: 13 }}>
               {trip.auto_dispatch_note}
             </div>
           )}
         </div>
       )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: colors.blue, letterSpacing: 0.2 }}>{trip.ticket_number}</span>
+        <span style={{ fontSize: 14, fontWeight: 800, color: colors.blue, letterSpacing: 0.2 }}>{trip.ticket_number}</span>
         <TripStatusBadge status={trip.status} />
       </div>
       {/* Destination is what the dispatcher scans for — it leads, bold. */}
@@ -378,15 +378,15 @@ function TripCard({ trip, selected, onClick }: { trip: Trip; selected: boolean; 
         <div style={{ fontSize: 14.5, fontWeight: 700, color: colors.text, lineHeight: 1.25 }}>
           {tripDestination(trip)}
         </div>
-        <div style={{ fontSize: 11.5, color: colors.textMuted, marginTop: 1 }}>from {ORIGIN_LABEL}</div>
+        <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 1 }}>from {ORIGIN_LABEL}</div>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 11.5, color: colors.textMuted, flexShrink: 0 }}>{cargoSummary(trip)}</span>
+        <span style={{ fontSize: 12, color: colors.textMuted, flexShrink: 0 }}>{cargoSummary(trip)}</span>
         {/* Right-align the driver name with a touch of padding so it never sits
             flush against the card edge; ellipsis keeps long names from overflowing. */}
         <span
           style={{
-            fontSize: 11.5,
+            fontSize: 12,
             color: colors.textMuted,
             textAlign: "right",
             paddingRight: 2,
@@ -419,7 +419,7 @@ function TripDetail({ trip, onDone }: { trip: Trip; onDone: () => void }) {
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
         <div>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: colors.textMuted }}>
+          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: colors.textMuted }}>
             {trip.route_type.name}
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: colors.text }}>{trip.ticket_number}</div>
@@ -451,11 +451,11 @@ function TripDetail({ trip, onDone }: { trip: Trip; onDone: () => void }) {
           </div>
           <div style={{ width: 14, height: 14, borderRadius: "50%", background: colors.yellow }} />
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 12.5 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 13 }}>
           <span>{ORIGIN_LABEL}</span>
           <span style={{ fontWeight: 700 }}>{tripDestination(trip)}</span>
         </div>
-        <div style={{ fontSize: 11.5, opacity: 0.8, marginTop: 6 }}>
+        <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
           Pickup {formatDateTime(trip.pickup_datetime)}
         </div>
       </div>
@@ -469,13 +469,13 @@ function TripDetail({ trip, onDone }: { trip: Trip; onDone: () => void }) {
 
       {/* Stops list */}
       <div style={{ marginBottom: 18 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: colors.textMuted, marginBottom: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: colors.textMuted, marginBottom: 8 }}>
           Stops
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {[...trip.stops].sort((a, b) => a.sequence - b.sequence).map((s) => (
-            <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, padding: "8px 10px", background: colors.panel, borderRadius: radius.sm }}>
-              <span style={{ width: 22, height: 22, borderRadius: "50%", background: colors.blue, color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, padding: "8px 10px", background: colors.panel, borderRadius: radius.sm }}>
+              <span style={{ width: 22, height: 22, borderRadius: "50%", background: colors.blue, color: "#fff", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 {s.sequence}
               </span>
               <span style={{ flex: 1 }}>{s.consignee.company_name}</span>
@@ -486,12 +486,12 @@ function TripDetail({ trip, onDone }: { trip: Trip; onDone: () => void }) {
                   href={s.pod_photo}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ fontSize: 12, fontWeight: 700, color: colors.blue, textDecoration: "none", whiteSpace: "nowrap" }}
+                  style={{ fontSize: 13, fontWeight: 700, color: colors.blue, textDecoration: "none", whiteSpace: "nowrap" }}
                 >
                   📷 POD ↗
                 </a>
               )}
-              <span style={{ fontSize: 11, color: colors.textMuted }}>{s.consignee.zone_code}</span>
+              <span style={{ fontSize: 12, color: colors.textMuted }}>{s.consignee.zone_code}</span>
               <Pill
                 bg={s.status === "delivered" ? colors.greenTint : s.status === "arrived" ? colors.blueTint : colors.panel}
                 fg={s.status === "delivered" ? colors.green : s.status === "arrived" ? colors.blue : colors.textMuted}
@@ -516,7 +516,7 @@ function TripDetail({ trip, onDone }: { trip: Trip; onDone: () => void }) {
       )}
       {trip.status === "completed" && <CompletedPanel trip={trip} />}
       {(trip.status === "cancelled" || trip.status === "rejected") && (
-        <div style={{ background: colors.panel, borderRadius: radius.md, padding: 14, fontSize: 13, color: colors.textMuted }}>
+        <div style={{ background: colors.panel, borderRadius: radius.md, padding: 14, fontSize: 14, color: colors.textMuted }}>
           <div>This booking was {trip.status}.</div>
           {trip.status === "rejected" && trip.rejection_reason && (
             <div style={{ marginTop: 8, color: colors.text }}>
@@ -540,11 +540,11 @@ function DocumentsSection({ trip }: { trip: Trip }) {
   const docs = trip.documents ?? [];
   return (
     <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: colors.textMuted, marginBottom: 8 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: colors.textMuted, marginBottom: 8 }}>
         Documents
       </div>
       {docs.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: colors.textFaint, padding: "8px 10px", background: colors.panel, borderRadius: radius.sm }}>
+        <div style={{ fontSize: 13, color: colors.textFaint, padding: "8px 10px", background: colors.panel, borderRadius: radius.sm }}>
           No documents uploaded.
         </div>
       ) : (
@@ -559,7 +559,7 @@ function DocumentsSection({ trip }: { trip: Trip }) {
                 display: "flex",
                 alignItems: "center",
                 gap: 10,
-                fontSize: 13,
+                fontSize: 14,
                 padding: "8px 10px",
                 background: colors.panel,
                 borderRadius: radius.sm,
@@ -569,8 +569,8 @@ function DocumentsSection({ trip }: { trip: Trip }) {
             >
               <span style={{ fontSize: 16 }}>📄</span>
               <span style={{ flex: 1, fontWeight: 600 }}>{DOC_TYPE_LABEL[d.type] ?? "Document"}</span>
-              <span style={{ fontSize: 11, color: colors.textMuted }}>{formatDateTime(d.uploaded_at)}</span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: colors.blue }}>View ↗</span>
+              <span style={{ fontSize: 12, color: colors.textMuted }}>{formatDateTime(d.uploaded_at)}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: colors.blue }}>View ↗</span>
             </a>
           ))}
         </div>
@@ -582,9 +582,9 @@ function DocumentsSection({ trip }: { trip: Trip }) {
 function InfoTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div style={{ background: colors.panel, borderRadius: radius.md, padding: 12 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: colors.textFaint }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: colors.textFaint }}>{label}</div>
       <div style={{ fontSize: 14, fontWeight: 700, color: colors.text, marginTop: 4 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11.5, color: colors.textMuted, marginTop: 2 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }
@@ -635,8 +635,8 @@ function DriverGrid({
             <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 8 }}>
               <Avatar name={d.name} size={32} />
               <div style={{ overflow: "hidden" }}>
-                <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>{d.name}</div>
-                <div style={{ fontSize: 11, color: colors.textMuted }}>
+                <div style={{ fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>{d.name}</div>
+                <div style={{ fontSize: 12, color: colors.textMuted }}>
                   {d.assigned_truck
                     ? `${d.assigned_truck.plate} · ${d.current_load}/${d.assigned_truck.max_pallets}p`
                     : "No truck"}
@@ -658,7 +658,7 @@ function DriverGrid({
                 {fits ? "Assign" : d.current_load > 0 ? "No room" : "Too small"}
               </Button>
             ) : (
-              <div style={{ fontSize: 11.5, color: colors.textMuted, textAlign: "center", padding: "7px 0" }}>
+              <div style={{ fontSize: 12, color: colors.textMuted, textAlign: "center", padding: "7px 0" }}>
                 {isCurrent
                   ? "Current driver"
                   : onLeave
@@ -755,7 +755,7 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
               background: tab === v ? colors.blueTint : colors.card,
               color: tab === v ? colors.blue : colors.textMuted,
               fontWeight: 700,
-              fontSize: 13,
+              fontSize: 14,
               cursor: "pointer",
             }}
           >
@@ -765,18 +765,18 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
       </div>
 
       {error && (
-        <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>
+        <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 13, marginBottom: 12 }}>
           {error}
         </div>
       )}
 
       {conflict && (
         <div style={{ background: colors.yellowTint, border: "1px solid #f0d98a", borderRadius: radius.md, padding: "11px 13px", marginBottom: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: colors.amber, marginBottom: 6 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: colors.amber, marginBottom: 6 }}>
             ⚠ Scheduling conflict
           </div>
           {conflict.conflicts.map((c) => (
-            <div key={c.tripId} style={{ fontSize: 12.5, color: colors.text, marginBottom: 3 }}>
+            <div key={c.tripId} style={{ fontSize: 13, color: colors.text, marginBottom: 3 }}>
               {c.plateOrDriverName} has another trip at <strong>{formatDateTime(c.pickup)}</strong>, within the conflict window of this pickup.
             </div>
           ))}
@@ -798,10 +798,10 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
 
       {windowWarn && (
         <div style={{ background: colors.yellowTint, border: "1px solid #f0d98a", borderRadius: radius.md, padding: "11px 13px", marginBottom: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: colors.amber, marginBottom: 6 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: colors.amber, marginBottom: 6 }}>
             ⚠ Operating window
           </div>
-          <div style={{ fontSize: 12.5, color: colors.text, marginBottom: 3 }}>{windowWarn.message}</div>
+          <div style={{ fontSize: 13, color: colors.text, marginBottom: 3 }}>{windowWarn.message}</div>
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <Button variant="ghost" size="sm" onClick={() => setWindowWarn(null)}>
               Cancel
@@ -820,10 +820,10 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
 
       {permitWarn && (
         <div style={{ background: colors.yellowTint, border: "1px solid #f0d98a", borderRadius: radius.md, padding: "11px 13px", marginBottom: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: colors.amber, marginBottom: 6 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: colors.amber, marginBottom: 6 }}>
             ⚠ Permit expired
           </div>
-          <div style={{ fontSize: 12.5, color: colors.text, marginBottom: 3 }}>
+          <div style={{ fontSize: 13, color: colors.text, marginBottom: 3 }}>
             {permitWarn.message} Overriding is audit-logged; update the date on the Trucks page once renewed.
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
@@ -844,7 +844,7 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
 
       {tab === "internal" ? (
         <div>
-          <div style={{ fontSize: 12, color: colors.textMuted, marginBottom: 10 }}>
+          <div style={{ fontSize: 13, color: colors.textMuted, marginBottom: 10 }}>
             Showing available drivers (capacity ≥ {pallets} pallets highlighted as a fit).
           </div>
           <DriverGrid trip={trip} busy={approve.isPending} onPick={(driverId, plate) => assign(driverId, plate)} />
@@ -861,12 +861,12 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
           </Button>
         ) : (
           <div style={{ border: `1px solid ${colors.red}`, borderRadius: radius.md, padding: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Reason for rejection (optional)</div>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Reason for rejection (optional)</div>
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={2}
-              style={{ width: "100%", padding: 10, borderRadius: radius.sm, border: `1px solid ${colors.border}`, fontSize: 13, outline: "none", resize: "vertical" }}
+              style={{ width: "100%", padding: 10, borderRadius: radius.sm, border: `1px solid ${colors.border}`, fontSize: 14, outline: "none", resize: "vertical" }}
             />
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <Button variant="ghost" size="sm" onClick={() => setRejecting(false)}>Cancel</Button>
@@ -914,7 +914,7 @@ function ExternalForm({ trip, onDone }: { trip: Trip; onDone: () => void }) {
   return (
     <div>
       {error && (
-        <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>{error}</div>
+        <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 13, marginBottom: 12 }}>{error}</div>
       )}
       <Input label="Forwarder Company" value={company} onChange={setCompany} placeholder="e.g. Penang Logistics Sdn Bhd" />
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -989,8 +989,8 @@ function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
     <div>
       <div style={{ background: colors.panel, borderRadius: radius.md, padding: 14, marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 700 }}>Delivery Progress</span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: colors.blue }}>{tripProgress(trip)}%</span>
+          <span style={{ fontSize: 14, fontWeight: 700 }}>Delivery Progress</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: colors.blue }}>{tripProgress(trip)}%</span>
         </div>
         <ProgressBar pct={tripProgress(trip)} height={10} />
       </div>
@@ -999,7 +999,7 @@ function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
         <Avatar name={trip.driver?.name ?? (trip.is_external ? "EX" : "?")} />
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>{trip.driver?.name ?? "External forwarder"}</div>
-          <div style={{ fontSize: 12, color: colors.textMuted }}>
+          <div style={{ fontSize: 13, color: colors.textMuted }}>
             {trip.truck_plate ?? "—"}
             {trip.driver?.phone ? ` · ${trip.driver.phone}` : ""}
           </div>
@@ -1016,7 +1016,7 @@ function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
         )}
       </div>
 
-      {error && <div style={{ color: colors.red, fontSize: 12.5, marginTop: 12 }}>{error}</div>}
+      {error && <div style={{ color: colors.red, fontSize: 13, marginTop: 12 }}>{error}</div>}
 
       {canCancel && (
         <div style={{ marginTop: 14 }}>
@@ -1094,21 +1094,21 @@ function ReassignDialog({ trip, onClose, onDone }: { trip: Trip; onClose: () => 
 
   return (
     <Modal open onClose={onClose} title={`Change driver — ${trip.ticket_number}`} width={640}>
-      <div style={{ fontSize: 12.5, color: colors.textMuted, marginBottom: 12 }}>
+      <div style={{ fontSize: 13, color: colors.textMuted, marginBottom: 12 }}>
         Currently assigned to <strong>{trip.driver?.name ?? "—"}</strong>
         {trip.truck_plate ? ` · ${trip.truck_plate}` : ""}. Pick the new driver — the same
         dispatch checks apply, the incentive rates are re-snapshotted for the new truck, and
         both drivers are notified.
       </div>
       {error && (
-        <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>
+        <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 13, marginBottom: 12 }}>
           {error}
         </div>
       )}
       {warn && (
         <div style={{ background: colors.yellowTint, border: "1px solid #f0d98a", borderRadius: radius.md, padding: "11px 13px", marginBottom: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: colors.amber, marginBottom: 6 }}>⚠ Needs override</div>
-          <div style={{ fontSize: 12.5, color: colors.text, marginBottom: 3 }}>{warn.message}</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: colors.amber, marginBottom: 6 }}>⚠ Needs override</div>
+          <div style={{ fontSize: 13, color: colors.text, marginBottom: 3 }}>{warn.message}</div>
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <Button variant="ghost" size="sm" onClick={() => setWarn(null)}>Cancel</Button>
             <Button
@@ -1170,11 +1170,11 @@ function CompletedPanel({ trip }: { trip: Trip }) {
       {/* Pay breakdown — the engine's finalize-time evidence, so "why did this
           trip pay RM44?" is answerable without re-running the rule by hand. */}
       <div style={{ marginTop: 16 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: colors.textMuted, marginBottom: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: colors.textMuted, marginBottom: 8 }}>
           Pay breakdown
         </div>
         {hasBreakdown ? (
-          <div style={{ background: colors.panel, borderRadius: radius.sm, padding: "10px 12px", fontSize: 12.5, display: "flex", flexDirection: "column", gap: 5 }}>
+          <div style={{ background: colors.panel, borderRadius: radius.sm, padding: "10px 12px", fontSize: 13, display: "flex", flexDirection: "column", gap: 5 }}>
             {stops.map((s) => (
               <div key={s.id} style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                 <span>
@@ -1205,7 +1205,7 @@ function CompletedPanel({ trip }: { trip: Trip }) {
             </div>
           </div>
         ) : (
-          <div style={{ fontSize: 12.5, color: colors.textMuted }}>
+          <div style={{ fontSize: 13, color: colors.textMuted }}>
             Breakdown not recorded (trip completed before per-drop pay history was kept).
           </div>
         )}

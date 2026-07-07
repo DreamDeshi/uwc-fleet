@@ -47,7 +47,7 @@ export function StatusTimeline({ steps }: { steps: TimelineStep[] }) {
     <div style={{ marginBottom: 18 }}>
       <div
         style={{
-          fontSize: 12,
+          fontSize: 13,
           fontWeight: 700,
           textTransform: "uppercase",
           letterSpacing: 0.5,
@@ -85,14 +85,14 @@ export function StatusTimeline({ steps }: { steps: TimelineStep[] }) {
               <div style={{ paddingBottom: isLast ? 0 : 14, flex: 1 }}>
                 <div
                   style={{
-                    fontSize: 13.5,
+                    fontSize: 14,
                     fontWeight: step.state === "current" ? 800 : 600,
                     color: upcoming ? colors.textFaint : colors.text,
                   }}
                 >
                   {stepLabel(step)}
                 </div>
-                <div style={{ fontSize: 11.5, color: colors.textMuted, marginTop: 1 }}>
+                <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 1 }}>
                   {step.timestamp ? formatDateTime(step.timestamp) : upcoming ? "Pending" : "—"}
                   {step.note ? ` · ${step.note}` : ""}
                 </div>

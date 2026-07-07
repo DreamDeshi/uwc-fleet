@@ -33,6 +33,19 @@ export const colors = {
 
 export const radius = { sm: 8, md: 12, lg: 16, xl: 20, pill: 999 };
 
+// Type scale (px). The smallest steps were bumped one notch (7 Jul 2026,
+// "nothing straining-to-read small"): badges/micro-labels land at 11.5–12,
+// captions/secondary at 12–13, body & table cells at 14. Legacy inline
+// sizes across the pages were bulk-aligned to this scale; use these tokens
+// for new work so the scale stays the single source of truth.
+export const font = {
+  xs: 12, // uppercase micro-labels, badges, count pills
+  sm: 13, // captions, secondary/muted text
+  md: 14, // body, table cells, inputs
+  lg: 16, // card/section titles
+  xl: 21, // page header title
+} as const;
+
 export const shadow = {
   card: "0 2px 12px rgba(0,0,0,0.06)",
   lift: "0 12px 28px rgba(16,24,40,0.12)",

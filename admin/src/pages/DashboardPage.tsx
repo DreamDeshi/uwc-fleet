@@ -54,19 +54,19 @@ function AttentionPanel({
     <Card pad={0} style={{ border: "1px solid #FFD9A8", borderLeft: `5px solid ${colors.orange}`, background: "#FFFDF8" }}>
       <div style={{ padding: "14px 18px", borderBottom: `1px solid #FBE7CC`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <SectionTitle title="⚠ Trips needing attention" subtitle="stuck or stale — auto-refreshes every minute" />
-        <button onClick={onOpenTrips} style={{ background: "none", border: "none", color: colors.blue, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+        <button onClick={onOpenTrips} style={{ background: "none", border: "none", color: colors.blue, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
           Open trip board →
         </button>
       </div>
       <div style={{ padding: "10px 18px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
         {groups.map((g) => (
           <div key={g.title}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: colors.orange, marginBottom: 4 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: colors.orange, marginBottom: 4 }}>
               {g.title} · {g.rows.length}
               <span style={{ fontWeight: 500, color: colors.textFaint }}> ({g.hint})</span>
             </div>
             {g.rows.slice(0, 5).map((t) => (
-              <div key={t.id} style={{ fontSize: 12.5, color: colors.text, padding: "3px 0", display: "flex", gap: 8 }}>
+              <div key={t.id} style={{ fontSize: 13, color: colors.text, padding: "3px 0", display: "flex", gap: 8 }}>
                 <span style={{ fontWeight: 700 }}>{t.ticket_number}</span>
                 <span style={{ color: colors.textMuted }}>
                   {t.driver?.name ?? "—"}
@@ -78,7 +78,7 @@ function AttentionPanel({
               </div>
             ))}
             {g.rows.length > 5 && (
-              <div style={{ fontSize: 12, color: colors.textFaint }}>… and {g.rows.length - 5} more</div>
+              <div style={{ fontSize: 13, color: colors.textFaint }}>… and {g.rows.length - 5} more</div>
             )}
           </div>
         ))}
@@ -127,12 +127,12 @@ export function DashboardPage() {
           {k.auto_dispatch_failed > 0 && (
             <button
               onClick={() => navigate("/trips?attention=1")}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, background: colors.redTint, color: colors.red, border: `1px solid ${colors.red}`, borderRadius: radius.pill, padding: "5px 11px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, background: colors.redTint, color: colors.red, border: `1px solid ${colors.red}`, borderRadius: radius.pill, padding: "5px 11px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
             >
               ⚠ {k.auto_dispatch_failed} auto-dispatch failed
             </button>
           )}
-          <span style={{ fontSize: 12.5, color: colors.textMuted }}>
+          <span style={{ fontSize: 13, color: colors.textMuted }}>
             {k.awaiting_manual} awaiting manual dispatch
           </span>
         </div>
@@ -214,14 +214,14 @@ export function DashboardPage() {
           <div style={{ padding: "16px 18px", borderBottom: `1px solid ${colors.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <div style={{ fontSize: 15, fontWeight: 700 }}>Fleet Map — Penang &amp; Northern Region</div>
-              <div style={{ fontSize: 12, color: colors.textMuted }}>
+              <div style={{ fontSize: 13, color: colors.textMuted }}>
                 Zone overlays ·{" "}
                 {liveCount > 0
                   ? `${liveCount} truck${liveCount === 1 ? "" : "s"} live on GPS`
                   : "approximate positions (awaiting GPS)"}
               </div>
             </div>
-            <div style={{ display: "flex", gap: 12, fontSize: 11.5, color: colors.textMuted }}>
+            <div style={{ display: "flex", gap: 12, fontSize: 12, color: colors.textMuted }}>
               <LegendDot color={colors.green} label="Active" />
               <LegendDot color={colors.blue} label="Idle" />
               <LegendDot color={colors.orange} label="Maintenance" />
@@ -230,7 +230,7 @@ export function DashboardPage() {
           <div style={{ flex: 1, minHeight: 400 }}>
             <Suspense
               fallback={
-                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: colors.textMuted, fontSize: 13 }}>
+                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: colors.textMuted, fontSize: 14 }}>
                   Loading map…
                 </div>
               }
@@ -263,10 +263,10 @@ export function DashboardPage() {
                         padding: "9px 11px",
                       }}
                     >
-                      <div style={{ fontSize: 13, fontWeight: 700, color: colors.text }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: colors.text }}>
                         {a.plate} — {docLabel[a.doc]}
                       </div>
-                      <div style={{ fontSize: 12, color: tone.fg, fontWeight: 600 }}>{relativeExpiry(a.daysLeft)}</div>
+                      <div style={{ fontSize: 13, color: tone.fg, fontWeight: 600 }}>{relativeExpiry(a.daysLeft)}</div>
                     </div>
                   );
                 })}
@@ -281,8 +281,8 @@ export function DashboardPage() {
               {truckList.map((t) => (
                 <div key={t.plate}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 700 }}>{t.plate}</span>
-                    <span style={{ fontSize: 11, color: colors.textMuted }}>{t.driver?.name ?? "Unassigned"}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700 }}>{t.plate}</span>
+                    <span style={{ fontSize: 12, color: colors.textMuted }}>{t.driver?.name ?? "Unassigned"}</span>
                   </div>
                   <LoadCapacityBar load={t.current_load} capacity={t.max_pallets} compact />
                 </div>
@@ -304,7 +304,7 @@ export function DashboardPage() {
               <button
                 className="uwc-lift"
                 onClick={() => navigate("/trips")}
-                style={{ border: `1.5px solid ${colors.blue}`, color: colors.blue, background: "transparent", borderRadius: radius.pill, padding: "7px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                style={{ border: `1.5px solid ${colors.blue}`, color: colors.blue, background: "transparent", borderRadius: radius.pill, padding: "7px 16px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
               >
                 View All →
               </button>
@@ -339,7 +339,7 @@ export function DashboardPage() {
                     <td style={{ ...tdStyle, minWidth: 130 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <ProgressBar pct={tripProgress(t)} color={t.status === "completed" ? colors.green : colors.blue} />
-                        <span style={{ fontSize: 11.5, fontWeight: 700, color: colors.textMuted, width: 34, fontVariantNumeric: "tabular-nums" }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: colors.textMuted, width: 34, fontVariantNumeric: "tabular-nums" }}>
                           {tripProgress(t)}%
                         </span>
                       </div>
@@ -353,7 +353,7 @@ export function DashboardPage() {
       </Card>
 
       {drivers.data && (
-        <div style={{ fontSize: 12, color: colors.textFaint }}>
+        <div style={{ fontSize: 13, color: colors.textFaint }}>
           {drivers.data.filter((d) => d.status === "on_trip").length} drivers on route ·{" "}
           {drivers.data.filter((d) => d.status === "available").length} available
         </div>
@@ -373,7 +373,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 
 const thStyle: React.CSSProperties = {
   textAlign: "left",
-  fontSize: 11,
+  fontSize: 12,
   fontWeight: 800,
   letterSpacing: 0.7,
   textTransform: "uppercase",
@@ -383,7 +383,7 @@ const thStyle: React.CSSProperties = {
   borderBottom: `1px solid ${colors.border}`,
 };
 const tdStyle: React.CSSProperties = {
-  fontSize: 13,
+  fontSize: 14,
   color: colors.text,
   padding: "13px 20px",
   borderBottom: `1px solid ${colors.divider}`,

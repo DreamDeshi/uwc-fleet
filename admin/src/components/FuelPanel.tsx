@@ -38,7 +38,7 @@ export function FuelPanel() {
         >
           <div>
             <div style={{ fontSize: 14, fontWeight: 800, color: colors.text }}>Fuel — This Month</div>
-            <div style={{ fontSize: 12.5, color: colors.textMuted, marginTop: 2 }}>
+            <div style={{ fontSize: 13, color: colors.textMuted, marginTop: 2 }}>
               Total spend {formatMoney(monthTotal)} across {rows.length} truck{rows.length === 1 ? "" : "s"}
             </div>
           </div>
@@ -52,7 +52,7 @@ export function FuelPanel() {
         {rows.length === 0 ? (
           <EmptyState message="No fuel logged this month yet." />
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ background: colors.panel, color: colors.textMuted, textAlign: "left" }}>
                 <Th>Truck</Th>
@@ -87,7 +87,7 @@ function Th({ children, align = "left" }: { children?: React.ReactNode; align?: 
     <th
       style={{
         padding: "10px 16px",
-        fontSize: 11,
+        fontSize: 12,
         fontWeight: 700,
         textTransform: "uppercase",
         letterSpacing: 0.4,
@@ -125,7 +125,7 @@ function FuelRow({
       >
         <Td>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-            <span style={{ color: colors.textFaint, fontSize: 11 }}>{expanded ? "▾" : "▸"}</span>
+            <span style={{ color: colors.textFaint, fontSize: 12 }}>{expanded ? "▾" : "▸"}</span>
             <span style={{ fontWeight: 800, letterSpacing: 0.3 }}>{row.plate}</span>
           </span>
         </Td>
@@ -136,7 +136,7 @@ function FuelRow({
         <Td align="right">{formatMoney(row.total_cost_rm)}</Td>
         <Td align="right">{row.cost_per_km != null ? formatMoney(row.cost_per_km) : "—"}</Td>
         <Td align="right">
-          <span style={{ fontSize: 12, color: colors.textFaint }}>
+          <span style={{ fontSize: 13, color: colors.textFaint }}>
             {row.log_count} fill{row.log_count === 1 ? "" : "s"}
           </span>
         </Td>
@@ -156,26 +156,26 @@ function ExpandedLogs({ plate }: { plate: string }) {
   const fuel = useTruckFuel(plate);
 
   if (fuel.isLoading)
-    return <div style={{ padding: 16, fontSize: 13, color: colors.textMuted }}>Loading logs…</div>;
+    return <div style={{ padding: 16, fontSize: 14, color: colors.textMuted }}>Loading logs…</div>;
   if (fuel.isError)
-    return <div style={{ padding: 16, fontSize: 13, color: colors.red }}>Could not load logs.</div>;
+    return <div style={{ padding: 16, fontSize: 14, color: colors.red }}>Could not load logs.</div>;
 
   const logs = fuel.data?.logs ?? [];
   const s = fuel.data?.summary;
 
   if (logs.length === 0)
-    return <div style={{ padding: 16, fontSize: 13, color: colors.textMuted }}>No fill-ups recorded.</div>;
+    return <div style={{ padding: 16, fontSize: 14, color: colors.textMuted }}>No fill-ups recorded.</div>;
 
   return (
     <div style={{ padding: "8px 16px 14px" }}>
       {s && (
-        <div style={{ fontSize: 12, color: colors.textMuted, margin: "6px 0 10px" }}>
+        <div style={{ fontSize: 13, color: colors.textMuted, margin: "6px 0 10px" }}>
           All-time: {formatNumber(s.total_litres)} L · {formatMoney(s.total_cost_rm)} ·{" "}
           {s.avg_cost_per_litre != null ? `${formatMoney(s.avg_cost_per_litre)}/L` : "—/L"} ·{" "}
           {s.total_km_covered > 0 ? `${formatNumber(s.total_km_covered)} km` : "— km"}
         </div>
       )}
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr style={{ color: colors.textFaint, textAlign: "left" }}>
             <Th>Date</Th>
@@ -252,7 +252,7 @@ function LogFuelModal({ open, onClose }: { open: boolean; onClose: () => void })
   return (
     <Modal open={open} onClose={onClose} title="Log Fuel Fill-up" width={420}>
       <label style={{ display: "block", marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: colors.text }}>Truck</div>
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: colors.text }}>Truck</div>
         <select
           value={plate}
           onChange={(e) => setPlate(e.target.value)}
@@ -281,7 +281,7 @@ function LogFuelModal({ open, onClose }: { open: boolean; onClose: () => void })
       <NumberInput label="Odometer (km)" value={odometer} onChange={setOdometer} placeholder="e.g. 152340" />
 
       <label style={{ display: "block", marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: colors.text }}>Date</div>
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: colors.text }}>Date</div>
         <input
           type="date"
           value={date}
@@ -298,7 +298,7 @@ function LogFuelModal({ open, onClose }: { open: boolean; onClose: () => void })
         />
       </label>
 
-      {error && <div style={{ color: colors.red, fontSize: 13, marginBottom: 12 }}>{error}</div>}
+      {error && <div style={{ color: colors.red, fontSize: 14, marginBottom: 12 }}>{error}</div>}
 
       <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
         <Button variant="ghost" onClick={onClose} full>
@@ -327,7 +327,7 @@ function NumberInput({
 }) {
   return (
     <label style={{ display: "block", marginBottom: 14 }}>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: colors.text }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: colors.text }}>{label}</div>
       <input
         inputMode="decimal"
         value={value}

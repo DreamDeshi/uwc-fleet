@@ -126,7 +126,7 @@ function AlertsPanel() {
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", background: colors.orangeTint, borderBottom: `1px solid ${colors.border}` }}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 3l9 16H3l9-16z" stroke={colors.orange} strokeWidth="1.8" strokeLinejoin="round" /><path d="M12 10v4M12 17v.5" stroke={colors.orange} strokeWidth="1.8" strokeLinecap="round" /></svg>
         <div style={{ fontSize: 14, fontWeight: 800, color: colors.text }}>Document Alerts</div>
-        <span style={{ marginLeft: "auto", fontSize: 12.5, color: colors.textMuted }}>
+        <span style={{ marginLeft: "auto", fontSize: 13, color: colors.textMuted }}>
           {list.length} truck{list.length === 1 ? "" : "s"} need attention
         </span>
       </div>
@@ -152,7 +152,7 @@ function AlertCard({ truck }: { truck: TruckExpiryAlert }) {
     <div style={{ border: `1px solid ${colors.border}`, borderLeft: `4px solid ${accent}`, borderRadius: radius.md, padding: 12 }}>
       <div style={{ marginBottom: 10 }}>
         <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: 0.3 }}>{truck.plate}</div>
-        <div style={{ fontSize: 12, color: colors.textMuted }}>{truck.type}</div>
+        <div style={{ fontSize: 13, color: colors.textMuted }}>{truck.type}</div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {docs.map((d) => (
@@ -169,10 +169,10 @@ function AlertDocRow({ label, doc }: { label: string; doc: DocExpiry }) {
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
       <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: fg, flexShrink: 0 }} />
-        <span style={{ fontSize: 13, fontWeight: 600, color: colors.text }}>{label}</span>
-        <span style={{ fontSize: 12, color: colors.textMuted }}>{formatDate(doc.expiry_date)}</span>
+        <span style={{ fontSize: 14, fontWeight: 600, color: colors.text }}>{label}</span>
+        <span style={{ fontSize: 13, color: colors.textMuted }}>{formatDate(doc.expiry_date)}</span>
       </span>
-      <span style={{ background: bg, color: fg, borderRadius: radius.pill, fontSize: 11, fontWeight: 800, padding: "2px 8px", whiteSpace: "nowrap" }}>
+      <span style={{ background: bg, color: fg, borderRadius: radius.pill, fontSize: 12, fontWeight: 800, padding: "2px 8px", whiteSpace: "nowrap" }}>
         {relativeExpiry(doc.days_until_expiry ?? 0)}
       </span>
     </div>
@@ -191,7 +191,7 @@ function TruckCard({ truck: t }: { truck: Truck }) {
         <Avatar size={46} glyph={truckGlyph} />
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: 0.3 }}>{t.plate}</div>
-          <div style={{ fontSize: 12, color: colors.textMuted }}>{t.type} · {t.max_pallets} pallets</div>
+          <div style={{ fontSize: 13, color: colors.textMuted }}>{t.type} · {t.max_pallets} pallets</div>
         </div>
         <Pill bg={meta.bg} fg={meta.fg}>{meta.label}</Pill>
       </div>
@@ -259,7 +259,7 @@ function EditDocumentsModal({ truck, onClose }: { truck: Truck; onClose: () => v
 
   return (
     <Modal open onClose={onClose} title={`Documents — ${truck.plate}`} width={400}>
-      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 13, marginBottom: 12 }}>{error}</div>}
       <Input label="Insurance expiry" value={insurance} onChange={setInsurance} type="date" />
       <Input label="Permit expiry" value={permit} onChange={setPermit} type="date" />
       <Input label="Road tax expiry" value={roadTax} onChange={setRoadTax} type="date" />
@@ -281,7 +281,7 @@ function DocRow({ label, date, alert }: { label: string; date: string | null; al
   const flagged = !!alert;
   const color = !flagged ? colors.text : alert!.daysLeft < 0 ? colors.red : colors.orange;
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
       <span style={{ color: colors.textMuted, display: "flex", alignItems: "center", gap: 6 }}>
         {flagged && (
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3l9 16H3l9-16z" stroke={color} strokeWidth="2" strokeLinejoin="round" /></svg>
@@ -305,8 +305,8 @@ function Mini({ label, value, divider, wrap }: { label: string; value: string; d
     : { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
   return (
     <div style={{ flex: 1, minWidth: 0, padding: "9px 10px", borderLeft: divider ? `1px solid ${colors.divider}` : undefined, textAlign: "center" }}>
-      <div title={value} style={{ fontSize: 13.5, fontWeight: 700, color: colors.text, ...valueStyle }}>{value}</div>
-      <div style={{ fontSize: 10, color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>{label}</div>
+      <div title={value} style={{ fontSize: 14, fontWeight: 700, color: colors.text, ...valueStyle }}>{value}</div>
+      <div style={{ fontSize: 11, color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>{label}</div>
     </div>
   );
 }
@@ -314,8 +314,8 @@ function Mini({ label, value, divider, wrap }: { label: string; value: string; d
 function RatePill({ label, value, color, bg }: { label: string; value: string; color: string; bg: string }) {
   return (
     <div style={{ flex: 1, background: bg, borderRadius: radius.sm, padding: "8px 10px", textAlign: "center" }}>
-      <div style={{ fontSize: 10, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.3 }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 700, color, marginTop: 2 }}>{value}</div>
+      <div style={{ fontSize: 11, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.3 }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color, marginTop: 2 }}>{value}</div>
     </div>
   );
 }

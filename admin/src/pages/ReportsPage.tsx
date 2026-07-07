@@ -106,8 +106,8 @@ export function ReportsPage() {
           <SectionTitle title="Incentive by Month" subtitle="Last 6 months" />
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={months} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: colors.textMuted }} tickFormatter={(l: string) => l.split(" ")[0]} />
-              <YAxis tick={{ fontSize: 11, fill: colors.textMuted }} tickFormatter={(v: number) => `RM${v}`} />
+              <XAxis dataKey="label" tick={{ fontSize: 12, fill: colors.textMuted }} tickFormatter={(l: string) => l.split(" ")[0]} />
+              <YAxis tick={{ fontSize: 12, fill: colors.textMuted }} tickFormatter={(v: number) => `RM${v}`} />
               <RTooltip formatter={(v: number) => formatMoney(v)} />
               <Bar dataKey="incentive" fill={colors.blue} radius={[6, 6, 0, 0]} />
             </BarChart>
@@ -116,7 +116,7 @@ export function ReportsPage() {
         <Card>
           <SectionTitle title="Route Type Split" subtitle={`${routeSplit.reduce((s, r) => s + r.value, 0)} trips`} />
           {routeSplit.length === 0 ? (
-            <div style={{ padding: 30, textAlign: "center", color: colors.textMuted, fontSize: 13 }}>No trips yet.</div>
+            <div style={{ padding: 30, textAlign: "center", color: colors.textMuted, fontSize: 14 }}>No trips yet.</div>
           ) : (
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <ResponsiveContainer width="55%" height={180}>
@@ -131,7 +131,7 @@ export function ReportsPage() {
               </ResponsiveContainer>
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
                 {routeSplit.map((r, i) => (
-                  <div key={r.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                  <div key={r.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
                     <span style={{ width: 10, height: 10, borderRadius: 3, background: PIE_COLORS[i % PIE_COLORS.length] }} />
                     <span style={{ flex: 1, color: colors.textMuted }}>{r.name}</span>
                     <span style={{ fontWeight: 700 }}>{r.value}</span>
@@ -150,7 +150,7 @@ export function ReportsPage() {
           <SectionTitle title="Driver Payroll" subtitle="Month totals from stored per-trip pay — click a driver for trip detail" />
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {payrollSettling && (
-              <span style={{ fontSize: 12, color: colors.textMuted }}>Loading {monthKeyLabel(month)}…</span>
+              <span style={{ fontSize: 13, color: colors.textMuted }}>Loading {monthKeyLabel(month)}…</span>
             )}
             <select value={month} onChange={(e) => setMonth(e.target.value)} style={monthSelectStyle}>
               {monthOptions.map((k) => (
@@ -239,14 +239,14 @@ function PayrollRow({ row, striped }: { row: PayrollDriverRow; striped: boolean 
       {open &&
         row.trips.map((t) => (
           <tr key={t.id} style={{ background: colors.panel }}>
-            <td style={{ ...tdStyle, paddingLeft: 40, fontSize: 12.5 }} colSpan={2}>
+            <td style={{ ...tdStyle, paddingLeft: 40, fontSize: 13 }} colSpan={2}>
               {t.ticket_number}
             </td>
-            <td style={{ ...tdStyle, fontSize: 12.5, color: colors.textMuted }}>
+            <td style={{ ...tdStyle, fontSize: 13, color: colors.textMuted }}>
               {/* The pay-deciding delivery-confirm instant (MYT). */}
               {formatDateTime(t.delivered_at ?? t.pickup_datetime)}
             </td>
-            <td style={{ ...tdStyle, fontSize: 12.5 }}>{formatMoney(t.incentive_earned)}</td>
+            <td style={{ ...tdStyle, fontSize: 13 }}>{formatMoney(t.incentive_earned)}</td>
           </tr>
         ))}
     </>
@@ -258,7 +258,7 @@ const monthSelectStyle: React.CSSProperties = {
   borderRadius: radius.sm,
   border: `1px solid ${colors.border}`,
   padding: "0 8px",
-  fontSize: 13,
+  fontSize: 14,
   color: colors.text,
   background: colors.card,
 };
@@ -266,7 +266,7 @@ const monthSelectStyle: React.CSSProperties = {
 function MiniKpi({ label, value, bg, fg }: { label: string; value: string; bg: string; fg: string }) {
   return (
     <div style={{ background: colors.card, borderRadius: radius.lg, padding: 18, border: `1px solid ${colors.border}`, borderLeft: `4px solid ${fg}`, boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
-      <div style={{ fontSize: 11.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: colors.textMuted }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: colors.textMuted }}>{label}</div>
       <div style={{ fontSize: 26, fontWeight: 800, color: fg, marginTop: 8 }}>{value}</div>
       <div style={{ width: 28, height: 4, background: bg, borderRadius: 2, marginTop: 8 }} />
     </div>
@@ -276,7 +276,7 @@ function MiniKpi({ label, value, bg, fg }: { label: string; value: string; bg: s
 function FooterStat({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
       <div style={{ fontSize: 19, fontWeight: 800, color: colors.yellow, marginTop: 4 }}>{value}</div>
     </div>
   );
@@ -284,7 +284,7 @@ function FooterStat({ label, value }: { label: string; value: string }) {
 
 const thStyle: React.CSSProperties = {
   textAlign: "left",
-  fontSize: 11,
+  fontSize: 12,
   fontWeight: 700,
   letterSpacing: 0.5,
   textTransform: "uppercase",
@@ -294,7 +294,7 @@ const thStyle: React.CSSProperties = {
   background: colors.panel,
 };
 const tdStyle: React.CSSProperties = {
-  fontSize: 13,
+  fontSize: 14,
   color: colors.text,
   padding: "12px 16px",
   borderBottom: `1px solid ${colors.divider}`,

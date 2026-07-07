@@ -11,7 +11,7 @@ import type { DestinationRate, PublicHoliday, RateAuditEntry, RateResetResult, T
 function UpdatedNote({ entry }: { entry?: RateAuditEntry }) {
   if (!entry) return null;
   return (
-    <div style={{ fontSize: 11, color: colors.textFaint, marginTop: 3 }}>
+    <div style={{ fontSize: 12, color: colors.textFaint, marginTop: 3 }}>
       Updated by {entry.user_name} · {formatDate(entry.timestamp)}
     </div>
   );
@@ -26,7 +26,7 @@ function PendingRatesNote({ pending }: { pending: Truck["pending_rates"] }) {
   if (pending.entitled_claim_offpeak !== null) parts.push(`weekend ${formatMoney(pending.entitled_claim_offpeak)}`);
   if (pending.daily_deduction_points !== null) parts.push(`deduction ${pending.daily_deduction_points} pts`);
   return (
-    <div style={{ fontSize: 11, color: colors.amber, fontWeight: 600, marginTop: 3 }}>
+    <div style={{ fontSize: 12, color: colors.amber, fontWeight: 600, marginTop: 3 }}>
       ⏳ New rates {parts.join(" · ")} — take effect {pending.effective_date} (MYT)
     </div>
   );
@@ -51,7 +51,7 @@ export function IncentivesPage() {
               background: tab === v ? colors.blue : colors.card,
               color: tab === v ? "#fff" : colors.textMuted,
               fontWeight: 700,
-              fontSize: 13.5,
+              fontSize: 14,
               cursor: "pointer",
             }}
           >
@@ -60,7 +60,7 @@ export function IncentivesPage() {
         ))}
       </div>
 
-      <div style={{ background: colors.blueTint, borderRadius: radius.md, padding: "11px 15px", fontSize: 12.5, color: colors.blue, fontWeight: 500 }}>
+      <div style={{ background: colors.blueTint, borderRadius: radius.md, padding: "11px 15px", fontSize: 13, color: colors.blue, fontWeight: 500 }}>
         Every rate change is recorded in the audit log. Source of truth: UWC Internal Lorry Rate (Development Brief §3).
       </div>
 
@@ -170,11 +170,11 @@ function ResetRatesConfirm({
   return (
     <Modal open onClose={onClose} title="Reset truck rates to UWC spec?" width={420}>
       {error && (
-        <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>
+        <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 13, marginBottom: 12 }}>
           {error}
         </div>
       )}
-      <div style={{ fontSize: 13.5, color: colors.text, lineHeight: 1.6, marginBottom: 14 }}>
+      <div style={{ fontSize: 14, color: colors.text, lineHeight: 1.6, marginBottom: 14 }}>
         Reset all truck rates to UWC spec defaults? This overwrites current rate values
         (weekday &amp; weekend claim, daily deduction, max load) for all trucks with the
         authoritative values from <code>docs/uwc-spec.json</code>. Audit-logged.
@@ -201,7 +201,7 @@ function ResetResultBanner({ result, onDismiss }: { result: RateResetResult; onD
     parts.push(`rates take effect ${result.rates_effective_date} (MYT)`);
   }
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 12, background: colors.greenTint, color: colors.green, borderRadius: radius.md, padding: "9px 13px", fontSize: 12.5, fontWeight: 600 }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 12, background: colors.greenTint, color: colors.green, borderRadius: radius.md, padding: "9px 13px", fontSize: 13, fontWeight: 600 }}>
       <span>✓ {parts.join(" · ")}</span>
       <button onClick={onDismiss} style={{ background: "none", border: "none", color: colors.green, cursor: "pointer", fontSize: 14, fontWeight: 700 }}>×</button>
     </div>
@@ -232,8 +232,8 @@ function EditTruckModal({ truck, onClose }: { truck: Truck; onClose: () => void 
 
   return (
     <Modal open onClose={onClose} title={`Edit Rates — ${truck.plate}`}>
-      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
-      <div style={{ background: colors.yellowTint, color: colors.amber, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12, fontWeight: 500 }}>
+      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+      <div style={{ background: colors.yellowTint, color: colors.amber, borderRadius: radius.md, padding: "9px 12px", fontSize: 13, marginBottom: 12, fontWeight: 500 }}>
         Rate changes take effect <strong>tomorrow (MYT)</strong> — today's assignments and
         running trips keep today's rates.
       </div>
@@ -293,7 +293,7 @@ function DestinationPointsTab() {
                   <UpdatedNote entry={auditById.get(r.id)} />
                   {/* Staged next-day points edit (same cutoff as truck rates). */}
                   {r.pending_points_effective !== null && r.pending_points !== null && (
-                    <div style={{ fontSize: 11, color: colors.amber, fontWeight: 600, marginTop: 3 }}>
+                    <div style={{ fontSize: 12, color: colors.amber, fontWeight: 600, marginTop: 3 }}>
                       ⏳ New points {r.pending_points} — take effect {r.pending_points_effective} (MYT)
                     </div>
                   )}
@@ -304,7 +304,7 @@ function DestinationPointsTab() {
                     <div style={{ flex: 1, maxWidth: 90, height: 8, background: colors.divider, borderRadius: 999, overflow: "hidden" }}>
                       <div style={{ width: `${(r.points / MAX_POINTS) * 100}%`, height: "100%", background: ti.color }} />
                     </div>
-                    <span style={{ fontWeight: 700, fontSize: 13 }}>{r.points}</span>
+                    <span style={{ fontWeight: 700, fontSize: 14 }}>{r.points}</span>
                   </div>
                 </td>
                 <td style={tdStyle}><Pill bg={`${ti.color}1a`} fg={ti.color}>{ti.label}</Pill></td>
@@ -336,8 +336,8 @@ function EditPointsModal({ rate, onClose }: { rate: DestinationRate; onClose: ()
 
   return (
     <Modal open onClose={onClose} title={`Edit Points — ${rate.location_name}`} width={380}>
-      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
-      <div style={{ background: colors.yellowTint, color: colors.amber, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12, fontWeight: 500 }}>
+      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+      <div style={{ background: colors.yellowTint, color: colors.amber, borderRadius: radius.md, padding: "9px 12px", fontSize: 13, marginBottom: 12, fontWeight: 500 }}>
         Point changes take effect <strong>tomorrow (MYT)</strong> — today's assignments and
         running trips keep today's points.
         {rate.zone_code ? " Applies to every location in the zone." : ""}
@@ -372,7 +372,7 @@ function HolidaysTab() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ background: colors.yellowTint, borderRadius: radius.md, padding: "11px 15px", fontSize: 12.5, color: colors.amber, fontWeight: 500 }}>
+      <div style={{ background: colors.yellowTint, borderRadius: radius.md, padding: "11px 15px", fontSize: 13, color: colors.amber, fontWeight: 500 }}>
         Trips picked up on a listed date pay the off-peak rate all day. Islamic holiday
         dates are moon-sighting estimates — verify against the official JPA/JAKIM gazette.
       </div>
@@ -382,7 +382,7 @@ function HolidaysTab() {
           <SectionTitle title="Public Holiday Calendar" subtitle={`${rows.length} dates`} />
         </div>
         {rows.length === 0 ? (
-          <div style={{ padding: 24, fontSize: 13, color: colors.textMuted }}>
+          <div style={{ padding: 24, fontSize: 14, color: colors.textMuted }}>
             No holidays in the calendar — every weekday pays the weekday rate until dates are added.
           </div>
         ) : (
@@ -434,7 +434,7 @@ function AddHolidayForm() {
   return (
     <Card>
       <SectionTitle title="Add a Holiday" />
-      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 13, marginBottom: 12 }}>{error}</div>}
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
         <div style={{ width: 190 }}>
           <Input label="Date" value={date} onChange={setDate} type="date" />
@@ -468,8 +468,8 @@ function DeleteHolidayConfirm({ holiday, onClose }: { holiday: PublicHoliday; on
 
   return (
     <Modal open onClose={onClose} title="Remove this holiday?" width={420}>
-      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
-      <div style={{ fontSize: 13.5, color: colors.text, lineHeight: 1.6, marginBottom: 14 }}>
+      {error && <div style={{ background: colors.redTint, color: colors.red, borderRadius: radius.md, padding: "9px 12px", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+      <div style={{ fontSize: 14, color: colors.text, lineHeight: 1.6, marginBottom: 14 }}>
         Remove <strong>{holiday.name}</strong> ({holiday.date}) from the calendar? Trips picked
         up that day will pay the normal weekday rate instead of the off-peak rate.
         Already-completed trips keep their finalized pay. Audit-logged.
@@ -489,7 +489,7 @@ function FormulaTab() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ background: `linear-gradient(135deg, ${colors.blue}, #001a4d)`, borderRadius: radius.lg, padding: 26, color: "#fff", textAlign: "center" }}>
-        <div style={{ fontSize: 12, letterSpacing: 1, opacity: 0.7, textTransform: "uppercase", marginBottom: 10 }}>Incentive Formula</div>
+        <div style={{ fontSize: 13, letterSpacing: 1, opacity: 0.7, textTransform: "uppercase", marginBottom: 10 }}>Incentive Formula</div>
         <div style={{ fontSize: 19, fontWeight: 700 }}>
           Entitled Claim Rate (RM) × <span style={{ color: colors.yellow }}>Destination Points</span>
         </div>
@@ -501,7 +501,7 @@ function FormulaTab() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <Card>
           <SectionTitle title="Calculation Rules" />
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13.5, color: colors.text, lineHeight: 1.9 }}>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, color: colors.text, lineHeight: 1.9 }}>
             <li>Each truck has its own weekday and weekend/holiday claim rate.</li>
             <li>Destination points reflect distance — further zones earn more.</li>
             <li>Weekend &amp; public-holiday trips use the higher off-peak rate.</li>
@@ -514,12 +514,12 @@ function FormulaTab() {
           <SectionTitle title="Time-Based Rates" />
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ background: colors.blueTint, borderRadius: radius.md, padding: 14 }}>
-              <div style={{ fontSize: 12, color: colors.blue, fontWeight: 700, textTransform: "uppercase" }}>Weekday — Standard Rate</div>
-              <div style={{ fontSize: 13, color: colors.textMuted, marginTop: 4 }}>Mon–Fri, normal operating window 07:00–18:00.</div>
+              <div style={{ fontSize: 13, color: colors.blue, fontWeight: 700, textTransform: "uppercase" }}>Weekday — Standard Rate</div>
+              <div style={{ fontSize: 14, color: colors.textMuted, marginTop: 4 }}>Mon–Fri, normal operating window 07:00–18:00.</div>
             </div>
             <div style={{ background: colors.yellowTint, borderRadius: radius.md, padding: 14 }}>
-              <div style={{ fontSize: 12, color: colors.amber, fontWeight: 700, textTransform: "uppercase" }}>Weekend / Holiday — Higher Rate</div>
-              <div style={{ fontSize: 13, color: colors.textMuted, marginTop: 4 }}>Saturdays, Sundays &amp; Malaysian public holidays.</div>
+              <div style={{ fontSize: 13, color: colors.amber, fontWeight: 700, textTransform: "uppercase" }}>Weekend / Holiday — Higher Rate</div>
+              <div style={{ fontSize: 14, color: colors.textMuted, marginTop: 4 }}>Saturdays, Sundays &amp; Malaysian public holidays.</div>
             </div>
           </div>
         </Card>
@@ -530,7 +530,7 @@ function FormulaTab() {
 
 const thStyle: React.CSSProperties = {
   textAlign: "left",
-  fontSize: 11,
+  fontSize: 12,
   fontWeight: 700,
   letterSpacing: 0.5,
   textTransform: "uppercase",
@@ -540,7 +540,7 @@ const thStyle: React.CSSProperties = {
   background: colors.panel,
 };
 const tdStyle: React.CSSProperties = {
-  fontSize: 13,
+  fontSize: 14,
   color: colors.text,
   padding: "12px 16px",
   borderBottom: `1px solid ${colors.divider}`,

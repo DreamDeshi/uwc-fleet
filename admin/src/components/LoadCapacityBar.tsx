@@ -21,7 +21,7 @@ export function LoadCapacityBar({
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
-        <span style={{ fontSize: 11.5, fontWeight: 600, color: colors.textMuted, display: "flex", alignItems: "center", gap: 5 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: colors.textMuted, display: "flex", alignItems: "center", gap: 5 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
             <rect x="1" y="6" width="14" height="10" rx="1.5" stroke={colors.textMuted} strokeWidth="1.6" />
             <path d="M15 9h4l3 3v4h-7z" stroke={colors.textMuted} strokeWidth="1.6" strokeLinejoin="round" />
@@ -30,7 +30,7 @@ export function LoadCapacityBar({
           </svg>
           Load
         </span>
-        <span style={{ fontSize: 12, fontWeight: 700, color: fillColor }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: fillColor }}>
           {load}/{capacity} pallets
         </span>
       </div>

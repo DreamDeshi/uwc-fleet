@@ -38,7 +38,7 @@ export function PerformancePage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <div style={{ fontSize: 13, color: colors.textMuted, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 14, color: colors.textMuted, lineHeight: 1.5 }}>
         Compare every driver across <strong>reliability</strong>, <strong>productivity</strong> and{" "}
         <strong>workload</strong>. The leaderboard below breaks the score into its three weighted
         parts (on-time 40 · completion 30 · incentive 30) so a ranking is never a black box.
@@ -69,10 +69,10 @@ function Lens({
   return (
     <Card>
       <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.2, color: colors.blue, textTransform: "uppercase" }}>
+        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1.2, color: colors.blue, textTransform: "uppercase" }}>
           {title}
         </div>
-        <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 3 }}>{hint}</div>
+        <div style={{ fontSize: 13, color: colors.textMuted, marginTop: 3 }}>{hint}</div>
       </div>
       {children}
     </Card>
@@ -81,7 +81,7 @@ function Lens({
 
 const thStyle: React.CSSProperties = {
   textAlign: "left",
-  fontSize: 10.5,
+  fontSize: 11.5,
   fontWeight: 700,
   color: colors.textFaint,
   textTransform: "uppercase",
@@ -91,7 +91,7 @@ const thStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 const tdStyle: React.CSSProperties = {
-  fontSize: 13,
+  fontSize: 14,
   color: colors.text,
   padding: "10px 10px",
   borderBottom: `1px solid ${colors.divider}`,
@@ -100,8 +100,8 @@ const tdStyle: React.CSSProperties = {
 function DriverCell({ d }: { d: DriverPerformance }) {
   return (
     <div>
-      <div style={{ fontWeight: 700, fontSize: 13.5 }}>{d.name}</div>
-      <div style={{ fontSize: 11, color: colors.textFaint }}>
+      <div style={{ fontWeight: 700, fontSize: 14 }}>{d.name}</div>
+      <div style={{ fontSize: 12, color: colors.textFaint }}>
         {d.employee_number ? `#${d.employee_number}` : "—"}
         {d.truck_plate ? ` · ${d.truck_plate}` : ""}
       </div>
@@ -112,16 +112,16 @@ function DriverCell({ d }: { d: DriverPerformance }) {
 function ScoreBadge({ score, completed }: { score: number; completed: number }) {
   if (completed === 0) {
     return (
-      <span style={{ background: "#f3f4f6", color: "#6b7280", padding: "3px 9px", borderRadius: radius.pill, fontSize: 11.5, fontWeight: 700 }}>
+      <span style={{ background: "#f3f4f6", color: "#6b7280", padding: "3px 9px", borderRadius: radius.pill, fontSize: 12, fontWeight: 700 }}>
         No data
       </span>
     );
   }
   const c = scoreColor(score);
   return (
-    <span style={{ background: c.bg, color: c.fg, padding: "3px 9px", borderRadius: radius.pill, fontSize: 12.5, fontWeight: 800, whiteSpace: "nowrap" }}>
+    <span style={{ background: c.bg, color: c.fg, padding: "3px 9px", borderRadius: radius.pill, fontSize: 13, fontWeight: 800, whiteSpace: "nowrap" }}>
       {score.toFixed(1)}
-      <span style={{ fontSize: 9.5, fontWeight: 700, opacity: 0.7 }}>/100</span>
+      <span style={{ fontSize: 10.5, fontWeight: 700, opacity: 0.7 }}>/100</span>
     </span>
   );
 }
@@ -193,12 +193,12 @@ function tierPill(score: number): { bg: string; fg: string } {
 function Component({ value, max, detail }: { value: number; max: number; detail: string }) {
   return (
     <div style={{ minWidth: 120 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
         <span>
           {value.toFixed(1)}
           <span style={{ color: colors.textFaint, fontWeight: 600 }}> / {max}</span>
         </span>
-        <span style={{ color: colors.textMuted, fontWeight: 600, fontSize: 11 }}>{detail}</span>
+        <span style={{ color: colors.textMuted, fontWeight: 600, fontSize: 12 }}>{detail}</span>
       </div>
       <ProgressBar pct={(value / max) * 100} />
     </div>
@@ -289,7 +289,7 @@ function Workload({ drivers }: { drivers: DriverPerformance[] }) {
           color: max > 0 && most.completed_this_month !== least.completed_this_month ? colors.orange : colors.blue,
           borderRadius: radius.md,
           padding: "10px 14px",
-          fontSize: 12.5,
+          fontSize: 13,
           fontWeight: 600,
           marginBottom: 16,
         }}
@@ -303,7 +303,7 @@ function Workload({ drivers }: { drivers: DriverPerformance[] }) {
           const isMost = max > 0 && d.completed_this_month === most.completed_this_month;
           return (
             <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ width: 150, fontSize: 12.5, fontWeight: 600, color: colors.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <div style={{ width: 150, fontSize: 13, fontWeight: 600, color: colors.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {d.name}
               </div>
               <div style={{ flex: 1, background: colors.divider, borderRadius: radius.pill, height: 22, overflow: "hidden" }}>
@@ -318,7 +318,7 @@ function Workload({ drivers }: { drivers: DriverPerformance[] }) {
                   }}
                 />
               </div>
-              <div style={{ width: 28, textAlign: "right", fontSize: 13, fontWeight: 800, color: colors.navy }}>
+              <div style={{ width: 28, textAlign: "right", fontSize: 14, fontWeight: 800, color: colors.navy }}>
                 {d.completed_this_month}
               </div>
             </div>
