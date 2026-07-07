@@ -218,20 +218,26 @@ export function RegisterScreen({ navigation }: Props) {
           </>
         )}
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? (
+          <View style={styles.errorBox}>
+            <Ionicons name="alert-circle" size={18} color={colors.red} />
+            <Text style={styles.error}>{error}</Text>
+          </View>
+        ) : null}
       </ScrollView>
 
       {/* Bottom actions */}
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 12 }]}>
         {step === 0 ? (
-          <Button title={t("common.next")} onPress={goNext} icon={<Ionicons name="arrow-forward" size={18} color={colors.white} />} />
+          <Button title={t("common.next")} onPress={goNext} size="xl" icon={<Ionicons name="arrow-forward" size={20} color={colors.white} />} />
         ) : (
           <Button
             title={t("register.create")}
             onPress={onSubmit}
             loading={loading}
             variant="accent"
-            icon={<Ionicons name="checkmark" size={18} color={colors.navy} />}
+            size="xl"
+            icon={<Ionicons name="checkmark" size={20} color={colors.navy} />}
           />
         )}
         <View style={styles.loginLinkRow}>
@@ -256,13 +262,19 @@ export function RegisterScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
-  header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 20 },
+  header: {
+    backgroundColor: colors.blue,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    borderBottomWidth: 4,
+    borderBottomColor: colors.yellow,
+  },
   headerTitle: { color: colors.white, fontSize: 20, fontWeight: "800" },
-  headerSub: { color: "rgba(255,255,255,0.6)", fontSize: 14, marginTop: 8 },
+  headerSub: { color: "rgba(255,255,255,0.7)", fontSize: 14, marginTop: 8 },
   progressWrap: { paddingHorizontal: 20, paddingTop: 16 },
   progressTrack: { flexDirection: "row", gap: 6 },
-  progressBar: { flex: 1, height: 4, borderRadius: 2 },
-  progressLabel: { fontSize: 13, color: "#888", fontWeight: "600", marginTop: 6 },
+  progressBar: { flex: 1, height: 5, borderRadius: 3 },
+  progressLabel: { fontSize: 13, color: colors.textMuted, fontWeight: "600", marginTop: 6 },
   body: { padding: 20, paddingBottom: 32 },
   roleLabel: {
     fontSize: 14,
@@ -298,9 +310,19 @@ const styles = StyleSheet.create({
   noticeText: { flex: 1, fontSize: 13, color: colors.blue, fontWeight: "600" },
   summary: { backgroundColor: "#f8f9fc", borderRadius: radius.md, padding: 16, marginTop: 4 },
   summaryRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 5 },
-  summaryKey: { fontSize: 14, color: "#888" },
+  summaryKey: { fontSize: 14, color: colors.textMuted },
   summaryVal: { fontSize: 14, fontWeight: "600", color: colors.navy },
-  error: { color: colors.red, fontSize: 14, marginTop: 16, fontWeight: "600" },
+  errorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.tintRed,
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 16,
+  },
+  error: { flex: 1, color: colors.red, fontSize: 14, fontWeight: "600" },
   bottom: {
     paddingHorizontal: 20,
     paddingTop: 12,
@@ -309,7 +331,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.borderLight,
   },
   loginLinkRow: { flexDirection: "row", justifyContent: "center", marginTop: 14 },
-  loginLinkText: { fontSize: 14, color: "#888" },
+  loginLinkText: { fontSize: 14, color: colors.textMuted },
   loginLink: { fontSize: 14, fontWeight: "700", color: colors.blue },
   successWrap: { flex: 1, backgroundColor: colors.white, alignItems: "center", justifyContent: "center", padding: 32 },
   successIcon: {

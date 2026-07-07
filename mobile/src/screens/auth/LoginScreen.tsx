@@ -32,6 +32,8 @@ export function LoginScreen({ navigation }: Props) {
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Presentation-only: which field wears the corporate-blue focus ring.
+  const [focused, setFocused] = useState<"phone" | "pw" | null>(null);
 
   const onSubmit = async () => {
     setError(null);
@@ -57,19 +59,22 @@ export function LoginScreen({ navigation }: Props) {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView contentContainerStyle={styles.flexGrow} keyboardShouldPersistTaps="handled">
-        {/* Blue header */}
-        <View style={[styles.header, { paddingTop: insets.top + 24 }]}>
+        {/* Blue brand header — decorative discs bleed off the corner (the
+            admin KPI-tile depth cue), yellow underline closes it. */}
+        <View style={[styles.header, { paddingTop: insets.top + 28 }]}>
+          <View style={styles.discBig} pointerEvents="none" />
+          <View style={styles.discSmall} pointerEvents="none" />
           <Logo />
-          <View style={{ marginTop: 24 }}>
+          <View style={{ marginTop: 26 }}>
             <Text style={styles.welcome}>{t("login.welcome")}</Text>
             <Text style={styles.subtitle}>{t("login.subtitle")}</Text>
           </View>
         </View>
 
-        {/* Form */}
+        {/* Form panel rises into the header with rounded shoulders. */}
         <View style={styles.form}>
           <Text style={styles.label}>{t("login.phone")}</Text>
-          <View style={styles.phoneRow}>
+          <View style={[styles.phoneRow, focused === "phone" && styles.fieldFocused]}>
             <View style={styles.prefix}>
               <Text style={styles.flag}>🇲🇾</Text>
               <Text style={styles.prefixText}>+60</Text>
@@ -81,11 +86,13 @@ export function LoginScreen({ navigation }: Props) {
               placeholderTextColor={colors.textFaint}
               keyboardType="phone-pad"
               style={styles.phoneInput}
+              onFocus={() => setFocused("phone")}
+              onBlur={() => setFocused(null)}
             />
           </View>
 
           <Text style={[styles.label, { marginTop: 20 }]}>{t("login.password")}</Text>
-          <View style={styles.pwRow}>
+          <View style={[styles.pwRow, focused === "pw" && styles.fieldFocused]}>
             <Ionicons name="lock-closed-outline" size={18} color={colors.blue} style={{ marginRight: 10 }} />
             <TextInput
               value={password}
@@ -94,18 +101,26 @@ export function LoginScreen({ navigation }: Props) {
               placeholderTextColor={colors.textFaint}
               secureTextEntry={!showPw}
               style={styles.pwInput}
+              onFocus={() => setFocused("pw")}
+              onBlur={() => setFocused(null)}
             />
             <TouchableOpacity onPress={() => setShowPw((s) => !s)} hitSlop={10}>
               <Ionicons name={showPw ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textMuted} />
             </TouchableOpacity>
           </View>
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? (
+            <View style={styles.errorBox}>
+              <Ionicons name="alert-circle" size={18} color={colors.red} />
+              <Text style={styles.error}>{error}</Text>
+            </View>
+          ) : null}
 
           <Button
             title={t("login.signIn")}
             onPress={onSubmit}
             loading={loading}
+            size="xl"
             style={{ marginTop: 28 }}
             icon={<Ionicons name="arrow-forward" size={20} color={colors.white} />}
           />
@@ -124,12 +139,43 @@ export function LoginScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.white },
+  flex: { flex: 1, backgroundColor: colors.blue },
   flexGrow: { flexGrow: 1 },
-  header: { backgroundColor: colors.blue, paddingHorizontal: 24, paddingBottom: 40 },
-  welcome: { color: "rgba(255,255,255,0.95)", fontSize: 24, fontWeight: "700" },
-  subtitle: { color: "rgba(255,255,255,0.55)", fontSize: 14, marginTop: 4 },
-  form: { flex: 1, padding: 24 },
+  header: {
+    backgroundColor: colors.blue,
+    paddingHorizontal: 24,
+    paddingBottom: 56,
+    overflow: "hidden",
+  },
+  discBig: {
+    position: "absolute",
+    right: -70,
+    top: -50,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: "rgba(255,255,255,0.07)",
+  },
+  discSmall: {
+    position: "absolute",
+    right: 40,
+    bottom: -60,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: "rgba(255,204,0,0.10)",
+  },
+  welcome: { color: colors.white, fontSize: 26, fontWeight: "800" },
+  subtitle: { color: "rgba(255,255,255,0.7)", fontSize: 15, marginTop: 4 },
+  form: {
+    flex: 1,
+    padding: 24,
+    paddingTop: 28,
+    marginTop: -24,
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+  },
   label: {
     fontSize: 14,
     fontWeight: "700",
@@ -170,6 +216,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   pwInput: { flex: 1, paddingVertical: 15, fontSize: 15, color: colors.navy },
-  error: { color: colors.red, fontSize: 14, marginTop: 14, fontWeight: "600" },
-  footer: { marginTop: "auto", paddingTop: 28, textAlign: "center", color: "#bbb", fontSize: 13 },
+  // Focused field wears the corporate-blue ring (the admin .uwc-input).
+  fieldFocused: { borderColor: colors.blue, backgroundColor: colors.white },
+  errorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.tintRed,
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 14,
+  },
+  error: { flex: 1, color: colors.red, fontSize: 14, fontWeight: "600" },
+  footer: { marginTop: "auto", paddingTop: 28, textAlign: "center", color: colors.textFaint, fontSize: 13 },
 });
