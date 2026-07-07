@@ -87,6 +87,13 @@ textarea {
 .uwc-table tbody tr:hover {
   background: #f3f7ff;
 }
+/* Div-based list rows (directories, queues) share the table hover. */
+.uwc-row {
+  transition: background 0.12s ease;
+}
+.uwc-row:hover {
+  background: #f3f7ff;
+}
 .uwc-trip-card {
   transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
 }

@@ -57,29 +57,30 @@ export function ConsigneesPage() {
             {rows.map((c) => (
               <div
                 key={c.id}
+                className="uwc-row"
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 12,
-                  padding: "12px 16px",
+                  padding: "13px 20px",
                   borderBottom: `1px solid ${colors.divider}`,
                   opacity: c.is_active === false ? 0.55 : 1,
                 }}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: colors.text }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 700, color: colors.text }}>
                     {c.company_name}
                     {c.is_active === false && (
-                      <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, color: colors.red }}>
-                        DEACTIVATED
-                      </span>
+                      <Pill bg="#F3F4F6" fg="#4B5563" border="#E5E7EB" dot="#9CA3AF">
+                        Deactivated
+                      </Pill>
                     )}
                   </div>
                   <div style={{ fontSize: 13, color: colors.textMuted, marginTop: 2 }}>
                     {[c.area, c.state].filter(Boolean).join(" · ") || "—"}
                   </div>
                 </div>
-                <Pill bg={colors.blueTint} fg={colors.blue}>
+                <Pill bg={colors.blueTint} fg={colors.blue} border="#BBD2F5">
                   {c.zone_code}
                 </Pill>
                 <Button size="sm" variant="outline" onClick={() => setEditing(c)}>
@@ -135,11 +136,11 @@ function EditConsigneeModal({ consignee, onClose }: { consignee: Consignee; onCl
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <label style={fieldLabel}>
           Company name
-          <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} />
+          <input className="uwc-input" value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} />
         </label>
         <label style={fieldLabel}>
           Delivery zone
-          <select value={zone} onChange={(e) => setZone(e.target.value)} style={inputStyle}>
+          <select className="uwc-input" value={zone} onChange={(e) => setZone(e.target.value)} style={inputStyle}>
             {ZONES.map((z) => (
               <option key={z.code} value={z.code}>
                 {z.code} — {z.name}
@@ -197,4 +198,5 @@ const inputStyle: React.CSSProperties = {
   fontSize: 14,
   color: colors.text,
   background: colors.card,
+  outline: "none",
 };
