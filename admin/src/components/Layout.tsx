@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
-import { colors, radius } from "@/theme";
+import { colors, gradients, radius } from "@/theme";
 import { useAuth } from "@/context/AuthContext";
 import { usePendingUsers, useDashboard, useTruckAlerts } from "@/hooks/queries";
 import { formatFullDate, initials } from "@/lib/format";
@@ -108,6 +108,16 @@ const navItems: NavItem[] = [
   },
 ];
 
+// Sidebar sections — purely presentational grouping of the same routes, in
+// working order: the dispatcher's day first, configuration second.
+const byRoute = new Map(navItems.map((i) => [i.to, i]));
+const group = (routes: string[]) => routes.map((r) => byRoute.get(r)!);
+const navGroups: { heading: string; items: NavItem[] }[] = [
+  { heading: "Overview", items: group(["/"]) },
+  { heading: "Operations", items: group(["/trips", "/drivers", "/trucks", "/performance"]) },
+  { heading: "Administration", items: group(["/incentives", "/approvals", "/consignees", "/reports"]) },
+];
+
 const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/": { title: "Dashboard", subtitle: "Live fleet overview" },
   "/trips": { title: "Trip Management", subtitle: "Dispatch & monitor bookings" },
@@ -137,27 +147,30 @@ export function Layout() {
       {/* ── Sidebar ── */}
       <aside
         style={{
-          width: 240,
-          background: colors.navy,
+          width: 248,
+          background: gradients.sidebar,
+          borderRight: "1px solid rgba(255,255,255,0.06)",
           display: "flex",
           flexDirection: "column",
           flexShrink: 0,
           overflowY: "auto",
         }}
       >
-        <div style={{ padding: "24px 20px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ padding: "26px 20px 20px", display: "flex", alignItems: "center", gap: 12 }}>
           <div
             style={{
-              width: 38,
-              height: 38,
+              width: 42,
+              height: 42,
               background: colors.yellow,
-              borderRadius: 10,
+              borderRadius: 12,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              boxShadow: "0 8px 18px -6px rgba(255,204,0,0.45)",
+              flexShrink: 0,
             }}
           >
-            <svg width="22" height="15" viewBox="0 0 22 15" fill="none">
+            <svg width="24" height="16" viewBox="0 0 22 15" fill="none">
               <rect x="0" y="4" width="14" height="9" rx="2" fill={colors.blue} />
               <rect x="14" y="6" width="8" height="7" rx="2" fill={colors.blue} />
               <circle cx="4" cy="13" r="2" fill={colors.blue} />
@@ -165,87 +178,95 @@ export function Layout() {
             </svg>
           </div>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: "#fff", letterSpacing: 0.5 }}>UWC TRUCKING</div>
-            <div style={{ fontSize: 10, color: colors.yellow, fontWeight: 600, letterSpacing: 1 }}>FLEET MANAGEMENT</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", letterSpacing: 0.4 }}>UWC TRUCKING</div>
+            <div style={{ fontSize: 9.5, color: colors.yellow, fontWeight: 700, letterSpacing: 1.8 }}>FLEET MANAGEMENT</div>
           </div>
         </div>
 
-        <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "0 16px 8px" }} />
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: 1.5,
-            color: "rgba(255,255,255,0.35)",
-            padding: "12px 20px 8px",
-            textTransform: "uppercase",
-          }}
-        >
-          Main Menu
-        </div>
+        <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "0 16px 6px" }} />
 
-        <nav style={{ flex: 1, padding: "0 12px" }}>
-          {navItems.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.to === "/"} style={{ display: "block" }}>
-              {({ isActive }) => (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    width: "100%",
-                    padding: "11px 12px",
-                    borderRadius: 10,
-                    borderLeft: `3px solid ${isActive ? colors.yellow : "transparent"}`,
-                    background: isActive ? "rgba(255,204,0,0.1)" : "transparent",
-                    color: isActive ? colors.yellow : "rgba(255,255,255,0.65)",
-                    fontWeight: isActive ? 700 : 500,
-                    fontSize: 14,
-                    marginBottom: 4,
-                  }}
-                >
-                  <span style={{ color: isActive ? colors.yellow : "rgba(255,255,255,0.4)", display: "flex" }}>{item.icon}</span>
-                  <span>{item.label}</span>
-                  {item.to === "/approvals" && pendingCount > 0 && (
-                    <span
+        <nav style={{ flex: 1, padding: "4px 12px 0" }}>
+          {navGroups.map((g) => (
+            <div key={g.heading}>
+              <div
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  letterSpacing: 1.8,
+                  color: "rgba(255,255,255,0.32)",
+                  padding: "14px 10px 7px",
+                  textTransform: "uppercase",
+                }}
+              >
+                {g.heading}
+              </div>
+              {g.items.map((item) => (
+                <NavLink key={item.to} to={item.to} end={item.to === "/"} style={{ display: "block" }}>
+                  {({ isActive }) => (
+                    <div
+                      className={isActive ? undefined : "uwc-nav-link"}
                       style={{
-                        marginLeft: "auto",
-                        background: colors.yellow,
-                        color: colors.navy,
-                        borderRadius: radius.pill,
-                        fontSize: 11,
-                        fontWeight: 800,
-                        padding: "1px 7px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        // The active page is unmistakable: a solid corporate-yellow
+                        // pill with navy ink, floating on its own soft glow.
+                        background: isActive ? colors.yellow : "transparent",
+                        color: isActive ? colors.navy : "rgba(255,255,255,0.62)",
+                        fontWeight: isActive ? 800 : 500,
+                        fontSize: 13.5,
+                        marginBottom: 3,
+                        boxShadow: isActive ? "0 8px 18px -8px rgba(255,204,0,0.55)" : undefined,
                       }}
                     >
-                      {pendingCount}
-                    </span>
+                      <span style={{ color: isActive ? colors.navy : "rgba(255,255,255,0.38)", display: "flex" }}>{item.icon}</span>
+                      <span>{item.label}</span>
+                      {item.to === "/approvals" && pendingCount > 0 && (
+                        <span
+                          style={{
+                            marginLeft: "auto",
+                            background: isActive ? colors.navy : colors.yellow,
+                            color: isActive ? colors.yellow : colors.navy,
+                            borderRadius: radius.pill,
+                            fontSize: 11,
+                            fontWeight: 800,
+                            padding: "1px 7px",
+                          }}
+                        >
+                          {pendingCount}
+                        </span>
+                      )}
+                      {item.to === "/trucks" && truckAlertCount > 0 && (
+                        <span
+                          title={`${truckAlertCount} truck${truckAlertCount === 1 ? "" : "s"} with expiring or expired documents`}
+                          style={{
+                            marginLeft: "auto",
+                            background: colors.red,
+                            color: "#fff",
+                            borderRadius: radius.pill,
+                            fontSize: 11,
+                            fontWeight: 800,
+                            padding: "1px 7px",
+                          }}
+                        >
+                          {truckAlertCount}
+                        </span>
+                      )}
+                    </div>
                   )}
-                  {item.to === "/trucks" && truckAlertCount > 0 && (
-                    <span
-                      title={`${truckAlertCount} truck${truckAlertCount === 1 ? "" : "s"} with expiring or expired documents`}
-                      style={{
-                        marginLeft: "auto",
-                        background: colors.red,
-                        color: "#fff",
-                        borderRadius: radius.pill,
-                        fontSize: 11,
-                        fontWeight: 800,
-                        padding: "1px 7px",
-                      }}
-                    >
-                      {truckAlertCount}
-                    </span>
-                  )}
-                </div>
-              )}
-            </NavLink>
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
 
         <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "8px 16px" }} />
         <div style={{ padding: "8px 12px" }}>
           <button
+            className="uwc-nav-link"
             onClick={logout}
             style={{
               display: "flex",
@@ -254,12 +275,12 @@ export function Layout() {
               width: "100%",
               padding: "10px 12px",
               borderRadius: 10,
-              border: "none",
+              border: "1px solid rgba(255,255,255,0.14)",
               background: "transparent",
               cursor: "pointer",
-              color: "rgba(255,255,255,0.55)",
-              fontSize: 14,
-              fontWeight: 500,
+              color: "rgba(255,255,255,0.6)",
+              fontSize: 13.5,
+              fontWeight: 600,
             }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -269,7 +290,7 @@ export function Layout() {
           </button>
         </div>
 
-        <div style={{ margin: "8px 12px 16px", padding: 12, background: "rgba(255,255,255,0.06)", borderRadius: 12, display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ margin: "8px 12px 16px", padding: 12, background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 12, display: "flex", alignItems: "center", gap: 10 }}>
           <div
             style={{
               width: 36,
@@ -301,22 +322,37 @@ export function Layout() {
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: colors.bg }}>
         <header
           style={{
-            background: colors.blue,
+            background: gradients.header,
             borderBottom: `4px solid ${colors.yellow}`,
             padding: "0 28px",
-            height: 64,
+            height: 66,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             flexShrink: 0,
+            boxShadow: "0 6px 18px -8px rgba(0,32,90,0.5)",
+            position: "relative",
+            zIndex: 5,
           }}
         >
           <div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: "#fff" }}>{page.title}</div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", marginTop: -2 }}>{page.subtitle}</div>
+            <div style={{ fontSize: 21, fontWeight: 800, color: "#fff", letterSpacing: -0.2 }}>{page.title}</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", marginTop: -1 }}>{page.subtitle}</div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.7)" }}>{formatFullDate(new Date())}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: "rgba(255,255,255,0.85)",
+                background: "rgba(255,255,255,0.12)",
+                border: "1px solid rgba(255,255,255,0.14)",
+                borderRadius: radius.pill,
+                padding: "6px 13px",
+              }}
+            >
+              {formatFullDate(new Date())}
+            </div>
             <div style={{ position: "relative" }}>
               <div
                 style={{

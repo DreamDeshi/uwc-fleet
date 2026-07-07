@@ -35,16 +35,35 @@ export function Card({
 export function SectionTitle({ title, subtitle, right }: { title: string; subtitle?: string; right?: ReactNode }) {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-      <div>
-        <div style={{ fontSize: 16, fontWeight: 700, color: colors.text }}>{title}</div>
-        {subtitle && <div style={{ fontSize: 12.5, color: colors.textMuted, marginTop: 2 }}>{subtitle}</div>}
+      {/* Corporate-yellow tick before every section title — the small, repeated
+          brand mark that makes each card read as deliberately composed. */}
+      <div style={{ display: "flex", gap: 10 }}>
+        <span
+          style={{
+            width: 4,
+            borderRadius: 2,
+            background: colors.yellow,
+            alignSelf: "stretch",
+            marginTop: 2,
+            marginBottom: 2,
+            flexShrink: 0,
+          }}
+        />
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: colors.text, letterSpacing: -0.2 }}>{title}</div>
+          {subtitle && <div style={{ fontSize: 12.5, color: colors.textMuted, marginTop: 2 }}>{subtitle}</div>}
+        </div>
       </div>
       {right}
     </div>
   );
 }
 
-// ── KPI card (color-filled, optional click-through) ──────────────────
+// ── KPI card (gradient-filled stat tile, optional click-through) ─────
+// The dashboard's headline numbers: brand-gradient fill, a same-hue soft
+// shadow so the tile floats, decorative corner discs for depth, and a
+// display-size value. `shadowColor` takes a kpiShadow token; `bg` a
+// gradients token (plain colors still work for any legacy caller).
 export function KpiCard({
   label,
   value,
@@ -54,6 +73,7 @@ export function KpiCard({
   accent,
   icon,
   onClick,
+  shadowColor,
 }: {
   label: string;
   value: ReactNode;
@@ -63,32 +83,37 @@ export function KpiCard({
   accent: string;
   icon?: ReactNode;
   onClick?: () => void;
+  shadowColor?: string;
 }) {
   return (
     <div
+      className="uwc-kpi"
       onClick={onClick}
       style={{
         background: bg,
         color: fg,
-        borderRadius: radius.lg,
-        padding: 20,
-        boxShadow: shadow.card,
+        borderRadius: radius.xl,
+        padding: "20px 22px",
+        boxShadow: shadowColor ?? shadow.card,
         cursor: onClick ? "pointer" : undefined,
         position: "relative",
         overflow: "hidden",
-        minHeight: 130,
+        minHeight: 142,
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", opacity: 0.85 }}>
+      {/* Decorative depth: two translucent discs bleeding off the corner. */}
+      <div style={{ position: "absolute", right: -34, top: -34, width: 130, height: 130, borderRadius: "50%", background: "rgba(255,255,255,0.09)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", right: 26, bottom: -48, width: 96, height: 96, borderRadius: "50%", background: "rgba(255,255,255,0.07)", pointerEvents: "none" }} />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", position: "relative" }}>
+        <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: 1.2, textTransform: "uppercase", opacity: 0.9 }}>
           {label}
         </div>
         {icon && (
           <div
             style={{
-              width: 34,
-              height: 34,
-              borderRadius: 10,
+              width: 38,
+              height: 38,
+              borderRadius: 12,
               background: accent,
               display: "flex",
               alignItems: "center",
@@ -100,8 +125,10 @@ export function KpiCard({
           </div>
         )}
       </div>
-      <div style={{ fontSize: 38, fontWeight: 800, marginTop: 10, lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: 12.5, opacity: 0.85, marginTop: 8 }}>{sub}</div>}
+      <div style={{ fontSize: 44, fontWeight: 800, marginTop: 8, lineHeight: 1, letterSpacing: -1, position: "relative" }}>
+        {value}
+      </div>
+      {sub && <div style={{ fontSize: 12.5, fontWeight: 600, opacity: 0.9, marginTop: 9, position: "relative" }}>{sub}</div>}
     </div>
   );
 }
@@ -200,12 +227,33 @@ export function Pill({
   );
 }
 
+// Status is a first-class signal on every board and table, so the badge is
+// deliberately louder than a generic Pill: uppercase micro-type, a strong
+// tinted fill with a real border, and the status dot. The label is always
+// text — color is reinforcement, never the only channel.
 export function TripStatusBadge({ status }: { status: string }) {
   const c = tripStatusColor[status] ?? tripStatusColor.pending;
   return (
-    <Pill bg={c.bg} fg={c.fg} border={c.border} dot={c.dot}>
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        background: c.bg,
+        color: c.fg,
+        border: `1.5px solid ${c.border}`,
+        padding: "4px 10px",
+        borderRadius: radius.pill,
+        fontSize: 10.5,
+        fontWeight: 800,
+        letterSpacing: 0.6,
+        textTransform: "uppercase",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: c.dot, flexShrink: 0 }} />
       {tripStatusLabel[status] ?? status}
-    </Pill>
+    </span>
   );
 }
 
@@ -288,18 +336,20 @@ export function SegmentedFilter<T extends string>({
           <button
             key={o.value}
             onClick={() => onChange(o.value)}
+            className="uwc-lift"
             style={{
               display: "inline-flex",
               alignItems: "center",
               gap: 7,
-              padding: "8px 13px",
-              borderRadius: radius.md,
-              border: `1px solid ${active ? colors.blue : colors.border}`,
+              padding: "8px 15px",
+              borderRadius: radius.pill,
+              border: `1.5px solid ${active ? colors.blue : colors.border}`,
               background: active ? colors.blue : colors.card,
               color: active ? "#fff" : colors.textMuted,
-              fontWeight: 600,
+              fontWeight: 700,
               fontSize: 13,
               cursor: "pointer",
+              boxShadow: active ? "0 6px 14px -6px rgba(0,48,135,0.5)" : undefined,
             }}
           >
             {o.label}
