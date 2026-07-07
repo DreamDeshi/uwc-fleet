@@ -11,7 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import { useMonthly, usePayroll, useTrips } from "@/hooks/queries";
-import { colors, radius } from "@/theme";
+import { colors, gradients, radius } from "@/theme";
 import { Button, Card, ErrorState, Loading, SectionTitle } from "@/components/ui";
 import { formatDateTime, formatMoney, formatNumber } from "@/lib/format";
 import { buildPayrollCsv, lastNMytMonthKeys, monthKeyLabel, payrollBusy } from "@/lib/payroll";
@@ -152,7 +152,7 @@ export function ReportsPage() {
             {payrollSettling && (
               <span style={{ fontSize: 13, color: colors.textMuted }}>Loading {monthKeyLabel(month)}…</span>
             )}
-            <select value={month} onChange={(e) => setMonth(e.target.value)} style={monthSelectStyle}>
+            <select className="uwc-input" value={month} onChange={(e) => setMonth(e.target.value)} style={monthSelectStyle}>
               {monthOptions.map((k) => (
                 <option key={k} value={k}>
                   {monthKeyLabel(k)}
@@ -163,7 +163,7 @@ export function ReportsPage() {
         </div>
         {/* Dimmed while settling: the rows below may still be the previous
             month's placeholder data. */}
-        <table style={{ width: "100%", borderCollapse: "collapse", opacity: payrollSettling ? 0.45 : 1, transition: "opacity 120ms" }}>
+        <table className="uwc-table" style={{ width: "100%", borderCollapse: "collapse", opacity: payrollSettling ? 0.45 : 1, transition: "opacity 120ms" }}>
           <thead>
             <tr>
               {["Driver", "Employee No", "Trips", "Total"].map((h) => <th key={h} style={thStyle}>{h}</th>)}
@@ -178,7 +178,7 @@ export function ReportsPage() {
                 </td>
               </tr>
             ) : (
-              payrollRows.map((d, i) => <PayrollRow key={d.driver_id} row={d} striped={i % 2 === 1} />)
+              payrollRows.map((d) => <PayrollRow key={d.driver_id} row={d} />)
             )}
           </tbody>
         </table>
@@ -189,15 +189,15 @@ export function ReportsPage() {
         <div style={{ padding: 18, borderBottom: `1px solid ${colors.border}` }}>
           <SectionTitle title="Monthly Performance Summary" subtitle={months[0]?.label + " – " + months[months.length - 1]?.label} />
         </div>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <table className="uwc-table" style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
               {["Month", "Trips", "Completed", "Incentive", "External"].map((h) => <th key={h} style={thStyle}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
-            {months.map((m: MonthlyRow, i) => (
-              <tr key={m.month} style={{ background: i % 2 ? colors.blueTint : "transparent" }}>
+            {months.map((m: MonthlyRow) => (
+              <tr key={m.month}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{m.label}</td>
                 <td style={tdStyle}>{m.trips}</td>
                 <td style={tdStyle}>{m.completed}</td>
@@ -207,8 +207,8 @@ export function ReportsPage() {
             ))}
           </tbody>
         </table>
-        {/* Dark summary footer */}
-        <div style={{ background: colors.navy, borderRadius: `0 0 ${radius.lg}px ${radius.lg}px`, padding: "16px 18px", display: "flex", justifyContent: "space-around" }}>
+        {/* Dark summary footer — same gradient surface as the sidebar. */}
+        <div style={{ background: gradients.sidebar, borderRadius: `0 0 ${radius.lg}px ${radius.lg}px`, padding: "16px 18px", display: "flex", justifyContent: "space-around" }}>
           <FooterStat label="Total Trips" value={formatNumber(totalTrips)} />
           <FooterStat label="Total Incentive" value={formatMoney(totalIncentive)} />
           <FooterStat label="External Trips" value={formatNumber(totalExternal)} />
@@ -220,14 +220,11 @@ export function ReportsPage() {
 
 // One payroll row, expandable to the per-trip lines the month total is the
 // sum of — a pay dispute is settled by reading exactly these.
-function PayrollRow({ row, striped }: { row: PayrollDriverRow; striped: boolean }) {
+function PayrollRow({ row }: { row: PayrollDriverRow }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <tr
-        onClick={() => setOpen(!open)}
-        style={{ background: striped ? colors.blueTint : "transparent", cursor: "pointer" }}
-      >
+      <tr onClick={() => setOpen(!open)} style={{ cursor: "pointer" }}>
         <td style={{ ...tdStyle, fontWeight: 600 }}>
           <span style={{ display: "inline-block", width: 14, color: colors.textMuted }}>{open ? "▾" : "▸"}</span>
           {row.name}
@@ -261,6 +258,7 @@ const monthSelectStyle: React.CSSProperties = {
   fontSize: 14,
   color: colors.text,
   background: colors.card,
+  outline: "none",
 };
 
 function MiniKpi({ label, value, bg, fg }: { label: string; value: string; bg: string; fg: string }) {
@@ -284,18 +282,20 @@ function FooterStat({ label, value }: { label: string; value: string }) {
 
 const thStyle: React.CSSProperties = {
   textAlign: "left",
-  fontSize: 12,
-  fontWeight: 700,
-  letterSpacing: 0.5,
+  fontSize: 11,
+  fontWeight: 800,
+  letterSpacing: 0.7,
   textTransform: "uppercase",
-  color: colors.textMuted,
-  padding: "12px 16px",
+  color: "#475467",
+  padding: "11px 20px",
   borderBottom: `1px solid ${colors.border}`,
   background: colors.panel,
 };
 const tdStyle: React.CSSProperties = {
   fontSize: 14,
   color: colors.text,
-  padding: "12px 16px",
+  padding: "13px 20px",
   borderBottom: `1px solid ${colors.divider}`,
+  // Money/count columns align digit-for-digit (tabular figures).
+  fontVariantNumeric: "tabular-nums",
 };
