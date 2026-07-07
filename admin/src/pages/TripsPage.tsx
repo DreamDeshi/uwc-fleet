@@ -8,7 +8,7 @@ import {
   useRejectTrip,
   useReassignTrip,
   useTrip,
-  useTrips,
+  useTripBoard,
   useUnassignTrip,
 } from "@/hooks/queries";
 import { colors, radius } from "@/theme";
@@ -34,6 +34,7 @@ import { apiErrorMessage, apiErrorCode, apiErrorConflicts } from "@/services/api
 import { formatDateTime, formatMoney, formatTime, mytDateKey } from "@/lib/format";
 import { ZONES as ZONE_INFOS } from "@/lib/zones";
 import { byPickupUrgency } from "@/lib/pendingOrder";
+import { flattenTripPages, tripsTotal } from "@/lib/tripPages";
 import {
   ORIGIN_LABEL,
   cargoSummary,
@@ -117,7 +118,9 @@ export function TripsPage() {
     return () => clearTimeout(id);
   }, [q]);
 
-  const trips = useTrips({
+  // Paged board: the 20s poll covers the loaded pages only (page 1 = the
+  // live head by default); "Load older" appends further keyset pages.
+  const trips = useTripBoard({
     q: debouncedQ,
     status,
     driver_id: driverId,
@@ -126,6 +129,11 @@ export function TripsPage() {
     date_to: dateTo,
   });
   const drivers = useDrivers();
+
+  // Everything loaded so far, newest first (defensively deduped by id).
+  const all = useMemo(() => flattenTripPages(trips.data?.pages), [trips.data]);
+  // The filtered-set total the server counted — the board may hold less.
+  const total = tripsTotal(trips.data?.pages, all.length);
 
   const hasFilters = !!(q || status || driverId || zone || dateFrom || dateTo || needsAttentionOnly);
   const clearFilters = () => {
@@ -142,29 +150,26 @@ export function TripsPage() {
   // A booking "needs attention" when it's still pending AND auto-dispatch failed
   // to place it — the persistent, self-clearing Phase-2 signal.
   const needsAttention = (t: Trip) => t.status === "pending" && t.auto_dispatch_failed;
-  const attentionCount = useMemo(
-    () => (trips.data ?? []).filter(needsAttention).length,
-    [trips.data]
-  );
+  const attentionCount = useMemo(() => all.filter(needsAttention).length, [all]);
 
   const grouped = useMemo(() => {
     const g: Record<string, Trip[]> = { pending: [], active: [], completed: [], cancelled: [] };
-    const source = needsAttentionOnly ? (trips.data ?? []).filter(needsAttention) : trips.data ?? [];
+    const source = needsAttentionOnly ? all.filter(needsAttention) : all;
     for (const t of source) g[tripGroup(t.status)].push(t);
     // The dispatch queue is worked top-down: most-urgent pickup first, not
     // newest-created first (which buries the longest-waiting booking).
     g.pending.sort(byPickupUrgency);
     return g;
-  }, [trips.data, needsAttentionOnly]);
+  }, [all, needsAttentionOnly]);
 
   if (trips.isLoading) return <Loading />;
   if (trips.isError) return <ErrorState message="Could not load trips." onRetry={() => trips.refetch()} />;
 
-  const all = trips.data ?? [];
   // What the board actually shows after the client-side attention filter —
   // zero while `all` is non-empty means "filtered everything out".
   const boardCount = GROUP_ORDER.reduce((sum, g) => sum + grouped[g].length, 0);
   const selected = all.find((t) => t.id === selectedId) ?? null;
+  const olderCount = total - all.length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, height: "calc(100vh - 150px)" }}>
@@ -220,7 +225,9 @@ export function TripsPage() {
               ⚠ Needs attention{attentionCount > 0 ? ` · ${attentionCount}` : ""}
             </button>
             <span style={{ fontSize: 12.5, color: colors.textMuted }}>
-              {all.length} result{all.length === 1 ? "" : "s"}
+              {olderCount > 0
+                ? `${all.length} of ${total} results`
+                : `${all.length} result${all.length === 1 ? "" : "s"}`}
             </span>
             {hasFilters && (
               <Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button>
@@ -270,6 +277,23 @@ export function TripsPage() {
               }
             />
           ) : null}
+          {/* Older history stays off the poll until asked for. Loaded pages
+              join their status groups above and ARE polled from then on. */}
+          {trips.hasNextPage && (
+            <div style={{ paddingBottom: 8 }}>
+              <Button
+                variant="outline"
+                size="sm"
+                full
+                disabled={trips.isFetchingNextPage}
+                onClick={() => trips.fetchNextPage()}
+              >
+                {trips.isFetchingNextPage
+                  ? "Loading older trips…"
+                  : `Load older trips${olderCount > 0 ? ` (${olderCount} more)` : ""}`}
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* ── Right: detail / dispatch ── */}

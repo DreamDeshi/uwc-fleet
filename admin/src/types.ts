@@ -189,6 +189,15 @@ export interface Trip {
   timeline?: TimelineStep[];
 }
 
+// One keyset page of GET /trips?page_size=…&cursor=… (paged mode). The
+// cursor is opaque; total counts every trip matching the current filters,
+// so the board can say "N of total" and size its Load-older button.
+export interface TripPage {
+  items: Trip[];
+  next_cursor: string | null;
+  total: number;
+}
+
 export interface TruckAlert {
   doc: "insurance" | "permit" | "road_tax";
   expiry: string;

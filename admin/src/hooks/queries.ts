@@ -1,4 +1,10 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { api } from "@/services/api";
 import type {
   AdminUser,
@@ -17,6 +23,7 @@ import type {
   RateAuditEntry,
   RateResetResult,
   Trip,
+  TripPage,
   Truck,
   TruckExpiryAlert,
   TruckFuelLogs,
@@ -44,17 +51,18 @@ export interface TripFilters {
 }
 
 // Every mounted useTrips re-downloads its window (full include) on the 20s
-// poll, so each page requests only what it renders (audit #6): the board's
-// working window, the dashboard's recent handful, MobileLite's phone screen.
-// Filters always search the FULL history server-side — the limit caps the
-// result, not the search. True pagination is the noted bigger follow-up.
-const BOARD_LIMIT = 300;
+// poll, so each page requests only what it renders (audit #6): the
+// dashboard's recent handful, MobileLite's phone screen, Reports' pie
+// window. Filters always search the FULL history server-side — the limit
+// caps the result, not the search. The trip BOARD no longer uses this
+// legacy window: it pages with useTripBoard below.
+const DEFAULT_LIMIT = 300;
 
 export function useTrips(
   filters: TripFilters = {},
   opts: { poll?: boolean; limit?: number } = {}
 ) {
-  const { poll = true, limit = BOARD_LIMIT } = opts;
+  const { poll = true, limit = DEFAULT_LIMIT } = opts;
   const params: Record<string, string> = { limit: String(limit) };
   for (const [k, v] of Object.entries(filters)) if (v) params[k] = v;
   return useQuery({
@@ -71,6 +79,41 @@ export function useTrips(
     // aggregate (ReportsPage's pie) opt out of the poll entirely.
     refetchInterval: poll ? 20_000 : false,
     ...(poll ? {} : { staleTime: 5 * 60_000 }),
+  });
+}
+
+// ── True pagination for the trip board (the cb6bd55 follow-up) ────────
+// The board polls only its LOADED pages. By default that is just the first
+// page — the live head under (created_at desc, id desc), where every new
+// booking enters and where anything operationally live sits — so the 20s
+// poll re-downloads a bounded window, never the growing history. "Load
+// older" appends further keyset pages on demand; react-query refetches
+// loaded pages SEQUENTIALLY with recomputed cursors on every poll and
+// invalidation, so the loaded set stays gap- and duplicate-free even as
+// bookings arrive mid-walk, and status changes on old loaded trips are
+// picked up too. Changing filters (new key) or navigating away resets the
+// working set back to one page.
+const BOARD_PAGE_SIZE = 150;
+
+export function useTripBoard(filters: TripFilters = {}) {
+  const params: Record<string, string> = { page_size: String(BOARD_PAGE_SIZE) };
+  for (const [k, v] of Object.entries(filters)) if (v) params[k] = v;
+  return useInfiniteQuery({
+    // Shares the ["trips"] prefix, so every mutation that invalidates
+    // ["trips"] refetches the board exactly like the legacy list.
+    queryKey: ["trips", "board", params],
+    queryFn: async ({ pageParam }) =>
+      (
+        await api.get<TripPage>("/trips", {
+          params: pageParam ? { ...params, cursor: pageParam } : params,
+        })
+      ).data,
+    initialPageParam: "",
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+    // Same rationale as useTrips: keep the previous board while a new filter
+    // combination loads / poll every 20s so other actors' changes appear.
+    placeholderData: keepPreviousData,
+    refetchInterval: 20_000,
   });
 }
 
