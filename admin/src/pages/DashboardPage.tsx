@@ -1,7 +1,7 @@
 import { lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAttention, useDashboard, useDrivers, useFleetLive, useTrips, useTrucks } from "@/hooks/queries";
-import { colors, radius } from "@/theme";
+import { colors, gradients, kpiShadow, radius } from "@/theme";
 import { Card, KpiCard, Loading, ErrorState, ProgressBar, TripStatusBadge, SectionTitle, Pill, EmptyState } from "@/components/ui";
 // FleetMap pulls in Leaflet (~150 KB). It sits below the fold on the dashboard,
 // so we load it as its own chunk and let the KPIs paint first.
@@ -51,8 +51,8 @@ function AttentionPanel({
   if (groups.length === 0) return null;
 
   return (
-    <Card pad={0} style={{ border: `1px solid #FFB74D` }}>
-      <div style={{ padding: "14px 18px", borderBottom: `1px solid ${colors.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <Card pad={0} style={{ border: "1px solid #FFD9A8", borderLeft: `5px solid ${colors.orange}`, background: "#FFFDF8" }}>
+      <div style={{ padding: "14px 18px", borderBottom: `1px solid #FBE7CC`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <SectionTitle title="⚠ Trips needing attention" subtitle="stuck or stale — auto-refreshes every minute" />
         <button onClick={onOpenTrips} style={{ background: "none", border: "none", color: colors.blue, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
           Open trip board →
@@ -146,9 +146,10 @@ export function DashboardPage() {
           label="Active Trucks"
           value={k.active_trucks}
           sub={`of ${k.total_trucks} total fleet`}
-          bg={colors.blue}
+          bg={gradients.blue}
           fg="#fff"
           accent="rgba(255,255,255,0.18)"
+          shadowColor={kpiShadow.blue}
           onClick={() => navigate("/trucks")}
           icon={
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -161,9 +162,10 @@ export function DashboardPage() {
           label="Trips Today"
           value={k.trips_today}
           sub={`${k.trips_in_progress} in progress · ${k.completed_today} done`}
-          bg={colors.yellow}
+          bg={gradients.yellow}
           fg={colors.navy}
           accent="rgba(0,48,135,0.12)"
+          shadowColor={kpiShadow.yellow}
           onClick={() => navigate("/trips")}
           icon={
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -176,9 +178,10 @@ export function DashboardPage() {
           label="On-Time Rate"
           value={k.on_time_rate === null ? "—" : `${k.on_time_rate}%`}
           sub="completed this month"
-          bg={colors.green}
+          bg={gradients.green}
           fg="#fff"
           accent="rgba(255,255,255,0.18)"
+          shadowColor={kpiShadow.green}
           onClick={() => navigate("/reports")}
           icon={
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -191,9 +194,10 @@ export function DashboardPage() {
           label="Active Alerts"
           value={k.alerts}
           sub={`${docAlerts.length} doc · ${k.auto_dispatch_failed} failed · ${k.awaiting_manual} awaiting`}
-          bg={colors.red}
+          bg={gradients.red}
           fg="#fff"
           accent="rgba(255,255,255,0.18)"
+          shadowColor={kpiShadow.red}
           onClick={() => navigate("/trucks")}
           icon={
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -288,48 +292,56 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Recent trips */}
-      <Card>
-        <SectionTitle
-          title="Recent Trips"
-          subtitle="Latest bookings & deliveries"
-          right={
-            <button
-              onClick={() => navigate("/trips")}
-              style={{ border: `1.5px solid ${colors.blue}`, color: colors.blue, background: "transparent", borderRadius: radius.md, padding: "7px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
-            >
-              View All
-            </button>
-          }
-        />
+      {/* Recent trips — full-bleed table: padded card header, then the table
+          runs edge to edge with a solid header band and hover rows (the
+          zebra-blue rows read as selection states; separators + hover don't). */}
+      <Card pad={0} style={{ overflow: "hidden" }}>
+        <div style={{ padding: "18px 20px 4px" }}>
+          <SectionTitle
+            title="Recent Trips"
+            subtitle="Latest bookings & deliveries"
+            right={
+              <button
+                className="uwc-lift"
+                onClick={() => navigate("/trips")}
+                style={{ border: `1.5px solid ${colors.blue}`, color: colors.blue, background: "transparent", borderRadius: radius.pill, padding: "7px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+              >
+                View All →
+              </button>
+            }
+          />
+        </div>
         {recentTrips.length === 0 ? (
           <EmptyState message="No trips yet." />
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table className="uwc-table" style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
-                <tr>
+                <tr style={{ background: colors.panel }}>
                   {["Ticket", "Route", "Driver", "Cargo", "Status", "Progress"].map((h) => (
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {recentTrips.map((t, i) => (
-                  <tr key={t.id} style={{ background: i % 2 ? colors.blueTint : "transparent" }}>
-                    <td style={{ ...tdStyle, fontWeight: 700, color: colors.blue }}>{t.ticket_number}</td>
+                {recentTrips.map((t) => (
+                  <tr key={t.id}>
+                    <td style={{ ...tdStyle, fontWeight: 800, color: colors.blue }}>{t.ticket_number}</td>
                     <td style={tdStyle}>
-                      {ORIGIN_LABEL} → {tripDestination(t)}
+                      <span style={{ color: colors.textMuted }}>{ORIGIN_LABEL} → </span>
+                      <span style={{ fontWeight: 600 }}>{tripDestination(t)}</span>
                     </td>
                     <td style={{ ...tdStyle, color: t.driver ? colors.text : colors.textFaint }}>
                       {t.driver?.name ?? (t.is_external ? "External forwarder" : "—")}
                     </td>
                     <td style={tdStyle}>{cargoSummary(t)}</td>
                     <td style={tdStyle}><TripStatusBadge status={t.status} /></td>
-                    <td style={{ ...tdStyle, minWidth: 120 }}>
+                    <td style={{ ...tdStyle, minWidth: 130 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <ProgressBar pct={tripProgress(t)} color={t.status === "completed" ? colors.green : colors.blue} />
-                        <span style={{ fontSize: 11.5, color: colors.textMuted, width: 32 }}>{tripProgress(t)}%</span>
+                        <span style={{ fontSize: 11.5, fontWeight: 700, color: colors.textMuted, width: 34, fontVariantNumeric: "tabular-nums" }}>
+                          {tripProgress(t)}%
+                        </span>
                       </div>
                     </td>
                   </tr>
@@ -362,16 +374,17 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 const thStyle: React.CSSProperties = {
   textAlign: "left",
   fontSize: 11,
-  fontWeight: 700,
-  letterSpacing: 0.5,
+  fontWeight: 800,
+  letterSpacing: 0.7,
   textTransform: "uppercase",
-  color: colors.textMuted,
-  padding: "10px 12px",
+  color: "#475467",
+  padding: "11px 20px",
+  borderTop: `1px solid ${colors.border}`,
   borderBottom: `1px solid ${colors.border}`,
 };
 const tdStyle: React.CSSProperties = {
   fontSize: 13,
   color: colors.text,
-  padding: "12px 12px",
+  padding: "13px 20px",
   borderBottom: `1px solid ${colors.divider}`,
 };

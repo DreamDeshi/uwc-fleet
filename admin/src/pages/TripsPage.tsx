@@ -47,11 +47,14 @@ import {
 import type { Trip, SchedulingConflictInfo } from "@/types";
 
 const GROUP_ORDER = ["pending", "active", "completed", "cancelled"] as const;
-const GROUP_META: Record<string, { label: string; dot: string }> = {
-  pending: { label: "Pending Dispatch", dot: colors.orange },
-  active: { label: "Active", dot: colors.green },
-  completed: { label: "Completed", dot: colors.blue },
-  cancelled: { label: "Cancelled / Rejected", dot: "#9ca3af" },
+// Group colors match the trip-card accent scheme (pending orange, active
+// blue, completed green) — the old header dots disagreed with the cards
+// under them (active green / completed blue), which read as two systems.
+const GROUP_META: Record<string, { label: string; dot: string; tint: string; fg: string }> = {
+  pending: { label: "Pending Dispatch", dot: colors.orange, tint: colors.orangeTint, fg: "#B45309" },
+  active: { label: "Active", dot: colors.blue, tint: colors.blueTint, fg: colors.blue },
+  completed: { label: "Completed", dot: colors.green, tint: colors.greenTint, fg: "#2E7D32" },
+  cancelled: { label: "Cancelled / Rejected", dot: "#9ca3af", tint: "#F3F4F6", fg: "#4B5563" },
 };
 
 // Every bookable zone (Zone model @id codes) — derived from the shared zone
@@ -246,13 +249,31 @@ export function TripsPage() {
             return (
               <div key={group}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: GROUP_META[group].dot }} />
-                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: colors.textMuted }}>
+                  <span
+                    style={{
+                      width: 9,
+                      height: 9,
+                      borderRadius: "50%",
+                      background: GROUP_META[group].dot,
+                      boxShadow: `0 0 0 3px ${GROUP_META[group].tint}`,
+                    }}
+                  />
+                  <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: colors.text }}>
                     {GROUP_META[group].label}
                   </span>
-                  <span style={{ background: colors.panel, color: colors.textMuted, borderRadius: radius.pill, padding: "1px 8px", fontSize: 11.5, fontWeight: 700 }}>
+                  <span
+                    style={{
+                      background: GROUP_META[group].tint,
+                      color: GROUP_META[group].fg,
+                      borderRadius: radius.pill,
+                      padding: "2px 9px",
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                    }}
+                  >
                     {list.length}
                   </span>
+                  <span style={{ flex: 1, height: 1, background: colors.divider }} />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {list.map((t) => (
@@ -322,15 +343,18 @@ function TripCard({ trip, selected, onClick }: { trip: Trip; selected: boolean; 
     : group === "pending" ? colors.orange : group === "active" ? colors.blue : group === "completed" ? colors.green : "#9ca3af";
   return (
     <div
+      className="uwc-trip-card"
       onClick={onClick}
       style={{
         background: colors.card,
         border: `1.5px solid ${selected ? accent : colors.border}`,
-        borderLeft: `4px solid ${accent}`,
+        borderLeft: `5px solid ${accent}`,
         borderRadius: radius.md,
-        padding: 13,
+        padding: 14,
         cursor: "pointer",
-        boxShadow: selected ? "0 4px 14px rgba(0,0,0,0.08)" : undefined,
+        // Selected card gets a soft ring in its own accent, not just a border —
+        // unmistakable even while scanning a long column.
+        boxShadow: selected ? `0 0 0 3px ${accent}26, 0 6px 16px rgba(16,24,40,0.10)` : undefined,
       }}
     >
       {needsAttention && (
@@ -346,11 +370,15 @@ function TripCard({ trip, selected, onClick }: { trip: Trip; selected: boolean; 
         </div>
       )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: colors.blue }}>{trip.ticket_number}</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: colors.blue, letterSpacing: 0.2 }}>{trip.ticket_number}</span>
         <TripStatusBadge status={trip.status} />
       </div>
-      <div style={{ fontSize: 13, color: colors.text, marginBottom: 6 }}>
-        {ORIGIN_LABEL} → <strong>{tripDestination(trip)}</strong>
+      {/* Destination is what the dispatcher scans for — it leads, bold. */}
+      <div style={{ marginBottom: 7 }}>
+        <div style={{ fontSize: 14.5, fontWeight: 700, color: colors.text, lineHeight: 1.25 }}>
+          {tripDestination(trip)}
+        </div>
+        <div style={{ fontSize: 11.5, color: colors.textMuted, marginTop: 1 }}>from {ORIGIN_LABEL}</div>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <span style={{ fontSize: 11.5, color: colors.textMuted, flexShrink: 0 }}>{cargoSummary(trip)}</span>
