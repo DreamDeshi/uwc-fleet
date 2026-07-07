@@ -14,27 +14,45 @@ export function FieldLabel({ children }: { children: React.ReactNode }) {
   return <Text style={styles.label}>{children}</Text>;
 }
 
-// Bordered text input with an optional leading icon.
+// Bordered text input with an optional leading icon. The row wears a
+// corporate-blue ring while focused (presentation-only state; any caller
+// onFocus/onBlur handlers still run).
 export function TextField({
   label,
   leftIcon,
   rightElement,
+  onFocus,
+  onBlur,
   ...rest
 }: TextInputProps & {
   label?: string;
   leftIcon?: keyof typeof Ionicons.glyphMap;
   rightElement?: React.ReactNode;
 }) {
+  const [focused, setFocused] = React.useState(false);
   return (
     <View style={styles.block}>
       {label ? <FieldLabel>{label}</FieldLabel> : null}
-      <View style={styles.inputRow}>
+      <View style={[styles.inputRow, focused && styles.inputRowFocused]}>
         {leftIcon ? (
-          <Ionicons name={leftIcon} size={18} color={colors.textFaint} style={styles.leftIcon} />
+          <Ionicons
+            name={leftIcon}
+            size={18}
+            color={focused ? colors.blue : colors.textFaint}
+            style={styles.leftIcon}
+          />
         ) : null}
         <TextInput
           placeholderTextColor={colors.textFaint}
           style={styles.input}
+          onFocus={(e) => {
+            setFocused(true);
+            onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            setFocused(false);
+            onBlur?.(e);
+          }}
           {...rest}
         />
         {rightElement}
@@ -93,6 +111,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     minHeight: 52,
   },
+  inputRowFocused: { borderColor: colors.blue },
   leftIcon: { marginRight: 10 },
   input: { flex: 1, fontSize: 15, color: colors.navy, paddingVertical: 14 },
   value: { flex: 1, fontSize: 15, color: colors.navy, fontWeight: "600" },

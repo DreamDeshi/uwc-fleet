@@ -301,8 +301,8 @@ export function BookingFormScreen() {
             <View
               style={[
                 styles.stepDot,
-                i < step && { backgroundColor: colors.green },
-                i === step && { backgroundColor: colors.blue },
+                i < step && { backgroundColor: colors.green, borderColor: colors.green },
+                i === step && { backgroundColor: colors.blue, borderColor: colors.blue },
               ]}
             >
               {i < step ? (
@@ -384,12 +384,13 @@ export function BookingFormScreen() {
             onPress={onNext}
             loading={submitting}
             variant={isLastStep ? "accent" : "primary"}
+            size="xl"
             style={{ flex: step > 0 ? 2 : 1 }}
             icon={
               isLastStep ? (
-                <Ionicons name="checkmark" size={18} color={colors.navy} />
+                <Ionicons name="checkmark" size={20} color={colors.navy} />
               ) : (
-                <Ionicons name="arrow-forward" size={18} color={colors.white} />
+                <Ionicons name="arrow-forward" size={20} color={colors.white} />
               )
             }
           />
@@ -846,13 +847,15 @@ function StepConfirm({
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
   header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 12, flexDirection: "row", alignItems: "center", gap: 12 },
-  headerTitle: { color: colors.white, fontSize: 18, fontWeight: "700" },
+  headerTitle: { color: colors.white, fontSize: 18, fontWeight: "800" },
   stepBar: { flexDirection: "row", backgroundColor: colors.white, paddingHorizontal: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.borderLight },
   stepItem: { flex: 1, alignItems: "center", justifyContent: "flex-start" },
-  stepDot: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#e8ecf4", alignItems: "center", justifyContent: "center" },
-  stepNum: { fontSize: 13, fontWeight: "700", color: colors.textFaint },
-  stepLabel: { fontSize: 12, fontWeight: "700", color: colors.textFaint, marginTop: 4, textTransform: "uppercase" },
-  stepConn: { position: "absolute", top: 14, right: -50, width: 100, height: 2, backgroundColor: "#e8ecf4", zIndex: -1 },
+  // Bigger dots + a thicker connector so the 1-2-3 progress reads instantly;
+  // done = green check, current = blue, upcoming = muted (unchanged logic).
+  stepDot: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.fieldBg, borderWidth: 1.5, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
+  stepNum: { fontSize: 14, fontWeight: "800", color: colors.textFaint },
+  stepLabel: { fontSize: 12, fontWeight: "700", color: colors.textFaint, marginTop: 5, textTransform: "uppercase", letterSpacing: 0.3 },
+  stepConn: { position: "absolute", top: 15, right: -50, width: 100, height: 3, borderRadius: 2, backgroundColor: "#e8ecf4", zIndex: -1 },
   body: { padding: 16, paddingBottom: 24 },
 
   rebookBtn: {
