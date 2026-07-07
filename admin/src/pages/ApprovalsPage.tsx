@@ -16,11 +16,16 @@ export function ApprovalsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Card pad={14} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <Card pad={14} style={{ display: "flex", alignItems: "center", gap: 12, ...(users.length > 0 ? { borderLeft: `5px solid ${colors.yellow}` } : {}) }}>
+        {users.length > 0 && (
+          <span style={{ background: colors.yellowTint, color: colors.amber, borderRadius: 999, padding: "3px 11px", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>
+            {users.length}
+          </span>
+        )}
         <span style={{ fontSize: 14, color: colors.text }}>
           {users.length === 0
             ? "No accounts are waiting for approval."
-            : `${users.length} account${users.length === 1 ? "" : "s"} awaiting approval. Approving sets the account to active so the person can log in.`}
+            : `account${users.length === 1 ? "" : "s"} awaiting approval. Approving sets the account to active so the person can log in.`}
         </span>
       </Card>
 
@@ -58,12 +63,12 @@ function ApprovalRow({ user }: { user: AdminUser }) {
   const roleColor = user.role === "driver" ? colors.blue : user.role === "requestor" ? colors.green : colors.navy;
 
   return (
-    <Card style={{ display: "flex", alignItems: "center", gap: 14 }}>
+    <Card style={{ display: "flex", alignItems: "center", gap: 14, borderLeft: `5px solid ${roleColor}` }}>
       <Avatar name={user.name} size={46} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 15, fontWeight: 700 }}>{user.name}</span>
-          <Pill bg={`${roleColor}1a`} fg={roleColor}>{user.role}</Pill>
+          <Pill bg={`${roleColor}1a`} fg={roleColor} dot={roleColor}>{user.role}</Pill>
         </div>
         <div style={{ fontSize: 13, color: colors.textMuted, marginTop: 2 }}>
           {user.phone}
