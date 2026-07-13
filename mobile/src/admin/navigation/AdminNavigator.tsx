@@ -22,9 +22,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../context/AuthContext";
-import { colors, font, gradients, radius } from "../theme";
-import { Avatar, Card, EmptyState } from "../components/ui";
+import { colors, font, gradients } from "../theme";
+import { Avatar } from "../components/ui";
 import { useLayoutMode } from "../hooks/useLayoutMode";
+import { ApprovalsScreen } from "../screens/ApprovalsScreen";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -243,24 +244,14 @@ function AdminHeader({ navigation, options }: DrawerHeaderProps) {
   );
 }
 
-// Phase-0 placeholder — replaced by the real DashboardScreen in Phase 3;
-// Phase 1 repoints the initial route at the first real screens.
-function AdminHomeScreen() {
-  const { t } = useTranslation();
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.bg, padding: 16 }}>
-      <Card>
-        <EmptyState message={t("admin.comingSoon")} />
-      </Card>
-    </View>
-  );
-}
-
 export function AdminNavigator() {
   const { t } = useTranslation();
   const mode = useLayoutMode();
   return (
     <Drawer.Navigator
+      // Phase 1: no dashboard yet — admins land on the approval queue, the
+      // most action-shaped of the live screens.
+      initialRouteName="AdminApprovals"
       drawerContent={(props) => <AdminDrawerContent {...props} />}
       screenOptions={{
         header: (props) => <AdminHeader {...props} />,
@@ -269,10 +260,12 @@ export function AdminNavigator() {
         overlayColor: "rgba(16,24,40,0.5)",
       }}
     >
+      {/* Only ported screens are registered; NAV_GROUPS entries without a
+          registered route render disabled in the drawer (see above). */}
       <Drawer.Screen
-        name="AdminDashboard"
-        component={AdminHomeScreen}
-        options={{ title: t("admin.nav.dashboard") }}
+        name="AdminApprovals"
+        component={ApprovalsScreen}
+        options={{ title: t("admin.nav.approvals") }}
       />
     </Drawer.Navigator>
   );

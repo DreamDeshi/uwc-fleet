@@ -405,7 +405,21 @@
       "administration": "Pentadbiran"
     },
     "roleLabel": "Pentadbir Armada",
-    "comingSoon": "Skrin ini akan tiba dalam fasa akan datang."
+    "comingSoon": "Skrin ini akan tiba dalam fasa akan datang.",
+    "approvals": {
+      "loadError": "Tidak dapat memuatkan pengguna yang menunggu.",
+      "queueEmpty": "Barisan kelulusan kosong.",
+      "noneWaiting": "Tiada akaun menunggu kelulusan.",
+      "awaiting": "akaun menunggu kelulusan — kelulusan mengaktifkan akaun supaya orang itu boleh log masuk.",
+      "empNo": "Pekerja #{{num}}",
+      "registered": "Didaftar {{date}}",
+      "reject": "Tolak",
+      "approve": "Lulus",
+      "rejectTitle": "Tolak akaun ini?",
+      "rejectBody": "Tolak {{name}} ({{role}})? Akaun akan dinyahaktifkan dan tidak boleh log masuk sehingga admin meluluskannya semula.",
+      "rejectConfirm": "Tolak Akaun",
+      "actionFailed": "Tindakan gagal."
+    }
   },
   "timeline": {
     "title": "Garis masa status",

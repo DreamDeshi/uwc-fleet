@@ -405,7 +405,21 @@
       "administration": "Administration"
     },
     "roleLabel": "Fleet Administrator",
-    "comingSoon": "This screen arrives in a later phase."
+    "comingSoon": "This screen arrives in a later phase.",
+    "approvals": {
+      "loadError": "Could not load pending users.",
+      "queueEmpty": "The approval queue is empty.",
+      "noneWaiting": "No accounts are waiting for approval.",
+      "awaiting": "accounts awaiting approval — approving sets the account to active so the person can log in.",
+      "empNo": "Emp #{{num}}",
+      "registered": "Registered {{date}}",
+      "reject": "Reject",
+      "approve": "Approve",
+      "rejectTitle": "Reject this account?",
+      "rejectBody": "Reject {{name}} ({{role}})? The account is disabled and cannot log in until an admin re-approves it.",
+      "rejectConfirm": "Reject Account",
+      "actionFailed": "Action failed."
+    }
   },
   "timeline": {
     "title": "Status timeline",

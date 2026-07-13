@@ -405,7 +405,21 @@
       "administration": "管理"
     },
     "roleLabel": "车队管理员",
-    "comingSoon": "此页面将在后续阶段推出。"
+    "comingSoon": "此页面将在后续阶段推出。",
+    "approvals": {
+      "loadError": "无法加载待审批用户。",
+      "queueEmpty": "审批队列为空。",
+      "noneWaiting": "没有等待审批的账户。",
+      "awaiting": "个账户等待审批 — 批准后账户将激活，用户即可登录。",
+      "empNo": "工号 #{{num}}",
+      "registered": "注册于 {{date}}",
+      "reject": "拒绝",
+      "approve": "批准",
+      "rejectTitle": "拒绝此账户？",
+      "rejectBody": "拒绝 {{name}}（{{role}}）？该账户将被停用，在管理员重新批准前无法登录。",
+      "rejectConfirm": "拒绝账户",
+      "actionFailed": "操作失败。"
+    }
   },
   "timeline": {
     "title": "状态时间线",
