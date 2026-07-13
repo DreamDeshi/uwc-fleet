@@ -3,7 +3,6 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Layout } from "@/components/Layout";
 import { FullScreenLoader } from "@/components/FullScreenLoader";
-import { useIsMobile } from "@/hooks/useIsMobile";
 
 // Route-level code splitting: each page (and its heavy deps — Leaflet on the
 // dashboard, Recharts on reports) ships as its own chunk loaded on navigation,
@@ -28,7 +27,6 @@ const MobileLitePage = lazyPage(() => import("@/pages/MobileLitePage"), "MobileL
 
 export default function App() {
   const { status } = useAuth();
-  const isMobile = useIsMobile();
 
   if (status === "loading") return <FullScreenLoader />;
 
@@ -43,23 +41,13 @@ export default function App() {
     );
   }
 
-  // On a phone, the desktop dashboard is unusable — route admins to the touch
-  // "lite" screen (dispatch + approvals). Desktop keeps the full app, with /m
-  // reachable for previewing the mobile view.
-  if (isMobile) {
-    return (
-      <Suspense fallback={<FullScreenLoader />}>
-        <Routes>
-          <Route path="/m" element={<MobileLitePage />} />
-          <Route path="*" element={<Navigate to="/m" replace />} />
-        </Routes>
-      </Suspense>
-    );
-  }
-
-  // Authenticated desktop app. Each page chunk loads on navigation; the Suspense
-  // boundary lives inside Layout (around the Outlet) so the sidebar stays put
-  // while a page streams in. The /m preview route gets its own boundary.
+  // Authenticated app — every viewport gets the full dashboard (the Layout
+  // shell adapts below 768px: overlay-drawer sidebar behind a hamburger).
+  // /m keeps serving the legacy touch "lite" screen for anyone who bookmarked
+  // it; phones are no longer forced onto it. Each page chunk loads on
+  // navigation; the Suspense boundary lives inside Layout (around the Outlet)
+  // so the sidebar stays put while a page streams in. The /m route gets its
+  // own boundary.
   return (
     <Routes>
       <Route element={<Layout />}>

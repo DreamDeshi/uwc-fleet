@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { colors, gradients, radius } from "@/theme";
@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { usePendingUsers, useDashboard, useTruckAlerts } from "@/hooks/queries";
 import { formatFullDate, initials } from "@/lib/format";
 import { FullScreenLoader } from "@/components/FullScreenLoader";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 interface NavItem {
   to: string;
@@ -136,6 +137,10 @@ export function Layout() {
   const pending = usePendingUsers();
   const dashboard = useDashboard();
   const truckAlerts = useTruckAlerts();
+  // Below 768px the sidebar becomes an off-canvas drawer behind a hamburger;
+  // desktop keeps the fixed 248px column untouched.
+  const mobile = useIsMobile();
+  const [navOpen, setNavOpen] = useState(false);
 
   const page = pageTitles[location.pathname] ?? { title: "Dashboard", subtitle: "" };
   const pendingCount = pending.data?.length ?? 0;
@@ -144,6 +149,14 @@ export function Layout() {
 
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
+      {/* Scrim behind the open drawer — tap anywhere outside to close. */}
+      {mobile && navOpen && (
+        <div
+          onClick={() => setNavOpen(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(16,24,40,0.5)", zIndex: 940 }}
+        />
+      )}
+
       {/* ── Sidebar ── */}
       <aside
         style={{
@@ -154,6 +167,20 @@ export function Layout() {
           flexDirection: "column",
           flexShrink: 0,
           overflowY: "auto",
+          // Drawer mode: slides in over the content (kept below the 1000-level
+          // modals so a dialog always wins).
+          ...(mobile
+            ? {
+                position: "fixed" as const,
+                top: 0,
+                bottom: 0,
+                left: 0,
+                zIndex: 950,
+                transform: navOpen ? "translateX(0)" : "translateX(-100%)",
+                transition: "transform 0.22s ease",
+                boxShadow: navOpen ? "0 0 40px rgba(0,0,0,0.35)" : undefined,
+              }
+            : null),
         }}
       >
         <div style={{ padding: "26px 20px 20px", display: "flex", alignItems: "center", gap: 12 }}>
@@ -201,7 +228,13 @@ export function Layout() {
                 {g.heading}
               </div>
               {g.items.map((item) => (
-                <NavLink key={item.to} to={item.to} end={item.to === "/"} style={{ display: "block" }}>
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === "/"}
+                  style={{ display: "block" }}
+                  onClick={mobile ? () => setNavOpen(false) : undefined}
+                >
                   {({ isActive }) => (
                     <div
                       className={isActive ? undefined : "uwc-nav-link"}
@@ -324,7 +357,7 @@ export function Layout() {
           style={{
             background: gradients.header,
             borderBottom: `4px solid ${colors.yellow}`,
-            padding: "0 28px",
+            padding: mobile ? "0 14px" : "0 28px",
             height: 66,
             display: "flex",
             alignItems: "center",
@@ -335,24 +368,73 @@ export function Layout() {
             zIndex: 5,
           }}
         >
-          <div>
-            <div style={{ fontSize: 21, fontWeight: 800, color: "#fff", letterSpacing: -0.2 }}>{page.title}</div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginTop: -1 }}>{page.subtitle}</div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color: "rgba(255,255,255,0.85)",
-                background: "rgba(255,255,255,0.12)",
-                border: "1px solid rgba(255,255,255,0.14)",
-                borderRadius: radius.pill,
-                padding: "6px 13px",
-              }}
-            >
-              {formatFullDate(new Date())}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            {mobile && (
+              <button
+                onClick={() => setNavOpen(true)}
+                aria-label="Open menu"
+                style={{
+                  border: "none",
+                  background: "rgba(255,255,255,0.12)",
+                  borderRadius: 10,
+                  width: 40,
+                  height: 40,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                  <path d="M4 6h16M4 12h16M4 18h16" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </button>
+            )}
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: mobile ? 17 : 21,
+                  fontWeight: 800,
+                  color: "#fff",
+                  letterSpacing: -0.2,
+                  ...(mobile
+                    ? { whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }
+                    : null),
+                }}
+              >
+                {page.title}
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "rgba(255,255,255,0.65)",
+                  marginTop: -1,
+                  ...(mobile
+                    ? { whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }
+                    : null),
+                }}
+              >
+                {page.subtitle}
+              </div>
             </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+            {!mobile && (
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "rgba(255,255,255,0.85)",
+                  background: "rgba(255,255,255,0.12)",
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  borderRadius: radius.pill,
+                  padding: "6px 13px",
+                }}
+              >
+                {formatFullDate(new Date())}
+              </div>
+            )}
             <div style={{ position: "relative" }}>
               <div
                 style={{
@@ -397,7 +479,7 @@ export function Layout() {
           </div>
         </header>
 
-        <main style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }}>
+        <main style={{ flex: 1, overflowY: "auto", padding: mobile ? "14px 14px 28px" : "24px 28px" }}>
           <Suspense fallback={<FullScreenLoader />}>
             <Outlet />
           </Suspense>
