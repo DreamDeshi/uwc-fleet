@@ -11,7 +11,8 @@ import {
   useTripBoard,
   useUnassignTrip,
 } from "@/hooks/queries";
-import { colors, radius } from "@/theme";
+import { colors, gradients, radius } from "@/theme";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import {
   Avatar,
   Button,
@@ -132,6 +133,9 @@ export function TripsPage() {
     date_to: dateTo,
   });
   const drivers = useDrivers();
+  // Phone layout: single-column board; a selected trip opens as a
+  // full-screen layer instead of the side-by-side detail column.
+  const mobile = useIsMobile();
 
   // Everything loaded so far, newest first (defensively deduped by id).
   const all = useMemo(() => flattenTripPages(trips.data?.pages), [trips.data]);
@@ -240,7 +244,7 @@ export function TripsPage() {
         <SegmentedFilter options={STATUS_OPTIONS} value={status} onChange={setStatus} />
       </Card>
 
-      <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16, flex: 1, minHeight: 0 }}>
+      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "360px 1fr", gap: 16, flex: 1, minHeight: 0 }}>
         {/* ── Left: grouped board ── */}
         <div style={{ overflowY: "auto", paddingRight: 4, display: "flex", flexDirection: "column", gap: 18 }}>
           {GROUP_ORDER.map((group) => {
@@ -317,17 +321,69 @@ export function TripsPage() {
           )}
         </div>
 
-        {/* ── Right: detail / dispatch ── */}
-        <div style={{ overflowY: "auto" }}>
-          {selected ? (
-            <TripDetail key={selected.id} trip={selected} onDone={() => setSelectedId(null)} />
-          ) : (
-            <Card style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <EmptyState message="Select a trip to view details and dispatch." />
-            </Card>
-          )}
-        </div>
+        {/* ── Right: detail / dispatch (desktop side-by-side column) ── */}
+        {!mobile && (
+          <div style={{ overflowY: "auto" }}>
+            {selected ? (
+              <TripDetail key={selected.id} trip={selected} onDone={() => setSelectedId(null)} />
+            ) : (
+              <Card style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <EmptyState message="Select a trip to view details and dispatch." />
+              </Card>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Phone: the same TripDetail opens as a full-screen layer over the
+          board (same selectedId state — back returns to the list). Kept
+          below the 1000-level modals so confirm dialogs stay on top. */}
+      {mobile && selected && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 900, background: colors.bg, display: "flex", flexDirection: "column" }}>
+          <div
+            style={{
+              background: gradients.header,
+              borderBottom: `4px solid ${colors.yellow}`,
+              padding: "0 14px",
+              height: 56,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              flexShrink: 0,
+            }}
+          >
+            <button
+              onClick={() => setSelectedId(null)}
+              aria-label="Back to trip board"
+              style={{
+                border: "none",
+                background: "rgba(255,255,255,0.12)",
+                borderRadius: 10,
+                width: 38,
+                height: 38,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M15 5l-7 7 7 7" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {selected.ticket_number}
+              </div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", marginTop: -1 }}>Trip details & dispatch</div>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 28px" }}>
+            <TripDetail key={selected.id} trip={selected} onDone={() => setSelectedId(null)} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -414,6 +470,7 @@ function TripDetail({ trip, onDone }: { trip: Trip; onDone: () => void }) {
   // it on selection and fall back to the list trip for everything else.
   const detail = useTrip(trip.id);
   const timeline = detail.data?.timeline ?? [];
+  const mobile = useIsMobile();
   return (
     <Card>
       {/* Header */}
@@ -460,8 +517,8 @@ function TripDetail({ trip, onDone }: { trip: Trip; onDone: () => void }) {
         </div>
       </div>
 
-      {/* Info row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 18 }}>
+      {/* Info row — stacks on a phone (three 100px columns are unreadable) */}
+      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(3, 1fr)", gap: 12, marginBottom: 18 }}>
         <InfoTile label="Requestor" value={trip.requestor.name} sub={trip.requestor.phone} />
         <InfoTile label="Cargo" value={`${totalPallets(trip)} pallets`} sub={cargoSummary(trip)} />
         <InfoTile label="Consignee" value={tripConsigneeName(trip)} sub={`${trip.stops.length} stop${trip.stops.length === 1 ? "" : "s"}`} />
@@ -605,10 +662,13 @@ function DriverGrid({
 }) {
   const drivers = useDrivers();
   const pallets = totalPallets(trip);
+  // Full-width driver cards on a phone — bigger tap targets for the
+  // on-the-floor assign/reassign flow.
+  const mobile = useIsMobile();
 
   if (drivers.isLoading) return <Loading label="Loading drivers…" />;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 10 }}>
       {(drivers.data ?? []).map((d) => {
         // Leave is checked against THIS trip's pickup MYT date (not
         // "today") — a driver on leave next week is still assignable
@@ -1155,13 +1215,14 @@ function CompletedPanel({ trip }: { trip: Trip }) {
   // Per-drop evidence exists only on trips finalized after the breakdown
   // feature; older completed trips show an honest "not recorded" note.
   const hasBreakdown = stops.some((s) => s.points_awarded !== null && s.points_awarded !== undefined);
+  const mobile = useIsMobile();
   return (
     <div>
       <div style={{ background: colors.greenTint, borderRadius: radius.md, padding: 14, marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
         <span style={{ width: 28, height: 28, borderRadius: "50%", background: colors.green, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>✓</span>
         <span style={{ fontSize: 14, fontWeight: 700, color: colors.green }}>Trip Completed</span>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr 1fr", gap: 12 }}>
         <InfoTile label="Driver" value={trip.driver?.name ?? "—"} />
         <InfoTile label="Truck" value={trip.truck_plate ?? "—"} />
         <InfoTile label="Incentive" value={formatMoney(trip.incentive_earned)} />
