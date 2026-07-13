@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
+import { isNormalizedPhone, legacyZeroVariant, normalizePhone } from "../lib/phone";
 import { validateBody } from "../middleware/validate";
 import { accountStatusError, requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
@@ -31,9 +32,18 @@ const registerSchema = z.object({
 
 router.post("/register", validateBody(registerSchema), async (req, res, next) => {
   try {
-    const { phone, password, name, employee_number, department_id, role } = req.body;
+    const { password, name, employee_number, department_id, role } = req.body;
 
-    const existing = await prisma.user.findUnique({ where: { phone } });
+    const phone = normalizePhone(req.body.phone);
+    if (!isNormalizedPhone(phone)) {
+      throw new ApiError(400, "INVALID_PHONE", "Enter a valid Malaysian phone number.");
+    }
+
+    // Also match the pre-normalization "+600…" shape so the same person can't
+    // end up with two accounts (see lib/phone.ts legacyZeroVariant).
+    const existing = await prisma.user.findFirst({
+      where: { phone: { in: [phone, legacyZeroVariant(phone)] } },
+    });
     if (existing) {
       throw new ApiError(409, "PHONE_ALREADY_REGISTERED", "An account with this phone number already exists.");
     }
@@ -78,9 +88,15 @@ const loginSchema = z.object({
 
 router.post("/login", validateBody(loginSchema), async (req, res, next) => {
   try {
-    const { phone, password } = req.body;
+    const { password } = req.body;
 
-    const user = await prisma.user.findUnique({ where: { phone } });
+    const phone = normalizePhone(req.body.phone);
+    let user = await prisma.user.findUnique({ where: { phone } });
+    if (!user && phone.startsWith("+60")) {
+      // Accounts registered before phone normalization were stored as
+      // "+600…" — keep them logging in until the one-off data fix runs.
+      user = await prisma.user.findUnique({ where: { phone: legacyZeroVariant(phone) } });
+    }
     if (!user) {
       throw new ApiError(401, "INVALID_CREDENTIALS", "Phone number or password is incorrect.");
     }
