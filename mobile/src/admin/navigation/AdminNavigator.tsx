@@ -29,6 +29,7 @@ import { AdminHomeScreen } from "../screens/AdminHomeScreen";
 import { ApprovalsScreen } from "../screens/ApprovalsScreen";
 import { ConsigneesScreen } from "../screens/ConsigneesScreen";
 import { PerformanceScreen } from "../screens/PerformanceScreen";
+import { DriversScreen } from "../screens/DriversScreen";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -288,6 +289,11 @@ export function AdminNavigator() {
         name="AdminPerformance"
         component={PerformanceScreen}
         options={{ title: t("admin.nav.performance") }}
+      />
+      <Drawer.Screen
+        name="AdminDrivers"
+        component={DriversScreen}
+        options={{ title: t("admin.nav.drivers") }}
       />
     </Drawer.Navigator>
   );
