@@ -4,8 +4,9 @@
 // score components (on-time 40 · completion 30 · incentive 30) so a ranking
 // is never a black box. The leaderboard is the first real user of the RN
 // table pattern (TableScroll + flex rows).
-import React, { useMemo } from "react";
-import { RefreshControl, ScrollView, Text, View } from "react-native";
+import React, { useMemo, useState } from "react";
+import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { useDriverPerformance } from "../hooks/queries";
 import { colors, font, radius } from "../theme";
@@ -133,9 +134,14 @@ function ScoreBadge({ score, completed }: { score: number; completed: number }) 
   );
 }
 
-function Component({ value, max, detail }: { value: number; max: number; detail: string }) {
+function Component({ value, max, detail, label }: { value: number; max: number; detail: string; label?: string }) {
   return (
     <View style={{ minWidth: 120 }}>
+      {label ? (
+        <Text style={{ fontSize: font.xs, fontWeight: "800", letterSpacing: 0.6, textTransform: "uppercase", color: colors.textMuted, marginBottom: 3 }}>
+          {label}
+        </Text>
+      ) : null}
       <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4, gap: 6 }}>
         <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.text }}>
           {value.toFixed(1)}
@@ -149,8 +155,22 @@ function Component({ value, max, detail }: { value: number; max: number; detail:
 }
 
 // ── Ranked leaderboard — the "why" view, sorted by total score ───────────
+// Owner ruling (13 Jul 2026): table on PC, stacked CARDS on phones — a wide
+// table must never horizontal-scroll on a narrow screen.
 function Leaderboard({ ranked }: { ranked: DriverPerformance[] }) {
   const { t } = useTranslation();
+  const mode = useLayoutMode();
+  if (mode === "narrow") {
+    return (
+      <Lens title={t("admin.performance.leaderboard")} hint={t("admin.performance.leaderboardHint")}>
+        <View style={{ gap: 10 }}>
+          {ranked.map((d, i) => (
+            <LeaderboardCard key={d.id} d={d} rank={i + 1} />
+          ))}
+        </View>
+      </Lens>
+    );
+  }
   return (
     <Lens title={t("admin.performance.leaderboard")} hint={t("admin.performance.leaderboardHint")}>
       <TableScroll minWidth={760}>
@@ -191,6 +211,75 @@ function Leaderboard({ ranked }: { ranked: DriverPerformance[] }) {
         })}
       </TableScroll>
     </Lens>
+  );
+}
+
+// One driver as a stacked card (narrow mode): rank, name/truck, score and
+// tier visible at once; the three weighted components expand on tap.
+function LeaderboardCard({ d, rank }: { d: DriverPerformance; rank: number }) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const scored = d.total_completed > 0;
+  return (
+    <Pressable
+      onPress={() => setExpanded((e) => !e)}
+      style={{
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: radius.md,
+        padding: 12,
+        backgroundColor: colors.card,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <View
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 14,
+            backgroundColor: rank === 1 && scored ? colors.yellow : colors.panel,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text style={{ fontSize: font.sm, fontWeight: "800", color: rank === 1 && scored ? colors.navy : colors.textFaint }}>
+            {rank}
+          </Text>
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <DriverCell d={d} />
+        </View>
+        <View style={{ alignItems: "flex-end", gap: 4 }}>
+          <ScoreBadge score={d.total_score} completed={d.total_completed} />
+          {scored ? (
+            <Pill {...scoreColor(d.total_score)}>{t(tierKeyFor(d.total_score))}</Pill>
+          ) : null}
+        </View>
+        <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} />
+      </View>
+      {expanded && (
+        <View style={{ gap: 12, marginTop: 14, borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 12 }}>
+          <Component
+            label={t("admin.performance.onTimeCol")}
+            value={d.on_time_component}
+            max={40}
+            detail={t("admin.performance.onTimeDetail", { pct: d.on_time_rate.toFixed(0) })}
+          />
+          <Component
+            label={t("admin.performance.completionCol")}
+            value={d.completion_component}
+            max={30}
+            detail={t("admin.performance.completedDetail", { pct: d.completion_rate.toFixed(0) })}
+          />
+          <Component
+            label={t("admin.performance.incentiveCol")}
+            value={d.points_component}
+            max={30}
+            detail={formatMoney(d.rm_earned_this_month)}
+          />
+        </View>
+      )}
+    </Pressable>
   );
 }
 

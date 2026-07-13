@@ -494,9 +494,14 @@ export function Input({
 }
 
 // ── Table pattern ────────────────────────────────────────────────────
-// RN has no <table>: rows are flex layouts. TableScroll keeps a wide row set
-// readable on a phone — natural column widths, sideways pan inside the card
-// (the web admin's TableScroll, RN-native). Desktop/wide just renders flat.
+// RN has no <table>: rows are flex layouts.
+//
+// OWNER RULING (13 Jul 2026): on NARROW screens, wide tables must NOT
+// horizontal-scroll — render each row as a stacked CARD instead (key fields
+// visible at once, secondary columns below or behind a tap-to-expand), and
+// keep the full table on wide screens. See PerformanceScreen's leaderboard
+// for the reference implementation. TableScroll remains for WIDE mode and
+// for tables narrow enough to fit a phone without panning.
 export function TableScroll({ children, minWidth = 640 }: { children: Kids; minWidth?: number }) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={{ flexGrow: 1 }}>
