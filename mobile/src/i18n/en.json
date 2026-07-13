@@ -537,7 +537,13 @@
       "attOnLeaveHint": "assigned trips whose driver has leave covering the pickup date",
       "sincePickup": "{{h}}h since pickup",
       "untilPickup": "{{h}}h until pickup",
-      "andMore": "… and {{count}} more"
+      "andMore": "… and {{count}} more",
+      "mapSubLive": "Zone overlays · {{count}} truck(s) live on GPS",
+      "mapSubAwaiting": "Zone overlays · approximate positions (awaiting GPS)",
+      "mapLive": "Live · {{time}}",
+      "mapStale": "Signal lost (last fix stale)",
+      "mapApprox": "Approx. position (no GPS yet)",
+      "mapNoDriver": "No driver"
     },
     "drivers": {
       "loadError": "Could not load drivers.",

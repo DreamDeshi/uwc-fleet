@@ -53,6 +53,7 @@ export function DashboardWide() {
   const k = dash.data!;
   const truckList: Truck[] = trucks.data ?? [];
   const recentTrips = (trips.data ?? []).slice(0, 6);
+  const liveCount = (live.data ?? []).filter((p) => !p.stale).length;
 
   // Aggregate alerts: truck doc expiries.
   const docAlerts = truckList.flatMap((tr) => tr.alerts.map((a) => ({ plate: tr.plate, ...a })));
@@ -152,13 +153,35 @@ export function DashboardWide() {
       {/* Map + right rail */}
       <View style={{ flexDirection: "row", gap: 16, alignItems: "stretch" }}>
         <Card pad={0} style={{ flex: 1, overflow: "hidden", minHeight: 460 }}>
-          <View style={{ paddingVertical: 16, paddingHorizontal: 18, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <Text style={{ fontSize: 15, fontWeight: "700", color: colors.text }}>{t("admin.dashboard.fleetMap")}</Text>
-            <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 2 }}>{t("admin.dashboard.fleetMapSub")}</Text>
+          <View
+            style={{
+              paddingVertical: 16,
+              paddingHorizontal: 18,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <View style={{ minWidth: 220 }}>
+              <Text style={{ fontSize: 15, fontWeight: "700", color: colors.text }}>{t("admin.dashboard.fleetMap")}</Text>
+              <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 2 }}>
+                {liveCount > 0
+                  ? t("admin.dashboard.mapSubLive", { count: liveCount })
+                  : t("admin.dashboard.mapSubAwaiting")}
+              </Text>
+            </View>
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <LegendDot color={colors.green} label={t("admin.trucks.statusActive")} />
+              <LegendDot color={colors.blue} label={t("admin.trucks.statusIdle")} />
+              <LegendDot color={colors.orange} label={t("admin.trucks.statusMaintenance")} />
+            </View>
           </View>
           <View style={{ flex: 1, padding: 12 }}>
-            {/* Phase 3 swaps this placeholder for the real fleet map. */}
-            <AdminFleetMap height={380} />
+            <AdminFleetMap trucks={truckList} live={live.data ?? []} height={380} />
           </View>
         </Card>
 
@@ -276,6 +299,15 @@ export function DashboardWide() {
         </Text>
       )}
     </ScrollView>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+      <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: color }} />
+      <Text style={{ fontSize: font.xs, color: colors.textMuted }}>{label}</Text>
+    </View>
   );
 }
 

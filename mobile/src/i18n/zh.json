@@ -537,7 +537,13 @@
       "attOnLeaveHint": "已分配行程的司机在取货日期休假",
       "sincePickup": "取货后 {{h}} 小时",
       "untilPickup": "距取货 {{h}} 小时",
-      "andMore": "… 还有 {{count}} 条"
+      "andMore": "… 还有 {{count}} 条",
+      "mapSubLive": "区域覆盖 · {{count}} 辆卡车 GPS 在线",
+      "mapSubAwaiting": "区域覆盖 · 大致位置（等待 GPS）",
+      "mapLive": "在线 · {{time}}",
+      "mapStale": "信号丢失（最后定位已过期）",
+      "mapApprox": "大致位置（尚无 GPS）",
+      "mapNoDriver": "无司机"
     },
     "drivers": {
       "loadError": "无法加载司机。",

@@ -537,7 +537,13 @@
       "attOnLeaveHint": "trip yang pemandunya bercuti pada tarikh ambilan",
       "sincePickup": "{{h}} jam sejak ambilan",
       "untilPickup": "{{h}} jam sebelum ambilan",
-      "andMore": "… dan {{count}} lagi"
+      "andMore": "… dan {{count}} lagi",
+      "mapSubLive": "Lapisan zon · {{count}} lori langsung di GPS",
+      "mapSubAwaiting": "Lapisan zon · kedudukan anggaran (menunggu GPS)",
+      "mapLive": "Langsung · {{time}}",
+      "mapStale": "Isyarat hilang (kedudukan terakhir lapuk)",
+      "mapApprox": "Kedudukan anggaran (belum ada GPS)",
+      "mapNoDriver": "Tiada pemandu"
     },
     "drivers": {
       "loadError": "Tidak dapat memuatkan pemandu.",
