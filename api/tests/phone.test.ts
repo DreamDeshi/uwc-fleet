@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isNormalizedPhone, legacyZeroVariant, normalizePhone } from "../src/lib/phone";
+import { isNormalizedPhone, normalizePhone } from "../src/lib/phone";
 
 /**
  * Phone is the login ID, so registration and login must canonicalize the same
@@ -70,11 +70,5 @@ describe("isNormalizedPhone", () => {
     expect(isNormalizedPhone("")).toBe(false);
     expect(isNormalizedPhone("+601234")).toBe(false); // too short
     expect(isNormalizedPhone("+60123456789012")).toBe(false); // too long
-  });
-});
-
-describe("legacyZeroVariant", () => {
-  it("rebuilds the pre-fix malformed shape from a canonical number", () => {
-    expect(legacyZeroVariant("+60174145245")).toBe("+600174145245");
   });
 });

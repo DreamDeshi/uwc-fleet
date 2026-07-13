@@ -3,7 +3,7 @@ import bcrypt from "bcrypt";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
-import { isNormalizedPhone, legacyZeroVariant, normalizePhone } from "../lib/phone";
+import { isNormalizedPhone, normalizePhone } from "../lib/phone";
 import { validateBody } from "../middleware/validate";
 import { accountStatusError, requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
@@ -39,11 +39,7 @@ router.post("/register", validateBody(registerSchema), async (req, res, next) =>
       throw new ApiError(400, "INVALID_PHONE", "Enter a valid Malaysian phone number.");
     }
 
-    // Also match the pre-normalization "+600…" shape so the same person can't
-    // end up with two accounts (see lib/phone.ts legacyZeroVariant).
-    const existing = await prisma.user.findFirst({
-      where: { phone: { in: [phone, legacyZeroVariant(phone)] } },
-    });
+    const existing = await prisma.user.findUnique({ where: { phone } });
     if (existing) {
       throw new ApiError(409, "PHONE_ALREADY_REGISTERED", "An account with this phone number already exists.");
     }
@@ -91,12 +87,7 @@ router.post("/login", validateBody(loginSchema), async (req, res, next) => {
     const { password } = req.body;
 
     const phone = normalizePhone(req.body.phone);
-    let user = await prisma.user.findUnique({ where: { phone } });
-    if (!user && phone.startsWith("+60")) {
-      // Accounts registered before phone normalization were stored as
-      // "+600…" — keep them logging in until the one-off data fix runs.
-      user = await prisma.user.findUnique({ where: { phone: legacyZeroVariant(phone) } });
-    }
+    const user = await prisma.user.findUnique({ where: { phone } });
     if (!user) {
       throw new ApiError(401, "INVALID_CREDENTIALS", "Phone number or password is incorrect.");
     }

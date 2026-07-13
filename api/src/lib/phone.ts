@@ -30,14 +30,3 @@ export function normalizePhone(input: string): string {
 export function isNormalizedPhone(phone: string): boolean {
   return /^\+60[1-9]\d{7,10}$/.test(phone);
 }
-
-/**
- * The pre-normalization malformed shape of a canonical number: the mobile
- * client used to prepend "+60" without stripping the trunk zero, storing
- * "+600174145245". Login/registration check this variant so accounts created
- * before the fix keep working until the one-off data correction runs —
- * remove this (and its call sites) once no "+600…" rows remain.
- */
-export function legacyZeroVariant(canonical: string): string {
-  return canonical.replace(/^\+60/, "+600");
-}
