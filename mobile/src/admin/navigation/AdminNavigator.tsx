@@ -34,6 +34,7 @@ import { ConsigneesScreen } from "../screens/ConsigneesScreen";
 import { PerformanceScreen } from "../screens/PerformanceScreen";
 import { DriversScreen } from "../screens/DriversScreen";
 import { TrucksScreen } from "../screens/TrucksScreen";
+import { ReportsScreen } from "../screens/ReportsScreen";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -419,32 +420,37 @@ export function AdminNavigator() {
         // Narrow: the greeting home draws its own header (hamburger
         // included) — no nav header on top of it. Wide: the dashboard uses
         // the standard flat-blue header like every other screen.
-        options={{ title: t("admin.nav.dashboard"), headerShown: mode === "wide" }}
+        options={{ title: t("admin.titles.dashboard"), headerShown: mode === "wide" }}
       />
       <Drawer.Screen
         name="AdminApprovals"
         component={ApprovalsScreen}
-        options={{ title: t("admin.nav.approvals") }}
+        options={{ title: t("admin.titles.approvals") }}
       />
       <Drawer.Screen
         name="AdminConsignees"
         component={ConsigneesScreen}
-        options={{ title: t("admin.nav.consignees") }}
+        options={{ title: t("admin.titles.consignees") }}
       />
       <Drawer.Screen
         name="AdminPerformance"
         component={PerformanceScreen}
-        options={{ title: t("admin.nav.performance") }}
+        options={{ title: t("admin.titles.performance") }}
       />
       <Drawer.Screen
         name="AdminDrivers"
         component={DriversScreen}
-        options={{ title: t("admin.nav.drivers") }}
+        options={{ title: t("admin.titles.drivers") }}
       />
       <Drawer.Screen
         name="AdminTrucks"
         component={TrucksScreen}
-        options={{ title: t("admin.nav.trucks") }}
+        options={{ title: t("admin.titles.trucks") }}
+      />
+      <Drawer.Screen
+        name="AdminReports"
+        component={ReportsScreen}
+        options={{ title: t("admin.titles.reports") }}
       />
       </Drawer.Navigator>
     </View>
