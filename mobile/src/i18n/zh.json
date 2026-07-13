@@ -387,7 +387,25 @@
       "completed": "已完成",
       "cancelled": "已取消",
       "rejected": "已拒绝"
-    }
+    },
+    "nav": {
+      "dashboard": "仪表板",
+      "trips": "行程管理",
+      "drivers": "司机管理",
+      "trucks": "卡车管理",
+      "performance": "绩效",
+      "incentives": "激励费率",
+      "approvals": "用户审批",
+      "consignees": "收货方",
+      "reports": "报表"
+    },
+    "navGroups": {
+      "overview": "概览",
+      "operations": "运营",
+      "administration": "管理"
+    },
+    "roleLabel": "车队管理员",
+    "comingSoon": "此页面将在后续阶段推出。"
   },
   "timeline": {
     "title": "状态时间线",

@@ -387,7 +387,25 @@
       "completed": "Completed",
       "cancelled": "Cancelled",
       "rejected": "Rejected"
-    }
+    },
+    "nav": {
+      "dashboard": "Dashboard",
+      "trips": "Trip Management",
+      "drivers": "Driver Management",
+      "trucks": "Truck Management",
+      "performance": "Performance",
+      "incentives": "Incentive Rates",
+      "approvals": "User Approvals",
+      "consignees": "Consignees",
+      "reports": "Reports"
+    },
+    "navGroups": {
+      "overview": "Overview",
+      "operations": "Operations",
+      "administration": "Administration"
+    },
+    "roleLabel": "Fleet Administrator",
+    "comingSoon": "This screen arrives in a later phase."
   },
   "timeline": {
     "title": "Status timeline",

@@ -387,7 +387,25 @@
       "completed": "Selesai",
       "cancelled": "Dibatalkan",
       "rejected": "Ditolak"
-    }
+    },
+    "nav": {
+      "dashboard": "Papan Pemuka",
+      "trips": "Pengurusan Trip",
+      "drivers": "Pengurusan Pemandu",
+      "trucks": "Pengurusan Lori",
+      "performance": "Prestasi",
+      "incentives": "Kadar Insentif",
+      "approvals": "Kelulusan Pengguna",
+      "consignees": "Penerima Barang",
+      "reports": "Laporan"
+    },
+    "navGroups": {
+      "overview": "Ringkasan",
+      "operations": "Operasi",
+      "administration": "Pentadbiran"
+    },
+    "roleLabel": "Pentadbir Armada",
+    "comingSoon": "Skrin ini akan tiba dalam fasa akan datang."
   },
   "timeline": {
     "title": "Garis masa status",
