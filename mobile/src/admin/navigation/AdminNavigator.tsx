@@ -35,6 +35,7 @@ import { PerformanceScreen } from "../screens/PerformanceScreen";
 import { DriversScreen } from "../screens/DriversScreen";
 import { TrucksScreen } from "../screens/TrucksScreen";
 import { ReportsScreen } from "../screens/ReportsScreen";
+import { IncentivesScreen } from "../screens/IncentivesScreen";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -451,6 +452,11 @@ export function AdminNavigator() {
         name="AdminReports"
         component={ReportsScreen}
         options={{ title: t("admin.titles.reports") }}
+      />
+      <Drawer.Screen
+        name="AdminIncentives"
+        component={IncentivesScreen}
+        options={{ title: t("admin.titles.incentives") }}
       />
       </Drawer.Navigator>
     </View>
