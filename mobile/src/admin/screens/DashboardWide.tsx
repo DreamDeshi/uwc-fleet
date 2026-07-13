@@ -61,7 +61,7 @@ export function DashboardWide() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 24, gap: 20 }}
+      contentContainerStyle={{ paddingVertical: 24, paddingHorizontal: 28, gap: 20 }}
       refreshControl={<RefreshControl refreshing={dash.isRefetching} onRefresh={() => dash.refetch()} />}
     >
       {/* Dispatch mode toggle (Mr. Teh requirement) */}
@@ -246,7 +246,25 @@ export function DashboardWide() {
       {/* Recent trips */}
       <Card pad={0} style={{ overflow: "hidden" }}>
         <View style={{ paddingTop: 18, paddingHorizontal: 20, paddingBottom: 4 }}>
-          <SectionTitle title={t("admin.dashboard.recentTrips")} subtitle={t("admin.dashboard.recentSub")} />
+          <SectionTitle
+            title={t("admin.dashboard.recentTrips")}
+            subtitle={t("admin.dashboard.recentSub")}
+            right={
+              // Activates when the trip board lands (Phase 4); dimmed until then.
+              <View
+                style={{
+                  borderWidth: 1.5,
+                  borderColor: colors.blue,
+                  borderRadius: radius.pill,
+                  paddingVertical: 7,
+                  paddingHorizontal: 16,
+                  opacity: 0.45,
+                }}
+              >
+                <Text style={{ color: colors.blue, fontWeight: "700", fontSize: font.md }}>{t("admin.dashboard.viewAll")}</Text>
+              </View>
+            }
+          />
         </View>
         {recentTrips.length === 0 ? (
           <EmptyState message={t("admin.dashboard.noTrips")} />
@@ -357,7 +375,16 @@ function AttentionPanel({ report }: { report?: AttentionReport }) {
   return (
     <Card pad={0} style={{ borderColor: "#FFD9A8", borderLeftWidth: 5, borderLeftColor: colors.orange, backgroundColor: "#FFFDF8" }}>
       <View style={{ paddingVertical: 14, paddingHorizontal: 18, borderBottomWidth: 1, borderBottomColor: "#FBE7CC" }}>
-        <SectionTitle title={t("admin.dashboard.attTitle")} subtitle={t("admin.dashboard.attSub")} />
+        <SectionTitle
+          title={t("admin.dashboard.attTitle")}
+          subtitle={t("admin.dashboard.attSub")}
+          right={
+            // Activates as the trip-board deep link when Trips lands (Phase 4).
+            <Text style={{ color: colors.blue, fontSize: font.sm, fontWeight: "700", opacity: 0.45 }}>
+              {t("admin.dashboard.openTripBoard")}
+            </Text>
+          }
+        />
       </View>
       <View style={{ paddingTop: 10, paddingHorizontal: 18, paddingBottom: 16, gap: 12 }}>
         {groups.map((g) => (

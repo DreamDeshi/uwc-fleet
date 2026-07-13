@@ -42,7 +42,7 @@ export function ConsigneesScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: mode === "wide" ? 24 : 14, gap: 16, maxWidth: 1000, width: "100%", alignSelf: "center" }}
+      contentContainerStyle={mode === "wide" ? { paddingVertical: 24, paddingHorizontal: 28, gap: 16 } : { padding: 14, gap: 16 }}
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={consignees.isRefetching} onRefresh={() => consignees.refetch()} />}
     >

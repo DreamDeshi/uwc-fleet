@@ -90,7 +90,7 @@ export function DriversScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: wide ? 24 : 14, gap: 16 }}
+      contentContainerStyle={wide ? { paddingVertical: 24, paddingHorizontal: 28, gap: 16 } : { padding: 14, gap: 16 }}
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={drivers.isRefetching} onRefresh={() => drivers.refetch()} />}
     >

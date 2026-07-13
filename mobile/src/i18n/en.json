@@ -418,7 +418,9 @@
       "rejectTitle": "Reject this account?",
       "rejectBody": "Reject {{name}} ({{role}})? The account is disabled and cannot log in until an admin re-approves it.",
       "rejectConfirm": "Reject Account",
-      "actionFailed": "Action failed."
+      "actionFailed": "Action failed.",
+      "awaiting_one": "account awaiting approval — approving sets the account to active so the person can log in.",
+      "awaiting_other": "accounts awaiting approval — approving sets the account to active so the person can log in."
     },
     "consignees": {
       "loadError": "Could not load consignees.",
@@ -543,7 +545,11 @@
       "mapLive": "Live · {{time}}",
       "mapStale": "Signal lost (last fix stale)",
       "mapApprox": "Approx. position (no GPS yet)",
-      "mapNoDriver": "No driver"
+      "mapNoDriver": "No driver",
+      "openTripBoard": "Open trip board →",
+      "viewAll": "View All →",
+      "mapSubLive_one": "Zone overlays · {{count}} truck live on GPS",
+      "mapSubLive_other": "Zone overlays · {{count}} trucks live on GPS"
     },
     "drivers": {
       "loadError": "Could not load drivers.",
@@ -580,7 +586,9 @@
       "removing": "Removing…",
       "removeTitle": "Remove this leave entry?",
       "removeBody": "Remove {{name}}'s leave ({{range}})? The driver goes straight back into the dispatch pool for those dates.",
-      "removeFailed": "Could not remove the leave entry."
+      "removeFailed": "Could not remove the leave entry.",
+      "scheduledTrips_one": "{{count}} scheduled trip",
+      "scheduledTrips_other": "{{count}} scheduled trips"
     },
     "trucks": {
       "tabFleet": "Fleet",
@@ -638,7 +646,25 @@
       "valCost": "Cost (RM) must be a positive number.",
       "valOdometer": "Odometer (km) must be a positive number.",
       "logSaveFailed": "Could not save the fuel log.",
-      "saveLog": "Save Log"
+      "saveLog": "Save Log",
+      "fills_one": "{{count}} fill",
+      "fills_other": "{{count}} fills",
+      "needAttention_one": "{{count}} truck needs attention",
+      "needAttention_other": "{{count}} trucks need attention",
+      "fuelSub_one": "Total spend {{total}} across {{count}} truck",
+      "fuelSub_other": "Total spend {{total}} across {{count}} trucks"
+    },
+    "signOut": "Sign Out",
+    "subtitles": {
+      "dashboard": "Live fleet overview",
+      "trips": "Dispatch & monitor bookings",
+      "drivers": "Drivers & performance",
+      "performance": "Reliability, productivity & workload",
+      "trucks": "Fleet & document expiries",
+      "incentives": "Claim rates & destination points",
+      "approvals": "New account registrations",
+      "consignees": "Fix zones, rename, deactivate",
+      "reports": "Trips, incentives & utilisation"
     }
   },
   "timeline": {

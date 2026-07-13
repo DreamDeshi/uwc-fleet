@@ -23,6 +23,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { colors, font, radius, shadow, tripStatusColor, tripStatusLabelKey } from "../theme";
 import { initials } from "../lib/format";
+import { adminFontScope } from "../platform/webFonts";
 
 type Kids = React.ReactNode;
 
@@ -393,7 +394,9 @@ export function Modal({
   if (!open) return null;
   return (
     <RNModal visible transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable onPress={onClose} style={styles.modalBackdrop}>
+      {/* RN Modal portals outside the admin subtree — re-apply the Inter
+          font scope so dialogs match (web only; see platform/webFonts). */}
+      <Pressable onPress={onClose} style={styles.modalBackdrop} {...adminFontScope}>
         {/* Inner pressable swallows taps so content clicks don't close. */}
         <Pressable onPress={() => {}} style={[styles.modalCard, shadow.floating, { width, maxWidth: "100%" }]}>
           <View style={styles.modalHeader}>

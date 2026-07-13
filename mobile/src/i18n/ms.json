@@ -543,7 +543,9 @@
       "mapLive": "Langsung · {{time}}",
       "mapStale": "Isyarat hilang (kedudukan terakhir lapuk)",
       "mapApprox": "Kedudukan anggaran (belum ada GPS)",
-      "mapNoDriver": "Tiada pemandu"
+      "mapNoDriver": "Tiada pemandu",
+      "openTripBoard": "Buka papan trip →",
+      "viewAll": "Lihat Semua →"
     },
     "drivers": {
       "loadError": "Tidak dapat memuatkan pemandu.",
@@ -639,6 +641,18 @@
       "valOdometer": "Odometer (km) mesti nombor positif.",
       "logSaveFailed": "Tidak dapat menyimpan rekod minyak.",
       "saveLog": "Simpan Rekod"
+    },
+    "signOut": "Log Keluar",
+    "subtitles": {
+      "dashboard": "Gambaran armada langsung",
+      "trips": "Hantar & pantau tempahan",
+      "drivers": "Pemandu & prestasi",
+      "performance": "Kebolehpercayaan, produktiviti & beban kerja",
+      "trucks": "Armada & luput dokumen",
+      "incentives": "Kadar tuntutan & mata destinasi",
+      "approvals": "Pendaftaran akaun baharu",
+      "consignees": "Betulkan zon, namakan semula, nyahaktif",
+      "reports": "Trip, insentif & penggunaan"
     }
   },
   "timeline": {

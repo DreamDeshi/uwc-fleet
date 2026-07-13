@@ -543,7 +543,9 @@
       "mapLive": "在线 · {{time}}",
       "mapStale": "信号丢失（最后定位已过期）",
       "mapApprox": "大致位置（尚无 GPS）",
-      "mapNoDriver": "无司机"
+      "mapNoDriver": "无司机",
+      "openTripBoard": "打开行程看板 →",
+      "viewAll": "查看全部 →"
     },
     "drivers": {
       "loadError": "无法加载司机。",
@@ -639,6 +641,18 @@
       "valOdometer": "里程表 (km) 必须为正数。",
       "logSaveFailed": "无法保存加油记录。",
       "saveLog": "保存记录"
+    },
+    "signOut": "退出登录",
+    "subtitles": {
+      "dashboard": "实时车队概览",
+      "trips": "调度与监控预订",
+      "drivers": "司机与绩效",
+      "performance": "可靠性、生产力与工作量",
+      "trucks": "车队与文件到期",
+      "incentives": "索赔费率与目的地积分",
+      "approvals": "新账户注册",
+      "consignees": "修正区域、重命名、停用",
+      "reports": "行程、激励与利用率"
     }
   },
   "timeline": {

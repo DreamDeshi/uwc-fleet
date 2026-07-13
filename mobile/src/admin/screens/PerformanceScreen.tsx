@@ -55,7 +55,7 @@ export function PerformanceScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: wide ? 24 : 14, gap: 20, maxWidth: 1200, width: "100%", alignSelf: "center" }}
+      contentContainerStyle={wide ? { paddingVertical: 24, paddingHorizontal: 28, gap: 20 } : { padding: 14, gap: 20 }}
       refreshControl={<RefreshControl refreshing={performance.isRefetching} onRefresh={() => performance.refetch()} />}
     >
       {ranked.length === 0 ? (

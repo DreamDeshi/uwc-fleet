@@ -27,7 +27,7 @@ export function ApprovalsScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: mode === "wide" ? 24 : 14, gap: 16, maxWidth: 900, width: "100%", alignSelf: "center" }}
+      contentContainerStyle={mode === "wide" ? { paddingVertical: 24, paddingHorizontal: 28, gap: 16 } : { padding: 14, gap: 16 }}
       refreshControl={<RefreshControl refreshing={pending.isRefetching} onRefresh={() => pending.refetch()} />}
     >
       <Card
@@ -43,7 +43,9 @@ export function ApprovalsScreen() {
           </View>
         )}
         <Text style={{ fontSize: font.md, color: colors.text, flex: 1 }}>
-          {users.length === 0 ? t("admin.approvals.noneWaiting") : t("admin.approvals.awaiting")}
+          {users.length === 0
+            ? t("admin.approvals.noneWaiting")
+            : t("admin.approvals.awaiting", { count: users.length })}
         </Text>
       </Card>
 

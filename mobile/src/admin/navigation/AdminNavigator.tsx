@@ -22,9 +22,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../context/AuthContext";
-import { colors, font, gradients } from "../theme";
+import { useDashboard, usePendingUsers, useTruckAlerts } from "../hooks/queries";
+import { colors, font, gradients, radius } from "../theme";
+import { formatFullDate } from "../lib/format";
 import { Avatar } from "../components/ui";
 import { useLayoutMode } from "../hooks/useLayoutMode";
+import { installAdminWebFonts, adminFontScope } from "../platform/webFonts";
 import { AdminHomeScreen } from "../screens/AdminHomeScreen";
 import { ApprovalsScreen } from "../screens/ApprovalsScreen";
 import { ConsigneesScreen } from "../screens/ConsigneesScreen";
@@ -70,6 +73,13 @@ function AdminDrawerContent(props: DrawerContentComponentProps) {
   const { t } = useTranslation();
   const { user, logout } = useAuth();
   const insets = useSafeAreaInsets();
+  const mode = useLayoutMode();
+  // Nav badges (old-admin parity): pending-approvals count on User
+  // Approvals, expiring-documents count on Truck Management.
+  const pending = usePendingUsers();
+  const truckAlerts = useTruckAlerts();
+  const pendingCount = pending.data?.length ?? 0;
+  const truckAlertCount = truckAlerts.data?.length ?? 0;
   const active = props.state.routeNames[props.state.index];
   const registered = new Set(props.state.routeNames);
 
@@ -123,19 +133,28 @@ function AdminDrawerContent(props: DrawerContentComponentProps) {
                     key={item.route}
                     disabled={!enabled}
                     onPress={() => props.navigation.navigate(item.route)}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 12,
-                      paddingVertical: 10,
-                      paddingHorizontal: 12,
-                      borderRadius: 10,
-                      marginBottom: 3,
-                      // The active page is unmistakable: the corporate-yellow
-                      // pill with navy ink (web-admin sidebar identity).
-                      backgroundColor: isActive ? colors.yellow : "transparent",
-                      opacity: enabled ? 1 : 0.35,
-                    }}
+                    style={[
+                      {
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 12,
+                        paddingVertical: 10,
+                        paddingHorizontal: 12,
+                        borderRadius: 10,
+                        marginBottom: 3,
+                        // The active page is unmistakable: the corporate-yellow
+                        // pill with navy ink (web-admin sidebar identity).
+                        backgroundColor: isActive ? colors.yellow : "transparent",
+                        opacity: enabled ? 1 : 0.35,
+                      },
+                      // The pill's soft same-hue glow from the web admin (PC).
+                      isActive && mode === "wide" && {
+                        shadowColor: "#FFCC00",
+                        shadowOpacity: 0.55,
+                        shadowRadius: 18,
+                        shadowOffset: { width: 0, height: 8 },
+                      },
+                    ]}
                   >
                     <Ionicons name={item.icon} size={18} color={isActive ? colors.navy : "rgba(255,255,255,0.38)"} />
                     <Text
@@ -143,10 +162,32 @@ function AdminDrawerContent(props: DrawerContentComponentProps) {
                         color: isActive ? colors.navy : "rgba(255,255,255,0.62)",
                         fontWeight: isActive ? "800" : "500",
                         fontSize: font.md,
+                        flex: 1,
                       }}
                     >
                       {t(item.labelKey)}
                     </Text>
+                    {/* Count badges — approvals (yellow/navy swap on active) and
+                        truck document alerts (red), exactly like the old admin. */}
+                    {item.route === "AdminApprovals" && pendingCount > 0 && (
+                      <View
+                        style={{
+                          backgroundColor: isActive ? colors.navy : colors.yellow,
+                          borderRadius: radius.pill,
+                          paddingVertical: 1,
+                          paddingHorizontal: 7,
+                        }}
+                      >
+                        <Text style={{ color: isActive ? colors.yellow : colors.navy, fontSize: font.xs, fontWeight: "800" }}>
+                          {pendingCount}
+                        </Text>
+                      </View>
+                    )}
+                    {item.route === "AdminTrucks" && truckAlertCount > 0 && (
+                      <View style={{ backgroundColor: colors.red, borderRadius: radius.pill, paddingVertical: 1, paddingHorizontal: 7 }}>
+                        <Text style={{ color: "#fff", fontSize: font.xs, fontWeight: "800" }}>{truckAlertCount}</Text>
+                      </View>
+                    )}
                   </Pressable>
                 );
               })}
@@ -172,7 +213,7 @@ function AdminDrawerContent(props: DrawerContentComponentProps) {
             }}
           >
             <Ionicons name="log-out-outline" size={18} color="rgba(255,255,255,0.6)" />
-            <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: font.md, fontWeight: "600" }}>{t("profile.logout")}</Text>
+            <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: font.md, fontWeight: "600" }}>{t("admin.signOut")}</Text>
           </Pressable>
         </View>
 
@@ -204,13 +245,113 @@ function AdminDrawerContent(props: DrawerContentComponentProps) {
   );
 }
 
-// Header: flat corporate blue matching the driver/requestor screen headers
-// (owner direction 13 Jul — one design language across roles; the standing
-// "no yellow underline on mobile headers" ruling applies here too).
-// Hamburger appears only in narrow (off-canvas) mode.
-function AdminHeader({ navigation, options }: DrawerHeaderProps) {
+// Route → header subtitle (the old admin's pageTitles map), i18n'd.
+const SUBTITLE_KEYS: Record<string, string> = {
+  AdminDashboard: "admin.subtitles.dashboard",
+  AdminTrips: "admin.subtitles.trips",
+  AdminDrivers: "admin.subtitles.drivers",
+  AdminPerformance: "admin.subtitles.performance",
+  AdminTrucks: "admin.subtitles.trucks",
+  AdminIncentives: "admin.subtitles.incentives",
+  AdminApprovals: "admin.subtitles.approvals",
+  AdminConsignees: "admin.subtitles.consignees",
+  AdminReports: "admin.subtitles.reports",
+};
+
+// Header — split by layout:
+//   WIDE (PC): the old web admin's header exactly — gradient bar, 4px yellow
+//   underline, 21px title + subtitle, date pill, alert bell with badge.
+//   NARROW: flat corporate blue matching the driver/requestor headers (the
+//   "no yellow underline on mobile headers" ruling), hamburger included.
+function AdminHeader({ navigation, options, route }: DrawerHeaderProps) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const mode = useLayoutMode();
+  const dashboard = useDashboard();
+
+  if (mode === "wide") {
+    const subtitleKey = SUBTITLE_KEYS[route.name];
+    const alertCount = dashboard.data?.alerts ?? 0;
+    return (
+      <LinearGradient colors={gradients.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+        <View
+          style={{
+            paddingTop: insets.top,
+            height: insets.top + 66,
+            paddingHorizontal: 28,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            borderBottomWidth: 4,
+            borderBottomColor: colors.yellow,
+          }}
+        >
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text numberOfLines={1} style={{ fontSize: font.xl, fontWeight: "800", color: "#fff", letterSpacing: -0.2 }}>
+              {options.title ?? ""}
+            </Text>
+            {subtitleKey ? (
+              <Text numberOfLines={1} style={{ fontSize: font.sm, color: "rgba(255,255,255,0.65)", marginTop: -1 }}>
+                {t(subtitleKey)}
+              </Text>
+            ) : null}
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <View
+              style={{
+                backgroundColor: "rgba(255,255,255,0.12)",
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.14)",
+                borderRadius: radius.pill,
+                paddingVertical: 6,
+                paddingHorizontal: 13,
+              }}
+            >
+              <Text style={{ fontSize: font.sm, fontWeight: "600", color: "rgba(255,255,255,0.85)" }}>
+                {formatFullDate(new Date())}
+              </Text>
+            </View>
+            <View>
+              <View
+                style={{
+                  backgroundColor: "rgba(255,255,255,0.12)",
+                  borderRadius: 10,
+                  width: 40,
+                  height: 40,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons name="notifications-outline" size={18} color="#fff" />
+              </View>
+              {alertCount > 0 && (
+                <View
+                  style={{
+                    position: "absolute",
+                    top: 4,
+                    right: 4,
+                    minWidth: 16,
+                    height: 16,
+                    paddingHorizontal: 4,
+                    backgroundColor: colors.red,
+                    borderRadius: 8,
+                    borderWidth: 1.5,
+                    borderColor: colors.blue,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text style={{ color: "#fff", fontSize: 11, fontWeight: "800" }}>{alertCount}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </View>
+      </LinearGradient>
+    );
+  }
+
   return (
     <View style={{ backgroundColor: colors.blue }}>
       <View
@@ -252,8 +393,12 @@ function AdminHeader({ navigation, options }: DrawerHeaderProps) {
 export function AdminNavigator() {
   const { t } = useTranslation();
   const mode = useLayoutMode();
+  // Web: load Inter (the old admin's typeface) and scope it to this subtree
+  // via [data-uwc-admin] — driver/requestor keep the system font. Idempotent.
+  installAdminWebFonts();
   return (
-    <Drawer.Navigator
+    <View style={{ flex: 1 }} {...adminFontScope}>
+      <Drawer.Navigator
       // Admins land on the greeting home (the app-native landing shared with
       // the driver/requestor design language); Phase 3 grows it into the
       // full dashboard.
@@ -301,6 +446,7 @@ export function AdminNavigator() {
         component={TrucksScreen}
         options={{ title: t("admin.nav.trucks") }}
       />
-    </Drawer.Navigator>
+      </Drawer.Navigator>
+    </View>
   );
 }
