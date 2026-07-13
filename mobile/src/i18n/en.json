@@ -419,6 +419,23 @@
       "rejectBody": "Reject {{name}} ({{role}})? The account is disabled and cannot log in until an admin re-approves it.",
       "rejectConfirm": "Reject Account",
       "actionFailed": "Action failed."
+    },
+    "consignees": {
+      "loadError": "Could not load consignees.",
+      "searchPlaceholder": "Search company, area, state…",
+      "includeDeactivated": "Include deactivated",
+      "showing": "Showing {{count}} results (max 10 — refine the search)",
+      "noMatch": "No consignees match this search.",
+      "deactivated": "Deactivated",
+      "edit": "Edit",
+      "editTitle": "Edit Consignee",
+      "companyName": "Company name",
+      "deliveryZone": "Delivery zone",
+      "zoneChangeNote": "Zone changes apply to FUTURE bookings only — completed trips keep the pay they were finalized at (snapshotted), and the change is audit-logged.",
+      "activeBookable": "Active (bookable by requestors)",
+      "saveFailed": "Could not save. Try again.",
+      "saveAnyway": "Save anyway",
+      "saving": "Saving…"
     }
   },
   "timeline": {

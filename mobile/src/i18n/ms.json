@@ -419,6 +419,23 @@
       "rejectBody": "Tolak {{name}} ({{role}})? Akaun akan dinyahaktifkan dan tidak boleh log masuk sehingga admin meluluskannya semula.",
       "rejectConfirm": "Tolak Akaun",
       "actionFailed": "Tindakan gagal."
+    },
+    "consignees": {
+      "loadError": "Tidak dapat memuatkan penerima barang.",
+      "searchPlaceholder": "Cari syarikat, kawasan, negeri…",
+      "includeDeactivated": "Termasuk yang dinyahaktif",
+      "showing": "Menunjukkan {{count}} hasil (maks 10 — perhalusi carian)",
+      "noMatch": "Tiada penerima sepadan dengan carian ini.",
+      "deactivated": "Dinyahaktifkan",
+      "edit": "Sunting",
+      "editTitle": "Sunting Penerima",
+      "companyName": "Nama syarikat",
+      "deliveryZone": "Zon penghantaran",
+      "zoneChangeNote": "Perubahan zon hanya untuk tempahan AKAN DATANG — trip yang selesai mengekalkan bayaran yang dimuktamadkan (disnapshot), dan perubahan direkod audit.",
+      "activeBookable": "Aktif (boleh ditempah oleh pemohon)",
+      "saveFailed": "Tidak dapat menyimpan. Cuba lagi.",
+      "saveAnyway": "Simpan juga",
+      "saving": "Menyimpan…"
     }
   },
   "timeline": {

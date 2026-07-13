@@ -26,6 +26,7 @@ import { colors, font, gradients } from "../theme";
 import { Avatar } from "../components/ui";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { ApprovalsScreen } from "../screens/ApprovalsScreen";
+import { ConsigneesScreen } from "../screens/ConsigneesScreen";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -266,6 +267,11 @@ export function AdminNavigator() {
         name="AdminApprovals"
         component={ApprovalsScreen}
         options={{ title: t("admin.nav.approvals") }}
+      />
+      <Drawer.Screen
+        name="AdminConsignees"
+        component={ConsigneesScreen}
+        options={{ title: t("admin.nav.consignees") }}
       />
     </Drawer.Navigator>
   );

@@ -419,6 +419,23 @@
       "rejectBody": "拒绝 {{name}}（{{role}}）？该账户将被停用，在管理员重新批准前无法登录。",
       "rejectConfirm": "拒绝账户",
       "actionFailed": "操作失败。"
+    },
+    "consignees": {
+      "loadError": "无法加载收货方。",
+      "searchPlaceholder": "搜索公司、地区、州…",
+      "includeDeactivated": "包括已停用",
+      "showing": "显示 {{count}} 条结果（最多 10 条 — 请细化搜索）",
+      "noMatch": "没有匹配的收货方。",
+      "deactivated": "已停用",
+      "edit": "编辑",
+      "editTitle": "编辑收货方",
+      "companyName": "公司名称",
+      "deliveryZone": "配送区域",
+      "zoneChangeNote": "区域更改仅影响未来的预订 — 已完成行程保留定案时的报酬（已快照），且更改会记录审计日志。",
+      "activeBookable": "启用（申请人可预订）",
+      "saveFailed": "保存失败，请重试。",
+      "saveAnyway": "仍要保存",
+      "saving": "保存中…"
     }
   },
   "timeline": {
