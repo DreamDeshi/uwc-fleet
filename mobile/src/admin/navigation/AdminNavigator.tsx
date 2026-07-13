@@ -25,6 +25,7 @@ import { useAuth } from "../../context/AuthContext";
 import { colors, font, gradients } from "../theme";
 import { Avatar } from "../components/ui";
 import { useLayoutMode } from "../hooks/useLayoutMode";
+import { AdminHomeScreen } from "../screens/AdminHomeScreen";
 import { ApprovalsScreen } from "../screens/ApprovalsScreen";
 import { ConsigneesScreen } from "../screens/ConsigneesScreen";
 import { PerformanceScreen } from "../screens/PerformanceScreen";
@@ -201,13 +202,15 @@ function AdminDrawerContent(props: DrawerContentComponentProps) {
   );
 }
 
-// Header: the web admin's gradient bar with the yellow underline; hamburger
-// appears only in narrow (off-canvas) mode.
+// Header: flat corporate blue matching the driver/requestor screen headers
+// (owner direction 13 Jul — one design language across roles; the standing
+// "no yellow underline on mobile headers" ruling applies here too).
+// Hamburger appears only in narrow (off-canvas) mode.
 function AdminHeader({ navigation, options }: DrawerHeaderProps) {
   const insets = useSafeAreaInsets();
   const mode = useLayoutMode();
   return (
-    <LinearGradient colors={gradients.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+    <View style={{ backgroundColor: colors.blue }}>
       <View
         style={{
           paddingTop: insets.top,
@@ -216,8 +219,6 @@ function AdminHeader({ navigation, options }: DrawerHeaderProps) {
           flexDirection: "row",
           alignItems: "center",
           gap: 12,
-          borderBottomWidth: 4,
-          borderBottomColor: colors.yellow,
         }}
       >
         {mode === "narrow" && (
@@ -242,7 +243,7 @@ function AdminHeader({ navigation, options }: DrawerHeaderProps) {
           </Text>
         </View>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -251,9 +252,10 @@ export function AdminNavigator() {
   const mode = useLayoutMode();
   return (
     <Drawer.Navigator
-      // Phase 1: no dashboard yet — admins land on the approval queue, the
-      // most action-shaped of the live screens.
-      initialRouteName="AdminApprovals"
+      // Admins land on the greeting home (the app-native landing shared with
+      // the driver/requestor design language); Phase 3 grows it into the
+      // full dashboard.
+      initialRouteName="AdminDashboard"
       drawerContent={(props) => <AdminDrawerContent {...props} />}
       screenOptions={{
         header: (props) => <AdminHeader {...props} />,
@@ -264,6 +266,13 @@ export function AdminNavigator() {
     >
       {/* Only ported screens are registered; NAV_GROUPS entries without a
           registered route render disabled in the drawer (see above). */}
+      <Drawer.Screen
+        name="AdminDashboard"
+        component={AdminHomeScreen}
+        // The home draws its own greeting header (requestor/driver pattern),
+        // hamburger included — no drawer header on top of it.
+        options={{ title: t("admin.nav.dashboard"), headerShown: false }}
+      />
       <Drawer.Screen
         name="AdminApprovals"
         component={ApprovalsScreen}

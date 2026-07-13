@@ -469,6 +469,19 @@
       "workloadNone": "Belum ada trip siap bulan ini — tiada apa untuk diimbangkan.",
       "workloadEven": "Kerja tersebar sama rata — setiap pemandu menyiapkan {{count}} trip bulan ini.",
       "workloadImbalance": "{{most}} membawa paling banyak bulan ini ({{mostCount}} trip), manakala {{least}} paling sedikit ({{leastCount}}). Pertimbangkan pengimbangan semula."
+    },
+    "home": {
+      "goodMorning": "Selamat pagi",
+      "goodAfternoon": "Selamat tengah hari",
+      "goodEvening": "Selamat petang",
+      "approvalQueue": "Barisan kelulusan",
+      "pendingSub": "{{count}} menunggu semakan",
+      "allClear": "Tiada akaun menunggu — semua selesai",
+      "today": "Hari ini",
+      "tripsToday": "Trip hari ini",
+      "inProgress": "Dalam perjalanan",
+      "completedToday": "Selesai hari ini",
+      "manage": "Urus"
     }
   },
   "timeline": {

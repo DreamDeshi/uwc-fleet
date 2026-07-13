@@ -469,6 +469,19 @@
       "workloadNone": "本月尚未完成任何行程 — 无需平衡。",
       "workloadEven": "工作分配均匀 — 每位司机本月完成 {{count}} 趟行程。",
       "workloadImbalance": "{{most}} 本月承担最多（{{mostCount}} 趟），而 {{least}} 最少（{{leastCount}} 趟）。请考虑重新平衡。"
+    },
+    "home": {
+      "goodMorning": "早上好",
+      "goodAfternoon": "下午好",
+      "goodEvening": "晚上好",
+      "approvalQueue": "审批队列",
+      "pendingSub": "{{count}} 个待审核",
+      "allClear": "没有等待的账户 — 一切就绪",
+      "today": "今天",
+      "tripsToday": "今日行程",
+      "inProgress": "进行中",
+      "completedToday": "今日完成",
+      "manage": "管理"
     }
   },
   "timeline": {

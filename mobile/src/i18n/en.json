@@ -469,6 +469,19 @@
       "workloadNone": "No trips have been completed yet this month — nothing to balance.",
       "workloadEven": "Work is evenly spread — every driver completed {{count}} trip(s) this month.",
       "workloadImbalance": "{{most}} is carrying the most this month ({{mostCount}} trips), while {{least}} has the fewest ({{leastCount}}). Consider rebalancing."
+    },
+    "home": {
+      "goodMorning": "Good morning",
+      "goodAfternoon": "Good afternoon",
+      "goodEvening": "Good evening",
+      "approvalQueue": "Approval queue",
+      "pendingSub": "{{count}} awaiting review",
+      "allClear": "No accounts waiting — all clear",
+      "today": "Today",
+      "tripsToday": "Trips today",
+      "inProgress": "In progress",
+      "completedToday": "Completed today",
+      "manage": "Manage"
     }
   },
   "timeline": {
