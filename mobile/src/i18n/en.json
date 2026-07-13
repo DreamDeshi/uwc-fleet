@@ -311,7 +311,7 @@
     "postalCode": "Postcode (optional)",
     "addConsigneeBtn": "Add Consignee",
     "consigneeRequired": "Company name and delivery zone are required.",
-        "consigneeAdded": "Consignee added.",
+    "consigneeAdded": "Consignee added.",
     "similarTitle": "A similar consignee already exists — did you mean:",
     "similarUse": "Use this",
     "similarCreateAnyway": "Create anyway",
@@ -377,7 +377,17 @@
   },
   "admin": {
     "webOnlyTitle": "Admin Dashboard",
-    "webOnlyBody": "Admin tools live in the web dashboard. Please sign in there."
+    "webOnlyBody": "Admin tools live in the web dashboard. Please sign in there.",
+    "working": "Working…",
+    "status": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "assigned": "Assigned",
+      "in_progress": "In Progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled",
+      "rejected": "Rejected"
+    }
   },
   "timeline": {
     "title": "Status timeline",

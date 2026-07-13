@@ -377,7 +377,17 @@
   },
   "admin": {
     "webOnlyTitle": "Papan Pemuka Admin",
-    "webOnlyBody": "Alat admin berada di papan pemuka web. Sila log masuk di sana."
+    "webOnlyBody": "Alat admin berada di papan pemuka web. Sila log masuk di sana.",
+    "working": "Sedang diproses…",
+    "status": {
+      "pending": "Menunggu",
+      "approved": "Diluluskan",
+      "assigned": "Ditugaskan",
+      "in_progress": "Dalam Perjalanan",
+      "completed": "Selesai",
+      "cancelled": "Dibatalkan",
+      "rejected": "Ditolak"
+    }
   },
   "timeline": {
     "title": "Garis masa status",

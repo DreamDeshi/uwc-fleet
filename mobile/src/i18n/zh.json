@@ -377,7 +377,17 @@
   },
   "admin": {
     "webOnlyTitle": "管理员仪表板",
-    "webOnlyBody": "管理工具位于网页仪表板。请在那里登录。"
+    "webOnlyBody": "管理工具位于网页仪表板。请在那里登录。",
+    "working": "处理中…",
+    "status": {
+      "pending": "待处理",
+      "approved": "已批准",
+      "assigned": "已分配",
+      "in_progress": "进行中",
+      "completed": "已完成",
+      "cancelled": "已取消",
+      "rejected": "已拒绝"
+    }
   },
   "timeline": {
     "title": "状态时间线",
