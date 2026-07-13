@@ -269,9 +269,10 @@ export function AdminNavigator() {
       <Drawer.Screen
         name="AdminDashboard"
         component={AdminHomeScreen}
-        // The home draws its own greeting header (requestor/driver pattern),
-        // hamburger included — no drawer header on top of it.
-        options={{ title: t("admin.nav.dashboard"), headerShown: false }}
+        // Narrow: the greeting home draws its own header (hamburger
+        // included) — no nav header on top of it. Wide: the dashboard uses
+        // the standard flat-blue header like every other screen.
+        options={{ title: t("admin.nav.dashboard"), headerShown: mode === "wide" }}
       />
       <Drawer.Screen
         name="AdminApprovals"

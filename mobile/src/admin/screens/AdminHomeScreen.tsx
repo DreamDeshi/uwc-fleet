@@ -1,10 +1,11 @@
-// Admin landing — built in the SAME design language as the driver/requestor
-// homes (owner direction, 13 Jul 2026): blue greeting header ("Good evening,
-// name 👋", 26/800 scale, yellow-ringed avatar, context line), a floating
-// action card overlapping the header, tinted stat boxes, and section-titled
-// card lists. Admin content, app-native feel. Data comes from the already-
-// ported hooks (useDashboard 30s poll, usePendingUsers) — read-only, no new
-// logic. Phase 3 grows this screen into the full dashboard (map, KPIs).
+// Admin landing — split by layout (owner direction, 13 Jul 2026):
+//   NARROW (phone): the greeting home in the driver/requestor design
+//   language — "Good evening, name 👋" header, floating action card,
+//   tinted stat boxes, card lists. A mobile pattern, mobile-only.
+//   WIDE (PC): the old web admin's dashboard layout instead — dispatch
+//   bar, attention panel, gradient KPI tiles, map + rail, recent trips
+//   (DashboardWide.tsx).
+// Data comes from the already-ported hooks — read-only, no new logic.
 import React from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,6 +19,7 @@ import { useDashboard, usePendingUsers } from "../hooks/queries";
 import { colors, font, radius, shadow } from "../theme";
 import { initials } from "../lib/format";
 import { useLayoutMode } from "../hooks/useLayoutMode";
+import { DashboardWide } from "./DashboardWide";
 
 function greetingKey(hour: number): "goodMorning" | "goodAfternoon" | "goodEvening" {
   if (hour < 12) return "goodMorning";
@@ -48,6 +50,9 @@ export function AdminHomeScreen() {
     { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline" as const },
     { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" as const },
   ];
+
+  // PC gets the real dashboard; the greeting home below is mobile-only.
+  if (mode === "wide") return <DashboardWide />;
 
   return (
     <ScrollView
