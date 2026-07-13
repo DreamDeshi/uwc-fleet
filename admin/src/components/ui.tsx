@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { colors, radius, shadow, tripStatusColor, tripStatusLabel } from "@/theme";
 import { initials } from "@/lib/format";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 // ── Card ─────────────────────────────────────────────────────────────
 export function Card({
@@ -401,6 +402,9 @@ export function Modal({
   children: ReactNode;
   width?: number;
 }) {
+  // Slimmer gutters on a phone so the dialog gets the width; desktop values
+  // are untouched.
+  const mobile = useIsMobile();
   if (!open) return null;
   return (
     <div
@@ -414,7 +418,7 @@ export function Modal({
         alignItems: "center",
         justifyContent: "center",
         zIndex: 1000,
-        padding: 20,
+        padding: mobile ? 10 : 20,
       }}
     >
       <div
@@ -450,8 +454,21 @@ export function Modal({
             ×
           </button>
         </div>
-        <div style={{ padding: 20 }}>{children}</div>
+        <div style={{ padding: mobile ? 14 : 20 }}>{children}</div>
       </div>
+    </div>
+  );
+}
+
+// ── Table scroll container ───────────────────────────────────────────
+// Wide data tables must never overflow the viewport: on a narrow screen the
+// table keeps its natural column widths and pans sideways inside its card
+// instead of pushing the page wider. On desktop the card is wider than
+// minWidth, so nothing scrolls and the table renders exactly as before.
+export function TableScroll({ children, minWidth = 640 }: { children: ReactNode; minWidth?: number }) {
+  return (
+    <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ minWidth }}>{children}</div>
     </div>
   );
 }
