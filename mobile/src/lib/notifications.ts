@@ -21,6 +21,14 @@ Notifications.setNotificationHandler({
  */
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
   try {
+    // Web push isn't configured (no VAPID key / service worker), so
+    // getExpoPushTokenAsync throws on web anyway — but requestPermissionsAsync
+    // still pops the browser "Allow notifications?" prompt first. Bail out on web
+    // so users aren't asked to enable a feature that can't work here. On web the
+    // driver/requestor screens poll instead (see hooks/queries.ts). Native is
+    // unaffected and continues to register for real push.
+    if (Platform.OS === "web") return null;
+
     if (!Device.isDevice) return null; // push tokens only issue on real hardware
 
     if (Platform.OS === "android") {

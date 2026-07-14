@@ -62,10 +62,18 @@ export function useHolidaySet(): ReadonlySet<string> {
 }
 
 // ── Trips ──────────────────────────────────────────────────────────────
+// Real-time refresh: push isn't configured on the web deployment (documented
+// limitation), so the driver/requestor screens POLL for new assignments,
+// approvals and rejections the same way the admin board does — a change shows
+// up within ~25s without pulling to refresh. react-query pauses the timer while
+// the tab is hidden; native builds still also receive real push.
+const TRIP_POLL_MS = 25_000;
+
 export function useTrips() {
   return useQuery({
     queryKey: ["trips"],
     queryFn: async () => (await api.get<Trip[]>("/trips")).data,
+    refetchInterval: TRIP_POLL_MS,
   });
 }
 
@@ -73,6 +81,9 @@ export function useTrip(tripId: string) {
   return useQuery({
     queryKey: ["trip", tripId],
     queryFn: async () => (await api.get<Trip>(`/trips/${tripId}`)).data,
+    // Keep the open booking/trip live as its status advances (assigned →
+    // in transit → delivered) without push — see the note on useTrips.
+    refetchInterval: TRIP_POLL_MS,
   });
 }
 
