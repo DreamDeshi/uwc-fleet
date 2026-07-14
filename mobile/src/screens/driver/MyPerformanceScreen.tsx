@@ -3,7 +3,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTranslation } from "react-i18next";
-import { colors, radius, shadow } from "../../theme";
+import { colors, layout, radius, shadow } from "../../theme";
 import { Header } from "../../components/Header";
 import { Card } from "../../components/Card";
 import { LoadingState, ErrorState } from "../../components/States";
@@ -32,7 +32,7 @@ export function MyPerformanceScreen() {
         <ErrorState onRetry={refetch} />
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: 16, paddingBottom: 28 }}
+          contentContainerStyle={{ padding: 16, paddingBottom: 28, width: "100%", maxWidth: layout.content, alignSelf: "center" }}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         >
           {data.has_data && data.tier ? (

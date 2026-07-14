@@ -77,10 +77,10 @@
   },
   "driver": {
     "greeting": "Hi, {{name}}",
-    "tripsToday": "You have {{count}} trip(s) assigned today",
+    "tripsToday": "{{count}} trips today",
     "noTripsToday": "No trips assigned today.",
     "todaysAssignment": "Today's Assignment",
-    "todaysAssignments": "Today's Assignments",
+    "todaysAssignments": "Assignments",
     "next": "Next",
     "upcoming": "Upcoming",
     "viewAll": "View All",
@@ -90,7 +90,7 @@
     "viewTripDetails": "View Trip Details",
     "viewNavigation": "View Navigation",
     "myTruck": "My Truck",
-    "recentCompleted": "Recent Completed",
+    "recentCompleted": "Recently Completed",
     "myTrips": "My Trips"
   },
   "trip": {
@@ -122,7 +122,7 @@
     "doUploaded": "Delivery Order (DO) confirmed",
     "k2Form": "K2 Customs Form acknowledged",
     "docGateHint": "Confirm the DO (and K2 form for K2 destinations) before marking delivered.",
-    "podGateHint": "Take a proof-of-delivery photo (and confirm the K2 form for K2 destinations) before marking delivered.",
+    "podGateHint": "Add a POD photo before marking delivered.",
     "podCapture": "Take POD Photo",
     "podUploaded": "POD photo uploaded",
     "podRetake": "Retake photo",
@@ -184,10 +184,10 @@
     "completion": "Completion Rate",
     "tripsCompleted": "Trips Completed",
     "rmEarned": "Earned This Month",
-    "howItWorks": "Your score blends on-time delivery (40%), trip completion (30%) and incentive earned (30%).",
+    "howItWorks": "Score = on-time 40% · completion 30% · earnings 30%.",
     "emptyTitle": "Not enough trips yet",
     "emptyBody": "Complete your first trips and your performance score, tier and ranking will appear here.",
-    "emptyTier": "Not enough trips yet"
+    "emptyTier": "No score yet"
   },
   "profile": {
     "title": "Profile",

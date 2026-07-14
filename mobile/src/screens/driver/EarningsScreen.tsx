@@ -7,7 +7,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { DriverTabParamList } from "../../navigation/types";
 import { useIncentives } from "../../hooks/queries";
-import { colors, radius, shadow } from "../../theme";
+import { colors, layout, radius, shadow } from "../../theme";
 import { Header } from "../../components/Header";
 import { Card } from "../../components/Card";
 import { WeeklyEarningsChart } from "../../components/WeeklyEarningsChart";
@@ -69,7 +69,7 @@ export function EarningsScreen() {
         <ErrorState onRetry={refetch} />
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+          contentContainerStyle={{ padding: 16, paddingBottom: 24, width: "100%", maxWidth: layout.content, alignSelf: "center" }}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         >
           {/* Browsers can't pull-to-refresh — web drivers resync here. */}
@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
   rowIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
   divider: { borderBottomWidth: 1, borderBottomColor: colors.bg },
   rowRoute: { fontSize: 14, fontWeight: "700", color: colors.navy },
-  rowMetaLine: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 3 },
+  rowMetaLine: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 3, flexWrap: "wrap" },
   rowMeta: { fontSize: 12, color: colors.textFaint },
   rowDot: { fontSize: 12, color: colors.textFaint, marginHorizontal: 1 },
   rowRm: { fontSize: 17, fontWeight: "800", color: colors.green },

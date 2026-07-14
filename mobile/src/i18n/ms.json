@@ -77,10 +77,10 @@
   },
   "driver": {
     "greeting": "Hai, {{name}}",
-    "tripsToday": "Anda mempunyai {{count}} perjalanan hari ini",
+    "tripsToday": "{{count}} perjalanan hari ini",
     "noTripsToday": "Tiada perjalanan ditugaskan hari ini.",
     "todaysAssignment": "Tugasan Hari Ini",
-    "todaysAssignments": "Tugasan Hari Ini",
+    "todaysAssignments": "Tugasan",
     "next": "Seterusnya",
     "upcoming": "Akan Datang",
     "viewAll": "Lihat Semua",
@@ -122,7 +122,7 @@
     "doUploaded": "Pesanan Penghantaran (DO) disahkan",
     "k2Form": "Borang Kastam K2 diakui",
     "docGateHint": "Sahkan DO (dan borang K2 untuk destinasi K2) sebelum menanda telah dihantar.",
-    "podGateHint": "Ambil foto bukti penghantaran (dan sahkan borang K2 untuk destinasi K2) sebelum menanda telah dihantar.",
+    "podGateHint": "Tambah foto POD sebelum menanda telah dihantar.",
     "podCapture": "Ambil Foto Bukti",
     "podUploaded": "Foto bukti dimuat naik",
     "podRetake": "Ambil semula foto",
@@ -184,10 +184,10 @@
     "completion": "Kadar Siap",
     "tripsCompleted": "Perjalanan Selesai",
     "rmEarned": "Pendapatan Bulan Ini",
-    "howItWorks": "Skor anda menggabungkan penghantaran menepati masa (40%), perjalanan selesai (30%) dan insentif diperoleh (30%).",
+    "howItWorks": "Skor = tepat masa 40% · selesai 30% · pendapatan 30%.",
     "emptyTitle": "Belum cukup perjalanan",
     "emptyBody": "Selesaikan perjalanan pertama anda dan skor prestasi, tahap serta kedudukan anda akan dipaparkan di sini.",
-    "emptyTier": "Belum cukup perjalanan"
+    "emptyTier": "Belum ada skor"
   },
   "profile": {
     "title": "Profil",

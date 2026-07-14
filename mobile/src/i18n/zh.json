@@ -77,10 +77,10 @@
   },
   "driver": {
     "greeting": "你好，{{name}}",
-    "tripsToday": "您今天有 {{count}} 个行程任务",
+    "tripsToday": "今日 {{count}} 个行程",
     "noTripsToday": "今天没有分配行程。",
     "todaysAssignment": "今日任务",
-    "todaysAssignments": "今日任务",
+    "todaysAssignments": "任务",
     "next": "下一个",
     "upcoming": "即将开始",
     "viewAll": "查看全部",
@@ -122,7 +122,7 @@
     "doUploaded": "送货单 (DO) 已确认",
     "k2Form": "K2 海关表格已确认",
     "docGateHint": "在标记送达前，请确认送货单（K2 目的地需确认 K2 表格）。",
-    "podGateHint": "在标记送达前，请拍摄送达凭证照片（K2 目的地需确认 K2 表格）。",
+    "podGateHint": "标记送达前请先拍摄送达凭证照片。",
     "podCapture": "拍摄送达凭证",
     "podUploaded": "送达凭证照片已上传",
     "podRetake": "重新拍摄",
@@ -184,10 +184,10 @@
     "completion": "完成率",
     "tripsCompleted": "完成行程",
     "rmEarned": "本月收入",
-    "howItWorks": "您的评分由准时送达（40%）、行程完成（30%）和所得奖励（30%）组成。",
+    "howItWorks": "评分 = 准时 40% · 完成 30% · 收入 30%。",
     "emptyTitle": "行程还不够",
     "emptyBody": "完成您的首批行程后，您的表现评分、等级和排名将显示在这里。",
-    "emptyTier": "行程还不够"
+    "emptyTier": "暂无评分"
   },
   "profile": {
     "title": "我的",

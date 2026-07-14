@@ -5,7 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { TripsStackParamList } from "../../navigation/types";
 import { useTrips } from "../../hooks/queries";
-import { colors, radius, shadow } from "../../theme";
+import { colors, layout, radius, shadow } from "../../theme";
 import { Header } from "../../components/Header";
 import { TripCard } from "../../components/TripCard";
 import { LoadingState, ErrorState, EmptyState } from "../../components/States";
@@ -38,12 +38,13 @@ export function TripListScreen() {
         title={t("driver.myTrips")}
         right={
           <View style={styles.countPill}>
-            <Text style={styles.countText}>{t("history.tripsCount", { count: trips?.length ?? 0 })}</Text>
+            <Text style={styles.countText}>{t("history.tripsCount", { count: filtered.length })}</Text>
           </View>
         }
       />
 
       {/* Filter tabs */}
+      <View style={styles.centerCol}>
       <View style={styles.tabs}>
         {(["all", "active", "completed"] as const).map((f) => (
           <TouchableOpacity
@@ -57,6 +58,7 @@ export function TripListScreen() {
           </TouchableOpacity>
         ))}
       </View>
+      </View>
 
       {isLoading ? (
         <LoadingState />
@@ -66,7 +68,7 @@ export function TripListScreen() {
         <FlatList
           data={filtered}
           keyExtractor={(tr) => tr.id}
-          contentContainerStyle={{ padding: 16, paddingTop: 4, flexGrow: 1 }}
+          contentContainerStyle={{ padding: 16, paddingTop: 4, flexGrow: 1, width: "100%", maxWidth: layout.content, alignSelf: "center" }}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
           ListEmptyComponent={<EmptyState message={t("history.empty")} icon="cube-outline" />}
           renderItem={({ item }) => (
@@ -85,6 +87,7 @@ export function TripListScreen() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
+  centerCol: { width: "100%", maxWidth: layout.content, alignSelf: "center" },
   countPill: { backgroundColor: colors.yellow, paddingHorizontal: 12, paddingVertical: 4, borderRadius: radius.pill },
   countText: { color: colors.navy, fontSize: 13, fontWeight: "800" },
   tabs: { flexDirection: "row", backgroundColor: colors.white, margin: 16, marginBottom: 8, borderRadius: radius.md, padding: 4, ...shadow.card },

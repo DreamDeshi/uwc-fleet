@@ -16,7 +16,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { TripsStackParamList } from "../../navigation/types";
 import { useTrip, useUpdateTripStatus, useHolidaySet } from "../../hooks/queries";
 import { apiErrorCode, apiErrorMessage } from "../../services/api";
-import { colors, radius, shadow } from "../../theme";
+import { colors, layout, radius, shadow } from "../../theme";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -151,7 +151,7 @@ export function TripDetailsScreen() {
 
           {/* 3 info cards */}
           <View style={styles.infoRow}>
-            <InfoCard icon="calendar-outline" label={t("booking.pickupDate")} value={formatDate(trip.pickup_datetime)} sub={formatTime(trip.pickup_datetime)} />
+            <InfoCard icon="calendar-outline" label={t("trip.pickup")} value={formatDate(trip.pickup_datetime)} sub={formatTime(trip.pickup_datetime)} />
             <InfoCard icon="cube-outline" label={t("trip.cargo")} value={`${totalPallets(trip)}`} sub={t("booking.pallet")} />
             <InfoCard
               icon="cash-outline"
@@ -286,8 +286,8 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   badgeFloat: { position: "absolute", right: 12 },
-  body: { padding: 16 },
-  chipsRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
+  body: { padding: 16, width: "100%", maxWidth: layout.content, alignSelf: "center" },
+  chipsRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" },
   ticketChip: { backgroundColor: colors.blue, paddingHorizontal: 12, paddingVertical: 5, borderRadius: radius.sm },
   ticketChipText: { color: colors.white, fontSize: 12, fontWeight: "700" },
   typeChip: { backgroundColor: colors.tintBlue, paddingHorizontal: 12, paddingVertical: 5, borderRadius: radius.pill },
@@ -309,5 +309,5 @@ const styles = StyleSheet.create({
   smallStrong: { fontSize: 14, fontWeight: "700", color: colors.navy },
   smallMuted: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
   error: { color: colors.red, fontSize: 14, fontWeight: "600", marginTop: 8 },
-  bottom: { paddingHorizontal: 16, paddingTop: 12, backgroundColor: colors.bg },
+  bottom: { paddingHorizontal: 16, paddingTop: 12, backgroundColor: colors.bg, width: "100%", maxWidth: layout.content, alignSelf: "center" },
 });

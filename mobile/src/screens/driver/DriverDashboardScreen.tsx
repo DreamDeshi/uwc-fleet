@@ -8,7 +8,7 @@ import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { DriverTabParamList } from "../../navigation/types";
 import { useAuth } from "../../context/AuthContext";
 import { useTrips, useHolidaySet } from "../../hooks/queries";
-import { colors, radius, shadow } from "../../theme";
+import { colors, layout, radius, shadow } from "../../theme";
 import { Card } from "../../components/Card";
 import { StatusBadge } from "../../components/StatusBadge";
 import { TripCard } from "../../components/TripCard";
@@ -65,17 +65,19 @@ export function DriverDashboardScreen() {
     >
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <View style={styles.headerTop}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <View style={styles.logoBadge}>
-              <MaterialCommunityIcons name="truck" size={18} color={colors.blue} />
+        <View style={styles.centerCol}>
+          <View style={styles.headerTop}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={styles.logoBadge}>
+                <MaterialCommunityIcons name="truck" size={18} color={colors.blue} />
+              </View>
+              <Text style={styles.brand}>UWC TRUCKING</Text>
             </View>
-            <Text style={styles.brand}>UWC TRUCKING</Text>
           </View>
+          <Text style={styles.date}>{formatDate(new Date())}</Text>
+          <Text style={styles.greeting}>{t("driver.greeting", { name: firstName(user?.name) })} 👋</Text>
+          <Text style={styles.sub}>{t("driver.tripsToday", { count: assignedToday })}</Text>
         </View>
-        <Text style={styles.date}>{formatDate(new Date())}</Text>
-        <Text style={styles.greeting}>{t("driver.greeting", { name: firstName(user?.name) })} 👋</Text>
-        <Text style={styles.sub}>{t("driver.tripsToday", { count: assignedToday })}</Text>
       </View>
 
       {/* Active trip card */}
@@ -233,6 +235,8 @@ function firstName(name?: string) {
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
+  // Desktop: cap + centre the mobile column instead of stretching edge-to-edge.
+  centerCol: { width: "100%", maxWidth: layout.content, alignSelf: "center" },
   header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 20 },
   headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   logoBadge: {
@@ -248,7 +252,7 @@ const styles = StyleSheet.create({
   // Same greeting scale as the requestor home (owner-approved balance).
   greeting: { color: colors.white, fontSize: 26, fontWeight: "800", marginTop: 4 },
   sub: { color: "rgba(255,255,255,0.85)", fontSize: 15, fontWeight: "600", marginTop: 3 },
-  section: { paddingHorizontal: 16, paddingTop: 16 },
+  section: { paddingHorizontal: 16, paddingTop: 16, width: "100%", maxWidth: layout.content, alignSelf: "center" },
   sectionHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
   countPill: { backgroundColor: colors.yellow, paddingHorizontal: 10, paddingVertical: 2, borderRadius: radius.pill },
@@ -278,7 +282,7 @@ const styles = StyleSheet.create({
 
   assignCard: { backgroundColor: colors.white, borderRadius: radius.lg, overflow: "hidden", marginTop: 12, ...shadow.card },
   assignCardNext: { borderWidth: 2, borderColor: colors.yellow },
-  assignHead: { backgroundColor: colors.blue, paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 8 },
+  assignHead: { backgroundColor: colors.blue, paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
   nextTag: { backgroundColor: colors.yellow, paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill },
   nextTagText: { color: colors.navy, fontSize: 12, fontWeight: "800", letterSpacing: 0.5, textTransform: "uppercase" },
   assignPlate: { backgroundColor: "rgba(255,255,255,0.15)", color: colors.white, fontSize: 12, fontWeight: "600", paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.pill },

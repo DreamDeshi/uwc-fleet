@@ -63,6 +63,16 @@ export const radius = {
   pill: 999,
 } as const;
 
+// Max content width for the mobile-first screens (driver / requestor / auth)
+// when shown in a desktop browser — the app ships as a web app too, so on a
+// wide monitor the content is capped and centered into a phone-like column
+// instead of stretching edge-to-edge. On a phone (< these widths) the caps are
+// inert. `content` for scrollable screens; `auth` for the login/register card.
+export const layout = {
+  content: 720,
+  auth: 460,
+} as const;
+
 // Soft card shadow from the brief: 0 2px 12px rgba(0,0,0,0.06)
 export const shadow = {
   card: {

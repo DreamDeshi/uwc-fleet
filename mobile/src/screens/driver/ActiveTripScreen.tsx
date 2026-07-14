@@ -306,7 +306,7 @@ export function ActiveTripScreen() {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headingLabel}>{t("trip.headingTo")}</Text>
-          <Text style={styles.headingDest}>{tripDestination(trip)}</Text>
+          <Text style={styles.headingDest} numberOfLines={1}>{tripDestination(trip)}</Text>
           <Text style={styles.headingSub}>
             ≈ {distance} {t("common.km")} · {trip.truck_plate ?? ""}
           </Text>
