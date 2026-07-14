@@ -138,6 +138,22 @@ export function startRaw(driverToken: string, tripId: string) {
     .send({ action: "start" });
 }
 
+/** Mark a stop arrived — RAW response (for the arrived-guard tests). */
+export function arriveRaw(driverToken: string, tripId: string, stopId: string) {
+  return api()
+    .patch(`/api/v1/trips/${tripId}/status`)
+    .set(auth(driverToken))
+    .send({ action: "arrived", stop_id: stopId });
+}
+
+/** Mark a stop delivered — RAW response (POD must already be satisfied). */
+export function deliverRaw(driverToken: string, tripId: string, stopId: string) {
+  return api()
+    .patch(`/api/v1/trips/${tripId}/status`)
+    .set(auth(driverToken))
+    .send({ action: "delivered", stop_id: stopId });
+}
+
 export async function startTrip(driverToken: string, tripId: string): Promise<FlowTrip> {
   const res = await api()
     .patch(`/api/v1/trips/${tripId}/status`)
