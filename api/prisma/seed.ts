@@ -67,12 +67,24 @@ const spec: UwcSpec = JSON.parse(fs.readFileSync(SPEC_PATH, "utf-8"));
 
 // PII overlay: the public docs/uwc-spec.json carries NEUTRAL placeholder driver
 // names/employee numbers (the repo is public; the real identities are NDA data).
-// The real values live in the gitignored References/ folder and are applied
-// here, matched by truck plate, whenever the overlay file is present locally —
-// so a local seed still produces the real drivers.
-const PRIVATE_SPEC_PATH = path.resolve(__dirname, "../../References/uwc-spec.private.json");
-if (fs.existsSync(PRIVATE_SPEC_PATH)) {
-  const overlay = JSON.parse(fs.readFileSync(PRIVATE_SPEC_PATH, "utf-8")) as {
+// The real values live OUTSIDE this repo, in the local-only uwc-master-doc folder
+// (moved there when the reference files left the repo). We look for the overlay,
+// in priority order:
+//   1. $UWC_PRIVATE_SPEC_PATH        — explicit override, any absolute path
+//   2. ../uwc-master-doc/uwc-spec.private.json — sibling of the uwc-fleet repo
+//      (the current home of the reference/spec files)
+//   3. References/uwc-spec.private.json         — legacy in-repo location (now empty)
+// First existing candidate wins. If NONE is found we WARN LOUDLY and fall back to
+// the placeholder identities — never silently seeding placeholders as if real.
+const PRIVATE_SPEC_CANDIDATES: string[] = [
+  process.env.UWC_PRIVATE_SPEC_PATH,
+  path.resolve(__dirname, "../../../uwc-master-doc/uwc-spec.private.json"),
+  path.resolve(__dirname, "../../References/uwc-spec.private.json"),
+].filter((p): p is string => Boolean(p));
+
+const privateSpecPath = PRIVATE_SPEC_CANDIDATES.find((p) => fs.existsSync(p));
+if (privateSpecPath) {
+  const overlay = JSON.parse(fs.readFileSync(privateSpecPath, "utf-8")) as {
     driver_assignments: { truck: string; name: string; employee_no: string }[];
   };
   const realByTruck = new Map(overlay.driver_assignments.map((d) => [d.truck, d]));
@@ -83,7 +95,20 @@ if (fs.existsSync(PRIVATE_SPEC_PATH)) {
       d.employee_no = real.employee_no;
     }
   }
-  console.log("Applied private driver-identity overlay (References/uwc-spec.private.json).");
+  console.log(`Applied private driver-identity overlay (${privateSpecPath}).`);
+} else {
+  console.warn(
+    [
+      "",
+      "⚠  PRIVATE DRIVER OVERLAY NOT FOUND — seeding PLACEHOLDER driver identities",
+      "   (Driver 1–6 / D001–D006), NOT the real UWC names/employee numbers.",
+      "   Looked in:",
+      ...PRIVATE_SPEC_CANDIDATES.map((p) => `     - ${p}`),
+      "   To seed the real identities: set UWC_PRIVATE_SPEC_PATH to the overlay file,",
+      "   or place uwc-spec.private.json in the uwc-master-doc folder beside this repo.",
+      "",
+    ].join("\n")
+  );
 }
 
 // ── Seed-only test fixtures (NOT spec data) ────────────────────────────────
