@@ -9,6 +9,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { BookingFilter, RequestorStackParamList, RequestorTabParamList } from "../../navigation/types";
 import { useAuth } from "../../context/AuthContext";
 import { useTrips } from "../../hooks/queries";
+import { useWide } from "../../hooks/useWide";
 import { colors, layout, radius, shadow } from "../../theme";
 import { Card } from "../../components/Card";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -36,6 +37,7 @@ export function RequestorDashboardScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
   const { user } = useAuth();
+  const wide = useWide();
   const { data: trips, isLoading, isError, refetch, isRefetching } = useTrips();
 
   const { active, pending, recent, stats } = useMemo(() => {
@@ -44,7 +46,8 @@ export function RequestorDashboardScreen() {
     );
     const active = list.find((tr) => tr.status === "in_progress" || tr.status === "assigned");
     const pending = list.find((tr) => tr.status === "pending" || tr.status === "approved");
-    const recent = list.slice(0, 4);
+    // Up to 8 (wide shows more; the phone column slices to 4 below).
+    const recent = list.slice(0, 8);
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthTrips = list.filter((tr) => new Date(tr.created_at) >= monthStart);
@@ -63,15 +66,117 @@ export function RequestorDashboardScreen() {
   if (isLoading) return <View style={styles.fill}><LoadingState /></View>;
   if (isError) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
 
-  return (
-    <ScrollView
-      style={styles.fill}
-      contentContainerStyle={{ paddingBottom: 24 }}
-      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
-    >
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <View style={styles.centerCol}>
+  // ── Shared card fragments (identical markup, composed differently per layout) ──
+  const ctaCard = (
+    <TouchableOpacity style={styles.cta} activeOpacity={0.9} onPress={() => navigation.navigate("NewBooking")}>
+      <View style={styles.ctaIcon}>
+        <MaterialCommunityIcons name="truck" size={22} color={colors.blue} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.ctaTitle}>{t("requestor.whereTo")}</Text>
+        <Text style={styles.ctaSub}>{t("requestor.tapToBook")}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={colors.blue} />
+    </TouchableOpacity>
+  );
+
+  const activeCard = active ? (
+    <TouchableOpacity activeOpacity={0.9} onPress={() => openDetail(active.id)}>
+      <View style={styles.activeCard}>
+        <View style={styles.activeTop}>
+          <Text style={styles.activeLabel}>{t("requestor.activeTrip")}</Text>
+          <StatusBadge status={active.status} small />
+        </View>
+        <Text style={styles.activeTicket}>{active.ticket_number}</Text>
+        <View style={styles.routeMini}>
+          <View style={[styles.miniDot, { backgroundColor: colors.white }]} />
+          <Text style={styles.miniPlace}>{ORIGIN_LABEL}</Text>
+          <Text style={styles.miniArrow}>→</Text>
+          <View style={[styles.miniDot, { backgroundColor: colors.yellow }]} />
+          <Text style={styles.miniPlace}>{tripDestination(active)}</Text>
+        </View>
+        {active.driver ? (
+          <View style={styles.driverRow}>
+            <View style={styles.driverAvatar}>
+              <Text style={styles.driverAvatarText}>{initials(active.driver.name)}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.driverName}>{active.driver.name}</Text>
+              <Text style={styles.driverPlate}>{active.truck_plate}</Text>
+            </View>
+            <Text style={styles.track}>{t("requestor.track")} →</Text>
+          </View>
+        ) : null}
+      </View>
+    </TouchableOpacity>
+  ) : null;
+
+  const pendingCard = pending ? (
+    <TouchableOpacity activeOpacity={0.9} onPress={() => openDetail(pending.id)}>
+      <View style={styles.pendingCard}>
+        <View style={styles.pendingStripe} />
+        <View style={{ flex: 1, padding: 14 }}>
+          <View style={styles.pendingHead}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Ionicons name="time-outline" size={16} color="#d97706" />
+              <Text style={styles.pendingLabel}>{t("requestor.pendingApproval")}</Text>
+            </View>
+            <View style={styles.awaitPill}>
+              <Text style={styles.awaitText}>{t("requestor.awaiting")}</Text>
+            </View>
+          </View>
+          <Text style={styles.pendingTicket}>{pending.ticket_number}</Text>
+          <Text style={styles.pendingRoute}>
+            {ORIGIN_LABEL} → {tripDestination(pending)}
+          </Text>
+          <Text style={styles.pendingMeta} numberOfLines={1}>
+            {pending.route_type?.name} · {formatDate(pending.pickup_datetime)}, {formatTime(pending.pickup_datetime)}
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={colors.textFaint} style={{ alignSelf: "center", marginRight: 12 }} />
+      </View>
+    </TouchableOpacity>
+  ) : null;
+
+  const statsRow = (
+    <View style={styles.statRow}>
+      <StatBox value={stats.total} label={t("history.all")} color={colors.blue} bg={colors.tintBlue} onPress={() => openBookings("all")} />
+      <StatBox value={stats.completed} label={t("history.completed")} color={colors.green} bg={colors.tintGreen} onPress={() => openBookings("completed")} />
+      <StatBox value={stats.pending} label={t("requestor.pendingShort")} color="#d97706" bg={colors.tintYellow} onPress={() => openBookings("active")} />
+    </View>
+  );
+
+  const recentCard = (limit: number) => {
+    const rows = recent.slice(0, limit);
+    if (rows.length === 0) {
+      return (
+        <Card style={{ marginTop: 12 }}>
+          <Text style={styles.emptyText}>{t("requestor.noBookings")}</Text>
+        </Card>
+      );
+    }
+    return (
+      <Card style={{ marginTop: 12 }} padded={false}>
+        {rows.map((tr, i) => (
+          <TouchableOpacity
+            key={tr.id}
+            style={[styles.recentRow, i < rows.length - 1 && styles.divider]}
+            onPress={() => openDetail(tr.id)}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.recentRoute}>{ORIGIN_LABEL} → {tripDestination(tr)}</Text>
+              <Text style={styles.recentMeta}>{tr.ticket_number} · {formatDate(tr.pickup_datetime)}</Text>
+            </View>
+            <StatusBadge status={tr.status} small />
+          </TouchableOpacity>
+        ))}
+      </Card>
+    );
+  };
+
+  const header = (
+    <View style={[styles.header, { paddingTop: insets.top + 12, paddingBottom: wide ? 24 : 44 }, wide && styles.headerWide]}>
+      <View style={wide ? styles.fillCol : styles.centerCol}>
         <View style={styles.headerTop}>
           <View style={{ flex: 1 }}>
             <Text style={styles.greetingTime}>{greeting} 👋</Text>
@@ -87,126 +192,78 @@ export function RequestorDashboardScreen() {
             <Text style={styles.avatarText}>{initials(user?.name ?? "")}</Text>
           </View>
         </View>
-        </View>
-
       </View>
+    </View>
+  );
+
+  // ── Wide (office PC) — two-column dashboard that uses the whole screen ──
+  if (wide) {
+    return (
+      <ScrollView
+        style={styles.fill}
+        contentContainerStyle={{ paddingBottom: 32 }}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+      >
+        {header}
+        <View style={styles.wideBody}>
+          <View style={styles.wideRow}>
+            {/* Left — the primary book action + whatever bookings are live now. */}
+            <View style={styles.wideMain}>
+              {ctaCard}
+              <Text style={[styles.sectionTitle, { marginTop: 20 }]}>{t("requestor.currentBookings")}</Text>
+              <View style={{ gap: 12, marginTop: 12 }}>
+                {activeCard}
+                {pendingCard}
+                {!active && !pending ? (
+                  <View style={styles.emptyBookings}>
+                    <MaterialCommunityIcons name="truck-outline" size={30} color={colors.textFaint} />
+                    <Text style={styles.emptyBookingsText}>{t("requestor.noActiveBookings")}</Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+            {/* Right — the glanceable month figures + a taller recent list. */}
+            <View style={styles.wideSide}>
+              <Text style={styles.sectionTitle}>{t("requestor.thisMonth")}</Text>
+              {statsRow}
+              <Text style={[styles.sectionTitle, { marginTop: 20 }]}>{t("requestor.recentActivity")}</Text>
+              {recentCard(8)}
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+    );
+  }
+
+  // ── Narrow (phone) — the shipped single-column layout, unchanged ──
+  return (
+    <ScrollView
+      style={styles.fill}
+      contentContainerStyle={{ paddingBottom: 24 }}
+      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+    >
+      {header}
 
       {/* Grab-style CTA — real layout overlap (negative margin) instead of a
           translateY transform, which left a subpixel blue seam along the
           card's edge on react-native-web. */}
-      <View style={styles.ctaWrap}>
-        <TouchableOpacity style={styles.cta} activeOpacity={0.9} onPress={() => navigation.navigate("NewBooking")}>
-          <View style={styles.ctaIcon}>
-            <MaterialCommunityIcons name="truck" size={22} color={colors.blue} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.ctaTitle}>{t("requestor.whereTo")}</Text>
-            <Text style={styles.ctaSub}>{t("requestor.tapToBook")}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.blue} />
-        </TouchableOpacity>
-      </View>
+      <View style={styles.ctaWrap}>{ctaCard}</View>
 
       <View style={{ height: 16 }} />
 
-      {/* Active booking */}
-      {active ? (
-        <View style={styles.section}>
-          <TouchableOpacity activeOpacity={0.9} onPress={() => openDetail(active.id)}>
-            <View style={styles.activeCard}>
-              <View style={styles.activeTop}>
-                <Text style={styles.activeLabel}>{t("requestor.activeTrip")}</Text>
-                <StatusBadge status={active.status} small />
-              </View>
-              <Text style={styles.activeTicket}>{active.ticket_number}</Text>
-              <View style={styles.routeMini}>
-                <View style={[styles.miniDot, { backgroundColor: colors.white }]} />
-                <Text style={styles.miniPlace}>{ORIGIN_LABEL}</Text>
-                <Text style={styles.miniArrow}>→</Text>
-                <View style={[styles.miniDot, { backgroundColor: colors.yellow }]} />
-                <Text style={styles.miniPlace}>{tripDestination(active)}</Text>
-              </View>
-              {active.driver ? (
-                <View style={styles.driverRow}>
-                  <View style={styles.driverAvatar}>
-                    <Text style={styles.driverAvatarText}>{initials(active.driver.name)}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.driverName}>{active.driver.name}</Text>
-                    <Text style={styles.driverPlate}>{active.truck_plate}</Text>
-                  </View>
-                  <Text style={styles.track}>{t("requestor.track")} →</Text>
-                </View>
-              ) : null}
-            </View>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-
-      {/* Pending booking */}
-      {pending ? (
-        <View style={styles.section}>
-          <TouchableOpacity activeOpacity={0.9} onPress={() => openDetail(pending.id)}>
-            <View style={styles.pendingCard}>
-              <View style={styles.pendingStripe} />
-              <View style={{ flex: 1, padding: 14 }}>
-                <View style={styles.pendingHead}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                    <Ionicons name="time-outline" size={16} color="#d97706" />
-                    <Text style={styles.pendingLabel}>{t("requestor.pendingApproval")}</Text>
-                  </View>
-                  <View style={styles.awaitPill}>
-                    <Text style={styles.awaitText}>{t("requestor.awaiting")}</Text>
-                  </View>
-                </View>
-                <Text style={styles.pendingTicket}>{pending.ticket_number}</Text>
-                <Text style={styles.pendingRoute}>
-                  {ORIGIN_LABEL} → {tripDestination(pending)}
-                </Text>
-                <Text style={styles.pendingMeta} numberOfLines={1}>
-                  {pending.route_type?.name} · {formatDate(pending.pickup_datetime)}, {formatTime(pending.pickup_datetime)}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textFaint} style={{ alignSelf: "center", marginRight: 12 }} />
-            </View>
-          </TouchableOpacity>
-        </View>
-      ) : null}
+      {active ? <View style={styles.section}>{activeCard}</View> : null}
+      {pending ? <View style={styles.section}>{pendingCard}</View> : null}
 
       {/* This month stats */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t("requestor.thisMonth")}</Text>
-        <View style={styles.statRow}>
-          <StatBox value={stats.total} label={t("history.all")} color={colors.blue} bg={colors.tintBlue} onPress={() => openBookings("all")} />
-          <StatBox value={stats.completed} label={t("history.completed")} color={colors.green} bg={colors.tintGreen} onPress={() => openBookings("completed")} />
-          <StatBox value={stats.pending} label={t("requestor.pendingShort")} color="#d97706" bg={colors.tintYellow} onPress={() => openBookings("active")} />
-        </View>
+        {statsRow}
       </View>
 
       {/* Recent activity */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t("requestor.recentActivity")}</Text>
-        {recent.length === 0 ? (
-          <Card style={{ marginTop: 12 }}>
-            <Text style={styles.emptyText}>{t("requestor.noBookings")}</Text>
-          </Card>
-        ) : (
-          <Card style={{ marginTop: 12 }} padded={false}>
-            {recent.map((tr, i) => (
-              <TouchableOpacity
-                key={tr.id}
-                style={[styles.recentRow, i < recent.length - 1 && styles.divider]}
-                onPress={() => openDetail(tr.id)}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.recentRoute}>{ORIGIN_LABEL} → {tripDestination(tr)}</Text>
-                  <Text style={styles.recentMeta}>{tr.ticket_number} · {formatDate(tr.pickup_datetime)}</Text>
-                </View>
-                <StatusBadge status={tr.status} small />
-              </TouchableOpacity>
-            ))}
-          </Card>
-        )}
+        {recentCard(4)}
       </View>
     </ScrollView>
   );
@@ -240,6 +297,16 @@ const styles = StyleSheet.create({
   ctaSub: { fontSize: 14, color: colors.textFaint },
   section: { paddingHorizontal: 16, paddingTop: 12, width: "100%", maxWidth: layout.content, alignSelf: "center" },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
+
+  // ── Wide dashboard scaffold (fills the content area beside the sidebar) ──
+  headerWide: { paddingHorizontal: 28 },
+  fillCol: { width: "100%" },
+  wideBody: { width: "100%", paddingHorizontal: 28, paddingTop: 22 },
+  wideRow: { flexDirection: "row", alignItems: "flex-start", gap: 24 },
+  wideMain: { flex: 1.6 },
+  wideSide: { flex: 1, maxWidth: 460 },
+  emptyBookings: { backgroundColor: colors.white, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderLight, alignItems: "center", justifyContent: "center", paddingVertical: 34, gap: 10, ...shadow.card },
+  emptyBookingsText: { fontSize: 14, color: colors.textMuted, fontWeight: "600" },
 
   // Owner call (feedback round 2): the dark navy active card and the dashed
   // pending card are the PREFERRED look — kept exactly as originally shipped.

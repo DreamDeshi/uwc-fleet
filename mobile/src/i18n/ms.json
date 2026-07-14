@@ -233,6 +233,8 @@
     "recentActivity": "Aktiviti Terkini",
     "thisMonth": "Bulan Ini",
     "noBookings": "Belum ada tempahan.",
+    "currentBookings": "Tempahan Semasa",
+    "noActiveBookings": "Tiada tempahan sedang berjalan.",
     "track": "Jejak"
   },
   "analytics": {
@@ -326,7 +328,11 @@
     "documents": "Dokumen (Pilihan)",
     "documentsHint": "Lampirkan DO atau invois sekarang, atau tambah kemudian.",
     "attachDocument": "Lampirkan dokumen",
-    "docUploadPartial": "Tempahan dibuat, tetapi dokumen gagal dimuat naik. Anda boleh tambah dari butiran tempahan."
+    "docUploadPartial": "Tempahan dibuat, tetapi dokumen gagal dimuat naik. Anda boleh tambah dari butiran tempahan.",
+    "summary": "Ringkasan Tempahan",
+    "noStopsYet": "Belum ada hentian ditambah.",
+    "summaryDocs_one": "{{count}} dokumen dilampirkan",
+    "summaryDocs_other": "{{count}} dokumen dilampirkan"
   },
   "bookingDetail": {
     "title": "Butiran Tempahan",
@@ -377,7 +383,12 @@
     "completed": "Selesai",
     "active": "Aktif",
     "tripsCount": "{{count}} Perjalanan",
-    "empty": "Tiada perjalanan untuk dipaparkan."
+    "empty": "Tiada perjalanan untuk dipaparkan.",
+    "colDate": "Tarikh",
+    "colTicket": "Tiket",
+    "colRoute": "Laluan",
+    "colType": "Jenis",
+    "colStatus": "Status"
   },
   "admin": {
     "webOnlyTitle": "Papan Pemuka Admin",

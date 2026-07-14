@@ -24,6 +24,7 @@ import {
 } from "../../hooks/queries";
 import { apiErrorMessage } from "../../services/api";
 import { colors, layout, radius, shadow } from "../../theme";
+import { useWide } from "../../hooks/useWide";
 import { Button } from "../../components/Button";
 import { FieldLabel, PressableField } from "../../components/Field";
 import { OptionsModal } from "../../components/OptionsModal";
@@ -79,6 +80,7 @@ export function BookingFormScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
+  const wide = useWide();
 
   const { data: routeTypes = [], isLoading: rtLoading } = useRouteTypes();
   const { data: trips = [] } = useTrips();
@@ -170,6 +172,17 @@ export function BookingFormScreen() {
   );
 
   const isLastStep = step === STEPS.length - 1;
+
+  // Running cargo summary — shown on the Confirm step AND (on PC) in the
+  // always-visible summary rail. `cargoIsSet` gates the rail's placeholder.
+  const cargoIsSet =
+    cargoType === "pallet" ? totalPallets > 0 : cargoType === "carton" ? cartonQty > 0 : othersText.trim().length > 0;
+  const cargoSummaryText =
+    cargoType === "pallet"
+      ? `${totalPallets} ${t("booking.pallet")}`
+      : cargoType === "carton"
+        ? `${cartonQty} ${t("booking.carton")}`
+        : othersText;
 
   const resetForm = () => {
     setStep(0);
@@ -297,19 +310,10 @@ export function BookingFormScreen() {
 
   if (rtLoading) return <View style={styles.fill}><LoadingState /></View>;
 
-  return (
-    <View style={styles.fill}>
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <TouchableOpacity onPress={onBack} hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color={colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t("booking.newRequest")}</Text>
-      </View>
-
-      {/* Step indicator */}
-      <View style={styles.stepBar}>
-        <View style={styles.stepBarRow}>
+  // ── Shared pieces (composed differently for phone vs PC) ──
+  const stepper = (
+    <View style={styles.stepBar}>
+      <View style={styles.stepBarRow}>
         {STEPS.map((s, i) => (
           <View key={s} style={styles.stepItem}>
             <View
@@ -331,88 +335,157 @@ export function BookingFormScreen() {
             ) : null}
           </View>
         ))}
-        </View>
+      </View>
+    </View>
+  );
+
+  const stepContent = (
+    <>
+      {step === 0 && (
+        <StepWhere
+          wide={wide}
+          routeTypes={routeTypes}
+          routeTypeId={routeTypeId}
+          setRouteTypeId={setRouteTypeId}
+          stops={stops}
+          setStops={setStops}
+          recent={recentConsignees}
+          canRebook={Boolean(lastTrip)}
+          onRebook={() => lastTrip && prefillFromTrip(lastTrip)}
+        />
+      )}
+      {step === 1 && (
+        <StepWhat
+          cargoType={cargoType}
+          setCargoType={setCargoType}
+          palletQtys={palletQtys}
+          setPalletQtys={setPalletQtys}
+          cartonQty={cartonQty}
+          setCartonQty={setCartonQty}
+          othersText={othersText}
+          setOthersText={setOthersText}
+          sizeEstimate={sizeEstimate}
+          setSizeEstimate={setSizeEstimate}
+          totalPallets={totalPallets}
+          totalEquivalents={totalEquivalents}
+        />
+      )}
+      {step === 2 && (
+        <StepConfirm
+          routeTypeName={routeTypes.find((r) => r.id === routeTypeId)?.name}
+          stops={stops}
+          cargoSummaryText={cargoSummaryText}
+          pickupDate={pickupDate}
+          remarks={remarks}
+          setRemarks={setRemarks}
+          onPickDate={() => setDayOpen(true)}
+          onPickTime={() => setTimeOpen(true)}
+          onEditStep={setStep}
+          docs={docs}
+          onAddDoc={onAddDoc}
+          onRemoveDoc={onRemoveDoc}
+          uploadingDoc={uploadDoc.isPending}
+        />
+      )}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+    </>
+  );
+
+  const navButtons = (
+    <View style={{ flexDirection: "row", gap: 10 }}>
+      {step > 0 ? (
+        <Button title={t("common.back")} variant="outline" onPress={onBack} style={{ flex: 1 }} />
+      ) : null}
+      <Button
+        title={isLastStep ? t("booking.submit") : t("common.next")}
+        onPress={onNext}
+        loading={submitting}
+        variant={isLastStep ? "accent" : "primary"}
+        size="xl"
+        style={{ flex: step > 0 ? 2 : 1 }}
+        icon={
+          isLastStep ? (
+            <Ionicons name="checkmark" size={20} color={colors.navy} />
+          ) : (
+            <Ionicons name="arrow-forward" size={20} color={colors.white} />
+          )
+        }
+      />
+    </View>
+  );
+
+  return (
+    <View style={styles.fill}>
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+        <TouchableOpacity onPress={onBack} hitSlop={12}>
+          <Ionicons name="chevron-back" size={24} color={colors.white} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{t("booking.newRequest")}</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-        {step === 0 && (
-          <StepWhere
-            routeTypes={routeTypes}
-            routeTypeId={routeTypeId}
-            setRouteTypeId={setRouteTypeId}
-            stops={stops}
-            setStops={setStops}
-            recent={recentConsignees}
-            canRebook={Boolean(lastTrip)}
-            onRebook={() => lastTrip && prefillFromTrip(lastTrip)}
-          />
-        )}
-        {step === 1 && (
-          <StepWhat
-            cargoType={cargoType}
-            setCargoType={setCargoType}
-            palletQtys={palletQtys}
-            setPalletQtys={setPalletQtys}
-            cartonQty={cartonQty}
-            setCartonQty={setCartonQty}
-            othersText={othersText}
-            setOthersText={setOthersText}
-            sizeEstimate={sizeEstimate}
-            setSizeEstimate={setSizeEstimate}
-            totalPallets={totalPallets}
-            totalEquivalents={totalEquivalents}
-          />
-        )}
-        {step === 2 && (
-          <StepConfirm
-            routeTypeName={routeTypes.find((r) => r.id === routeTypeId)?.name}
-            stops={stops}
-            cargoSummaryText={
-              cargoType === "pallet"
-                ? `${totalPallets} ${t("booking.pallet")}`
-                : cargoType === "carton"
-                  ? `${cartonQty} ${t("booking.carton")}`
-                  : othersText
-            }
-            pickupDate={pickupDate}
-            remarks={remarks}
-            setRemarks={setRemarks}
-            onPickDate={() => setDayOpen(true)}
-            onPickTime={() => setTimeOpen(true)}
-            onEditStep={setStep}
-            docs={docs}
-            onAddDoc={onAddDoc}
-            onRemoveDoc={onRemoveDoc}
-            uploadingDoc={uploadDoc.isPending}
-          />
-        )}
+      {wide ? (
+        // ── Wide (PC) — a self-contained form card beside a live summary rail ──
+        <ScrollView contentContainerStyle={styles.wideScroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.wideRow}>
+            <View style={styles.formCard}>
+              {stepper}
+              <View style={styles.formCardBody}>
+                {stepContent}
+                <View style={styles.formFooter}>{navButtons}</View>
+              </View>
+            </View>
+            <View style={styles.summaryRail}>
+              <Text style={styles.summaryTitle}>{t("booking.summary")}</Text>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-      </ScrollView>
+              <Text style={styles.summaryKey}>{t("booking.routeType")}</Text>
+              <Text style={styles.summaryVal}>
+                {routeTypes.find((r) => r.id === routeTypeId)?.name ?? "—"}
+              </Text>
 
-      {/* Bottom buttons */}
-      <View style={[styles.bottom, { paddingBottom: insets.bottom + 12 }]}>
-        <View style={{ flexDirection: "row", gap: 10 }}>
-          {step > 0 ? (
-            <Button title={t("common.back")} variant="outline" onPress={onBack} style={{ flex: 1 }} />
-          ) : null}
-          <Button
-            title={isLastStep ? t("booking.submit") : t("common.next")}
-            onPress={onNext}
-            loading={submitting}
-            variant={isLastStep ? "accent" : "primary"}
-            size="xl"
-            style={{ flex: step > 0 ? 2 : 1 }}
-            icon={
-              isLastStep ? (
-                <Ionicons name="checkmark" size={20} color={colors.navy} />
+              <Text style={styles.summaryKey}>{t("booking.consignee")}</Text>
+              {stops.length === 0 ? (
+                <Text style={styles.summaryMuted}>{t("booking.noStopsYet")}</Text>
               ) : (
-                <Ionicons name="arrow-forward" size={20} color={colors.white} />
-              )
-            }
-          />
-        </View>
-      </View>
+                stops.map((c, i) => (
+                  <View key={c.id} style={styles.summaryStop}>
+                    <View style={styles.summaryStopSeq}>
+                      <Text style={styles.summaryStopSeqText}>{i + 1}</Text>
+                    </View>
+                    <Text style={styles.summaryStopName} numberOfLines={1}>{c.company_name}</Text>
+                  </View>
+                ))
+              )}
+
+              <Text style={styles.summaryKey}>{t("trip.cargo")}</Text>
+              <Text style={cargoIsSet ? styles.summaryVal : styles.summaryMuted}>
+                {cargoIsSet ? cargoSummaryText : "—"}
+              </Text>
+
+              <Text style={styles.summaryKey}>{t("booking.schedule")}</Text>
+              <Text style={styles.summaryVal}>
+                {formatDate(pickupDate)}, {formatTime(pickupDate)}
+              </Text>
+
+              {docs.length > 0 ? (
+                <>
+                  <Text style={styles.summaryKey}>{t("booking.documents")}</Text>
+                  <Text style={styles.summaryVal}>{t("booking.summaryDocs", { count: docs.length })}</Text>
+                </>
+              ) : null}
+            </View>
+          </View>
+        </ScrollView>
+      ) : (
+        // ── Narrow (phone) — the shipped stacked wizard, unchanged ──
+        <>
+          {stepper}
+          <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+            {stepContent}
+          </ScrollView>
+          <View style={[styles.bottom, { paddingBottom: insets.bottom + 12 }]}>{navButtons}</View>
+        </>
+      )}
 
       {/* Pickers */}
       <OptionsModal
@@ -463,6 +536,7 @@ export function BookingFormScreen() {
 
 // ── Step 1: Where (route type + multi-stop consignees) ───────────────────
 function StepWhere({
+  wide,
   routeTypes,
   routeTypeId,
   setRouteTypeId,
@@ -472,6 +546,7 @@ function StepWhere({
   canRebook,
   onRebook,
 }: {
+  wide: boolean;
   routeTypes: { id: string; name: string }[];
   routeTypeId?: string;
   setRouteTypeId: (id: string) => void;
@@ -511,7 +586,7 @@ function StepWhere({
           return (
             <TouchableOpacity
               key={r.id}
-              style={[styles.routeCard, active && styles.routeCardActive]}
+              style={[styles.routeCard, wide && styles.routeCardWide, active && styles.routeCardActive]}
               onPress={() => setRouteTypeId(r.id)}
             >
               <Text style={[styles.routeCardText, active && { color: colors.blue }]}>{r.name}</Text>
@@ -897,6 +972,40 @@ const styles = StyleSheet.create({
   stepConn: { position: "absolute", top: 15, right: -50, width: 100, height: 3, borderRadius: 2, backgroundColor: "#e8ecf4", zIndex: -1 },
   body: { padding: 16, paddingBottom: 24, width: "100%", maxWidth: layout.content, alignSelf: "center" },
 
+  // ── Wide (PC) form scaffold: a form card + a persistent summary rail ──
+  // Fills the content area beside the sidebar; the row itself is capped so a
+  // form never stretches to an unreadable width on an ultra-wide monitor.
+  wideScroll: { width: "100%", paddingHorizontal: 28, paddingVertical: 24 },
+  wideRow: { flexDirection: "row", alignItems: "flex-start", gap: 24, width: "100%", maxWidth: 1180 },
+  formCard: {
+    flex: 1,
+    backgroundColor: colors.white,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    overflow: "hidden",
+    ...shadow.card,
+  },
+  formCardBody: { padding: 24 },
+  formFooter: { marginTop: 20, paddingTop: 20, borderTopWidth: 1, borderTopColor: colors.borderLight },
+  summaryRail: {
+    width: 300,
+    backgroundColor: colors.white,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    padding: 20,
+    ...shadow.card,
+  },
+  summaryTitle: { fontSize: 13, fontWeight: "800", color: colors.blue, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 },
+  summaryKey: { fontSize: 12, fontWeight: "700", color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 14 },
+  summaryVal: { fontSize: 14, fontWeight: "600", color: colors.navy, marginTop: 4 },
+  summaryMuted: { fontSize: 14, color: colors.textFaint, marginTop: 4 },
+  summaryStop: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8 },
+  summaryStopSeq: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center" },
+  summaryStopSeqText: { color: colors.white, fontSize: 12, fontWeight: "800" },
+  summaryStopName: { flex: 1, fontSize: 14, fontWeight: "600", color: colors.navy },
+
   rebookBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -928,6 +1037,7 @@ const styles = StyleSheet.create({
 
   routeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 },
   routeCard: { width: "48%", borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md, padding: 14, backgroundColor: colors.white },
+  routeCardWide: { width: "31.5%" },
   routeCardActive: { borderColor: colors.blue, borderWidth: 2, backgroundColor: colors.tintBlue },
   routeCardText: { fontSize: 14, fontWeight: "700", color: colors.navy },
 

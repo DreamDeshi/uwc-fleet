@@ -233,6 +233,8 @@
     "recentActivity": "最近活动",
     "thisMonth": "本月",
     "noBookings": "暂无预订。",
+    "currentBookings": "当前预订",
+    "noActiveBookings": "暂无进行中的预订。",
     "track": "追踪"
   },
   "analytics": {
@@ -326,7 +328,11 @@
     "documents": "文件（可选）",
     "documentsHint": "现在附上送货单或发票，或稍后添加。",
     "attachDocument": "附加文件",
-    "docUploadPartial": "预订已创建，但文件上传失败。您可以从预订详情中添加。"
+    "docUploadPartial": "预订已创建，但文件上传失败。您可以从预订详情中添加。",
+    "summary": "预订摘要",
+    "noStopsYet": "尚未添加卸货点。",
+    "summaryDocs_one": "已附上 {{count}} 份文件",
+    "summaryDocs_other": "已附上 {{count}} 份文件"
   },
   "bookingDetail": {
     "title": "预订详情",
@@ -377,7 +383,12 @@
     "completed": "已完成",
     "active": "进行中",
     "tripsCount": "{{count}} 个行程",
-    "empty": "没有可显示的行程。"
+    "empty": "没有可显示的行程。",
+    "colDate": "日期",
+    "colTicket": "单号",
+    "colRoute": "路线",
+    "colType": "类型",
+    "colStatus": "状态"
   },
   "admin": {
     "webOnlyTitle": "管理员仪表板",

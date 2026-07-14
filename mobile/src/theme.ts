@@ -70,6 +70,11 @@ export const radius = {
 // inert. `content` for scrollable screens; `auth` for the login/register card.
 export const layout = {
   content: 720,
+  // Desktop content cap for the requestor screens (office staff on a PC). Wider
+  // than `content` so wide layouts get two comfortable columns instead of a lone
+  // phone column stranded in the middle of a 1440px monitor. Gated behind
+  // useWide() (≥1024px) so phones never see it.
+  wide: 1160,
   auth: 460,
 } as const;
 

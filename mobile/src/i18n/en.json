@@ -233,6 +233,8 @@
     "recentActivity": "Recent Activity",
     "thisMonth": "This Month",
     "noBookings": "No bookings yet.",
+    "currentBookings": "Current Bookings",
+    "noActiveBookings": "No bookings in progress.",
     "track": "Track"
   },
   "analytics": {
@@ -326,7 +328,11 @@
     "documents": "Documents (Optional)",
     "documentsHint": "Attach your DO or invoice now, or add it later.",
     "attachDocument": "Attach document",
-    "docUploadPartial": "Booking created, but a document failed to upload. You can add it from the booking details."
+    "docUploadPartial": "Booking created, but a document failed to upload. You can add it from the booking details.",
+    "summary": "Booking Summary",
+    "noStopsYet": "No stops added yet.",
+    "summaryDocs_one": "{{count}} document attached",
+    "summaryDocs_other": "{{count}} documents attached"
   },
   "bookingDetail": {
     "title": "Booking Details",
@@ -377,7 +383,12 @@
     "completed": "Completed",
     "active": "Active",
     "tripsCount": "{{count}} Trips",
-    "empty": "No trips to show."
+    "empty": "No trips to show.",
+    "colDate": "Date",
+    "colTicket": "Ticket",
+    "colRoute": "Route",
+    "colType": "Type",
+    "colStatus": "Status"
   },
   "admin": {
     "webOnlyTitle": "Admin Dashboard",

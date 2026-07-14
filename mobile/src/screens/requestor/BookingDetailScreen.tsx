@@ -12,6 +12,7 @@ import { TripDocument } from "../../types";
 import { useToast } from "../../components/Toast";
 import { apiErrorMessage } from "../../services/api";
 import { colors, radius, shadow } from "../../theme";
+import { useWide } from "../../hooks/useWide";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
 import { Header } from "../../components/Header";
@@ -31,6 +32,7 @@ export function BookingDetailScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<Rt>();
+  const wide = useWide();
   const { data: trip, isLoading, isError, refetch, isRefetching } = useTrip(params.tripId);
   const cancelTrip = useCancelTrip();
   const uploadDoc = useUploadTripDocument();
@@ -77,132 +79,163 @@ export function BookingDetailScreen() {
 
   const documents = trip.documents ?? [];
 
+  // ── Card fragments (identical markup; stacked on phone, two columns on PC) ──
+  const pendingNotice = trip.status === "pending" ? (
+    <View style={styles.notice}>
+      <Ionicons name="information-circle-outline" size={18} color="#d97706" />
+      <Text style={styles.noticeText}>{t("bookingDetail.pendingNotice")}</Text>
+    </View>
+  ) : null;
+
+  const rejectNotice = trip.status === "rejected" ? (
+    <View style={styles.rejectNotice}>
+      <Ionicons name="close-circle-outline" size={18} color={colors.red} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.rejectTitle}>{t("bookingDetail.rejectionReason")}</Text>
+        <Text style={styles.rejectText}>
+          {trip.rejection_reason?.trim() || t("bookingDetail.rejectionNoReason")}
+        </Text>
+      </View>
+    </View>
+  ) : null;
+
+  const driverCard = trip.driver ? (
+    <Card style={{ marginBottom: 12 }}>
+      <Text style={styles.cardLabel}>{t("bookingDetail.assignedDriver")}</Text>
+      <View style={styles.driverRow}>
+        <View style={styles.driverAvatar}>
+          <Text style={styles.driverAvatarText}>{nameInitials(trip.driver.name)}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.driverName}>{trip.driver.name}</Text>
+          <Text style={styles.driverSub}>{trip.truck_plate} {trip.truck?.type ? `(${trip.truck.type})` : ""}</Text>
+          {trip.driver.phone ? <Text style={styles.driverPhone}>📞 {trip.driver.phone}</Text> : null}
+        </View>
+        {trip.driver.phone ? (
+          <TouchableOpacity style={styles.callBtn} onPress={() => Linking.openURL(`tel:${trip.driver!.phone}`)}>
+            <Ionicons name="call" size={20} color={colors.white} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    </Card>
+  ) : null;
+
+  const liveCard = trip.status === "in_progress" ? (
+    <Card style={{ marginBottom: 12 }}>
+      <View style={styles.detailHead}>
+        <Text style={styles.cardLabel}>{t("bookingDetail.liveLocation")}</Text>
+        <LiveStatus pos={livePos} />
+      </View>
+      <View style={{ marginTop: 12 }}>
+        <LiveTripMap tripId={trip.id} destZone={tripDestZone(trip)} live height={wide ? 260 : 200} />
+      </View>
+    </Card>
+  ) : null;
+
+  const detailsCard = (
+    <Card style={{ marginBottom: 12 }}>
+      <View style={styles.detailHead}>
+        <Text style={styles.cardLabel}>{t("bookingDetail.tripDetails")}</Text>
+        <View style={styles.ticketChip}>
+          <Text style={styles.ticketChipText}>{trip.ticket_number}</Text>
+        </View>
+      </View>
+      {trip.route_type ? (
+        <View style={styles.typeChip}>
+          <Text style={styles.typeChipText}>{trip.route_type.name}</Text>
+        </View>
+      ) : null}
+      <View style={{ marginTop: 14 }}>
+        <RouteLine from={ORIGIN_LABEL} to={tripConsigneeName(trip)} />
+      </View>
+      <View style={styles.detailGrid}>
+        <Detail k={t("bookingDetail.dateTime")} v={formatDateTime(trip.pickup_datetime)} />
+        <Detail k={t("bookingDetail.cargo")} v={cargoSummary(trip)} />
+        <Detail k={t("bookingDetail.consignee")} v={tripDestination(trip)} />
+      </View>
+    </Card>
+  );
+
+  const documentsCard = (
+    <Card style={{ marginBottom: 12 }}>
+      <View style={styles.detailHead}>
+        <Text style={styles.cardLabel}>{t("bookingDetail.documents")}</Text>
+        <TouchableOpacity
+          style={styles.uploadBtn}
+          onPress={onUploadDoc}
+          disabled={uploadDoc.isPending}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="cloud-upload-outline" size={16} color={colors.blue} />
+          <Text style={styles.uploadBtnText}>
+            {uploadDoc.isPending ? t("bookingDetail.docUploading") : t("bookingDetail.docUpload")}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {documents.length === 0 ? (
+        <Text style={styles.docEmpty}>{t("bookingDetail.docEmpty")}</Text>
+      ) : (
+        <View style={{ marginTop: 12, gap: 10 }}>
+          {documents.map((doc) => (
+            <DocumentRow key={doc.id} doc={doc} />
+          ))}
+        </View>
+      )}
+    </Card>
+  );
+
+  const timelineCard = (
+    <Card>
+      <Text style={[styles.cardLabel, { marginBottom: 16 }]}>{t("bookingDetail.timeline")}</Text>
+      <StatusTimeline steps={trip.timeline ?? []} />
+    </Card>
+  );
+
   return (
     <View style={styles.fill}>
       <Header title={t("bookingDetail.title")} onBack={() => navigation.goBack()} />
 
-      {/* Status banner */}
+      {/* Status banner (full-width strip on every layout) */}
       <View style={[styles.banner, { backgroundColor: banner.bg }]}>
         <Ionicons name={banner.icon} size={18} color={banner.fg} />
         <Text style={[styles.bannerText, { color: banner.fg }]}>{banner.text(t)}</Text>
       </View>
 
       <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+        contentContainerStyle={
+          wide
+            ? { paddingHorizontal: 28, paddingTop: 24, paddingBottom: 32, width: "100%" }
+            : { padding: 16, paddingBottom: 32 }
+        }
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
       >
-        {/* Pending notice */}
-        {trip.status === "pending" ? (
-          <View style={styles.notice}>
-            <Ionicons name="information-circle-outline" size={18} color="#d97706" />
-            <Text style={styles.noticeText}>{t("bookingDetail.pendingNotice")}</Text>
-          </View>
-        ) : null}
+        {pendingNotice}
+        {rejectNotice}
 
-        {/* Rejection reason — shown when an admin rejected the booking */}
-        {trip.status === "rejected" ? (
-          <View style={styles.rejectNotice}>
-            <Ionicons name="close-circle-outline" size={18} color={colors.red} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rejectTitle}>{t("bookingDetail.rejectionReason")}</Text>
-              <Text style={styles.rejectText}>
-                {trip.rejection_reason?.trim() || t("bookingDetail.rejectionNoReason")}
-              </Text>
+        {wide ? (
+          // ── Wide (PC) — details + tracking on the left, docs + timeline right ──
+          <View style={styles.wideRow}>
+            <View style={styles.wideMain}>
+              {driverCard}
+              {liveCard}
+              {detailsCard}
+            </View>
+            <View style={styles.wideSide}>
+              {documentsCard}
+              {timelineCard}
             </View>
           </View>
-        ) : null}
-
-        {/* Assigned driver */}
-        {trip.driver ? (
-          <Card style={{ marginBottom: 12 }}>
-            <Text style={styles.cardLabel}>{t("bookingDetail.assignedDriver")}</Text>
-            <View style={styles.driverRow}>
-              <View style={styles.driverAvatar}>
-                <Text style={styles.driverAvatarText}>{nameInitials(trip.driver.name)}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.driverName}>{trip.driver.name}</Text>
-                <Text style={styles.driverSub}>{trip.truck_plate} {trip.truck?.type ? `(${trip.truck.type})` : ""}</Text>
-                {trip.driver.phone ? <Text style={styles.driverPhone}>📞 {trip.driver.phone}</Text> : null}
-              </View>
-              {trip.driver.phone ? (
-                <TouchableOpacity style={styles.callBtn} onPress={() => Linking.openURL(`tel:${trip.driver!.phone}`)}>
-                  <Ionicons name="call" size={20} color={colors.white} />
-                </TouchableOpacity>
-              ) : null}
-            </View>
-          </Card>
-        ) : null}
-
-        {/* Live tracking — only while the truck is in transit */}
-        {trip.status === "in_progress" ? (
-          <Card style={{ marginBottom: 12 }}>
-            <View style={styles.detailHead}>
-              <Text style={styles.cardLabel}>{t("bookingDetail.liveLocation")}</Text>
-              <LiveStatus pos={livePos} />
-            </View>
-            <View style={{ marginTop: 12 }}>
-              <LiveTripMap tripId={trip.id} destZone={tripDestZone(trip)} live height={200} />
-            </View>
-          </Card>
-        ) : null}
-
-        {/* Trip details */}
-        <Card style={{ marginBottom: 12 }}>
-          <View style={styles.detailHead}>
-            <Text style={styles.cardLabel}>{t("bookingDetail.tripDetails")}</Text>
-            <View style={styles.ticketChip}>
-              <Text style={styles.ticketChipText}>{trip.ticket_number}</Text>
-            </View>
-          </View>
-          {trip.route_type ? (
-            <View style={styles.typeChip}>
-              <Text style={styles.typeChipText}>{trip.route_type.name}</Text>
-            </View>
-          ) : null}
-          <View style={{ marginTop: 14 }}>
-            <RouteLine from={ORIGIN_LABEL} to={tripConsigneeName(trip)} />
-          </View>
-          <View style={styles.detailGrid}>
-            <Detail k={t("bookingDetail.dateTime")} v={formatDateTime(trip.pickup_datetime)} />
-            <Detail k={t("bookingDetail.cargo")} v={cargoSummary(trip)} />
-            <Detail k={t("bookingDetail.consignee")} v={tripDestination(trip)} />
-          </View>
-        </Card>
-
-        {/* Documents — DO / invoice upload + uploaded files */}
-        <Card style={{ marginBottom: 12 }}>
-          <View style={styles.detailHead}>
-            <Text style={styles.cardLabel}>{t("bookingDetail.documents")}</Text>
-            <TouchableOpacity
-              style={styles.uploadBtn}
-              onPress={onUploadDoc}
-              disabled={uploadDoc.isPending}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="cloud-upload-outline" size={16} color={colors.blue} />
-              <Text style={styles.uploadBtnText}>
-                {uploadDoc.isPending ? t("bookingDetail.docUploading") : t("bookingDetail.docUpload")}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {documents.length === 0 ? (
-            <Text style={styles.docEmpty}>{t("bookingDetail.docEmpty")}</Text>
-          ) : (
-            <View style={{ marginTop: 12, gap: 10 }}>
-              {documents.map((doc) => (
-                <DocumentRow key={doc.id} doc={doc} />
-              ))}
-            </View>
-          )}
-        </Card>
-
-        {/* Adaptive status timeline (from GET /trips/:id .timeline) */}
-        <Card>
-          <Text style={[styles.cardLabel, { marginBottom: 16 }]}>{t("bookingDetail.timeline")}</Text>
-          <StatusTimeline steps={trip.timeline ?? []} />
-        </Card>
+        ) : (
+          // ── Narrow (phone) — the shipped stacked layout ──
+          <>
+            {driverCard}
+            {liveCard}
+            {detailsCard}
+            {documentsCard}
+            {timelineCard}
+          </>
+        )}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </ScrollView>
@@ -210,13 +243,15 @@ export function BookingDetailScreen() {
       {/* Cancel */}
       {canCancel ? (
         <View style={[styles.bottom, { paddingBottom: insets.bottom + 12 }]}>
-          <Button
-            title={t("bookingDetail.cancelRequest")}
-            variant="outline"
-            onPress={() => setConfirm(true)}
-            style={{ borderColor: colors.red }}
-            icon={<Ionicons name="close-circle-outline" size={18} color={colors.blue} />}
-          />
+          <View style={wide ? styles.bottomInner : undefined}>
+            <Button
+              title={t("bookingDetail.cancelRequest")}
+              variant="outline"
+              onPress={() => setConfirm(true)}
+              style={{ borderColor: colors.red }}
+              icon={<Ionicons name="close-circle-outline" size={18} color={colors.blue} />}
+            />
+          </View>
         </View>
       ) : null}
 
@@ -322,6 +357,10 @@ function bannerFor(status: TripStatus): {
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
+  wideRow: { flexDirection: "row", alignItems: "flex-start", gap: 20 },
+  wideMain: { flex: 1.3 },
+  wideSide: { flex: 1 },
+  bottomInner: { width: "100%", paddingHorizontal: 28 },
   banner: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 20, paddingVertical: 14 },
   bannerText: { fontSize: 14, fontWeight: "700" },
   notice: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.tintYellow, borderRadius: radius.md, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: "#FFE082" },

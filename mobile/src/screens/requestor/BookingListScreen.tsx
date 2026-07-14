@@ -6,11 +6,12 @@ import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RequestorStackParamList, RequestorTabParamList } from "../../navigation/types";
 import { useTrips } from "../../hooks/queries";
+import { useWide } from "../../hooks/useWide";
 import { colors, layout, radius, shadow } from "../../theme";
 import { Header } from "../../components/Header";
 import { StatusBadge } from "../../components/StatusBadge";
 import { LoadingState, ErrorState, EmptyState } from "../../components/States";
-import { dayMonth } from "../../lib/format";
+import { dayMonth, formatDate } from "../../lib/format";
 import { tripDestination, ORIGIN_LABEL } from "../../lib/trip";
 import { Trip, TripStatus } from "../../types";
 
@@ -28,6 +29,7 @@ export function BookingListScreen() {
   const { t } = useTranslation();
   const navigation = useNavigation<Nav>();
   const route = useRoute<Rt>();
+  const wide = useWide();
   const { data: trips, isLoading, isError, refetch, isRefetching } = useTrips();
   const [filter, setFilter] = useState<Filter>(route.params?.filter ?? "all");
 
@@ -45,6 +47,8 @@ export function BookingListScreen() {
     return list;
   }, [trips, filter]);
 
+  const openTrip = (id: string) => navigation.navigate("BookingDetail", { tripId: id });
+
   return (
     <View style={styles.fill}>
       <Header
@@ -55,22 +59,36 @@ export function BookingListScreen() {
           </View>
         }
       />
-      <View style={styles.centerCol}>
-      <View style={styles.tabs}>
-        {(["all", "active", "completed"] as const).map((f) => (
-          <TouchableOpacity key={f} style={[styles.tab, filter === f && styles.tabActive]} onPress={() => setFilter(f)}>
-            <Text style={[styles.tabText, filter === f && styles.tabTextActive]}>
-              {f === "all" ? t("history.all") : f === "active" ? t("history.active") : t("history.completed")}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <View style={wide ? styles.fillCol : styles.centerCol}>
+        <View style={[styles.tabs, wide && styles.tabsWide]}>
+          {(["all", "active", "completed"] as const).map((f) => (
+            <TouchableOpacity key={f} style={[styles.tab, filter === f && styles.tabActive]} onPress={() => setFilter(f)}>
+              <Text style={[styles.tabText, filter === f && styles.tabTextActive]}>
+                {f === "all" ? t("history.all") : f === "active" ? t("history.active") : t("history.completed")}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
       {isLoading ? (
         <LoadingState />
       ) : isError ? (
         <ErrorState onRetry={refetch} />
+      ) : wide ? (
+        // ── Wide (PC) — a proper data table (there's room; the phone keeps cards) ──
+        <FlatList
+          data={filtered}
+          keyExtractor={(tr) => tr.id}
+          style={{ width: "100%" }}
+          contentContainerStyle={styles.tableWrap}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+          ListHeaderComponent={filtered.length > 0 ? <TableHeader t={t} /> : null}
+          ListEmptyComponent={<EmptyState message={t("history.empty")} icon="cube-outline" />}
+          renderItem={({ item, index }) => (
+            <TableRow trip={item} last={index === filtered.length - 1} onPress={() => openTrip(item.id)} />
+          )}
+        />
       ) : (
         <FlatList
           data={filtered}
@@ -79,7 +97,7 @@ export function BookingListScreen() {
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
           ListEmptyComponent={<EmptyState message={t("history.empty")} icon="cube-outline" />}
           renderItem={({ item }) => (
-            <BookingRow trip={item} onPress={() => navigation.navigate("BookingDetail", { tripId: item.id })} />
+            <BookingRow trip={item} onPress={() => openTrip(item.id)} />
           )}
         />
       )}
@@ -87,6 +105,40 @@ export function BookingListScreen() {
   );
 }
 
+// ── Wide table ────────────────────────────────────────────────────────────
+function TableHeader({ t }: { t: (k: string) => string }) {
+  return (
+    <View style={styles.tableHeader}>
+      <Text style={[styles.thCell, { flex: 1 }]}>{t("history.colDate")}</Text>
+      <Text style={[styles.thCell, { flex: 1.1 }]}>{t("history.colTicket")}</Text>
+      <Text style={[styles.thCell, { flex: 2.4 }]}>{t("history.colRoute")}</Text>
+      <Text style={[styles.thCell, { flex: 1.4 }]}>{t("history.colType")}</Text>
+      <Text style={[styles.thCell, { flex: 1, textAlign: "right" }]}>{t("history.colStatus")}</Text>
+    </View>
+  );
+}
+
+function TableRow({ trip, last, onPress }: { trip: Trip; last: boolean; onPress: () => void }) {
+  return (
+    <TouchableOpacity activeOpacity={0.7} onPress={onPress} style={[styles.tableRow, last && styles.tableRowLast]}>
+      <Text style={[styles.tdCell, { flex: 1, color: colors.textMuted }]}>{formatDate(trip.pickup_datetime)}</Text>
+      <Text style={[styles.tdCell, { flex: 1.1, fontWeight: "700", color: colors.blue }]} numberOfLines={1}>
+        {trip.ticket_number}
+      </Text>
+      <Text style={[styles.tdCell, { flex: 2.4, fontWeight: "600" }]} numberOfLines={1}>
+        {ORIGIN_LABEL} → {tripDestination(trip)}
+      </Text>
+      <Text style={[styles.tdCell, { flex: 1.4, color: colors.textMuted }]} numberOfLines={1}>
+        {trip.route_type?.name ?? "—"}
+      </Text>
+      <View style={{ flex: 1, alignItems: "flex-end" }}>
+        <StatusBadge status={trip.status} small />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ── Narrow card (phone) — unchanged ─────────────────────────────────────────
 function BookingRow({ trip, onPress }: { trip: Trip; onPress: () => void }) {
   const dm = dayMonth(trip.pickup_datetime);
   return (
@@ -113,13 +165,58 @@ function BookingRow({ trip, onPress }: { trip: Trip; onPress: () => void }) {
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
   centerCol: { width: "100%", maxWidth: layout.content, alignSelf: "center" },
+  fillCol: { width: "100%" },
   countPill: { backgroundColor: colors.yellow, paddingHorizontal: 12, paddingVertical: 4, borderRadius: radius.pill },
   countText: { color: colors.navy, fontSize: 13, fontWeight: "800" },
   tabs: { flexDirection: "row", backgroundColor: colors.white, margin: 16, marginBottom: 8, borderRadius: radius.md, padding: 4, ...shadow.card },
+  // On a PC the segmented control shouldn't stretch — pin it left.
+  tabsWide: { alignSelf: "flex-start", width: 420, marginHorizontal: 28, marginTop: 20 },
   tab: { flex: 1, height: 36, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
   tabActive: { backgroundColor: colors.blue },
   tabText: { fontSize: 13, fontWeight: "700", color: colors.textMuted },
   tabTextActive: { color: colors.white },
+
+  // Wide table — fills the content area beside the sidebar.
+  tableWrap: {
+    width: "100%",
+    marginTop: 4,
+    marginBottom: 24,
+    paddingHorizontal: 28,
+    flexGrow: 1,
+  },
+  tableHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.tintBlue,
+    borderTopLeftRadius: radius.md,
+    borderTopRightRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  thCell: { fontSize: 12, fontWeight: "800", color: colors.blue, textTransform: "uppercase", letterSpacing: 0.5 },
+  tableRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.white,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.borderLight,
+    borderBottomColor: colors.bg,
+    paddingHorizontal: 18,
+    paddingVertical: 15,
+    gap: 8,
+  },
+  tableRowLast: {
+    borderBottomColor: colors.borderLight,
+    borderBottomLeftRadius: radius.md,
+    borderBottomRightRadius: radius.md,
+  },
+  tdCell: { fontSize: 14, color: colors.navy },
+
+  // Narrow card
   card: { flexDirection: "row", backgroundColor: colors.white, borderRadius: radius.lg, overflow: "hidden", marginBottom: 10, ...shadow.card },
   dateBlock: { width: 56, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center", paddingVertical: 16 },
   dateDay: { color: colors.white, fontSize: 22, fontWeight: "800" },
