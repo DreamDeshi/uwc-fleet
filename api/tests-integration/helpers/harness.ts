@@ -11,7 +11,7 @@
 import supertest from "supertest";
 import { app } from "../../src/app";
 import { prisma } from "../../src/lib/prisma";
-import { truncateTransactional } from "../../prisma/reset-test";
+import { truncateTransactional, restoreTruckDefaults } from "../../prisma/reset-test";
 import { ensureRequestor, ensureConsignees } from "../../prisma/seed-test";
 
 export { prisma };
@@ -26,6 +26,7 @@ export const api = () => supertest(app);
  */
 export async function resetDb(): Promise<void> {
   await truncateTransactional(prisma);
+  await restoreTruckDefaults(prisma); // undo any truck rate/expiry mutation a test made
   await ensureRequestor(prisma);
   await ensureConsignees(prisma);
 }

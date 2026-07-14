@@ -8,7 +8,9 @@ import {
 } from "../src/services/dispatchEngine";
 import { estimateOperatingWindow } from "../src/services/operatingWindow";
 
-// Adjacency from the seed (Mr. Teh's email): P2↔K1, P2↔A1.
+// Adjacency from the seed (Mr. Teh's email): P2↔K1, P2↔A1. KL/JH/SL are the
+// newer long-haul zones — out of the adjacency matrix (no neighbours), same as
+// the seed's ZONE_ADJACENCY, so an order there falls back to "any free truck".
 const ADJACENCY: Record<string, string[]> = {
   P1: [],
   P2: ["K1", "A1"],
@@ -17,6 +19,9 @@ const ADJACENCY: Record<string, string[]> = {
   K2: [],
   A1: ["P2"],
   A2: [],
+  KL: [],
+  JH: [],
+  SL: [],
 };
 
 // Real fleet capacities (Brief Section 2).
@@ -248,5 +253,34 @@ describe("autoDispatchFailureNote — the persisted failure reason", () => {
     expect(autoDispatchFailureNote(null)).toBe(
       "No available truck has capacity for this order."
     );
+  });
+});
+
+describe("selectTruck — new long-haul zones (KL / JH / SL)", () => {
+  // These zones are out of every truck's coverage AND the adjacency matrix, so
+  // an order there falls back to tier 2 ("any free truck") — the smallest that
+  // fits. Previously untested; the ADJACENCY fixture above now includes them.
+  it.each(["KL", "JH", "SL"])(
+    "assigns a %s order to the smallest fitting truck (no coverage, no adjacency)",
+    (zone) => {
+      const candidates = [
+        truck({ plate: "PLX 2406", maxPallets: 16, coverageZones: ["A1", "A2", "P1", "P2"] }),
+        truck({ plate: "PRJ 5292", maxPallets: 8, coverageZones: ["P1", "P2", "K1"] }),
+        truck({ plate: "PRH 5292", maxPallets: 2, coverageZones: ["P1", "P2"] }),
+      ];
+      const sel = selectTruck({ pallets: 1, zone }, candidates, ADJACENCY);
+      expect(sel?.plate).toBe("PRH 5292"); // 1 pallet → smallest truck, coverage irrelevant
+      expect(sel?.reason).toContain(`next available truck for ${zone}`);
+    }
+  );
+
+  it("still respects capacity for a long-haul zone (skips trucks too small)", () => {
+    const candidates = [
+      truck({ plate: "PLX 2406", maxPallets: 16, coverageZones: ["A1", "A2"] }),
+      truck({ plate: "PRJ 5292", maxPallets: 8, coverageZones: ["P1"] }),
+      truck({ plate: "PRH 5292", maxPallets: 2, coverageZones: ["P1"] }),
+    ];
+    const sel = selectTruck({ pallets: 10, zone: "KL" }, candidates, ADJACENCY);
+    expect(sel?.plate).toBe("PLX 2406"); // only the 16-pallet truck fits 10
   });
 });

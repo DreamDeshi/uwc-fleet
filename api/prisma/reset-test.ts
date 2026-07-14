@@ -11,6 +11,8 @@
  * DESTRUCTIVE: it TRUNCATEs. It therefore refuses to run against anything but a
  * localhost/docker DB, independent of the softer host-marker guard.
  */
+import fs from "fs";
+import path from "path";
 import { PrismaClient } from "@prisma/client";
 import { prisma } from "../src/lib/prisma";
 import { ensureRequestor, ensureConsignees } from "./seed-test";
@@ -62,12 +64,49 @@ export async function truncateTransactional(client: PrismaClient = prisma): Prom
   await client.$executeRawUnsafe(`TRUNCATE TABLE ${list} RESTART IDENTITY CASCADE;`);
 }
 
+// Trucks are MASTER data (not truncated), but dispatch/guard tests legitimately
+// mutate a truck's rates or document expiries. Restoring the fleet to spec
+// defaults on every reset keeps those mutations from leaking between tests (and
+// undoes any drift a prior run left behind). Expiries are set comfortably far
+// in the future so every truck is roadworthy by default; a test that wants an
+// expired doc sets it explicitly, and the next reset undoes it.
+const FAR_FUTURE_EXPIRY = new Date("2030-01-01T00:00:00Z");
+
+export async function restoreTruckDefaults(client: PrismaClient = prisma): Promise<void> {
+  assertLocalTestDb();
+  const specPath = path.resolve(__dirname, "../../docs/uwc-spec.json");
+  const spec = JSON.parse(fs.readFileSync(specPath, "utf-8")) as {
+    trucks: { plate: string; weekday_rate: number; offpeak_rate: number; daily_deduction: number }[];
+  };
+  for (const t of spec.trucks) {
+    await client.truck.updateMany({
+      where: { plate: t.plate },
+      data: {
+        entitled_claim_weekday: t.weekday_rate,
+        entitled_claim_offpeak: t.offpeak_rate,
+        daily_deduction_points: t.daily_deduction,
+        pending_claim_weekday: null,
+        pending_claim_offpeak: null,
+        pending_deduction_points: null,
+        pending_rates_effective: null,
+        insurance_expiry: FAR_FUTURE_EXPIRY,
+        permit_expiry: FAR_FUTURE_EXPIRY,
+        road_tax_expiry: FAR_FUTURE_EXPIRY,
+        is_available: true,
+        operating_hours_start: "07:00",
+        operating_hours_end: "18:00",
+      },
+    });
+  }
+}
+
 async function main() {
   assertLocalTestDb();
   await truncateTransactional();
+  await restoreTruckDefaults();
   await ensureRequestor();
   await ensureConsignees();
-  console.log("✔ Test DB reset: transactional tables cleared, fixtures re-ensured.");
+  console.log("✔ Test DB reset: transactional cleared, trucks restored, fixtures re-ensured.");
 }
 
 if (require.main === module) {
