@@ -36,6 +36,7 @@ import {
   Modal,
   Pill,
   ProgressBar,
+  ChipGrid,
   SearchInput,
   SegmentedFilter,
   TripStatusBadge,
@@ -217,19 +218,19 @@ export function TripsScreen() {
     </Text>
   );
 
-  const statusSegments = (
-    <SegmentedFilter
-      options={[
-        { value: "", label: t("admin.trips.statusAll") },
-        { value: "pending", label: t("admin.status.pending") },
-        { value: "assigned", label: t("admin.status.assigned") },
-        { value: "in_progress", label: t("admin.status.in_progress") },
-        { value: "completed", label: t("admin.status.completed") },
-        { value: "cancelled", label: t("admin.status.cancelled") },
-      ]}
-      value={status}
-      onChange={setStatus}
-    />
+  const statusOptions = [
+    { value: "", label: t("admin.trips.statusAll") },
+    { value: "pending", label: t("admin.status.pending") },
+    { value: "assigned", label: t("admin.status.assigned") },
+    { value: "in_progress", label: t("admin.status.in_progress") },
+    { value: "completed", label: t("admin.status.completed") },
+    { value: "cancelled", label: t("admin.status.cancelled") },
+  ];
+  // Narrow: an even 3-col grid (2 tidy rows) instead of a 3/2/1 ragged wrap.
+  const statusSegments = wide ? (
+    <SegmentedFilter options={statusOptions} value={status} onChange={setStatus} />
+  ) : (
+    <ChipGrid options={statusOptions} value={status} onChange={setStatus} columns={3} />
   );
 
   // Driver/zone/date filters active behind the narrow disclosure.

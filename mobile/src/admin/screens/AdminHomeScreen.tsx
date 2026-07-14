@@ -109,17 +109,20 @@ export function AdminHomeScreen() {
                 color={k && k.auto_dispatch_failed > 0 ? colors.red : colors.green}
               />
             </View>
+            {/* Subtle day-progress line — the day's context in one muted row,
+                not a second wall of stat boxes. */}
+            {k && (
+              <View style={styles.heroFooter}>
+                <Text style={styles.heroFooterText}>
+                  {t("admin.home.daySummary", {
+                    trips: k.trips_today,
+                    completed: k.completed_today,
+                    trucks: k.active_trucks,
+                  })}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
-        </View>
-
-        {/* Today — the dashboard's headline totals. */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t("admin.home.today")}</Text>
-          <View style={styles.statRow}>
-            <StatBox value={k ? k.trips_today : null} label={t("admin.home.tripsToday")} color={colors.blue} bg={colors.blueTint} />
-            <StatBox value={k ? k.completed_today : null} label={t("admin.home.completedToday")} color={colors.green} bg={colors.greenTint} />
-            <StatBox value={k ? k.active_trucks : null} label={t("admin.dashboard.activeTrucks")} color={colors.teal} bg={colors.tealTint} />
-          </View>
         </View>
 
         {/* Needs attention — same panel as the PC dashboard; hidden when the
@@ -193,15 +196,6 @@ function HeroStat({ value, label, color }: { value: number | null; label: string
   );
 }
 
-function StatBox({ value, label, color, bg }: { value: number | null; label: string; color: string; bg: string }) {
-  return (
-    <View style={[styles.statBox, { backgroundColor: bg }]}>
-      <Text style={[styles.statValue, { color }]}>{value ?? "—"}</Text>
-      <Text style={[styles.statLabel, { color }]} numberOfLines={2}>{label}</Text>
-    </View>
-  );
-}
-
 function LegendDot({ color, label }: { color: string; label: string }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
@@ -246,6 +240,8 @@ const styles = StyleSheet.create({
   heroHead: { flexDirection: "row", alignItems: "center", gap: 12 },
   heroStats: { flexDirection: "row", alignItems: "center" },
   heroDivider: { width: 1, alignSelf: "stretch", backgroundColor: colors.divider },
+  heroFooter: { borderTopWidth: 1, borderTopColor: colors.divider, marginTop: 12, paddingTop: 10, alignItems: "center" },
+  heroFooterText: { fontSize: font.sm, color: colors.textMuted, fontWeight: "600" },
   ctaIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: colors.yellow, alignItems: "center", justifyContent: "center" },
   ctaTitle: { flex: 1, fontSize: font.lg, fontWeight: "700", color: colors.navy },
   countPill: { backgroundColor: colors.red, borderRadius: radius.pill, minWidth: 22, height: 22, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
@@ -253,11 +249,6 @@ const styles = StyleSheet.create({
 
   section: { paddingHorizontal: 16, paddingTop: 16 },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
-
-  statRow: { flexDirection: "row", gap: 10, marginTop: 12 },
-  statBox: { flex: 1, borderRadius: radius.md, paddingVertical: 14, paddingHorizontal: 8, alignItems: "center" },
-  statValue: { fontSize: 26, fontWeight: "900" },
-  statLabel: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", marginTop: 3, textAlign: "center" },
 
   rowCard: { backgroundColor: colors.card, borderRadius: radius.lg, marginTop: 4, borderWidth: 1, borderColor: colors.border, ...shadow.card },
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 12 },

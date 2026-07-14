@@ -482,6 +482,7 @@
       "inProgress": "Dalam perjalanan",
       "dispatchTitle": "Penghantaran hari ini",
       "awaitingDispatch": "Menunggu penghantaran",
+      "daySummary": "{{trips}} trip hari ini · {{completed}} siap · {{trucks}} lori aktif",
       "completedToday": "Selesai hari ini",
       "manage": "Urus"
     },

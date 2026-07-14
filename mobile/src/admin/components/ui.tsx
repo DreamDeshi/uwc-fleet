@@ -367,6 +367,76 @@ export function SegmentedFilter<T extends string>({
   );
 }
 
+// ── Chip grid ────────────────────────────────────────────────────────
+// Filter chips laid out in EVEN columns (mobile) instead of ragged wrap.
+// Options are chunked into rows of `columns`; each cell is flex:1 so every
+// chip in a row is the same width, and a short final row is padded with
+// invisible spacers so columns stay aligned. Narrow-only by convention —
+// the PC keeps SegmentedFilter's inline wrap.
+export function ChipGrid<T extends string>({
+  options,
+  value,
+  onChange,
+  columns,
+}: {
+  options: { value: T; label: string; count?: number }[];
+  value: T;
+  onChange: (v: T) => void;
+  columns: number;
+}) {
+  const rows: { value: T; label: string; count?: number }[][] = [];
+  for (let i = 0; i < options.length; i += columns) rows.push(options.slice(i, i + columns));
+  return (
+    <View style={{ gap: 8 }}>
+      {rows.map((row, ri) => (
+        <View key={ri} style={{ flexDirection: "row", gap: 8 }}>
+          {row.map((o) => {
+            const active = o.value === value;
+            return (
+              <Pressable
+                key={o.value}
+                onPress={() => onChange(o.value)}
+                style={{
+                  flex: 1,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  paddingVertical: 9,
+                  paddingHorizontal: 6,
+                  borderRadius: radius.pill,
+                  borderWidth: 1.5,
+                  borderColor: active ? colors.blue : colors.border,
+                  backgroundColor: active ? colors.blue : colors.card,
+                }}
+              >
+                <Text numberOfLines={1} style={{ color: active ? "#fff" : colors.textMuted, fontWeight: "700", fontSize: font.md }}>
+                  {o.label}
+                </Text>
+                {o.count !== undefined && (
+                  <View
+                    style={{
+                      backgroundColor: active ? "rgba(255,255,255,0.22)" : colors.panel,
+                      borderRadius: radius.pill,
+                      paddingVertical: 1,
+                      paddingHorizontal: 7,
+                    }}
+                  >
+                    <Text style={{ color: active ? "#fff" : colors.textMuted, fontSize: font.xs, fontWeight: "700" }}>{o.count}</Text>
+                  </View>
+                )}
+              </Pressable>
+            );
+          })}
+          {/* Keep columns aligned when the last row is short. */}
+          {row.length < columns &&
+            Array.from({ length: columns - row.length }).map((_, i) => <View key={`pad-${i}`} style={{ flex: 1 }} />)}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 // ── Progress bar ─────────────────────────────────────────────────────
 export function ProgressBar({ pct, color = colors.blue, height = 8 }: { pct: number; color?: string; height?: number }) {
   const clamped = Math.max(0, Math.min(100, pct));

@@ -482,6 +482,7 @@
       "inProgress": "进行中",
       "dispatchTitle": "今日调度",
       "awaitingDispatch": "等待调度",
+      "daySummary": "今日 {{trips}} 趟 · 完成 {{completed}} · 在勤 {{trucks}} 辆",
       "completedToday": "今日完成",
       "manage": "管理"
     },

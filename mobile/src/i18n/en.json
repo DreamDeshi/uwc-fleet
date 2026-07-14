@@ -484,6 +484,7 @@
       "inProgress": "In progress",
       "dispatchTitle": "Today's dispatch",
       "awaitingDispatch": "Awaiting dispatch",
+      "daySummary": "{{trips}} trips today · {{completed}} completed · {{trucks}} trucks active",
       "completedToday": "Completed today",
       "manage": "Manage"
     },

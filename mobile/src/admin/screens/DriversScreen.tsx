@@ -15,6 +15,7 @@ import {
   Avatar,
   Button,
   Card,
+  ChipGrid,
   EmptyState,
   ErrorState,
   Input,
@@ -93,26 +94,26 @@ export function DriversScreen() {
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={drivers.isRefetching} onRefresh={() => drivers.refetch()} />}
     >
-      {/* Narrow stacks: an unconstrained row lets the chips run off-screen. */}
-      <View
-        style={
-          wide
-            ? { flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }
-            : { flexDirection: "column", alignItems: "stretch", gap: 12 }
-        }
-      >
-        <SegmentedFilter<Filter>
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: "all", label: t("admin.drivers.filterAll"), count: counts.all },
-            { value: "on_trip", label: t("admin.drivers.statusOnTrip"), count: counts.on_trip },
-            { value: "available", label: t("admin.drivers.statusAvailable"), count: counts.available },
-            { value: "off_duty", label: t("admin.drivers.statusOffDuty"), count: counts.off_duty },
-          ]}
-        />
-        <SearchInput value={search} onChange={setSearch} placeholder={t("admin.drivers.searchPlaceholder")} style={!wide && { minWidth: 0, alignSelf: "stretch" }} />
-      </View>
+      {/* Narrow: an even 2-col chip grid; wide keeps the inline segmented row. */}
+      {(() => {
+        const filterOptions = [
+          { value: "all" as Filter, label: t("admin.drivers.filterAll"), count: counts.all },
+          { value: "on_trip" as Filter, label: t("admin.drivers.statusOnTrip"), count: counts.on_trip },
+          { value: "available" as Filter, label: t("admin.drivers.statusAvailable"), count: counts.available },
+          { value: "off_duty" as Filter, label: t("admin.drivers.statusOffDuty"), count: counts.off_duty },
+        ];
+        return wide ? (
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <SegmentedFilter<Filter> value={filter} onChange={setFilter} options={filterOptions} />
+            <SearchInput value={search} onChange={setSearch} placeholder={t("admin.drivers.searchPlaceholder")} />
+          </View>
+        ) : (
+          <View style={{ gap: 12 }}>
+            <ChipGrid<Filter> value={filter} onChange={setFilter} options={filterOptions} columns={2} />
+            <SearchInput value={search} onChange={setSearch} placeholder={t("admin.drivers.searchPlaceholder")} style={{ minWidth: 0, alignSelf: "stretch" }} />
+          </View>
+        );
+      })()}
 
       {filtered.length === 0 ? (
         <Card>

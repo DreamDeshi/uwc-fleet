@@ -9,7 +9,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { useTrucks, useTruckAlerts, useUpdateTruckDocuments } from "../hooks/queries";
 import { colors, font, radius } from "../theme";
-import { Avatar, Button, Card, EmptyState, ErrorState, Loading, Modal, Pill, SearchInput, SegmentedFilter } from "../components/ui";
+import { Avatar, Button, Card, ChipGrid, EmptyState, ErrorState, Loading, Modal, Pill, SearchInput, SegmentedFilter } from "../components/ui";
 import { LoadCapacityBar } from "../components/LoadCapacityBar";
 import { FuelPanel } from "../components/FuelPanel";
 import { DateField } from "../platform/datePicker";
@@ -81,26 +81,26 @@ export function TrucksScreen() {
         <>
           <AlertsPanel />
 
-          {/* Narrow stacks: an unconstrained row lets the chips run off-screen. */}
-          <View
-            style={
-              wide
-                ? { flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }
-                : { flexDirection: "column", alignItems: "stretch", gap: 12 }
-            }
-          >
-            <SegmentedFilter<Filter>
-              value={filter}
-              onChange={setFilter}
-              options={[
-                { value: "all", label: t("admin.trucks.filterAll"), count: counts.all },
-                { value: "active", label: t("admin.trucks.statusActive"), count: counts.active },
-                { value: "idle", label: t("admin.trucks.statusIdle"), count: counts.idle },
-                { value: "maintenance", label: t("admin.trucks.statusMaintenance"), count: counts.maintenance },
-              ]}
-            />
-            <SearchInput value={search} onChange={setSearch} placeholder={t("admin.trucks.searchPlaceholder")} style={!wide && { minWidth: 0, alignSelf: "stretch" }} />
-          </View>
+          {/* Narrow: an even 2-col chip grid; wide keeps the inline segmented row. */}
+          {(() => {
+            const filterOptions = [
+              { value: "all" as Filter, label: t("admin.trucks.filterAll"), count: counts.all },
+              { value: "active" as Filter, label: t("admin.trucks.statusActive"), count: counts.active },
+              { value: "idle" as Filter, label: t("admin.trucks.statusIdle"), count: counts.idle },
+              { value: "maintenance" as Filter, label: t("admin.trucks.statusMaintenance"), count: counts.maintenance },
+            ];
+            return wide ? (
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+                <SegmentedFilter<Filter> value={filter} onChange={setFilter} options={filterOptions} />
+                <SearchInput value={search} onChange={setSearch} placeholder={t("admin.trucks.searchPlaceholder")} />
+              </View>
+            ) : (
+              <View style={{ gap: 12 }}>
+                <ChipGrid<Filter> value={filter} onChange={setFilter} options={filterOptions} columns={2} />
+                <SearchInput value={search} onChange={setSearch} placeholder={t("admin.trucks.searchPlaceholder")} style={{ minWidth: 0, alignSelf: "stretch" }} />
+              </View>
+            );
+          })()}
 
           {filtered.length === 0 ? (
             <Card>
