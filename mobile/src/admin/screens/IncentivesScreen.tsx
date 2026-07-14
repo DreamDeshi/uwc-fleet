@@ -98,14 +98,6 @@ export function IncentivesScreen() {
         ))}
       </View>
 
-      {/* The audit/source-of-truth note is desktop context — phones lead
-          with the data (mobile polish ruling). */}
-      {wide && (
-        <View style={{ backgroundColor: colors.blueTint, borderLeftWidth: 4, borderLeftColor: colors.blue, borderRadius: radius.md, paddingVertical: 11, paddingHorizontal: 15 }}>
-          <Text style={{ fontSize: font.sm, color: colors.blue, fontWeight: "500" }}>{t("admin.incentives.auditBanner")}</Text>
-        </View>
-      )}
-
       {tab === "trucks" && <TruckRatesTab />}
       {tab === "destinations" && <DestinationPointsTab />}
       {tab === "holidays" && <HolidaysTab />}

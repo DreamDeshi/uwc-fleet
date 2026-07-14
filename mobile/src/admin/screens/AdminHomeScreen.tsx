@@ -138,11 +138,6 @@ export function AdminHomeScreen() {
           <Text style={styles.sectionTitle}>{t("admin.dashboard.fleetMap")}</Text>
           <View style={styles.mapCard}>
             <View style={styles.mapHead}>
-              <Text style={styles.mapSub}>
-                {liveCount > 0
-                  ? t("admin.dashboard.mapSubLive", { count: liveCount })
-                  : t("admin.dashboard.mapSubAwaiting")}
-              </Text>
               <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
                 <LegendDot color={colors.green} label={t("admin.trucks.statusActive")} />
                 <LegendDot color={colors.blue} label={t("admin.trucks.statusIdle")} />

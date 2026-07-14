@@ -169,11 +169,6 @@ export function DashboardWide() {
           >
             <View style={{ minWidth: 220 }}>
               <Text style={{ fontSize: 15, fontWeight: "700", color: colors.text }}>{t("admin.dashboard.fleetMap")}</Text>
-              <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 2 }}>
-                {liveCount > 0
-                  ? t("admin.dashboard.mapSubLive", { count: liveCount })
-                  : t("admin.dashboard.mapSubAwaiting")}
-              </Text>
             </View>
             <View style={{ flexDirection: "row", gap: 12 }}>
               <LegendDot color={colors.green} label={t("admin.trucks.statusActive")} />
