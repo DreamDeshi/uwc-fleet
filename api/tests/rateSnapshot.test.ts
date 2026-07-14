@@ -95,7 +95,7 @@ describe("buildPointsByZone — deterministic regardless of DB row order", () =>
     { zone_code: "K2", location_name: "Sungai Petani", points: 4 },
     { zone_code: "A2", location_name: "Ipoh", points: 6 },
     { zone_code: "K2", location_name: "Kuala Ketil", points: 4 },
-    { zone_code: null, location_name: "Kuala Lumpur", points: 8 }, // no zone → not mapped
+    { zone_code: null, location_name: "Unzoned example", points: 8 }, // defensive: a null zone_code row is never mapped
   ];
 
   it("maps each zone once and skips null-zone rows", () => {
@@ -129,13 +129,13 @@ describe("dropZonePoints — snapshot wins over live zone points", () => {
 
   it("THROWS ZONE_POINTS_MISSING when the zone is unknown everywhere (never a silent 1-point pay)", () => {
     try {
-      dropZonePoints({ zone_points: null }, undefined, "KL");
+      dropZonePoints({ zone_points: null }, undefined, "ZZ");
       expect.unreachable("expected ZONE_POINTS_MISSING");
     } catch (err) {
       const e = err as { code?: string; statusCode?: number; message?: string };
       expect(e.code).toBe("ZONE_POINTS_MISSING");
       expect(e.statusCode).toBe(422);
-      expect(e.message).toContain("KL");
+      expect(e.message).toContain("ZZ");
     }
   });
 });

@@ -11,8 +11,8 @@ import { apiErrorCandidates, apiErrorCode, apiErrorMessage, SimilarConsignee } f
 import { useToast } from "./Toast";
 import { Consignee } from "../types";
 
-// UWC zones (Development Brief §4 + long-haul Johor/Selangor per spec REQUESTOR
-// INTERFACE). Used here and in the booking form.
+// UWC zones (spec §10 + long-haul Kuala Lumpur / Johor / Selangor). Used here
+// and in the booking form.
 export function zoneLabel(code: string): string {
   const name = ZONES.find((z) => z.code === code)?.name;
   return name ? `${code} — ${name}` : code;
@@ -26,6 +26,7 @@ export const ZONES: { code: string; name: string }[] = [
   { code: "K2", name: "Sungai Petani / Kuala Ketil" },
   { code: "A1", name: "Taiping" },
   { code: "A2", name: "Ipoh" },
+  { code: "KL", name: "Kuala Lumpur" },
   { code: "JH", name: "Johor" },
   { code: "SL", name: "Selangor" },
 ];

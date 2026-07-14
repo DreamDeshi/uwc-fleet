@@ -19,7 +19,7 @@
       "destination_points are the first-trip-of-day point values per destination (the yellow 'trip incentive point' row).",
       "trucks[].priority_zones is the coverage of the truck's assigned driver (see driver_assignments, the primary source). '4 Wheel' has no driver in the workbook, so it has no priority zones.",
       "cargo.pallet_sizes[].factor is the agreed 4x4-equivalent capacity convention (mirrors api/src/lib/pallets.ts); the workbook lists the pallet sizes but not the factors.",
-      "Kuala Lumpur has destination points (8) but no zone code. Johor & Selangor appear only in the REQUESTOR destination dropdown — they have no points or zone code in the workbook, so they are kept OUT of the authoritative datasets above and live in the separate 'extensions' block at the end of this file.",
+      "Kuala Lumpur is zone code KL (8 points, the furthest) — a real spec destination, wired like the other zones. Johor & Selangor appear only in the REQUESTOR destination dropdown with no points or zone code in the rate sheet, so they are kept OUT of the authoritative datasets above and live in the separate 'extensions' block at the end of this file (added as 8-point JH/SL zones).",
       "Rate reconciliation (2026-06-30): trucks[].weekday_rate / offpeak_rate / max_pallets were verified against Mr. Teh's authoritative INTERNAL LORRY RATE sheet — all 7 plates and both rate tiers match exactly.",
       "daily_deduction provenance: ONLY PLX 2406 = 2 is client-confirmed. PND/PRH = 2 and PRJ/PQL/PPE = 3 are as-seeded and UNVERIFIED — confirm with the client before treating them as authoritative.",
       "4 Wheel (Generic): the rate sheet has no off-peak row, so offpeak_rate is defaulted to the peak rate (11) pending client confirmation. OPEN: whether '4 Wheel' is a 7th dispatchable truck or an external/standby fallback — it has no assigned driver and no priority_zones.",
@@ -44,7 +44,8 @@
     { "code": "K1", "coverage_area": "Kulim" },
     { "code": "K2", "coverage_area": "Sungai Petani / Kuala Ketil" },
     { "code": "A1", "coverage_area": "Taiping" },
-    { "code": "A2", "coverage_area": "Ipoh" }
+    { "code": "A2", "coverage_area": "Ipoh" },
+    { "code": "KL", "coverage_area": "Kuala Lumpur" }
   ],
 
   "destination_points": [
@@ -56,7 +57,7 @@
     { "zone_code": "K2", "location_name": "Sungai Petani",  "points": 4 },
     { "zone_code": "A1", "location_name": "Taiping",        "points": 5 },
     { "zone_code": "A2", "location_name": "Ipoh",           "points": 6 },
-    { "zone_code": null, "location_name": "Kuala Lumpur",   "points": 8 }
+    { "zone_code": "KL", "location_name": "Kuala Lumpur",   "points": 8 }
   ],
 
   "route_types": [
