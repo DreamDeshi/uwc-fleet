@@ -397,12 +397,18 @@
       "incentives": "激励费率",
       "approvals": "用户审批",
       "consignees": "收货方",
-      "reports": "报表"
+      "reports": "报表",
+      "settings": "设置"
     },
     "navGroups": {
       "overview": "概览",
       "operations": "运营",
-      "administration": "管理"
+      "administration": "管理",
+      "system": "系统"
+    },
+    "settings": {
+      "languageSection": "语言",
+      "languageHint": "设置管理界面的语言。将应用于所有屏幕并保存到您的账户。"
     },
     "roleLabel": "车队管理员",
     "comingSoon": "此页面将在后续阶段推出。",
@@ -665,7 +671,8 @@
       "incentives": "索赔费率与目的地积分",
       "approvals": "新账户注册",
       "consignees": "修正区域、重命名、停用",
-      "reports": "行程、激励与利用率"
+      "reports": "行程、激励与利用率",
+      "settings": "语言与偏好"
     },
     "reports": {
       "reportsError": "无法加载报表。",
@@ -713,7 +720,8 @@
       "incentives": "激励费率管理",
       "approvals": "用户审批队列",
       "consignees": "收货方目录",
-      "reports": "报表与分析"
+      "reports": "报表与分析",
+      "settings": "设置"
     },
     "incentives": {
       "tabTrucks": "卡车索赔费率",

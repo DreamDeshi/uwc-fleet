@@ -32,6 +32,7 @@ import { TrucksScreen } from "../screens/TrucksScreen";
 import { ReportsScreen } from "../screens/ReportsScreen";
 import { IncentivesScreen } from "../screens/IncentivesScreen";
 import { TripsScreen } from "../screens/TripsScreen";
+import { AdminSettingsScreen } from "../screens/AdminSettingsScreen";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -62,6 +63,10 @@ const NAV_GROUPS: { headingKey: string; items: NavItem[] }[] = [
       { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline" },
       { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline" },
     ],
+  },
+  {
+    headingKey: "admin.navGroups.system",
+    items: [{ route: "AdminSettings", labelKey: "admin.nav.settings", icon: "settings-outline" }],
   },
 ];
 
@@ -254,6 +259,7 @@ const SUBTITLE_KEYS: Record<string, string> = {
   AdminApprovals: "admin.subtitles.approvals",
   AdminConsignees: "admin.subtitles.consignees",
   AdminReports: "admin.subtitles.reports",
+  AdminSettings: "admin.subtitles.settings",
 };
 
 // Header — split by layout:
@@ -468,6 +474,11 @@ function AdminDrawerWide() {
         name="AdminTrips"
         component={TripsScreen}
         options={{ title: t("admin.titles.trips") }}
+      />
+      <Drawer.Screen
+        name="AdminSettings"
+        component={AdminSettingsScreen}
+        options={{ title: t("admin.titles.settings") }}
       />
       </Drawer.Navigator>
   );

@@ -397,12 +397,18 @@
       "incentives": "Kadar Insentif",
       "approvals": "Kelulusan Pengguna",
       "consignees": "Penerima Barang",
-      "reports": "Laporan"
+      "reports": "Laporan",
+      "settings": "Tetapan"
     },
     "navGroups": {
       "overview": "Ringkasan",
       "operations": "Operasi",
-      "administration": "Pentadbiran"
+      "administration": "Pentadbiran",
+      "system": "Sistem"
+    },
+    "settings": {
+      "languageSection": "Bahasa",
+      "languageHint": "Tetapkan bahasa untuk antara muka admin. Digunakan di semua skrin dan disimpan ke akaun anda."
     },
     "roleLabel": "Pentadbir Armada",
     "comingSoon": "Skrin ini akan tiba dalam fasa akan datang.",
@@ -665,7 +671,8 @@
       "incentives": "Kadar tuntutan & mata destinasi",
       "approvals": "Pendaftaran akaun baharu",
       "consignees": "Betulkan zon, namakan semula, nyahaktif",
-      "reports": "Trip, insentif & penggunaan"
+      "reports": "Trip, insentif & penggunaan",
+      "settings": "Bahasa & keutamaan"
     },
     "reports": {
       "reportsError": "Tidak dapat memuatkan laporan.",
@@ -713,7 +720,8 @@
       "incentives": "Pengurusan Kadar Insentif",
       "approvals": "Barisan Kelulusan Pengguna",
       "consignees": "Direktori Penerima",
-      "reports": "Laporan & Analitik"
+      "reports": "Laporan & Analitik",
+      "settings": "Tetapan"
     },
     "incentives": {
       "tabTrucks": "Kadar Tuntutan Lori",

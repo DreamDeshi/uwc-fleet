@@ -64,6 +64,18 @@ export function MoreScreen() {
         ))}
       </View>
 
+      {/* Settings (language & preferences) — the admin's profile-area entry,
+          same screen the PC sidebar's System group opens. */}
+      <View style={[styles.card, { marginTop: 16 }]}>
+        <TouchableOpacity style={styles.row} onPress={() => navigation.navigate("AdminSettings")}>
+          <View style={styles.rowIcon}>
+            <Ionicons name="settings-outline" size={18} color={colors.blue} />
+          </View>
+          <Text style={styles.rowLabel}>{t("admin.nav.settings")}</Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+        </TouchableOpacity>
+      </View>
+
       {/* Sign out — confirmed first (mobile pattern, same as Profile). */}
       <View style={[styles.card, { marginTop: 16 }]}>
         <TouchableOpacity style={styles.row} onPress={() => setConfirmOut(true)}>

@@ -397,12 +397,18 @@
       "incentives": "Incentive Rates",
       "approvals": "User Approvals",
       "consignees": "Consignees",
-      "reports": "Reports"
+      "reports": "Reports",
+      "settings": "Settings"
     },
     "navGroups": {
       "overview": "Overview",
       "operations": "Operations",
-      "administration": "Administration"
+      "administration": "Administration",
+      "system": "System"
+    },
+    "settings": {
+      "languageSection": "Language",
+      "languageHint": "Set the language for the admin interface. Applies across all screens and is saved to your account."
     },
     "roleLabel": "Fleet Administrator",
     "comingSoon": "This screen arrives in a later phase.",
@@ -677,7 +683,8 @@
       "incentives": "Claim rates & destination points",
       "approvals": "New account registrations",
       "consignees": "Fix zones, rename, deactivate",
-      "reports": "Trips, incentives & utilisation"
+      "reports": "Trips, incentives & utilisation",
+      "settings": "Language & preferences"
     },
     "reports": {
       "reportsError": "Could not load reports.",
@@ -725,7 +732,8 @@
       "incentives": "Incentive Rate Management",
       "approvals": "User Approval Queue",
       "consignees": "Consignee Directory",
-      "reports": "Reports & Analytics"
+      "reports": "Reports & Analytics",
+      "settings": "Settings"
     },
     "incentives": {
       "tabTrucks": "Truck Claim Rates",

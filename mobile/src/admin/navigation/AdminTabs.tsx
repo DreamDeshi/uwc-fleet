@@ -26,6 +26,7 @@ import { ReportsScreen } from "../screens/ReportsScreen";
 import { ConsigneesScreen } from "../screens/ConsigneesScreen";
 import { ApprovalsScreen } from "../screens/ApprovalsScreen";
 import { PerformanceScreen } from "../screens/PerformanceScreen";
+import { AdminSettingsScreen } from "../screens/AdminSettingsScreen";
 
 // Same web-height fix as DriverTabs/RequestorTabs: RN-Web under-reserves
 // space for the label row, so the bar is taller with more bottom padding on
@@ -58,6 +59,7 @@ function MoreStack() {
       <Stack.Screen name="AdminConsignees" component={ConsigneesScreen} options={{ title: t("admin.titles.consignees") }} />
       <Stack.Screen name="AdminApprovals" component={ApprovalsScreen} options={{ title: t("admin.titles.approvals") }} />
       <Stack.Screen name="AdminPerformance" component={PerformanceScreen} options={{ title: t("admin.titles.performance") }} />
+      <Stack.Screen name="AdminSettings" component={AdminSettingsScreen} options={{ title: t("admin.titles.settings") }} />
     </Stack.Navigator>
   );
 }
