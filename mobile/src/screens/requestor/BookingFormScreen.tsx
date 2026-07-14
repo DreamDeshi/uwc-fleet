@@ -42,6 +42,13 @@ type Nav = BottomTabNavigationProp<RequestorTabParamList>;
 const STEPS = ["stepWhere", "stepWhat", "stepConfirm"] as const;
 const PALLET_SIZES = ["4×4", "3×4", "4×8", "5×10", "2×2"];
 
+// Parse the optional "estimated pallets of space" field for carton/Others cargo:
+// a positive whole number, or undefined when blank (→ manual admin assignment).
+function parsedEstimate(v: string): number | undefined {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 // Soft cap: the largest truck (PLX 2406) holds 16 pallets measured in
 // 4×4-EQUIVALENTS — the same units the server enforces (a 5×10 occupies
 // ~3 slots, a 2×2 a quarter). We don't hard-block — admin picks the actual
@@ -107,6 +114,8 @@ export function BookingFormScreen() {
   const [palletQtys, setPalletQtys] = useState<number[]>([0, 0, 0, 0, 0]);
   const [cartonQty, setCartonQty] = useState(0);
   const [othersText, setOthersText] = useState("");
+  // Optional 4×4-pallet estimate for carton/Others cargo (blank → manual dispatch).
+  const [sizeEstimate, setSizeEstimate] = useState("");
   const [remarks, setRemarks] = useState("");
 
   // Date/time chosen from quick pickers (no native datepicker dependency).
@@ -170,6 +179,7 @@ export function BookingFormScreen() {
     setPalletQtys([0, 0, 0, 0, 0]);
     setCartonQty(0);
     setOthersText("");
+    setSizeEstimate("");
     setRemarks("");
     const slot = nextBookableSlot();
     setDayOffset(slot.dayOffset);
@@ -201,6 +211,8 @@ export function BookingFormScreen() {
     const lines = tr.cargo_details ?? [];
     const custom = lines.find((l) => l.pallet_type === "custom");
     const carton = lines.find((l) => l.pallet_type === "carton");
+    const estLine = custom ?? carton;
+    setSizeEstimate(estLine?.estimated_pallets != null ? String(estLine.estimated_pallets) : "");
     if (custom) {
       setCargoType("others");
       setOthersText(custom.custom_size ?? "");
@@ -228,11 +240,12 @@ export function BookingFormScreen() {
   };
 
   const buildCargo = () => {
+    const estimate = parsedEstimate(sizeEstimate);
     if (cargoType === "carton") {
-      return [{ pallet_type: "carton", quantity: cartonQty, cartons: cartonQty, remark: remarks || undefined }];
+      return [{ pallet_type: "carton", quantity: cartonQty, cartons: cartonQty, estimated_pallets: estimate, remark: remarks || undefined }];
     }
     if (cargoType === "others") {
-      return [{ pallet_type: "custom", quantity: 1, custom_size: othersText.trim(), remark: remarks || undefined }];
+      return [{ pallet_type: "custom", quantity: 1, custom_size: othersText.trim(), estimated_pallets: estimate, remark: remarks || undefined }];
     }
     return PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] }))
       .filter((c) => c.quantity > 0)
@@ -344,6 +357,8 @@ export function BookingFormScreen() {
             setCartonQty={setCartonQty}
             othersText={othersText}
             setOthersText={setOthersText}
+            sizeEstimate={sizeEstimate}
+            setSizeEstimate={setSizeEstimate}
             totalPallets={totalPallets}
             totalEquivalents={totalEquivalents}
           />
@@ -598,6 +613,8 @@ function StepWhat({
   setCartonQty,
   othersText,
   setOthersText,
+  sizeEstimate,
+  setSizeEstimate,
   totalPallets,
   totalEquivalents,
 }: {
@@ -609,6 +626,8 @@ function StepWhat({
   setCartonQty: React.Dispatch<React.SetStateAction<number>>;
   othersText: string;
   setOthersText: (v: string) => void;
+  sizeEstimate: string;
+  setSizeEstimate: (v: string) => void;
   totalPallets: number;
   totalEquivalents: number;
 }) {
@@ -713,6 +732,23 @@ function StepWhat({
             multiline
             style={styles.textarea}
           />
+        </>
+      )}
+
+      {/* Optional size estimate for carton/Others — lets auto-dispatch size the
+          truck. Blank is fine: the booking then goes to manual admin assignment. */}
+      {(cargoType === "carton" || cargoType === "others") && (
+        <>
+          <FieldLabel>{t("booking.estimatedPallets")}</FieldLabel>
+          <TextInput
+            value={sizeEstimate}
+            onChangeText={(v) => setSizeEstimate(v.replace(/[^0-9]/g, ""))}
+            keyboardType="number-pad"
+            placeholder={t("booking.estimatedPalletsPlaceholder")}
+            placeholderTextColor={colors.textFaint}
+            style={styles.estimateInput}
+          />
+          <Text style={styles.estimateHint}>{t("booking.estimatedPalletsHint")}</Text>
         </>
       )}
 
@@ -934,6 +970,8 @@ const styles = StyleSheet.create({
   cargoNote: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.tintBlue, borderRadius: radius.md, padding: 12, marginTop: 20 },
   cargoNoteText: { flex: 1, fontSize: 13, fontWeight: "600", color: colors.blue, lineHeight: 17 },
   textarea: { minHeight: 90, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, padding: 14, fontSize: 14, color: colors.navy, backgroundColor: colors.white, textAlignVertical: "top" },
+  estimateInput: { borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.navy, backgroundColor: colors.white },
+  estimateHint: { fontSize: 12, color: colors.textFaint, marginTop: 6 },
 
   confirmCard: { backgroundColor: colors.white, borderRadius: radius.md, padding: 16, marginBottom: 12, borderWidth: 1.5, borderColor: colors.borderLight },
   confirmHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },

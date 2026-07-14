@@ -220,7 +220,7 @@ router.get("/", async (_req, res, next) => {
           select: {
             id: true,
             status: true,
-            cargo_details: { select: { pallet_type: true, quantity: true } },
+            cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } },
             stops: {
               orderBy: { sequence: "asc" },
               select: { consignee: { select: { area: true, zone_code: true } } },

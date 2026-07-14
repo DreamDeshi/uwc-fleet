@@ -20,16 +20,52 @@ export const PALLET_FACTORS: Record<string, number> = {
 export function palletFactor(palletType: string): number {
   if (palletType in PALLET_FACTORS) return PALLET_FACTORS[palletType];
   // Cartons and free-form "Others" cargo don't occupy standard pallet slots, so
-  // they contribute nothing to the pallet-equivalent load (admin judges these).
-  if (palletType === "carton" || palletType === "custom") return 0;
+  // they have no footprint by conversion — auto-dispatch can only size them from
+  // the requestor's estimate (see palletEquivalents / isUnsizedForDispatch).
+  if (isUnsizedType(palletType)) return 0;
   return 1; // unknown footprint — treat as one standard slot (conservative)
 }
 
 /**
- * Total 4×4-pallet-equivalent load for a set of cargo lines. Rounded to 3 dp to
- * keep the 3.125 factor exact while avoiding floating-point noise.
+ * "carton" and "custom" (Others) cargo carry no pallet footprint by conversion,
+ * so they need the requestor's optional `estimated_pallets` to be dispatchable.
  */
-export function palletEquivalents(cargo: { pallet_type: string; quantity: number }[]): number {
-  const total = cargo.reduce((sum, c) => sum + palletFactor(c.pallet_type) * c.quantity, 0);
+export function isUnsizedType(palletType: string): boolean {
+  return palletType === "carton" || palletType === "custom";
+}
+
+/** A cargo line as it feeds the capacity math. `estimated_pallets` is the
+ *  requestor's OPTIONAL 4×4-equivalent estimate for a carton/custom line. */
+export interface CargoLine {
+  pallet_type: string;
+  quantity: number;
+  estimated_pallets?: number | null;
+}
+
+/**
+ * Total 4×4-pallet-equivalent load for a set of cargo lines. Rounded to 3 dp to
+ * keep the 3.125 factor exact while avoiding floating-point noise. For a
+ * carton/custom line the requestor's estimate (if given) IS the line's
+ * equivalent; without one the line contributes 0 (and the order counts as
+ * unsized for dispatch — see isUnsizedForDispatch).
+ */
+export function palletEquivalents(cargo: CargoLine[]): number {
+  const total = cargo.reduce((sum, c) => {
+    if (isUnsizedType(c.pallet_type)) return sum + (c.estimated_pallets ?? 0);
+    return sum + palletFactor(c.pallet_type) * c.quantity;
+  }, 0);
   return Math.round(total * 1000) / 1000;
+}
+
+/**
+ * True when the order cannot be sized for auto-dispatch: any carton/"Others"
+ * (custom) line without a usable estimate. Such an order must NOT auto-dispatch
+ * to the smallest truck (a 0-equivalent "fits everything") — it routes to manual
+ * assignment via the needs-attention flag. Pallet lines never make an order
+ * unsized (their pallet type always gives a footprint).
+ */
+export function isUnsizedForDispatch(cargo: CargoLine[]): boolean {
+  return cargo.some(
+    (c) => isUnsizedType(c.pallet_type) && !(c.estimated_pallets != null && c.estimated_pallets > 0)
+  );
 }

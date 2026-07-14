@@ -21,7 +21,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
 import { sendPushNotifications } from "../lib/pushNotifications";
-import { palletEquivalents } from "../lib/pallets";
+import { palletEquivalents, isUnsizedForDispatch } from "../lib/pallets";
 import { isSerializationConflict } from "../lib/prismaErrors";
 import { claimPendingTrip } from "./tripAssignment";
 import { truckRateSnapshot, snapshotStopZonePoints } from "./rateSnapshot";
@@ -231,7 +231,9 @@ export function autoDispatchFailureNote(
 const ACTIVE_TRIP_STATUSES = ["assigned", "in_progress"] as const;
 
 // 4×4-pallet-equivalent load for a set of cargo lines (see lib/pallets).
-function orderPallets(cargo: { pallet_type: string; quantity: number }[]): number {
+function orderPallets(
+  cargo: { pallet_type: string; quantity: number; estimated_pallets?: number | null }[]
+): number {
   return palletEquivalents(cargo);
 }
 
@@ -285,12 +287,27 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
     include: {
-      cargo_details: { select: { pallet_type: true, quantity: true } },
+      cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } },
       stops: { orderBy: { sequence: "asc" }, select: { consignee: { select: { zone_code: true } } } },
     },
   });
   if (!trip) return { assigned: false, reason: "Trip not found." };
   if (trip.status !== "pending") return { assigned: false, reason: "Trip is not pending." };
+
+  // Unsized cargo (carton/"Others" with no requestor estimate) has no pallet
+  // footprint by conversion, so a 0-equivalent order "fits" every truck and
+  // would silently take the SMALLEST. Route it to MANUAL assignment via the
+  // needs-attention flag instead (same mechanism as ZONE_POINTS_MISSING below),
+  // so an admin sizes it and picks the truck. Cargo WITH an estimate flows
+  // through normally (orderPallets counts the estimate).
+  if (isUnsizedForDispatch(trip.cargo_details)) {
+    const reason = "Cargo size not specified — manual assignment required.";
+    await prisma.trip.updateMany({
+      where: { id: tripId, status: "pending" },
+      data: { auto_dispatch_failed: true, auto_dispatch_note: reason },
+    });
+    return { assigned: false, reason };
+  }
 
   const order: DispatchOrder = {
     pallets: orderPallets(trip.cargo_details),
@@ -342,7 +359,7 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
             trips: {
               where: { status: { in: [...ACTIVE_TRIP_STATUSES] }, id: { not: tripId } },
               select: {
-                cargo_details: { select: { pallet_type: true, quantity: true } },
+                cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } },
                 stops: {
                   orderBy: { sequence: "asc" },
                   take: 1,

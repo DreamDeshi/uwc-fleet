@@ -372,6 +372,13 @@ model CargoDetail {
   quantity        Int
   cartons         Int?
   custom_size     String?
+  // Requestor's OPTIONAL estimated 4×4-pallet-equivalent for a "carton"/"custom"
+  // (Others) line — those types carry no pallet footprint by conversion (factor
+  // 0), so without an estimate auto-dispatch can't size them. When given, the
+  // capacity math uses it; when absent, the booking is routed to manual
+  // assignment (needs-attention) instead of silently taking the smallest truck.
+  // Lives on the cargo line so it stays correct if cargo later becomes per-stop.
+  estimated_pallets Int?
   remark          String?
 }
 

@@ -164,6 +164,10 @@ export const createTripSchema = z.object({
         quantity: z.number().int().min(1),
         cartons: z.number().int().min(0).optional(),
         custom_size: z.string().optional(),
+        // Optional requestor estimate of 4×4-pallet space for carton/"Others"
+        // cargo (which has no footprint by conversion). Given → auto-dispatch
+        // sizes on it; blank → the booking routes to manual assignment.
+        estimated_pallets: z.number().int().min(1).optional(),
         remark: z.string().optional(),
       })
     )
@@ -554,14 +558,14 @@ async function assignTripInTx(
 
   const orderCargo = await tx.cargoDetail.findMany({
               where: { trip_id: id },
-              select: { pallet_type: true, quantity: true },
+              select: { pallet_type: true, quantity: true, estimated_pallets: true },
             });
             const truck = await tx.truck.findUnique({
               where: { plate: truck_plate },
               include: {
                 trips: {
                   where: { status: { in: ["assigned", "in_progress"] }, id: { not: id } },
-                  select: { cargo_details: { select: { pallet_type: true, quantity: true } } },
+                  select: { cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } } },
                 },
               },
             });

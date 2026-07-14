@@ -159,7 +159,7 @@ router.get("/drivers", async (_req, res, next) => {
             status: true,
             incentive_earned: true,
             pickup_datetime: true,
-            cargo_details: { select: { pallet_type: true, quantity: true } },
+            cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } },
             stops: {
               orderBy: { sequence: "asc" },
               take: 1,

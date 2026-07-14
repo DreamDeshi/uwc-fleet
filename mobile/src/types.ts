@@ -73,6 +73,7 @@ export interface CargoDetail {
   quantity: number;
   cartons?: number | null;
   custom_size?: string | null;
+  estimated_pallets?: number | null;
   remark?: string | null;
 }
 
