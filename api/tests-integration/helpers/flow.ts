@@ -130,6 +130,14 @@ export async function approveTrip(
   return res.body;
 }
 
+/** Start a trip — RAW response, for concurrency tests that race starts. */
+export function startRaw(driverToken: string, tripId: string) {
+  return api()
+    .patch(`/api/v1/trips/${tripId}/status`)
+    .set(auth(driverToken))
+    .send({ action: "start" });
+}
+
 export async function startTrip(driverToken: string, tripId: string): Promise<FlowTrip> {
   const res = await api()
     .patch(`/api/v1/trips/${tripId}/status`)
