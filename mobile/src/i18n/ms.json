@@ -480,6 +480,8 @@
       "today": "Hari ini",
       "tripsToday": "Trip hari ini",
       "inProgress": "Dalam perjalanan",
+      "dispatchTitle": "Penghantaran hari ini",
+      "awaitingDispatch": "Menunggu penghantaran",
       "completedToday": "Selesai hari ini",
       "manage": "Urus"
     },
@@ -692,6 +694,9 @@
       "colCompleted": "Siap",
       "colIncentive": "Insentif",
       "colExternal": "Luar",
+      "colCompletedShort": "Siap",
+      "colIncentiveShort": "RM",
+      "colExternalShort": "Luar",
       "footTotalTrips": "Jumlah Trip",
       "footTotalIncentive": "Jumlah Insentif",
       "footExternal": "Trip Luar"
@@ -804,6 +809,7 @@
       "from": "Dari",
       "to": "Hingga",
       "needsAttention": "Perlu perhatian",
+      "moreFilters": "Penapis",
       "results": "{{count}} hasil",
       "resultsOf": "{{shown}} daripada {{total}} hasil",
       "clearFilters": "Kosongkan penapis",

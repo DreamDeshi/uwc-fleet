@@ -83,41 +83,42 @@ export function AdminHomeScreen() {
       </View>
 
       <View style={styles.content}>
-        {/* Floating action card — the admin's "where to?": the approval queue
-            (now inside the MORE tab's stack). */}
+        {/* Floating hero — the dispatcher's live snapshot; taps to the board.
+            (Approvals moved down to a normal row — it's not the main job.) */}
         <View style={styles.ctaWrap}>
           <TouchableOpacity
             style={styles.cta}
             activeOpacity={0.9}
-            onPress={() => navigation.navigate("AdminMore", { screen: "AdminApprovals", initial: false })}
+            onPress={() => navigation.navigate("AdminTrips")}
           >
-            <View style={styles.ctaIcon}>
-              <Ionicons name="person-add" size={22} color={colors.blue} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.ctaTitle}>{t("admin.home.approvalQueue")}</Text>
-              <Text style={styles.ctaSub}>
-                {pendingCount > 0
-                  ? t("admin.home.pendingSub", { count: pendingCount })
-                  : t("admin.home.allClear")}
-              </Text>
-            </View>
-            {pendingCount > 0 && (
-              <View style={styles.countPill}>
-                <Text style={styles.countPillText}>{pendingCount}</Text>
+            <View style={styles.heroHead}>
+              <View style={styles.ctaIcon}>
+                <Ionicons name="flash" size={20} color={colors.blue} />
               </View>
-            )}
-            <Ionicons name="chevron-forward" size={20} color={colors.blue} />
+              <Text style={styles.ctaTitle}>{t("admin.home.dispatchTitle")}</Text>
+              <Ionicons name="chevron-forward" size={20} color={colors.blue} />
+            </View>
+            <View style={styles.heroStats}>
+              <HeroStat value={k ? k.trips_in_progress : null} label={t("admin.home.inProgress")} color={colors.violet} />
+              <View style={styles.heroDivider} />
+              <HeroStat value={k ? k.awaiting_manual : null} label={t("admin.home.awaitingDispatch")} color={colors.orange} />
+              <View style={styles.heroDivider} />
+              <HeroStat
+                value={k ? k.auto_dispatch_failed : null}
+                label={t("admin.trips.needsAttention")}
+                color={k && k.auto_dispatch_failed > 0 ? colors.red : colors.green}
+              />
+            </View>
           </TouchableOpacity>
         </View>
 
-        {/* Today — the dashboard's headline numbers. */}
+        {/* Today — the dashboard's headline totals. */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t("admin.home.today")}</Text>
           <View style={styles.statRow}>
             <StatBox value={k ? k.trips_today : null} label={t("admin.home.tripsToday")} color={colors.blue} bg={colors.blueTint} />
-            <StatBox value={k ? k.trips_in_progress : null} label={t("admin.home.inProgress")} color={colors.violet} bg={colors.violetTint} />
             <StatBox value={k ? k.completed_today : null} label={t("admin.home.completedToday")} color={colors.green} bg={colors.greenTint} />
+            <StatBox value={k ? k.active_trucks : null} label={t("admin.dashboard.activeTrucks")} color={colors.teal} bg={colors.tealTint} />
           </View>
         </View>
 
@@ -150,8 +151,45 @@ export function AdminHomeScreen() {
             </View>
           </View>
         </View>
+
+        {/* Approvals — a normal row, not the hero (admin housekeeping). */}
+        <View style={styles.section}>
+          <View style={styles.rowCard}>
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => navigation.navigate("AdminMore", { screen: "AdminApprovals", initial: false })}
+            >
+              <View style={styles.rowIcon}>
+                <Ionicons name="person-add-outline" size={18} color={colors.blue} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.rowLabel}>{t("admin.home.approvalQueue")}</Text>
+                <Text style={styles.rowSub}>
+                  {pendingCount > 0 ? t("admin.home.pendingSub", { count: pendingCount }) : t("admin.home.allClear")}
+                </Text>
+              </View>
+              {pendingCount > 0 && (
+                <View style={styles.countPill}>
+                  <Text style={styles.countPillText}>{pendingCount}</Text>
+                </View>
+              )}
+              <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
     </ScrollView>
+  );
+}
+
+function HeroStat({ value, label, color }: { value: number | null; label: string; color: string }) {
+  return (
+    <View style={{ flex: 1, alignItems: "center" }}>
+      <Text style={{ fontSize: 24, fontWeight: "900", color }}>{value ?? "—"}</Text>
+      <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textMuted, textAlign: "center", marginTop: 2 }}>
+        {label}
+      </Text>
+    </View>
   );
 }
 
@@ -159,7 +197,7 @@ function StatBox({ value, label, color, bg }: { value: number | null; label: str
   return (
     <View style={[styles.statBox, { backgroundColor: bg }]}>
       <Text style={[styles.statValue, { color }]}>{value ?? "—"}</Text>
-      <Text style={[styles.statLabel, { color }]} numberOfLines={1}>{label}</Text>
+      <Text style={[styles.statLabel, { color }]} numberOfLines={2}>{label}</Text>
     </View>
   );
 }
@@ -202,14 +240,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: radius.lg,
     padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
+    gap: 12,
     ...shadow.floating,
   },
-  ctaIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: colors.yellow, alignItems: "center", justifyContent: "center" },
-  ctaTitle: { fontSize: font.lg, fontWeight: "700", color: colors.navy },
-  ctaSub: { fontSize: font.md, color: colors.textFaint },
+  heroHead: { flexDirection: "row", alignItems: "center", gap: 12 },
+  heroStats: { flexDirection: "row", alignItems: "center" },
+  heroDivider: { width: 1, alignSelf: "stretch", backgroundColor: colors.divider },
+  ctaIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: colors.yellow, alignItems: "center", justifyContent: "center" },
+  ctaTitle: { flex: 1, fontSize: font.lg, fontWeight: "700", color: colors.navy },
   countPill: { backgroundColor: colors.red, borderRadius: radius.pill, minWidth: 22, height: 22, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
   countPillText: { color: "#fff", fontSize: font.xs, fontWeight: "800" },
 
@@ -217,9 +255,15 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
 
   statRow: { flexDirection: "row", gap: 10, marginTop: 12 },
-  statBox: { flex: 1, borderRadius: radius.md, padding: 14, alignItems: "center" },
+  statBox: { flex: 1, borderRadius: radius.md, paddingVertical: 14, paddingHorizontal: 8, alignItems: "center" },
   statValue: { fontSize: 26, fontWeight: "900" },
-  statLabel: { fontSize: font.xs, fontWeight: "700", textTransform: "uppercase", marginTop: 3 },
+  statLabel: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", marginTop: 3, textAlign: "center" },
+
+  rowCard: { backgroundColor: colors.card, borderRadius: radius.lg, marginTop: 4, borderWidth: 1, borderColor: colors.border, ...shadow.card },
+  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 12 },
+  rowIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.blueTint, alignItems: "center", justifyContent: "center" },
+  rowLabel: { fontSize: font.md, fontWeight: "600", color: colors.text },
+  rowSub: { fontSize: font.sm, color: colors.textFaint, marginTop: 1 },
 
   mapCard: {
     backgroundColor: colors.card,

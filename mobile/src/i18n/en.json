@@ -482,6 +482,8 @@
       "today": "Today",
       "tripsToday": "Trips today",
       "inProgress": "In progress",
+      "dispatchTitle": "Today's dispatch",
+      "awaitingDispatch": "Awaiting dispatch",
       "completedToday": "Completed today",
       "manage": "Manage"
     },
@@ -704,6 +706,9 @@
       "colCompleted": "Completed",
       "colIncentive": "Incentive",
       "colExternal": "External",
+      "colCompletedShort": "Done",
+      "colIncentiveShort": "RM",
+      "colExternalShort": "Ext",
       "footTotalTrips": "Total Trips",
       "footTotalIncentive": "Total Incentive",
       "footExternal": "External Trips"
@@ -818,6 +823,7 @@
       "from": "From",
       "to": "To",
       "needsAttention": "Needs attention",
+      "moreFilters": "Filters",
       "results": "{{count}} result(s)",
       "results_one": "{{count}} result",
       "results_other": "{{count}} results",

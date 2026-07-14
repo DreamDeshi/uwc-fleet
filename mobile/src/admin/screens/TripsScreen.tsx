@@ -9,7 +9,7 @@
 //   everything else (overload, unroadworthy, DRIVER_ON_LEAVE, raced
 //   CONCURRENT_ASSIGNMENT / TRIP_STATE_CHANGED) → plain error, no override.
 import React, { useEffect, useMemo, useState } from "react";
-import { Linking, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Linking, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import {
@@ -87,6 +87,9 @@ export function TripsScreen() {
   const [needsAttentionOnly, setNeedsAttentionOnly] = useState(false);
   const [driverPickerOpen, setDriverPickerOpen] = useState(false);
   const [zonePickerOpen, setZonePickerOpen] = useState(false);
+  // Narrow only: driver/zone/date filters live behind a disclosure so the
+  // board itself is visible without scrolling past a wall of controls.
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedQ(q), 300);
@@ -182,9 +185,60 @@ export function TripsScreen() {
     </View>
   );
 
+  // Secondary-filter chip (auto-dispatch failures) — used by both layouts.
+  const attentionChip = (
+    <Pressable
+      onPress={() => setNeedsAttentionOnly(!needsAttentionOnly)}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        borderRadius: radius.pill,
+        paddingVertical: 5,
+        paddingHorizontal: 11,
+        borderWidth: 1,
+        borderColor: colors.red,
+        backgroundColor: needsAttentionOnly ? colors.red : colors.redTint,
+      }}
+    >
+      <Ionicons name="warning" size={12} color={needsAttentionOnly ? "#fff" : colors.red} />
+      <Text style={{ fontSize: font.sm, fontWeight: "700", color: needsAttentionOnly ? "#fff" : colors.red }}>
+        {t("admin.trips.needsAttention")}
+        {attentionCount > 0 ? ` · ${attentionCount}` : ""}
+      </Text>
+    </Pressable>
+  );
+
+  const resultsLabel = (
+    <Text style={{ fontSize: font.sm, color: colors.textMuted }}>
+      {olderCount > 0
+        ? t("admin.trips.resultsOf", { shown: all.length, total })
+        : t("admin.trips.results", { count: all.length })}
+    </Text>
+  );
+
+  const statusSegments = (
+    <SegmentedFilter
+      options={[
+        { value: "", label: t("admin.trips.statusAll") },
+        { value: "pending", label: t("admin.status.pending") },
+        { value: "assigned", label: t("admin.status.assigned") },
+        { value: "in_progress", label: t("admin.status.in_progress") },
+        { value: "completed", label: t("admin.status.completed") },
+        { value: "cancelled", label: t("admin.status.cancelled") },
+      ]}
+      value={status}
+      onChange={setStatus}
+    />
+  );
+
+  // Driver/zone/date filters active behind the narrow disclosure.
+  const secondaryCount = [driverId, zone, dateFrom, dateTo].filter(Boolean).length;
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <View style={{ flex: 1, paddingVertical: wide ? 24 : 14, paddingHorizontal: wide ? 28 : 14, gap: 16 }}>
+      {wide ? (
+      <View style={{ flex: 1, paddingVertical: 24, paddingHorizontal: 28, gap: 16 }}>
         <Card pad={12} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
           <DispatchToggle />
         </Card>
@@ -192,7 +246,7 @@ export function TripsScreen() {
         {/* ── Search + filters ── */}
         <Card pad={12} style={{ gap: 12 }}>
           <View style={{ flexDirection: "row", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <SearchInput value={q} onChange={setQ} placeholder={t("admin.trips.searchPlaceholder")} style={!wide && { minWidth: 0, alignSelf: "stretch", flexBasis: "100%" }} />
+            <SearchInput value={q} onChange={setQ} placeholder={t("admin.trips.searchPlaceholder")} />
             <FilterSelect
               label={selectedDriver ? selectedDriver.name : t("admin.trips.allDrivers")}
               onPress={() => setDriverPickerOpen(true)}
@@ -207,32 +261,8 @@ export function TripsScreen() {
               <DateInputInline value={dateTo} onChange={setDateTo} />
             </View>
             <View style={{ marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              {/* One-click filter to the auto-dispatch failures. */}
-              <Pressable
-                onPress={() => setNeedsAttentionOnly(!needsAttentionOnly)}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 6,
-                  borderRadius: radius.pill,
-                  paddingVertical: 5,
-                  paddingHorizontal: 11,
-                  borderWidth: 1,
-                  borderColor: colors.red,
-                  backgroundColor: needsAttentionOnly ? colors.red : colors.redTint,
-                }}
-              >
-                <Ionicons name="warning" size={12} color={needsAttentionOnly ? "#fff" : colors.red} />
-                <Text style={{ fontSize: font.sm, fontWeight: "700", color: needsAttentionOnly ? "#fff" : colors.red }}>
-                  {t("admin.trips.needsAttention")}
-                  {attentionCount > 0 ? ` · ${attentionCount}` : ""}
-                </Text>
-              </Pressable>
-              <Text style={{ fontSize: font.sm, color: colors.textMuted }}>
-                {olderCount > 0
-                  ? t("admin.trips.resultsOf", { shown: all.length, total })
-                  : t("admin.trips.results", { count: all.length })}
-              </Text>
+              {attentionChip}
+              {resultsLabel}
               {hasFilters && (
                 <Button variant="ghost" size="sm" onPress={clearFilters}>
                   {t("admin.trips.clearFilters")}
@@ -240,42 +270,98 @@ export function TripsScreen() {
               )}
             </View>
           </View>
-          <SegmentedFilter
-            options={[
-              { value: "", label: t("admin.trips.statusAll") },
-              { value: "pending", label: t("admin.status.pending") },
-              { value: "assigned", label: t("admin.status.assigned") },
-              { value: "in_progress", label: t("admin.status.in_progress") },
-              { value: "completed", label: t("admin.status.completed") },
-              { value: "cancelled", label: t("admin.status.cancelled") },
-            ]}
-            value={status}
-            onChange={setStatus}
-          />
+          {statusSegments}
         </Card>
 
         {/* ── Board + detail ── */}
-        {wide ? (
-          <View style={{ flexDirection: "row", gap: 16, flex: 1, minHeight: 0 }}>
-            <ScrollView style={{ width: 360, flexGrow: 0, flexShrink: 0 }} contentContainerStyle={{ paddingRight: 4, paddingBottom: 12 }}>
-              {board}
-            </ScrollView>
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
-              {selected ? (
-                <TripDetail key={selected.id} trip={selected} onDone={() => setSelectedId(null)} />
-              ) : (
-                <Card style={{ minHeight: 300, alignItems: "center", justifyContent: "center" }}>
-                  <EmptyState message={t("admin.trips.selectPrompt")} />
-                </Card>
-              )}
-            </ScrollView>
-          </View>
-        ) : (
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
+        <View style={{ flexDirection: "row", gap: 16, flex: 1, minHeight: 0 }}>
+          <ScrollView style={{ width: 360, flexGrow: 0, flexShrink: 0 }} contentContainerStyle={{ paddingRight: 4, paddingBottom: 12 }}>
             {board}
           </ScrollView>
-        )}
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
+            {selected ? (
+              <TripDetail key={selected.id} trip={selected} onDone={() => setSelectedId(null)} />
+            ) : (
+              <Card style={{ minHeight: 300, alignItems: "center", justifyContent: "center" }}>
+                <EmptyState message={t("admin.trips.selectPrompt")} />
+              </Card>
+            )}
+          </ScrollView>
+        </View>
       </View>
+      ) : (
+        /* ── NARROW: one scrollable page — compact controls, then the board.
+           Everything is reachable by scrolling (no fixed filter wall). ── */
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 14, paddingBottom: 16, gap: 12 }}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={<RefreshControl refreshing={trips.isRefetching} onRefresh={() => trips.refetch()} />}
+        >
+          <Card pad={12}>
+            <DispatchToggle compact />
+          </Card>
+
+          <Card pad={12} style={{ gap: 10 }}>
+            <SearchInput value={q} onChange={setQ} placeholder={t("admin.trips.searchPlaceholder")} style={{ minWidth: 0, alignSelf: "stretch" }} />
+            {statusSegments}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              {attentionChip}
+              <Pressable
+                onPress={() => setFiltersOpen(!filtersOpen)}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 5,
+                  borderRadius: radius.pill,
+                  paddingVertical: 5,
+                  paddingHorizontal: 11,
+                  borderWidth: 1,
+                  borderColor: secondaryCount > 0 ? colors.blue : colors.border,
+                  backgroundColor: secondaryCount > 0 ? colors.blueTint : colors.card,
+                }}
+              >
+                <Ionicons name="options-outline" size={13} color={secondaryCount > 0 ? colors.blue : colors.textMuted} />
+                <Text style={{ fontSize: font.sm, fontWeight: "700", color: secondaryCount > 0 ? colors.blue : colors.textMuted }}>
+                  {t("admin.trips.moreFilters")}
+                  {secondaryCount > 0 ? ` · ${secondaryCount}` : ""}
+                </Text>
+                <Ionicons name={filtersOpen ? "chevron-up" : "chevron-down"} size={12} color={secondaryCount > 0 ? colors.blue : colors.textMuted} />
+              </Pressable>
+              <View style={{ marginLeft: "auto" }}>{resultsLabel}</View>
+            </View>
+            {filtersOpen && (
+              <>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <FilterSelect
+                    label={selectedDriver ? selectedDriver.name : t("admin.trips.allDrivers")}
+                    onPress={() => setDriverPickerOpen(true)}
+                    style={{ flex: 1 }}
+                  />
+                  <FilterSelect label={zone || t("admin.trips.allZones")} onPress={() => setZonePickerOpen(true)} style={{ flex: 1 }} />
+                </View>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.from")}</Text>
+                    <DateInputInline value={dateFrom} onChange={setDateFrom} style={{ flex: 1, width: undefined }} />
+                  </View>
+                  <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.to")}</Text>
+                    <DateInputInline value={dateTo} onChange={setDateTo} style={{ flex: 1, width: undefined }} />
+                  </View>
+                </View>
+                {hasFilters && (
+                  <Button variant="ghost" size="sm" onPress={clearFilters} style={{ alignSelf: "flex-start" }}>
+                    {t("admin.trips.clearFilters")}
+                  </Button>
+                )}
+              </>
+            )}
+          </Card>
+
+          {board}
+        </ScrollView>
+      )}
 
       {/* Narrow: full-screen detail layer (functional, pre-polish). */}
       {!wide && selected && (
@@ -315,48 +401,54 @@ export function TripsScreen() {
   );
 }
 
-function FilterSelect({ label, onPress }: { label: string; onPress: () => void }) {
+function FilterSelect({ label, onPress, style }: { label: string; onPress: () => void; style?: object }) {
   return (
     <Pressable
       onPress={onPress}
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-        paddingVertical: 9,
-        paddingHorizontal: 12,
-        borderRadius: radius.md,
-        borderWidth: 1,
-        borderColor: colors.border,
-        backgroundColor: colors.card,
-      }}
+      style={[
+        {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+          paddingVertical: 9,
+          paddingHorizontal: 12,
+          borderRadius: radius.md,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.card,
+        },
+        style,
+      ]}
     >
-      <Text style={{ fontSize: font.md, color: colors.text }}>{label}</Text>
-      <Ionicons name="chevron-down" size={14} color={colors.textMuted} />
+      <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: font.md, color: colors.text }}>{label}</Text>
+      <Ionicons name="chevron-down" size={14} color={colors.textMuted} style={{ marginLeft: "auto" }} />
     </Pressable>
   );
 }
 
 // Compact inline YYYY-MM-DD filter input (the old admin's native date input;
 // real picker arrives with the mobile pass).
-function DateInputInline({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function DateInputInline({ value, onChange, style }: { value: string; onChange: (v: string) => void; style?: object }) {
   return (
     <TextInput
       value={value}
       onChangeText={onChange}
       placeholder="YYYY-MM-DD"
       placeholderTextColor={colors.textFaint}
-      style={{
-        paddingVertical: 9,
-        paddingHorizontal: 12,
-        borderRadius: radius.md,
-        borderWidth: 1,
-        borderColor: colors.border,
-        fontSize: font.md,
-        color: colors.text,
-        backgroundColor: colors.card,
-        width: 130,
-      }}
+      style={[
+        {
+          paddingVertical: 9,
+          paddingHorizontal: 12,
+          borderRadius: radius.md,
+          borderWidth: 1,
+          borderColor: colors.border,
+          fontSize: font.md,
+          color: colors.text,
+          backgroundColor: colors.card,
+          width: 130,
+        },
+        style,
+      ]}
     />
   );
 }

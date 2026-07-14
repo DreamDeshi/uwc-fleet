@@ -93,7 +93,14 @@ export function DriversScreen() {
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={drivers.isRefetching} onRefresh={() => drivers.refetch()} />}
     >
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+      {/* Narrow stacks: an unconstrained row lets the chips run off-screen. */}
+      <View
+        style={
+          wide
+            ? { flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }
+            : { flexDirection: "column", alignItems: "stretch", gap: 12 }
+        }
+      >
         <SegmentedFilter<Filter>
           value={filter}
           onChange={setFilter}
@@ -192,9 +199,10 @@ function DriverCard({ driver: d, perf }: { driver: DriverPerf; perf?: DriverPerf
 
 function Stat({ label, value, divider }: { label: string; value: string; divider?: boolean }) {
   return (
-    <View style={{ flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderLeftWidth: divider ? 1 : 0, borderLeftColor: colors.divider, alignItems: "center" }}>
+    <View style={{ flex: 1, paddingVertical: 10, paddingHorizontal: 8, borderLeftWidth: divider ? 1 : 0, borderLeftColor: colors.divider, alignItems: "center" }}>
       <Text numberOfLines={1} style={{ fontSize: 15, fontWeight: "700", color: colors.text }}>{value}</Text>
-      <Text numberOfLines={1} style={{ fontSize: 11.5, color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>
+      {/* Two-line wrap beats "TRIPS (TOT…" on phones. */}
+      <Text numberOfLines={2} style={{ fontSize: 10.5, color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2, textAlign: "center" }}>
         {label}
       </Text>
     </View>

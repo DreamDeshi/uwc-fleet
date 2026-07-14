@@ -480,6 +480,8 @@
       "today": "今天",
       "tripsToday": "今日行程",
       "inProgress": "进行中",
+      "dispatchTitle": "今日调度",
+      "awaitingDispatch": "等待调度",
       "completedToday": "今日完成",
       "manage": "管理"
     },
@@ -692,6 +694,9 @@
       "colCompleted": "已完成",
       "colIncentive": "激励",
       "colExternal": "外包",
+      "colCompletedShort": "完成",
+      "colIncentiveShort": "激励",
+      "colExternalShort": "外包",
       "footTotalTrips": "总行程",
       "footTotalIncentive": "总激励",
       "footExternal": "外包行程"
@@ -804,6 +809,7 @@
       "from": "从",
       "to": "至",
       "needsAttention": "需要关注",
+      "moreFilters": "筛选",
       "results": "{{count}} 条结果",
       "resultsOf": "{{shown}} / {{total}} 条结果",
       "clearFilters": "清除筛选",

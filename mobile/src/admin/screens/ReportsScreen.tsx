@@ -143,7 +143,8 @@ export function ReportsScreen() {
             flexWrap: "wrap",
           }}
         >
-          <SectionTitle title={t("admin.reports.payrollTitle")} subtitle={t("admin.reports.payrollSub")} />
+          {/* The click-a-driver explainer stays PC-only (mobile: lead with data). */}
+          <SectionTitle title={t("admin.reports.payrollTitle")} subtitle={wide ? t("admin.reports.payrollSub") : undefined} />
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             {payrollSettling && (
               <Text style={{ fontSize: font.sm, color: colors.textMuted }}>
@@ -200,19 +201,21 @@ export function ReportsScreen() {
           />
         </View>
         <TableHeader style={{ borderRadius: 0 }}>
-          <TableCell flex={1.2} header>{t("admin.reports.colMonth")}</TableCell>
-          <TableCell flex={0.8} header>{t("admin.reports.colTrips")}</TableCell>
-          <TableCell flex={0.9} header>{t("admin.reports.colCompleted")}</TableCell>
-          <TableCell flex={1} header>{t("admin.reports.colIncentive")}</TableCell>
-          <TableCell flex={0.8} header>{t("admin.reports.colExternal")}</TableCell>
+          <TableCell flex={wide ? 1.2 : 1} header>{t("admin.reports.colMonth")}</TableCell>
+          <TableCell flex={wide ? 0.8 : 0.6} header>{t("admin.reports.colTrips")}</TableCell>
+          {/* Short header forms + a wider money column on phones — the full
+              words and "RM 855.00" wrap mid-word otherwise. */}
+          <TableCell flex={wide ? 0.9 : 0.7} header>{t(wide ? "admin.reports.colCompleted" : "admin.reports.colCompletedShort")}</TableCell>
+          <TableCell flex={wide ? 1 : 1.3} header>{t(wide ? "admin.reports.colIncentive" : "admin.reports.colIncentiveShort")}</TableCell>
+          <TableCell flex={wide ? 0.8 : 0.6} header>{t(wide ? "admin.reports.colExternal" : "admin.reports.colExternalShort")}</TableCell>
         </TableHeader>
         {months.map((m: MonthlyRow) => (
           <TableRow key={m.month}>
-            <TableCell flex={1.2} textStyle={{ fontWeight: "600" }}>{m.label}</TableCell>
-            <TableCell flex={0.8}>{m.trips}</TableCell>
-            <TableCell flex={0.9}>{m.completed}</TableCell>
-            <TableCell flex={1} textStyle={{ color: colors.green, fontWeight: "700" }}>{formatMoney(m.incentive)}</TableCell>
-            <TableCell flex={0.8}>{m.external}</TableCell>
+            <TableCell flex={wide ? 1.2 : 1} textStyle={{ fontWeight: "600" }}>{m.label}</TableCell>
+            <TableCell flex={wide ? 0.8 : 0.6}>{m.trips}</TableCell>
+            <TableCell flex={wide ? 0.9 : 0.7}>{m.completed}</TableCell>
+            <TableCell flex={wide ? 1 : 1.3} textStyle={{ color: colors.green, fontWeight: "700" }}>{formatMoney(m.incentive)}</TableCell>
+            <TableCell flex={wide ? 0.8 : 0.6}>{m.external}</TableCell>
           </TableRow>
         ))}
         {/* Dark summary footer — same gradient surface as the sidebar. */}

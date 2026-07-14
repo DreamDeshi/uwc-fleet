@@ -81,7 +81,14 @@ export function TrucksScreen() {
         <>
           <AlertsPanel />
 
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          {/* Narrow stacks: an unconstrained row lets the chips run off-screen. */}
+          <View
+            style={
+              wide
+                ? { flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }
+                : { flexDirection: "column", alignItems: "stretch", gap: 12 }
+            }
+          >
             <SegmentedFilter<Filter>
               value={filter}
               onChange={setFilter}

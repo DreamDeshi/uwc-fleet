@@ -64,9 +64,12 @@ export function PerformanceScreen() {
         </Card>
       ) : (
         <>
-          <Text style={{ fontSize: font.md, color: colors.textMuted, lineHeight: 21 }}>
-            {t("admin.performance.intro")}
-          </Text>
+          {/* Methodology intro is desktop context — phones lead with data. */}
+          {wide && (
+            <Text style={{ fontSize: font.md, color: colors.textMuted, lineHeight: 21 }}>
+              {t("admin.performance.intro")}
+            </Text>
+          )}
 
           <Leaderboard ranked={ranked} />
 
@@ -89,13 +92,16 @@ export function PerformanceScreen() {
 
 // ── Lens section shell ──────────────────────────────────────────────────
 function Lens({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
+  // Phones drop the explainer line under each lens title (mobile ruling:
+  // lead with data); the PC keeps it.
+  const narrow = useLayoutMode() === "narrow";
   return (
     <Card>
       <View style={{ marginBottom: 14 }}>
         <Text style={{ fontSize: font.xs, fontWeight: "800", letterSpacing: 1.2, color: colors.blue, textTransform: "uppercase" }}>
           {title}
         </Text>
-        <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 3 }}>{hint}</Text>
+        {!narrow && <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 3 }}>{hint}</Text>}
       </View>
       {children}
     </Card>
@@ -286,21 +292,24 @@ function LeaderboardCard({ d, rank }: { d: DriverPerformance; rank: number }) {
 // ── Reliability lens — on-time % and completion % ────────────────────────
 function Reliability({ drivers }: { drivers: DriverPerformance[] }) {
   const { t } = useTranslation();
+  const narrow = useLayoutMode() === "narrow";
   const right = { textAlign: "right" as const, fontWeight: "700" as const };
+  // Narrow trims the driver column so "COMPLETION" doesn't wrap mid-word.
+  const driverFlex = narrow ? 1.2 : 1.6;
   return (
     <Lens title={t("admin.performance.reliability")} hint={t("admin.performance.reliabilityHint")}>
       <TableHeader>
-        <TableCell flex={1.6} header>{t("admin.performance.driver")}</TableCell>
+        <TableCell flex={driverFlex} header>{t("admin.performance.driver")}</TableCell>
         <TableCell flex={1} header textStyle={{ textAlign: "right" }}>{t("admin.performance.onTime")}</TableCell>
-        <TableCell flex={1} header textStyle={{ textAlign: "right" }}>{t("admin.performance.completion")}</TableCell>
+        <TableCell flex={1.2} header textStyle={{ textAlign: "right" }}>{t("admin.performance.completion")}</TableCell>
       </TableHeader>
       {drivers.map((d) => (
         <TableRow key={d.id}>
-          <TableCell flex={1.6}><DriverCell d={d} /></TableCell>
+          <TableCell flex={driverFlex}><DriverCell d={d} /></TableCell>
           <TableCell flex={1} textStyle={right}>
             {d.total_completed > 0 ? `${d.on_time_rate.toFixed(0)}%` : "—"}
           </TableCell>
-          <TableCell flex={1} textStyle={right}>
+          <TableCell flex={1.2} textStyle={right}>
             {d.total_completed + d.total_cancelled > 0 ? `${d.completion_rate.toFixed(0)}%` : "—"}
           </TableCell>
         </TableRow>
@@ -312,21 +321,24 @@ function Reliability({ drivers }: { drivers: DriverPerformance[] }) {
 // ── Productivity lens — output volume ────────────────────────────────────
 function Productivity({ drivers }: { drivers: DriverPerformance[] }) {
   const { t } = useTranslation();
+  const narrow = useLayoutMode() === "narrow";
   const right = { textAlign: "right" as const, fontWeight: "700" as const };
+  // Narrow: money column wide enough that "RM 819.00" never wraps.
+  const flexes = narrow ? { driver: 1.1, trips: 0.6, rm: 1.3, km: 0.9 } : { driver: 1.5, trips: 0.8, rm: 1.1, km: 0.9 };
   return (
     <Lens title={t("admin.performance.productivity")} hint={t("admin.performance.productivityHint")}>
       <TableHeader>
-        <TableCell flex={1.5} header>{t("admin.performance.driver")}</TableCell>
-        <TableCell flex={0.8} header textStyle={{ textAlign: "right" }}>{t("admin.performance.tripsAll")}</TableCell>
-        <TableCell flex={1.1} header textStyle={{ textAlign: "right" }}>{t("admin.performance.rmMonth")}</TableCell>
-        <TableCell flex={0.9} header textStyle={{ textAlign: "right" }}>{t("admin.performance.distMonth")}</TableCell>
+        <TableCell flex={flexes.driver} header>{t("admin.performance.driver")}</TableCell>
+        <TableCell flex={flexes.trips} header textStyle={{ textAlign: "right" }}>{t("admin.performance.tripsAll")}</TableCell>
+        <TableCell flex={flexes.rm} header textStyle={{ textAlign: "right" }}>{t("admin.performance.rmMonth")}</TableCell>
+        <TableCell flex={flexes.km} header textStyle={{ textAlign: "right" }}>{t("admin.performance.distMonth")}</TableCell>
       </TableHeader>
       {drivers.map((d) => (
         <TableRow key={d.id}>
-          <TableCell flex={1.5}><DriverCell d={d} /></TableCell>
-          <TableCell flex={0.8} textStyle={right}>{d.total_completed}</TableCell>
-          <TableCell flex={1.1} textStyle={right}>{formatMoney(d.rm_earned_this_month)}</TableCell>
-          <TableCell flex={0.9} textStyle={right}>{`${Math.round(d.distance_km_this_month)} km`}</TableCell>
+          <TableCell flex={flexes.driver}><DriverCell d={d} /></TableCell>
+          <TableCell flex={flexes.trips} textStyle={right}>{d.total_completed}</TableCell>
+          <TableCell flex={flexes.rm} textStyle={right}>{formatMoney(d.rm_earned_this_month)}</TableCell>
+          <TableCell flex={flexes.km} textStyle={right}>{`${Math.round(d.distance_km_this_month)} km`}</TableCell>
         </TableRow>
       ))}
     </Lens>

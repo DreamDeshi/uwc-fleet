@@ -98,9 +98,13 @@ export function IncentivesScreen() {
         ))}
       </View>
 
-      <View style={{ backgroundColor: colors.blueTint, borderLeftWidth: 4, borderLeftColor: colors.blue, borderRadius: radius.md, paddingVertical: 11, paddingHorizontal: 15 }}>
-        <Text style={{ fontSize: font.sm, color: colors.blue, fontWeight: "500" }}>{t("admin.incentives.auditBanner")}</Text>
-      </View>
+      {/* The audit/source-of-truth note is desktop context — phones lead
+          with the data (mobile polish ruling). */}
+      {wide && (
+        <View style={{ backgroundColor: colors.blueTint, borderLeftWidth: 4, borderLeftColor: colors.blue, borderRadius: radius.md, paddingVertical: 11, paddingHorizontal: 15 }}>
+          <Text style={{ fontSize: font.sm, color: colors.blue, fontWeight: "500" }}>{t("admin.incentives.auditBanner")}</Text>
+        </View>
+      )}
 
       {tab === "trucks" && <TruckRatesTab />}
       {tab === "destinations" && <DestinationPointsTab />}
@@ -113,6 +117,7 @@ export function IncentivesScreen() {
 // ── Truck claim rates ─────────────────────────────────────────────────
 function TruckRatesTab() {
   const { t } = useTranslation();
+  const narrow = useLayoutMode() === "narrow";
   const trucks = useTrucks();
   const audit = useRateAudit();
   const [editing, setEditing] = useState<Truck | null>(null);
@@ -130,48 +135,93 @@ function TruckRatesTab() {
 
   return (
     <Card pad={0}>
-      <View style={{ padding: 18, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-        <SectionTitle
-          title={t("admin.incentives.truckRatesTitle")}
-          subtitle={t("admin.dashboard.trucksCount", { count: trucks.data!.length })}
-          right={
-            <Button variant="outline" size="sm" onPress={() => setConfirmingReset(true)}>
+      <View style={{ padding: narrow ? 14 : 18, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+        {narrow ? (
+          // Stacked on phones — the title and the Reset button don't fight
+          // for one row (the crushed-title bug).
+          <View style={{ gap: 10 }}>
+            <SectionTitle
+              title={t("admin.incentives.truckRatesTitle")}
+              subtitle={t("admin.dashboard.trucksCount", { count: trucks.data!.length })}
+            />
+            <Button variant="outline" size="sm" onPress={() => setConfirmingReset(true)} style={{ alignSelf: "flex-start" }}>
               {t("admin.incentives.resetToSpec")}
             </Button>
-          }
-        />
+          </View>
+        ) : (
+          <SectionTitle
+            title={t("admin.incentives.truckRatesTitle")}
+            subtitle={t("admin.dashboard.trucksCount", { count: trucks.data!.length })}
+            right={
+              <Button variant="outline" size="sm" onPress={() => setConfirmingReset(true)}>
+                {t("admin.incentives.resetToSpec")}
+              </Button>
+            }
+          />
+        )}
         {resetResult && <ResetResultBanner result={resetResult} onDismiss={() => setResetResult(null)} />}
       </View>
-      <TableHeader style={{ borderRadius: 0 }}>
-        <TableCell flex={1.6} header>{t("admin.trucks.colTruck")}</TableCell>
-        <TableCell flex={1} header>{t("admin.trucks.colType")}</TableCell>
-        <TableCell flex={0.9} header>{t("admin.incentives.colMaxLoad")}</TableCell>
-        <TableCell flex={1} header>{t("admin.incentives.colWeekdayRate")}</TableCell>
-        <TableCell flex={1} header>{t("admin.incentives.colWeekendRate")}</TableCell>
-        <TableCell flex={1} header>{t("admin.incentives.colDeduction")}</TableCell>
-        <TableCell flex={0.7} header>{""}</TableCell>
-      </TableHeader>
-      {trucks.data!.map((tr) => (
-        <TableRow key={tr.plate}>
-          <TableCell flex={1.6}>
-            <View>
-              <Text style={{ fontSize: font.md, fontWeight: "700", color: colors.text }}>{tr.plate}</Text>
+      {narrow ? (
+        // TABLE→CARD (standing rule): one card per truck, same labeled rate
+        // boxes as the Truck Management cards.
+        <View style={{ padding: 12, gap: 10 }}>
+          {trucks.data!.map((tr) => (
+            <View key={tr.plate} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 12, gap: 10 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={{ fontSize: font.md, fontWeight: "700", color: colors.text }}>{tr.plate}</Text>
+                  <Text style={{ fontSize: font.sm, color: colors.textMuted }}>
+                    {tr.type} · {t("admin.trucks.palletsCount", { count: tr.max_pallets })}
+                  </Text>
+                </View>
+                <Button variant="outline" size="sm" onPress={() => setEditing(tr)}>
+                  {t("admin.consignees.edit")}
+                </Button>
+              </View>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <RateBox label={t("admin.trucks.rateWeekday")} value={formatMoney(tr.entitled_claim_weekday)} fg={colors.blue} bg={colors.blueTint} />
+                <RateBox label={t("admin.trucks.rateWeekend")} value={formatMoney(tr.entitled_claim_offpeak)} fg={colors.amber} bg={colors.yellowTint} />
+                <RateBox label={t("admin.trucks.rateDeduction")} value={t("admin.trucks.pts", { count: tr.daily_deduction_points })} fg={colors.red} bg={colors.redTint} />
+              </View>
               <UpdatedNote entry={auditByPlate.get(tr.plate)} />
               <PendingRatesNote pending={tr.pending_rates} />
             </View>
-          </TableCell>
-          <TableCell flex={1}>{tr.type}</TableCell>
-          <TableCell flex={0.9}>{t("admin.trucks.palletsCount", { count: tr.max_pallets })}</TableCell>
-          <TableCell flex={1}><Pill bg={colors.blueTint} fg={colors.blue}>{formatMoney(tr.entitled_claim_weekday)}</Pill></TableCell>
-          <TableCell flex={1}><Pill bg={colors.yellowTint} fg={colors.amber}>{formatMoney(tr.entitled_claim_offpeak)}</Pill></TableCell>
-          <TableCell flex={1}><Pill bg={colors.redTint} fg={colors.red}>{t("admin.trucks.pts", { count: tr.daily_deduction_points })}</Pill></TableCell>
-          <TableCell flex={0.7}>
-            <Button variant="ghost" size="sm" onPress={() => setEditing(tr)}>
-              {t("admin.consignees.edit")}
-            </Button>
-          </TableCell>
-        </TableRow>
-      ))}
+          ))}
+        </View>
+      ) : (
+        <>
+          <TableHeader style={{ borderRadius: 0 }}>
+            <TableCell flex={1.6} header>{t("admin.trucks.colTruck")}</TableCell>
+            <TableCell flex={1} header>{t("admin.trucks.colType")}</TableCell>
+            <TableCell flex={0.9} header>{t("admin.incentives.colMaxLoad")}</TableCell>
+            <TableCell flex={1} header>{t("admin.incentives.colWeekdayRate")}</TableCell>
+            <TableCell flex={1} header>{t("admin.incentives.colWeekendRate")}</TableCell>
+            <TableCell flex={1} header>{t("admin.incentives.colDeduction")}</TableCell>
+            <TableCell flex={0.7} header>{""}</TableCell>
+          </TableHeader>
+          {trucks.data!.map((tr) => (
+            <TableRow key={tr.plate}>
+              <TableCell flex={1.6}>
+                <View>
+                  <Text style={{ fontSize: font.md, fontWeight: "700", color: colors.text }}>{tr.plate}</Text>
+                  <UpdatedNote entry={auditByPlate.get(tr.plate)} />
+                  <PendingRatesNote pending={tr.pending_rates} />
+                </View>
+              </TableCell>
+              <TableCell flex={1}>{tr.type}</TableCell>
+              <TableCell flex={0.9}>{t("admin.trucks.palletsCount", { count: tr.max_pallets })}</TableCell>
+              <TableCell flex={1}><Pill bg={colors.blueTint} fg={colors.blue}>{formatMoney(tr.entitled_claim_weekday)}</Pill></TableCell>
+              <TableCell flex={1}><Pill bg={colors.yellowTint} fg={colors.amber}>{formatMoney(tr.entitled_claim_offpeak)}</Pill></TableCell>
+              <TableCell flex={1}><Pill bg={colors.redTint} fg={colors.red}>{t("admin.trucks.pts", { count: tr.daily_deduction_points })}</Pill></TableCell>
+              <TableCell flex={0.7}>
+                <Button variant="ghost" size="sm" onPress={() => setEditing(tr)}>
+                  {t("admin.consignees.edit")}
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </>
+      )}
       {editing && <EditTruckModal truck={editing} onClose={() => setEditing(null)} />}
       {confirmingReset && (
         <ResetRatesConfirm
@@ -183,6 +233,19 @@ function TruckRatesTab() {
         />
       )}
     </Card>
+  );
+}
+
+// Labeled tinted rate box — the Truck Management card's rate visual, reused
+// for the narrow claim-rates cards.
+function RateBox({ label, value, fg, bg }: { label: string; value: string; fg: string; bg: string }) {
+  return (
+    <View style={{ flex: 1, backgroundColor: bg, borderRadius: radius.sm, paddingVertical: 8, paddingHorizontal: 4, alignItems: "center" }}>
+      <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "800", letterSpacing: 0.5, color: fg, textTransform: "uppercase" }}>
+        {label}
+      </Text>
+      <Text numberOfLines={1} style={{ fontSize: font.md, fontWeight: "800", color: fg, marginTop: 2 }}>{value}</Text>
+    </View>
   );
 }
 
@@ -315,6 +378,7 @@ function tierOf(points: number) {
 
 function DestinationPointsTab() {
   const { t } = useTranslation();
+  const narrow = useLayoutMode() === "narrow";
   const rates = useDestinationRates();
   const audit = useRateAudit();
   const [editing, setEditing] = useState<DestinationRate | null>(null);
@@ -327,6 +391,51 @@ function DestinationPointsTab() {
 
   if (rates.isLoading) return <Loading />;
   if (rates.isError) return <ErrorState message={t("admin.incentives.ratesLoadError")} onRetry={() => rates.refetch()} />;
+
+  if (narrow) {
+    // TABLE→CARD: name + zone left, points + tier right, Edit on the row.
+    return (
+      <Card pad={0}>
+        <View style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+          <SectionTitle
+            title={t("admin.incentives.destTitle")}
+            subtitle={t("admin.incentives.destSub", { count: rates.data!.length })}
+          />
+        </View>
+        <View style={{ padding: 12, gap: 10 }}>
+          {rates.data!.map((r) => {
+            const ti = tierOf(r.points);
+            return (
+              <View key={r.id} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 12, gap: 8 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={{ fontSize: font.md, fontWeight: "600", color: colors.text }}>{r.location_name}</Text>
+                    <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 1 }}>{r.zone_code ?? "—"}</Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end", gap: 4 }}>
+                    <Text style={{ fontSize: font.lg, fontWeight: "800", color: colors.text }}>
+                      {r.points} <Text style={{ fontSize: font.xs, fontWeight: "600", color: colors.textFaint }}>{t("admin.incentives.colPoints")}</Text>
+                    </Text>
+                    <Pill bg={`${ti.color}1a`} fg={ti.color}>{t(ti.key)}</Pill>
+                  </View>
+                  <Button variant="ghost" size="sm" onPress={() => setEditing(r)}>
+                    {t("admin.consignees.edit")}
+                  </Button>
+                </View>
+                <UpdatedNote entry={auditById.get(r.id)} />
+                {r.pending_points_effective !== null && r.pending_points !== null && (
+                  <Text style={{ fontSize: font.xs, color: colors.amber, fontWeight: "600" }}>
+                    {t("admin.incentives.pendingPoints", { points: r.pending_points, date: r.pending_points_effective })}
+                  </Text>
+                )}
+              </View>
+            );
+          })}
+        </View>
+        {editing && <EditPointsModal rate={editing} onClose={() => setEditing(null)} />}
+      </Card>
+    );
+  }
 
   return (
     <Card pad={0}>
@@ -430,6 +539,7 @@ function EditPointsModal({ rate, onClose }: { rate: DestinationRate; onClose: ()
 // Admin-managed calendar that drives the weekday/off-peak rate decision.
 function HolidaysTab() {
   const { t } = useTranslation();
+  const narrow = useLayoutMode() === "narrow";
   const holidays = useHolidays();
   const [deleting, setDeleting] = useState<PublicHoliday | null>(null);
 
@@ -444,16 +554,47 @@ function HolidaysTab() {
 
   return (
     <View style={{ gap: 16 }}>
-      <View style={{ backgroundColor: colors.yellowTint, borderRadius: radius.md, paddingVertical: 11, paddingHorizontal: 15 }}>
-        <Text style={{ fontSize: font.sm, color: colors.amber, fontWeight: "500" }}>{t("admin.incentives.holidayBanner")}</Text>
-      </View>
+      {/* Off-peak-rate explainer — desktop context, trimmed on phones. */}
+      {!narrow && (
+        <View style={{ backgroundColor: colors.yellowTint, borderRadius: radius.md, paddingVertical: 11, paddingHorizontal: 15 }}>
+          <Text style={{ fontSize: font.sm, color: colors.amber, fontWeight: "500" }}>{t("admin.incentives.holidayBanner")}</Text>
+        </View>
+      )}
       <AddHolidayForm />
       <Card pad={0}>
-        <View style={{ padding: 18, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+        <View style={{ padding: narrow ? 14 : 18, borderBottomWidth: 1, borderBottomColor: colors.border }}>
           <SectionTitle title={t("admin.incentives.holidayCalTitle")} subtitle={t("admin.incentives.holidayCalSub", { count: rows.length })} />
         </View>
         {rows.length === 0 ? (
           <Text style={{ padding: 24, fontSize: font.md, color: colors.textMuted }}>{t("admin.incentives.holidayEmpty")}</Text>
+        ) : narrow ? (
+          // TABLE→CARD: name on top, date · weekday beneath, Remove inline.
+          <View>
+            {rows.map((h, i) => (
+              <View
+                key={h.id}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 10,
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderBottomWidth: i < rows.length - 1 ? 1 : 0,
+                  borderBottomColor: colors.divider,
+                }}
+              >
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={{ fontSize: font.md, fontWeight: "600", color: colors.text }}>{h.name}</Text>
+                  <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 1 }}>
+                    {h.date} · {weekdayName(h.date)}
+                  </Text>
+                </View>
+                <Button variant="ghost" size="sm" onPress={() => setDeleting(h)}>
+                  {t("admin.drivers.remove")}
+                </Button>
+              </View>
+            ))}
+          </View>
         ) : (
           <View>
             <TableHeader style={{ borderRadius: 0 }}>
