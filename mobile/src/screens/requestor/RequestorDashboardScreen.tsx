@@ -9,7 +9,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { BookingFilter, RequestorStackParamList, RequestorTabParamList } from "../../navigation/types";
 import { useAuth } from "../../context/AuthContext";
 import { useTrips } from "../../hooks/queries";
-import { colors, radius, shadow } from "../../theme";
+import { colors, layout, radius, shadow } from "../../theme";
 import { Card } from "../../components/Card";
 import { StatusBadge } from "../../components/StatusBadge";
 import { LoadingState, ErrorState } from "../../components/States";
@@ -71,6 +71,7 @@ export function RequestorDashboardScreen() {
     >
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <View style={styles.centerCol}>
         <View style={styles.headerTop}>
           <View style={{ flex: 1 }}>
             <Text style={styles.greetingTime}>{greeting} 👋</Text>
@@ -85,6 +86,7 @@ export function RequestorDashboardScreen() {
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{initials(user?.name ?? "")}</Text>
           </View>
+        </View>
         </View>
 
       </View>
@@ -161,7 +163,7 @@ export function RequestorDashboardScreen() {
                 <Text style={styles.pendingRoute}>
                   {ORIGIN_LABEL} → {tripDestination(pending)}
                 </Text>
-                <Text style={styles.pendingMeta}>
+                <Text style={styles.pendingMeta} numberOfLines={1}>
                   {pending.route_type?.name} · {formatDate(pending.pickup_datetime)}, {formatTime(pending.pickup_datetime)}
                 </Text>
               </View>
@@ -177,7 +179,7 @@ export function RequestorDashboardScreen() {
         <View style={styles.statRow}>
           <StatBox value={stats.total} label={t("history.all")} color={colors.blue} bg={colors.tintBlue} onPress={() => openBookings("all")} />
           <StatBox value={stats.completed} label={t("history.completed")} color={colors.green} bg={colors.tintGreen} onPress={() => openBookings("completed")} />
-          <StatBox value={stats.pending} label={t("requestor.pendingApproval")} color="#d97706" bg={colors.tintYellow} onPress={() => openBookings("active")} />
+          <StatBox value={stats.pending} label={t("requestor.pendingShort")} color="#d97706" bg={colors.tintYellow} onPress={() => openBookings("active")} />
         </View>
       </View>
 
@@ -221,6 +223,7 @@ function StatBox({ value, label, color, bg, onPress }: { value: number; label: s
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
+  centerCol: { width: "100%", maxWidth: layout.content, alignSelf: "center" },
   header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 44 },
   headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   // Bigger, bolder greeting so the header reads balanced (owner feedback).
@@ -230,12 +233,12 @@ const styles = StyleSheet.create({
   dept: { color: "rgba(255,255,255,0.7)", fontSize: 14 },
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 2, borderColor: colors.yellow, alignItems: "center", justifyContent: "center" },
   avatarText: { color: colors.white, fontSize: 15, fontWeight: "800" },
-  ctaWrap: { paddingHorizontal: 20, marginTop: -28 },
+  ctaWrap: { paddingHorizontal: 20, marginTop: -28, width: "100%", maxWidth: layout.content, alignSelf: "center" },
   cta: { backgroundColor: colors.white, borderRadius: radius.lg, padding: 14, flexDirection: "row", alignItems: "center", gap: 14, ...shadow.floating },
   ctaIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: colors.yellow, alignItems: "center", justifyContent: "center" },
   ctaTitle: { fontSize: 16, fontWeight: "700", color: colors.navy },
   ctaSub: { fontSize: 14, color: colors.textFaint },
-  section: { paddingHorizontal: 16, paddingTop: 12 },
+  section: { paddingHorizontal: 16, paddingTop: 12, width: "100%", maxWidth: layout.content, alignSelf: "center" },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
 
   // Owner call (feedback round 2): the dark navy active card and the dashed

@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { useMyAnalytics } from "../../hooks/queries";
-import { colors, radius, statusColors } from "../../theme";
+import { colors, layout, radius, statusColors } from "../../theme";
 import { Card } from "../../components/Card";
 import { LoadingState, ErrorState } from "../../components/States";
 import { WeeklyEarningsChart, WeekDatum } from "../../components/WeeklyEarningsChart";
@@ -28,8 +28,10 @@ export function AnalyticsScreen() {
 
   const header = (
     <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-      <Text style={styles.title}>{t("analytics.title")}</Text>
-      <Text style={styles.subtitle}>{t("analytics.subtitle")}</Text>
+      <View style={styles.centerCol}>
+        <Text style={styles.title}>{t("analytics.title")}</Text>
+        <Text style={styles.subtitle}>{t("analytics.subtitle")}</Text>
+      </View>
     </View>
   );
 
@@ -199,10 +201,11 @@ export function AnalyticsScreen() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
+  centerCol: { width: "100%", maxWidth: layout.content, alignSelf: "center" },
   header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 20 },
   title: { color: colors.white, fontSize: 20, fontWeight: "800", marginTop: 4 },
   subtitle: { color: "rgba(255,255,255,0.75)", fontSize: 14, marginTop: 2 },
-  section: { paddingHorizontal: 16, paddingTop: 16 },
+  section: { paddingHorizontal: 16, paddingTop: 16, width: "100%", maxWidth: layout.content, alignSelf: "center" },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
   cardSub: { fontSize: 13, color: colors.textMuted, marginBottom: 6 },
 

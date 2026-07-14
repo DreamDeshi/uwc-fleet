@@ -16,7 +16,7 @@ import { AuthStackParamList } from "../../navigation/types";
 import { useAuth } from "../../context/AuthContext";
 import { useDepartments } from "../../hooks/queries";
 import { apiErrorMessage } from "../../services/api";
-import { colors, radius } from "../../theme";
+import { colors, layout, radius } from "../../theme";
 import { Button } from "../../components/Button";
 import { TextField, PressableField } from "../../components/Field";
 import { OptionsModal } from "../../components/OptionsModal";
@@ -265,11 +265,11 @@ const styles = StyleSheet.create({
   header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 20 },
   headerTitle: { color: colors.white, fontSize: 20, fontWeight: "800" },
   headerSub: { color: "rgba(255,255,255,0.7)", fontSize: 14, marginTop: 8 },
-  progressWrap: { paddingHorizontal: 20, paddingTop: 16 },
+  progressWrap: { paddingHorizontal: 20, paddingTop: 16, width: "100%", maxWidth: layout.content, alignSelf: "center" },
   progressTrack: { flexDirection: "row", gap: 6 },
   progressBar: { flex: 1, height: 5, borderRadius: 3 },
   progressLabel: { fontSize: 13, color: colors.textMuted, fontWeight: "600", marginTop: 6 },
-  body: { padding: 20, paddingBottom: 32 },
+  body: { padding: 20, paddingBottom: 32, width: "100%", maxWidth: layout.content, alignSelf: "center" },
   roleLabel: {
     fontSize: 14,
     fontWeight: "700",
@@ -302,7 +302,7 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   noticeText: { flex: 1, fontSize: 13, color: colors.blue, fontWeight: "600" },
-  summary: { backgroundColor: "#f8f9fc", borderRadius: radius.md, padding: 16, marginTop: 4 },
+  summary: { backgroundColor: colors.fieldBg, borderRadius: radius.md, padding: 16, marginTop: 4 },
   summaryRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 5 },
   summaryKey: { fontSize: 14, color: colors.textMuted },
   summaryVal: { fontSize: 14, fontWeight: "600", color: colors.navy },
@@ -323,6 +323,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderTopWidth: 1,
     borderTopColor: colors.borderLight,
+    width: "100%",
+    maxWidth: layout.content,
+    alignSelf: "center",
   },
   loginLinkRow: { flexDirection: "row", justifyContent: "center", marginTop: 14 },
   loginLinkText: { fontSize: 14, color: colors.textMuted },

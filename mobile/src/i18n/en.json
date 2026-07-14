@@ -33,7 +33,7 @@
   },
   "register": {
     "title": "Create Account",
-    "subtitle": "Register to start using UWC Trucking",
+    "subtitle": "Set up your account",
     "stepPersonal": "Personal Details",
     "stepPassword": "Create Password",
     "stepOf": "Step {{current}} of {{total}}",
@@ -62,7 +62,7 @@
     "departmentRequired": "Please select your department.",
     "phoneRequired": "Please enter your phone number.",
     "successTitle": "Account Created!",
-    "pendingMessage": "Your account is awaiting admin approval. You'll be able to sign in once an admin activates it.",
+    "pendingMessage": "Your account is awaiting admin approval — you can sign in once it's activated.",
     "goToLogin": "Back to Sign In"
   },
   "tabs": {
@@ -228,10 +228,11 @@
     "tapToBook": "Tap to book a truck",
     "activeTrip": "Active Trip",
     "pendingApproval": "Pending Approval",
+    "pendingShort": "Pending",
     "awaiting": "Awaiting",
     "recentActivity": "Recent Activity",
     "thisMonth": "This Month",
-    "noBookings": "No bookings yet. Tap above to make your first booking.",
+    "noBookings": "No bookings yet.",
     "track": "Track"
   },
   "analytics": {
@@ -271,7 +272,7 @@
     "stopN": "Stop {{n}}",
     "removeStop": "Remove",
     "searchConsignee": "Type company name, area, or location…",
-    "searchFrom": "Search from 1,561 companies",
+    "searchFrom": "Search companies",
     "addNewConsignee": "+ Add new consignee",
     "addManually": "Can't find company? Add manually",
     "noConsigneeFound": "No consignee found. Add a new one below.",
@@ -289,12 +290,12 @@
     "pickupTime": "Pickup Time",
     "remarks": "Remarks (Optional)",
     "remarksPlaceholder": "Special instructions for this delivery…",
-    "reviewHint": "Please review your booking details before submitting.",
+    "reviewHint": "Review before submitting.",
     "route": "Route",
     "schedule": "Schedule",
     "submit": "Submit Booking",
     "submittedTitle": "Booking Submitted!",
-    "submittedMessage": "Your trip request has been submitted. You'll be notified once a driver is assigned.",
+    "submittedMessage": "You'll be notified once a driver is assigned.",
     "edit": "Edit",
     "selectRouteType": "Please choose a route type.",
     "selectConsignee": "Please add at least one consignee.",
@@ -320,7 +321,7 @@
     "truckConfirmNote": "Admin will confirm truck availability based on your cargo size.",
     "largeLoadWarning": "That's a large load ({{count}} pallets in 4×4 terms). Admin may split it across more than one truck.",
     "documents": "Documents (Optional)",
-    "documentsHint": "Attach your DO or invoice now, or upload it later from the booking details.",
+    "documentsHint": "Attach your DO or invoice now, or add it later.",
     "attachDocument": "Attach document",
     "docUploadPartial": "Booking created, but a document failed to upload. You can add it from the booking details."
   },

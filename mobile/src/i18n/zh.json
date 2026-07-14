@@ -33,7 +33,7 @@
   },
   "register": {
     "title": "创建账户",
-    "subtitle": "注册以开始使用 UWC Trucking",
+    "subtitle": "设置您的账户",
     "stepPersonal": "个人资料",
     "stepPassword": "创建密码",
     "stepOf": "第 {{current}} 步，共 {{total}} 步",
@@ -62,7 +62,7 @@
     "departmentRequired": "请选择您的部门。",
     "phoneRequired": "请输入您的电话号码。",
     "successTitle": "账户已创建！",
-    "pendingMessage": "您的账户正在等待管理员批准。管理员激活后，您即可登录。",
+    "pendingMessage": "您的账户正在等待管理员批准——激活后即可登录。",
     "goToLogin": "返回登录"
   },
   "tabs": {
@@ -228,10 +228,11 @@
     "tapToBook": "点击预订卡车",
     "activeTrip": "进行中的行程",
     "pendingApproval": "等待批准",
+    "pendingShort": "待处理",
     "awaiting": "等待中",
     "recentActivity": "最近活动",
     "thisMonth": "本月",
-    "noBookings": "暂无预订。点击上方进行首次预订。",
+    "noBookings": "暂无预订。",
     "track": "追踪"
   },
   "analytics": {
@@ -271,7 +272,7 @@
     "stopN": "停靠点 {{n}}",
     "removeStop": "移除",
     "searchConsignee": "输入公司名称、地区或地点…",
-    "searchFrom": "从 1,561 家公司中搜索",
+    "searchFrom": "搜索公司",
     "addNewConsignee": "+ 添加新收货人",
     "addManually": "找不到公司？手动添加",
     "noConsigneeFound": "未找到收货人。请在下方添加新的。",
@@ -289,12 +290,12 @@
     "pickupTime": "提货时间",
     "remarks": "备注（可选）",
     "remarksPlaceholder": "此次送货的特殊说明…",
-    "reviewHint": "请在提交前核对您的预订详情。",
+    "reviewHint": "提交前请核对。",
     "route": "路线",
     "schedule": "时间安排",
     "submit": "提交预订",
     "submittedTitle": "预订已提交！",
-    "submittedMessage": "您的行程请求已提交。分配司机后会通知您。",
+    "submittedMessage": "分配司机后会通知您。",
     "edit": "编辑",
     "selectRouteType": "请选择路线类型。",
     "selectConsignee": "请至少添加一个收货人。",
@@ -320,7 +321,7 @@
     "truckConfirmNote": "管理员将根据您的货物尺寸确认卡车可用性。",
     "largeLoadWarning": "这是大批量货物（按 4×4 托盘计 {{count}} 个）。管理员可能会将其分配给多辆卡车。",
     "documents": "文件（可选）",
-    "documentsHint": "现在附上您的送货单或发票，或稍后从预订详情上传。",
+    "documentsHint": "现在附上送货单或发票，或稍后添加。",
     "attachDocument": "附加文件",
     "docUploadPartial": "预订已创建，但文件上传失败。您可以从预订详情中添加。"
   },

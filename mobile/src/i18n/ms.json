@@ -33,7 +33,7 @@
   },
   "register": {
     "title": "Cipta Akaun",
-    "subtitle": "Daftar untuk mula menggunakan UWC Trucking",
+    "subtitle": "Sediakan akaun anda",
     "stepPersonal": "Maklumat Peribadi",
     "stepPassword": "Cipta Kata Laluan",
     "stepOf": "Langkah {{current}} daripada {{total}}",
@@ -62,7 +62,7 @@
     "departmentRequired": "Sila pilih jabatan anda.",
     "phoneRequired": "Sila masukkan nombor telefon anda.",
     "successTitle": "Akaun Dicipta!",
-    "pendingMessage": "Akaun anda menunggu kelulusan admin. Anda boleh log masuk setelah admin mengaktifkannya.",
+    "pendingMessage": "Akaun anda menunggu kelulusan admin — anda boleh log masuk setelah diaktifkan.",
     "goToLogin": "Kembali ke Log Masuk"
   },
   "tabs": {
@@ -228,10 +228,11 @@
     "tapToBook": "Ketik untuk menempah trak",
     "activeTrip": "Perjalanan Aktif",
     "pendingApproval": "Menunggu Kelulusan",
+    "pendingShort": "Menunggu",
     "awaiting": "Menunggu",
     "recentActivity": "Aktiviti Terkini",
     "thisMonth": "Bulan Ini",
-    "noBookings": "Belum ada tempahan. Ketik di atas untuk membuat tempahan pertama anda.",
+    "noBookings": "Belum ada tempahan.",
     "track": "Jejak"
   },
   "analytics": {
@@ -271,7 +272,7 @@
     "stopN": "Hentian {{n}}",
     "removeStop": "Buang",
     "searchConsignee": "Taip nama syarikat, kawasan, atau lokasi…",
-    "searchFrom": "Cari daripada 1,561 syarikat",
+    "searchFrom": "Cari syarikat",
     "addNewConsignee": "+ Tambah penerima baru",
     "addManually": "Tak jumpa syarikat? Tambah secara manual",
     "noConsigneeFound": "Tiada penerima dijumpai. Tambah yang baru di bawah.",
@@ -289,12 +290,12 @@
     "pickupTime": "Masa Ambil",
     "remarks": "Catatan (Pilihan)",
     "remarksPlaceholder": "Arahan khas untuk penghantaran ini…",
-    "reviewHint": "Sila semak butiran tempahan anda sebelum menghantar.",
+    "reviewHint": "Semak sebelum menghantar.",
     "route": "Laluan",
     "schedule": "Jadual",
     "submit": "Hantar Tempahan",
     "submittedTitle": "Tempahan Dihantar!",
-    "submittedMessage": "Permintaan perjalanan anda telah dihantar. Anda akan dimaklumkan setelah pemandu ditugaskan.",
+    "submittedMessage": "Anda akan dimaklumkan setelah pemandu ditugaskan.",
     "edit": "Sunting",
     "selectRouteType": "Sila pilih jenis laluan.",
     "selectConsignee": "Sila tambah sekurang-kurangnya satu penerima.",
@@ -320,7 +321,7 @@
     "truckConfirmNote": "Admin akan mengesahkan ketersediaan trak berdasarkan saiz kargo anda.",
     "largeLoadWarning": "Itu muatan yang besar ({{count}} palet dalam unit 4×4). Admin mungkin membahagikannya kepada lebih daripada satu trak.",
     "documents": "Dokumen (Pilihan)",
-    "documentsHint": "Lampirkan DO atau invois anda sekarang, atau muat naik kemudian dari butiran tempahan.",
+    "documentsHint": "Lampirkan DO atau invois sekarang, atau tambah kemudian.",
     "attachDocument": "Lampirkan dokumen",
     "docUploadPartial": "Tempahan dibuat, tetapi dokumen gagal dimuat naik. Anda boleh tambah dari butiran tempahan."
   },

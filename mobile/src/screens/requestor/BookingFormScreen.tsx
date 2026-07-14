@@ -23,7 +23,7 @@ import {
   CONSIGNEE_SEARCH_MIN,
 } from "../../hooks/queries";
 import { apiErrorMessage } from "../../services/api";
-import { colors, radius, shadow } from "../../theme";
+import { colors, layout, radius, shadow } from "../../theme";
 import { Button } from "../../components/Button";
 import { FieldLabel, PressableField } from "../../components/Field";
 import { OptionsModal } from "../../components/OptionsModal";
@@ -296,6 +296,7 @@ export function BookingFormScreen() {
 
       {/* Step indicator */}
       <View style={styles.stepBar}>
+        <View style={styles.stepBarRow}>
         {STEPS.map((s, i) => (
           <View key={s} style={styles.stepItem}>
             <View
@@ -317,6 +318,7 @@ export function BookingFormScreen() {
             ) : null}
           </View>
         ))}
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
@@ -848,7 +850,8 @@ const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
   header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 12, flexDirection: "row", alignItems: "center", gap: 12 },
   headerTitle: { color: colors.white, fontSize: 18, fontWeight: "800" },
-  stepBar: { flexDirection: "row", backgroundColor: colors.white, paddingHorizontal: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  stepBar: { backgroundColor: colors.white, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  stepBarRow: { flexDirection: "row", paddingHorizontal: 12, width: "100%", maxWidth: layout.content, alignSelf: "center" },
   stepItem: { flex: 1, alignItems: "center", justifyContent: "flex-start" },
   // Bigger dots + a thicker connector so the 1-2-3 progress reads instantly;
   // done = green check, current = blue, upcoming = muted (unchanged logic).
@@ -856,7 +859,7 @@ const styles = StyleSheet.create({
   stepNum: { fontSize: 14, fontWeight: "800", color: colors.textFaint },
   stepLabel: { fontSize: 12, fontWeight: "700", color: colors.textFaint, marginTop: 5, textTransform: "uppercase", letterSpacing: 0.3 },
   stepConn: { position: "absolute", top: 15, right: -50, width: 100, height: 3, borderRadius: 2, backgroundColor: "#e8ecf4", zIndex: -1 },
-  body: { padding: 16, paddingBottom: 24 },
+  body: { padding: 16, paddingBottom: 24, width: "100%", maxWidth: layout.content, alignSelf: "center" },
 
   rebookBtn: {
     flexDirection: "row",
@@ -946,7 +949,7 @@ const styles = StyleSheet.create({
   docAttachName: { flex: 1, fontSize: 14, fontWeight: "600", color: colors.navy },
 
   error: { color: colors.red, fontSize: 14, fontWeight: "600", marginTop: 14 },
-  bottom: { paddingHorizontal: 16, paddingTop: 12, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.borderLight },
+  bottom: { paddingHorizontal: 16, paddingTop: 12, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.borderLight, width: "100%", maxWidth: layout.content, alignSelf: "center" },
 
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center", padding: 24 },
   modalCard: { backgroundColor: colors.white, borderRadius: 24, padding: 28, alignItems: "center", width: "100%" },

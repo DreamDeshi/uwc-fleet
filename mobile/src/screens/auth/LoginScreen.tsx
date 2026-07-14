@@ -16,7 +16,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { AuthStackParamList } from "../../navigation/types";
 import { useAuth } from "../../context/AuthContext";
 import { apiErrorMessage } from "../../services/api";
-import { colors, radius, shadow } from "../../theme";
+import { colors, layout, radius, shadow } from "../../theme";
 import { Logo } from "../../components/Logo";
 import { Button } from "../../components/Button";
 
@@ -175,6 +175,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
+    // Desktop: the form becomes a centred card instead of a full-width sheet.
+    width: "100%",
+    maxWidth: layout.auth,
+    alignSelf: "center",
   },
   label: {
     fontSize: 14,

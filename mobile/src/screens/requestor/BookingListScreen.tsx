@@ -6,7 +6,7 @@ import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RequestorStackParamList, RequestorTabParamList } from "../../navigation/types";
 import { useTrips } from "../../hooks/queries";
-import { colors, radius, shadow } from "../../theme";
+import { colors, layout, radius, shadow } from "../../theme";
 import { Header } from "../../components/Header";
 import { StatusBadge } from "../../components/StatusBadge";
 import { LoadingState, ErrorState, EmptyState } from "../../components/States";
@@ -55,6 +55,7 @@ export function BookingListScreen() {
           </View>
         }
       />
+      <View style={styles.centerCol}>
       <View style={styles.tabs}>
         {(["all", "active", "completed"] as const).map((f) => (
           <TouchableOpacity key={f} style={[styles.tab, filter === f && styles.tabActive]} onPress={() => setFilter(f)}>
@@ -63,6 +64,7 @@ export function BookingListScreen() {
             </Text>
           </TouchableOpacity>
         ))}
+      </View>
       </View>
 
       {isLoading ? (
@@ -73,7 +75,7 @@ export function BookingListScreen() {
         <FlatList
           data={filtered}
           keyExtractor={(tr) => tr.id}
-          contentContainerStyle={{ padding: 16, paddingTop: 4, flexGrow: 1 }}
+          contentContainerStyle={{ padding: 16, paddingTop: 4, flexGrow: 1, width: "100%", maxWidth: layout.content, alignSelf: "center" }}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
           ListEmptyComponent={<EmptyState message={t("history.empty")} icon="cube-outline" />}
           renderItem={({ item }) => (
@@ -110,6 +112,7 @@ function BookingRow({ trip, onPress }: { trip: Trip; onPress: () => void }) {
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
+  centerCol: { width: "100%", maxWidth: layout.content, alignSelf: "center" },
   countPill: { backgroundColor: colors.yellow, paddingHorizontal: 12, paddingVertical: 4, borderRadius: radius.pill },
   countText: { color: colors.navy, fontSize: 13, fontWeight: "800" },
   tabs: { flexDirection: "row", backgroundColor: colors.white, margin: 16, marginBottom: 8, borderRadius: radius.md, padding: 4, ...shadow.card },

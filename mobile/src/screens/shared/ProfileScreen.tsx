@@ -3,7 +3,7 @@ import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "rea
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../context/AuthContext";
-import { colors, radius, shadow } from "../../theme";
+import { colors, layout, radius, shadow } from "../../theme";
 import { Header } from "../../components/Header";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
@@ -39,7 +39,7 @@ export function ProfileScreen() {
   return (
     <View style={styles.fill}>
       <Header title={t("profile.title")} />
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32, width: "100%", maxWidth: layout.content, alignSelf: "center" }}>
         {/* Identity card */}
         <Card style={{ alignItems: "center", paddingVertical: 24 }}>
           <View style={styles.avatar}>
