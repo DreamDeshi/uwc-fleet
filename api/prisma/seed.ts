@@ -53,6 +53,13 @@ interface UwcSpec {
     priority_zones_raw: string;
     notes: string | null;
   }[];
+  // ⚠ PLACEHOLDER extensions (JH/SL) — NOT authoritative spec; see the extensions
+  // _note in docs/uwc-spec.json and the placeholder block in seedZones. Optional
+  // so a spec file without them still seeds.
+  extensions?: {
+    zones: { code: string; coverage_area: string }[];
+    destination_points: { zone_code: string | null; location_name: string; points: number }[];
+  };
 }
 
 const SPEC_PATH = path.resolve(__dirname, "../../docs/uwc-spec.json");
@@ -146,8 +153,30 @@ async function seedZones() {
     await prisma.zone.update({ where: { code: a }, data: { adjacentTo: { connect: { code: b } } } });
     await prisma.zone.update({ where: { code: b }, data: { adjacentTo: { connect: { code: a } } } });
   }
+  // ⚠ PLACEHOLDER / UNCONFIRMED zones (spec.extensions): Johor (JH) & Selangor
+  // (SL). They appear in Mr. Teh's REQUESTOR INTERFACE destination dropdown but
+  // have NO points in the authoritative INTERNAL LORRY RATE sheet — the 8-point
+  // values are a TEST PLACEHOLDER (matching Kuala Lumpur, the long-haul
+  // reference) so JH/SL bookings SCORE during testing instead of throwing
+  // ZONE_POINTS_MISSING. THESE ARE NOT CONFIRMED SPEC VALUES — replace with Mr.
+  // Teh's real values before go-live. No adjacency (out-of-matrix, like KL).
+  const ext = spec.extensions;
+  if (ext) {
+    for (const zone of ext.zones) {
+      await prisma.zone.upsert({
+        where: { code: zone.code },
+        update: { name: zone.coverage_area },
+        create: { code: zone.code, name: zone.coverage_area },
+      });
+    }
+    for (const rate of ext.destination_points) {
+      const exists = await prisma.destinationRate.findFirst({ where: { location_name: rate.location_name } });
+      if (!exists) await prisma.destinationRate.create({ data: rate });
+    }
+  }
   console.log(
-    `Seeded ${spec.zones.length} zones, ${spec.destination_points.length} destination rates, ${ZONE_ADJACENCY.length} adjacency pairs.`
+    `Seeded ${spec.zones.length} zones, ${spec.destination_points.length} destination rates, ${ZONE_ADJACENCY.length} adjacency pairs` +
+      (ext ? `, +${ext.zones.length} PLACEHOLDER extension zones (JH/SL — UNCONFIRMED points).` : ".")
   );
 }
 
