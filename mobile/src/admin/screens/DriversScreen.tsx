@@ -8,8 +8,7 @@ import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { useNavigation } from "@react-navigation/native";
-import type { DrawerNavigationProp } from "@react-navigation/drawer";
-import type { ParamListBase } from "@react-navigation/native";
+import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { useAddLeave, useDeleteLeave, useDrivers, useDriverPerformance, useLeaves } from "../hooks/queries";
 import { colors, font, radius } from "../theme";
 import {
@@ -130,8 +129,15 @@ export function DriversScreen() {
 
 function DriverCard({ driver: d, perf }: { driver: DriverPerf; perf?: DriverPerformance }) {
   const { t } = useTranslation();
-  const navigation = useNavigation<DrawerNavigationProp<ParamListBase>>();
+  const navigation = useNavigation<NavigationProp<ParamListBase>>();
+  const mode = useLayoutMode();
   const meta = STATUS_META[d.status];
+  // Wide: Performance is a drawer sibling. Narrow: it lives in the MORE
+  // tab's stack (bottom-bar shell), pushed with a back button.
+  const openPerformance = () =>
+    mode === "wide"
+      ? navigation.navigate("AdminPerformance")
+      : navigation.navigate("AdminMore", { screen: "AdminPerformance", initial: false });
   return (
     <Card style={{ borderLeftWidth: 5, borderLeftColor: meta.dot }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
@@ -143,7 +149,7 @@ function DriverCard({ driver: d, perf }: { driver: DriverPerf; perf?: DriverPerf
             {d.assigned_truck ? ` · ${d.assigned_truck.plate}` : ""}
           </Text>
         </View>
-        {perf && <ScoreBadge perf={perf} onPress={() => navigation.navigate("AdminPerformance")} />}
+        {perf && <ScoreBadge perf={perf} onPress={openPerformance} />}
         {/* Leave is date-scoped — a badge alongside status, not a status. */}
         {d.on_leave_today && (
           <Pill bg={colors.yellowTint} fg={colors.amber} dot={colors.orange}>

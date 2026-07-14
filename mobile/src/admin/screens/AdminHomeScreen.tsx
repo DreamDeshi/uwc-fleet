@@ -1,24 +1,28 @@
 // Admin landing — split by layout (owner direction, 13 Jul 2026):
-//   NARROW (phone): the greeting home in the driver/requestor design
-//   language — "Good evening, name 👋" header, floating action card,
-//   tinted stat boxes, card lists. A mobile pattern, mobile-only.
+//   NARROW (phone): HOME — the greeting home and the dashboard MERGED into
+//   the one landing screen of the bottom-tab shell (mobile polish pass,
+//   14 Jul 2026): greeting header, approval-queue action card, today's
+//   stats, the attention panel (deep-links to the Trips tab) and the
+//   Phase-3 fleet map. The old "Manage" list moved to the MORE tab; the
+//   hamburger is gone (bottom bar replaced the drawer).
 //   WIDE (PC): the old web admin's dashboard layout instead — dispatch
 //   bar, attention panel, gradient KPI tiles, map + rail, recent trips
-//   (DashboardWide.tsx).
+//   (DashboardWide.tsx). Untouched by the mobile pass.
 // Data comes from the already-ported hooks — read-only, no new logic.
 import React from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { useNavigation } from "@react-navigation/native";
-import type { DrawerNavigationProp } from "@react-navigation/drawer";
-import type { ParamListBase } from "@react-navigation/native";
+import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
-import { useDashboard, usePendingUsers } from "../hooks/queries";
+import { useAttention, useDashboard, useFleetLive, usePendingUsers, useTrucks } from "../hooks/queries";
 import { colors, font, radius, shadow } from "../theme";
 import { initials } from "../lib/format";
 import { useLayoutMode } from "../hooks/useLayoutMode";
+import { AttentionPanel, attentionHasRows } from "../components/AttentionPanel";
+import { AdminFleetMap } from "../platform/map";
 import { DashboardWide } from "./DashboardWide";
 
 function greetingKey(hour: number): "goodMorning" | "goodAfternoon" | "goodEvening" {
@@ -30,28 +34,29 @@ function greetingKey(hour: number): "goodMorning" | "goodAfternoon" | "goodEveni
 export function AdminHomeScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation<DrawerNavigationProp<ParamListBase>>();
+  const navigation = useNavigation<NavigationProp<ParamListBase>>();
   const { user } = useAuth();
   const mode = useLayoutMode();
   const dashboard = useDashboard();
   const pending = usePendingUsers();
+  const attention = useAttention();
+  const trucks = useTrucks();
+  const live = useFleetLive();
 
   const greeting = t(`admin.home.${greetingKey(new Date().getHours())}`);
   const pendingCount = pending.data?.length ?? 0;
   const k = dashboard.data;
-  const refreshing = dashboard.isRefetching || pending.isRefetching;
+  const liveCount = (live.data ?? []).filter((p) => !p.stale).length;
+  const refreshing = dashboard.isRefetching || pending.isRefetching || attention.isRefetching;
   const refetchAll = () => {
     dashboard.refetch();
     pending.refetch();
+    attention.refetch();
+    trucks.refetch();
+    live.refetch();
   };
 
-  const live = [
-    { route: "AdminApprovals", labelKey: "admin.nav.approvals", icon: "person-add-outline" as const, count: pendingCount },
-    { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline" as const },
-    { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" as const },
-  ];
-
-  // PC gets the real dashboard; the greeting home below is mobile-only.
+  // PC gets the real dashboard; the merged home below is mobile-only.
   if (mode === "wide") return <DashboardWide />;
 
   return (
@@ -62,15 +67,6 @@ export function AdminHomeScreen() {
     >
       {/* Greeting header — the requestor/driver home header, admin-flavoured. */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        {mode === "narrow" && (
-          <Pressable
-            onPress={() => navigation.toggleDrawer()}
-            accessibilityLabel="Open menu"
-            style={styles.menuBtn}
-          >
-            <Ionicons name="menu" size={20} color="#fff" />
-          </Pressable>
-        )}
         <View style={styles.headerTop}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.greetingTime}>{greeting} 👋</Text>
@@ -87,12 +83,13 @@ export function AdminHomeScreen() {
       </View>
 
       <View style={styles.content}>
-        {/* Floating action card — the admin's "where to?": the approval queue. */}
+        {/* Floating action card — the admin's "where to?": the approval queue
+            (now inside the MORE tab's stack). */}
         <View style={styles.ctaWrap}>
           <TouchableOpacity
             style={styles.cta}
             activeOpacity={0.9}
-            onPress={() => navigation.navigate("AdminApprovals")}
+            onPress={() => navigation.navigate("AdminMore", { screen: "AdminApprovals", initial: false })}
           >
             <View style={styles.ctaIcon}>
               <Ionicons name="person-add" size={22} color={colors.blue} />
@@ -114,7 +111,7 @@ export function AdminHomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Today — a taste of the dashboard (Phase 3 brings the full thing). */}
+        {/* Today — the dashboard's headline numbers. */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t("admin.home.today")}</Text>
           <View style={styles.statRow}>
@@ -124,28 +121,33 @@ export function AdminHomeScreen() {
           </View>
         </View>
 
-        {/* Manage — the live admin screens as a tappable card list. */}
+        {/* Needs attention — same panel as the PC dashboard; hidden when the
+            fleet is healthy. "Open trip board" jumps to the Trips tab. */}
+        {attentionHasRows(attention.data) && (
+          <View style={styles.section}>
+            <AttentionPanel report={attention.data} onOpenBoard={() => navigation.navigate("AdminTrips")} />
+          </View>
+        )}
+
+        {/* Fleet map — the Phase-3 map, now on the phone home too. */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t("admin.home.manage")}</Text>
-          <View style={styles.listCard}>
-            {live.map((item, i) => (
-              <TouchableOpacity
-                key={item.route}
-                style={[styles.listRow, i < live.length - 1 && styles.divider]}
-                onPress={() => navigation.navigate(item.route)}
-              >
-                <View style={styles.listIcon}>
-                  <Ionicons name={item.icon} size={18} color={colors.blue} />
-                </View>
-                <Text style={styles.listLabel}>{t(item.labelKey)}</Text>
-                {item.count !== undefined && item.count > 0 && (
-                  <View style={styles.countPill}>
-                    <Text style={styles.countPillText}>{item.count}</Text>
-                  </View>
-                )}
-                <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
-              </TouchableOpacity>
-            ))}
+          <Text style={styles.sectionTitle}>{t("admin.dashboard.fleetMap")}</Text>
+          <View style={styles.mapCard}>
+            <View style={styles.mapHead}>
+              <Text style={styles.mapSub}>
+                {liveCount > 0
+                  ? t("admin.dashboard.mapSubLive", { count: liveCount })
+                  : t("admin.dashboard.mapSubAwaiting")}
+              </Text>
+              <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+                <LegendDot color={colors.green} label={t("admin.trucks.statusActive")} />
+                <LegendDot color={colors.blue} label={t("admin.trucks.statusIdle")} />
+                <LegendDot color={colors.orange} label={t("admin.trucks.statusMaintenance")} />
+              </View>
+            </View>
+            <View style={{ padding: 10 }}>
+              <AdminFleetMap trucks={trucks.data ?? []} live={live.data ?? []} height={280} />
+            </View>
           </View>
         </View>
       </View>
@@ -162,18 +164,18 @@ function StatBox({ value, label, color, bg }: { value: number | null; label: str
   );
 }
 
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+      <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: color }} />
+      <Text style={{ fontSize: font.xs, color: colors.textMuted }}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
   header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 44 },
-  menuBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
   headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   // Same greeting scale as the requestor/driver homes (owner-approved balance).
   greetingTime: { color: "rgba(255,255,255,0.85)", fontSize: 16, fontWeight: "700" },
@@ -219,9 +221,23 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 26, fontWeight: "900" },
   statLabel: { fontSize: font.xs, fontWeight: "700", textTransform: "uppercase", marginTop: 3 },
 
-  listCard: { backgroundColor: "#fff", borderRadius: radius.lg, marginTop: 12, ...shadow.card, borderWidth: 1, borderColor: colors.border },
-  listRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
-  divider: { borderBottomWidth: 1, borderBottomColor: colors.divider },
-  listIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.blueTint, alignItems: "center", justifyContent: "center" },
-  listLabel: { flex: 1, fontSize: font.md, fontWeight: "600", color: colors.text },
+  mapCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: 12,
+    overflow: "hidden",
+    ...shadow.card,
+  },
+  mapHead: {
+    paddingTop: 12,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  mapSub: { fontSize: font.sm, color: colors.textMuted, flexShrink: 1 },
 });

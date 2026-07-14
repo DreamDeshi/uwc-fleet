@@ -1,15 +1,9 @@
-// The in-app admin shell: one react-navigation drawer that IS both layouts —
-// a permanent 248px sidebar on wide screens (PC via Expo web), an off-canvas
-// hamburger drawer on phones. Visual identity is the web admin's sidebar:
-// navy gradient, grouped nav, the corporate-yellow active pill.
-//
-// Phase 0 registers only a placeholder home screen; Phase 1+ add the real
-// screens by (1) registering them below and (2) adding their entry to
-// NAV_GROUPS. Drawer items whose route isn't registered yet render disabled,
-// so the sidebar's final shape is already in place.
-//
-// NOT routed from RootNavigator yet — the admin role keeps seeing the
-// web-dashboard note until Phase 1 flips the branch.
+// The in-app admin shell, split by layout (mobile polish pass, 14 Jul 2026):
+//   WIDE (PC): the react-navigation drawer below — permanent 248px sidebar,
+//   the web admin's visual identity (navy gradient, grouped nav, the
+//   corporate-yellow active pill). Untouched by the mobile pass.
+//   NARROW (phone): the bottom tab bar (AdminTabs) — the hamburger drawer
+//   is gone on phones; HOME/TRIPS/FLEET/MORE are thumb-reachable.
 import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import {
@@ -28,6 +22,7 @@ import { formatFullDate } from "../lib/format";
 import { Avatar } from "../components/ui";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { installAdminWebFonts, adminFontScope } from "../platform/webFonts";
+import { AdminTabs } from "./AdminTabs";
 import { AdminHomeScreen } from "../screens/AdminHomeScreen";
 import { ApprovalsScreen } from "../screens/ApprovalsScreen";
 import { ConsigneesScreen } from "../screens/ConsigneesScreen";
@@ -394,13 +389,23 @@ function AdminHeader({ navigation, options, route }: DrawerHeaderProps) {
 }
 
 export function AdminNavigator() {
-  const { t } = useTranslation();
   const mode = useLayoutMode();
   // Web: load Inter (the old admin's typeface) and scope it to this subtree
   // via [data-uwc-admin] — driver/requestor keep the system font. Idempotent.
   installAdminWebFonts();
   return (
     <View style={{ flex: 1 }} {...adminFontScope}>
+      {mode === "wide" ? <AdminDrawerWide /> : <AdminTabs />}
+    </View>
+  );
+}
+
+// The PC shell — only ever mounted on wide, code unchanged from the
+// pre-tab-bar era so the sidebar admin stays pixel-identical.
+function AdminDrawerWide() {
+  const { t } = useTranslation();
+  const mode = useLayoutMode();
+  return (
       <Drawer.Navigator
       // Admins land on the greeting home (the app-native landing shared with
       // the driver/requestor design language); Phase 3 grows it into the
@@ -465,6 +470,5 @@ export function AdminNavigator() {
         options={{ title: t("admin.titles.trips") }}
       />
       </Drawer.Navigator>
-    </View>
   );
 }

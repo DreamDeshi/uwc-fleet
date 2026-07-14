@@ -643,6 +643,16 @@
       "saveLog": "Simpan Rekod"
     },
     "signOut": "Log Keluar",
+    "tabs": {
+      "home": "Utama",
+      "trips": "Trip",
+      "fleet": "Armada",
+      "more": "Lagi"
+    },
+    "fleet": {
+      "drivers": "Pemandu",
+      "trucks": "Lori"
+    },
     "subtitles": {
       "dashboard": "Gambaran armada langsung",
       "trips": "Hantar & pantau tempahan",
@@ -688,6 +698,8 @@
     },
     "titles": {
       "dashboard": "Papan Pemuka",
+      "fleet": "Pengurusan Armada",
+      "more": "Lagi",
       "trips": "Pengurusan Trip",
       "drivers": "Pengurusan Pemandu",
       "performance": "Prestasi Pemandu",

@@ -655,6 +655,16 @@
       "fuelSub_other": "Total spend {{total}} across {{count}} trucks"
     },
     "signOut": "Sign Out",
+    "tabs": {
+      "home": "Home",
+      "trips": "Trips",
+      "fleet": "Fleet",
+      "more": "More"
+    },
+    "fleet": {
+      "drivers": "Drivers",
+      "trucks": "Trucks"
+    },
     "subtitles": {
       "dashboard": "Live fleet overview",
       "trips": "Dispatch & monitor bookings",
@@ -700,6 +710,8 @@
     },
     "titles": {
       "dashboard": "Dashboard",
+      "fleet": "Fleet Management",
+      "more": "More",
       "trips": "Trip Management",
       "drivers": "Driver Management",
       "performance": "Driver Performance",

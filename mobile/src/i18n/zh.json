@@ -643,6 +643,16 @@
       "saveLog": "保存记录"
     },
     "signOut": "退出登录",
+    "tabs": {
+      "home": "首页",
+      "trips": "行程",
+      "fleet": "车队",
+      "more": "更多"
+    },
+    "fleet": {
+      "drivers": "司机",
+      "trucks": "卡车"
+    },
     "subtitles": {
       "dashboard": "实时车队概览",
       "trips": "调度与监控预订",
@@ -688,6 +698,8 @@
     },
     "titles": {
       "dashboard": "仪表板",
+      "fleet": "车队管理",
+      "more": "更多",
       "trips": "行程管理",
       "drivers": "司机管理",
       "performance": "司机绩效",
