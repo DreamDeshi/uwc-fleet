@@ -66,10 +66,21 @@ On PowerShell, set the variable first: `$env:E2E_ALLOW_PROD = "1"; npm test`
 
 ## What's covered
 
+This suite is deliberately **UI-focused**. The API-level behaviours it used to
+drive through a browser (auto-dispatch failure, creation validation, the
+operating-window cutoff, the scheduling-conflict guard, the money/finalize path)
+are now covered faster and more thoroughly by the **integration tier**
+(`api/tests-integration/`, run with `npm run test:integration` — see
+[`../TESTING.md`](../TESTING.md)). The redundant API-only browser specs were
+removed; what remains is genuine per-role UI and visual coverage.
+
 **Requestor (mobile web)** — `tests/requestor.spec.ts`
 1. Login with correct credentials → lands on home.
 2. Login with the wrong password → shows the error.
 3. Book a single-stop delivery → it appears in history as **Pending**.
+   *(Pinned to a phone viewport — at ≥1024px the requestor mounts its desktop
+   sidebar shell; the booking flow is identical, so we target the stable phone
+   layout. The desktop shell is exercised visually by `screenshots.spec.ts`.)*
 
 **Admin (dashboard)** — `tests/admin.spec.ts`
 4. Login → sees the dashboard.
@@ -78,10 +89,16 @@ On PowerShell, set the variable first: `$env:E2E_ALLOW_PROD = "1"; npm test`
 7. With auto mode on, a new booking is auto-dispatched → **Assigned**.
 8. Toggle dispatch mode between manual and auto.
 
+**Admin scheduling-conflict override** — `tests/conflict.spec.ts`
+9. Assigning a scheduled driver shows the inline **⚠ Scheduling conflict**
+   warning; **Assign anyway** re-submits with force and the trip is assigned.
+
 **Driver (mobile web)** — `tests/driver.spec.ts`
-9. Login → home shows the assigned trip.
-10. Start trip → status becomes **in progress**.
-11. Upload a DO/POD photo and mark delivered → trip **completed**, incentive shown.
+10. Login → home shows the assigned trip.
+11. Start trip → status becomes **in progress**.
+12. Upload a DO/POD photo and mark delivered → trip **completed**, incentive shown.
+
+**Admin rate reset** — `tests/rateReset.spec.ts` · **Visual sweep** — `tests/screenshots.spec.ts`.
 
 ## Database isolation — run the local API against the Docker test DB
 

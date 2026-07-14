@@ -10,8 +10,21 @@ import { mobileLogin } from "../helpers/ui";
  *  1. Login with correct credentials → lands on home.
  *  2. Login with wrong password → shows error.
  *  3. Book a single-stop delivery → appears in history as Pending.
+ *
+ * VIEWPORT: the shared config forces 1440×900 so the ADMIN app renders its full
+ * dashboard. At ≥1024px the requestor app now mounts its DESKTOP SHELL (a left
+ * sidebar drawer, `useWide` / RequestorDrawer) instead of the bottom tabs — so
+ * "Bookings" becomes a sidebar item and the booking form reflows into columns.
+ * The underlying booking FLOW is identical in both layouts (same 3-step wizard,
+ * same strings — BookingFormScreen's `wide` flag only changes layout, not copy),
+ * and the phone layout is the app's stable, untouched primary form factor. We
+ * therefore pin this flow spec to a PHONE viewport so its text/placeholder
+ * selectors stay valid; the desktop shell's wide layout is exercised visually by
+ * screenshots.spec.
  */
 test.describe("Requestor (mobile web)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
   test.beforeEach(async () => {
     await resetState();
   });

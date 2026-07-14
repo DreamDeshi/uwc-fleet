@@ -1,83 +1,26 @@
 import { test, expect } from "@playwright/test";
 import { ADMIN, REQUESTOR, DRIVER } from "../helpers/accounts";
-import { approveTrip, driverIdentity, getTrip, login, setDispatchMode } from "../helpers/api";
+import { approveTrip, driverIdentity, getTrip, login } from "../helpers/api";
 import { seedPendingTrip } from "../helpers/seed";
 import { resetState } from "../helpers/reset";
 import { adminLogin, gotoAdminTrips } from "../helpers/ui";
 
 /**
- * SCHEDULING-CONFLICT CHECK AT ASSIGNMENT (roadmap #2).
+ * SCHEDULING-CONFLICT — the admin UI override flow.
  *
- * These exercise the server-side conflict guard end-to-end: the 409
- * SCHEDULING_CONFLICT block, the force override ("Assign anyway"), and the
- * auto-dispatch skip. Some drive the backend through the API (the suite's
- * pattern for trip-state setup/assertions); the last one drives the FULL admin
- * UI flow.
- *
- * Phase 1 aligned the picker to the one-active model: a driver is hidden from
- * the dispatch picker ONLY while a trip is actually in_progress — an
- * assigned-but-not-started driver stays selectable. That makes the manual
- * "Assign anyway" override reachable by clicking through the UI (see the last
- * test), which previously could only be proven at the API level.
+ * The server-side conflict guard (409 SCHEDULING_CONFLICT, the force override,
+ * the audit row, and the auto-dispatch skip) is now covered end-to-end at the
+ * integration tier (api/tests-integration/guardLadder.test.ts +
+ * concurrency.test.ts) — faster and more thorough than driving it through a
+ * browser. What remains here is the one thing only the browser can prove: the
+ * admin dispatch panel surfaces the inline "⚠ Scheduling conflict" warning and
+ * the "Assign anyway" button re-submits with force.
  */
-test.describe("Scheduling-conflict check at assignment (roadmap #2)", () => {
+test.describe("Scheduling-conflict — admin UI override", () => {
   let adminToken: string;
 
   test.beforeEach(async () => {
     adminToken = (await resetState()).adminToken;
-  });
-
-  test("manual assign is blocked by a scheduling conflict, then succeeds with force", async () => {
-    const requestor = await login(REQUESTOR);
-    const testDriver = await driverIdentity(DRIVER);
-
-    // Trip 1 → assign the PLX 2406 driver (pickup ~now+1h): the driver+truck are now committed.
-    const trip1 = await seedPendingTrip(requestor.accessToken, ["P2"]);
-    await approveTrip(adminToken, trip1.id, { driver_id: testDriver.id, truck_plate: testDriver.plate });
-
-    // Trip 2 in the same window → assigning the test driver clashes within the buffer.
-    const trip2 = await seedPendingTrip(requestor.accessToken, ["P2"]);
-
-    // Without force → blocked with SCHEDULING_CONFLICT; trip stays pending.
-    await expect(
-      approveTrip(adminToken, trip2.id, { driver_id: testDriver.id, truck_plate: testDriver.plate })
-    ).rejects.toThrow(/SCHEDULING_CONFLICT/);
-    expect((await getTrip(adminToken, trip2.id)).status).toBe("pending");
-
-    // With force ("Assign anyway") → the override proceeds; trip2 is assigned.
-    await approveTrip(adminToken, trip2.id, {
-      driver_id: testDriver.id,
-      truck_plate: testDriver.plate,
-      force: true,
-    });
-    expect((await getTrip(adminToken, trip2.id)).status).toBe("assigned");
-  });
-
-  test("auto-dispatch skips a busy/conflicted driver and assigns the next eligible one", async () => {
-    const requestor = await login(REQUESTOR);
-    const testDriver = await driverIdentity(DRIVER);
-
-    // Commit the test driver (the PRIMARY A-zone driver) to an A2 (Ipoh) trip in this window.
-    const first = await seedPendingTrip(requestor.accessToken, ["A2"]);
-    await approveTrip(adminToken, first.id, { driver_id: testDriver.id, truck_plate: testDriver.plate });
-
-    await setDispatchMode(adminToken, "auto");
-    try {
-      // A new A2 booking is auto-dispatched on creation. The engine must NOT pick
-      // the test driver (busy + conflicting) — it falls to an A1/A2 backup (PND 1888, or
-      // PRH 5292 for <2 pallets). If no backup fits it stays pending, but it must
-      // never double-book the test driver.
-      const second = await seedPendingTrip(requestor.accessToken, ["A2"]);
-      const after = await getTrip(adminToken, second.id);
-      expect(after.driver_id, "must not auto-assign the busy/conflicted driver").not.toBe(testDriver.id);
-      if (after.status === "assigned") {
-        expect(after.truck_plate).not.toBe(testDriver.plate);
-      } else {
-        expect(after.status).toBe("pending");
-      }
-    } finally {
-      await setDispatchMode(adminToken, "manual");
-    }
   });
 
   test("UI: assigning a scheduled driver shows the ⚠ conflict warning, then 'Assign anyway' succeeds", async ({
