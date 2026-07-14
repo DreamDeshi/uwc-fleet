@@ -134,7 +134,7 @@ function ScoreBadge({ score, completed }: { score: number; completed: number }) 
     <View style={{ backgroundColor: c.bg, paddingVertical: 3, paddingHorizontal: 9, borderRadius: radius.pill, alignSelf: "flex-start" }}>
       <Text style={{ color: c.fg, fontSize: font.sm, fontWeight: "800" }}>
         {score.toFixed(1)}
-        <Text style={{ fontSize: 10.5, fontWeight: "700", opacity: 0.7 }}>/100</Text>
+        <Text style={{ fontSize: 12, fontWeight: "700", opacity: 0.7 }}>/100</Text>
       </Text>
     </View>
   );

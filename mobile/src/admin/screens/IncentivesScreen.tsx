@@ -21,7 +21,7 @@ import {
   useUpdateTruckRates,
 } from "../hooks/queries";
 import { colors, font, gradients, radius } from "../theme";
-import { Button, Card, ErrorState, Input, Loading, Modal, Pill, SectionTitle, TableCell, TableHeader, TableRow } from "../components/ui";
+import { Button, Card, ChipGrid, ErrorState, Input, Loading, Modal, Pill, SectionTitle, TableCell, TableHeader, TableRow } from "../components/ui";
 import { DateField } from "../platform/datePicker";
 import { formatDate, formatMoney } from "../lib/format";
 import { apiErrorMessage } from "../services/api";
@@ -79,24 +79,29 @@ export function IncentivesScreen() {
       contentContainerStyle={wide ? { paddingVertical: 24, paddingHorizontal: 28, gap: 16 } : { padding: 14, gap: 16 }}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-        {tabs.map(([v, label]) => (
-          <Pressable
-            key={v}
-            onPress={() => setTab(v)}
-            style={{
-              paddingVertical: 9,
-              paddingHorizontal: 18,
-              borderRadius: radius.pill,
-              borderWidth: 1.5,
-              borderColor: tab === v ? colors.blue : colors.border,
-              backgroundColor: tab === v ? colors.blue : colors.card,
-            }}
-          >
-            <Text style={{ color: tab === v ? "#fff" : colors.textMuted, fontWeight: "700", fontSize: font.md }}>{label}</Text>
-          </Pressable>
-        ))}
-      </View>
+      {/* Narrow: even 2-col grid (no ragged wrap). Wide: the old-admin pill row. */}
+      {wide ? (
+        <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+          {tabs.map(([v, label]) => (
+            <Pressable
+              key={v}
+              onPress={() => setTab(v)}
+              style={{
+                paddingVertical: 9,
+                paddingHorizontal: 18,
+                borderRadius: radius.pill,
+                borderWidth: 1.5,
+                borderColor: tab === v ? colors.blue : colors.border,
+                backgroundColor: tab === v ? colors.blue : colors.card,
+              }}
+            >
+              <Text style={{ color: tab === v ? "#fff" : colors.textMuted, fontWeight: "700", fontSize: font.md }}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : (
+        <ChipGrid options={tabs.map(([v, label]) => ({ value: v, label }))} value={tab} onChange={setTab} columns={2} />
+      )}
 
       {tab === "trucks" && <TruckRatesTab />}
       {tab === "destinations" && <DestinationPointsTab />}
@@ -233,7 +238,7 @@ function TruckRatesTab() {
 function RateBox({ label, value, fg, bg }: { label: string; value: string; fg: string; bg: string }) {
   return (
     <View style={{ flex: 1, backgroundColor: bg, borderRadius: radius.sm, paddingVertical: 8, paddingHorizontal: 4, alignItems: "center" }}>
-      <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "800", letterSpacing: 0.5, color: fg, textTransform: "uppercase" }}>
+      <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "800", letterSpacing: 0.5, color: fg, textTransform: "uppercase" }}>
         {label}
       </Text>
       <Text numberOfLines={1} style={{ fontSize: font.md, fontWeight: "800", color: fg, marginTop: 2 }}>{value}</Text>

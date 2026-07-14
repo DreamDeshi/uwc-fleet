@@ -203,7 +203,7 @@ function Stat({ label, value, divider }: { label: string; value: string; divider
     <View style={{ flex: 1, paddingVertical: 10, paddingHorizontal: 8, borderLeftWidth: divider ? 1 : 0, borderLeftColor: colors.divider, alignItems: "center" }}>
       <Text numberOfLines={1} style={{ fontSize: 15, fontWeight: "700", color: colors.text }}>{value}</Text>
       {/* Two-line wrap beats "TRIPS (TOT…" on phones. */}
-      <Text numberOfLines={2} style={{ fontSize: 10.5, color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2, textAlign: "center" }}>
+      <Text numberOfLines={2} style={{ fontSize: 12, color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2, textAlign: "center" }}>
         {label}
       </Text>
     </View>
@@ -226,7 +226,7 @@ function ScoreBadge({ perf, onPress }: { perf: DriverPerformance; onPress: () =>
     <Pressable onPress={onPress} style={{ backgroundColor: c.bg, paddingVertical: 4, paddingHorizontal: 10, borderRadius: radius.pill }}>
       <Text style={{ color: c.fg, fontSize: font.sm, fontWeight: "800" }}>
         {perf.total_score.toFixed(1)}
-        <Text style={{ fontSize: 10.5, fontWeight: "700", opacity: 0.75 }}>/100</Text>
+        <Text style={{ fontSize: 12, fontWeight: "700", opacity: 0.75 }}>/100</Text>
       </Text>
     </Pressable>
   );

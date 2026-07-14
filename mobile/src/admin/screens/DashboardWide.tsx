@@ -5,9 +5,10 @@
 // → fleet map + alerts/load rail → recent-trips table → drivers footnote.
 // The map area renders the Phase-3 placeholder until the real map lands.
 import React from "react";
-import { RefreshControl, ScrollView, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
+import { useNavigation, type NavigationProp, type ParamListBase } from "@react-navigation/native";
 import {
   useAttention,
   useDashboard,
@@ -40,6 +41,8 @@ import type { Truck } from "../types";
 
 export function DashboardWide() {
   const { t } = useTranslation();
+  const navigation = useNavigation<NavigationProp<ParamListBase>>();
+  const openTrips = () => navigation.navigate("AdminTrips");
   const dash = useDashboard();
   const trucks = useTrucks();
   // Only the "recent trips" strip reads this — a small window is plenty.
@@ -97,7 +100,7 @@ export function DashboardWide() {
         </View>
       </Card>
 
-      <AttentionPanel report={attention.data} />
+      <AttentionPanel report={attention.data} onOpenBoard={openTrips} />
 
       {/* KPI cards — the gradient tiles from the web admin. */}
       <View style={{ flexDirection: "row", gap: 16 }}>
@@ -246,19 +249,18 @@ export function DashboardWide() {
             title={t("admin.dashboard.recentTrips")}
             subtitle={t("admin.dashboard.recentSub")}
             right={
-              // Activates when the trip board lands (Phase 4); dimmed until then.
-              <View
+              <Pressable
+                onPress={openTrips}
                 style={{
                   borderWidth: 1.5,
                   borderColor: colors.blue,
                   borderRadius: radius.pill,
                   paddingVertical: 7,
                   paddingHorizontal: 16,
-                  opacity: 0.45,
                 }}
               >
                 <Text style={{ color: colors.blue, fontWeight: "700", fontSize: font.md }}>{t("admin.dashboard.viewAll")}</Text>
-              </View>
+              </Pressable>
             }
           />
         </View>

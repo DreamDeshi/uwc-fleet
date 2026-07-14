@@ -184,7 +184,7 @@ function HeroStat({ value, label, color }: { value: number | null; label: string
   return (
     <View style={{ flex: 1, alignItems: "center" }}>
       <Text style={{ fontSize: 24, fontWeight: "900", color }}>{value ?? "—"}</Text>
-      <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textMuted, textAlign: "center", marginTop: 2 }}>
+      <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textMuted, textAlign: "center", marginTop: 2 }}>
         {label}
       </Text>
     </View>

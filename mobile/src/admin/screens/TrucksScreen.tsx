@@ -337,7 +337,7 @@ function Mini({ label, value, divider, wrap }: { label: string; value: string; d
       <Text numberOfLines={wrap ? 3 : 1} style={{ fontSize: font.md, fontWeight: "700", color: colors.text, textAlign: "center" }}>
         {value}
       </Text>
-      <Text numberOfLines={1} style={{ fontSize: 11, color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>
+      <Text numberOfLines={1} style={{ fontSize: 12, color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>
         {label}
       </Text>
     </View>
@@ -347,7 +347,7 @@ function Mini({ label, value, divider, wrap }: { label: string; value: string; d
 function RatePill({ label, value, color, bg }: { label: string; value: string; color: string; bg: string }) {
   return (
     <View style={{ flex: 1, backgroundColor: bg, borderRadius: radius.sm, paddingVertical: 8, paddingHorizontal: 10, alignItems: "center" }}>
-      <Text numberOfLines={1} style={{ fontSize: 11, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.3 }}>
+      <Text numberOfLines={1} style={{ fontSize: 12, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.3 }}>
         {label}
       </Text>
       <Text numberOfLines={1} style={{ fontSize: font.md, fontWeight: "700", color, marginTop: 2 }}>
