@@ -11,7 +11,9 @@
     "gen:spec": "node scripts/gen-spec.mjs",
     "start": "node dist/index.js",
     "seed": "tsx prisma/seed.ts",
+    "seed:test": "tsx prisma/seed-test.ts",
     "test": "vitest run",
+    "test:integration": "vitest run -c vitest.integration.config.ts",
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio"
@@ -39,7 +41,9 @@
     "@types/multer": "^2.1.0",
     "@types/node": "^20.16.0",
     "@types/swagger-ui-express": "^4.1.6",
+    "@types/supertest": "^6.0.2",
     "prisma": "^5.20.0",
+    "supertest": "^7.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"

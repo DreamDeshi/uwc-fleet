@@ -1,0 +1,35 @@
+# Local PostgreSQL for the UWC Fleet test suite (integration + local e2e).
+#
+# This is a THROWAWAY database that tests may freely create / delete / mutate.
+# It exists ONLY so destructive tests never touch the live Railway prod DB.
+# Credentials are intentionally trivial (uwc/uwc) — it is local-only, never
+# exposed, and holds nothing but disposable test fixtures.
+#
+# Data lives in tmpfs (RAM), so it is ephemeral and fast: stopping the
+# container discards everything. `npm run test:db:up` re-migrates + re-seeds a
+# fresh DB every time, which is exactly what we want for deterministic tests.
+#
+# One command to start:  npm run test:db:up      (from the repo root)
+# Tear it down:          npm run test:db:down
+services:
+  db:
+    image: postgres:16-alpine # matches Railway's PostgreSQL 16
+    container_name: uwc-test-db
+    environment:
+      POSTGRES_USER: uwc
+      POSTGRES_PASSWORD: uwc
+      POSTGRES_DB: uwc_test
+    ports:
+      # Host port 55432 (not 5432) so this never clashes with any local
+      # Postgres a developer already runs. Connect from the host via
+      # localhost:55432.
+      - "55432:5432"
+    tmpfs:
+      # RAM-backed storage — ephemeral by design and noticeably faster than a
+      # named volume for the churn a test run produces.
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uwc -d uwc_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

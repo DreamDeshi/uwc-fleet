@@ -10,7 +10,13 @@
   ],
   "scripts": {
     "dev:api": "npm run dev --workspace=api",
-    "seed": "npm run seed --workspace=api"
+    "seed": "npm run seed --workspace=api",
+    "test:db:up": "node scripts/test-db.mjs up",
+    "test:db:reset": "node scripts/test-db.mjs reset",
+    "test:db:seed": "node scripts/test-db.mjs seed",
+    "test:db:down": "node scripts/test-db.mjs down",
+    "test:db:api": "node scripts/test-db.mjs api",
+    "test:integration": "npm run test:integration --workspace=api"
   },
   "license": "ISC"
 }

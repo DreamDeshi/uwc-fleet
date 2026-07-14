@@ -83,6 +83,27 @@ On PowerShell, set the variable first: `$env:E2E_ALLOW_PROD = "1"; npm test`
 10. Start trip → status becomes **in progress**.
 11. Upload a DO/POD photo and mark delivered → trip **completed**, incentive shown.
 
+## Database isolation — run the local API against the Docker test DB
+
+> ⚠ **`E2E_ALLOW_PROD` only guards the front-end URLs, not the database.** A
+> locally-run API reads `api/.env` → `DATABASE_URL` → the **live Railway prod
+> DB**, so "local" targets still mutate production unless you repoint the API.
+
+The sanctioned way to run this suite locally is against the throwaway Docker
+Postgres (see the repo-root [`TESTING.md`](../TESTING.md)):
+
+```bash
+npm run test:db:up      # start + migrate + seed the Docker test DB (repo root)
+npm run test:db:api     # run the API dev server pointed at the Docker test DB
+# …start the admin + mobile web dev servers as usual, then:
+cd e2e && npm test
+```
+
+`test:db:api` starts the same API dev server but with `DATABASE_URL` pointed at
+`localhost:55432` (the Docker DB), so every trip the suite creates/cancels lands
+in the disposable test database, never prod. When you're done:
+`npm run test:db:down`.
+
 ## How isolation works
 
 The apps share one backend, so the suite **does not** rely on test ordering.
