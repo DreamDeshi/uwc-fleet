@@ -67,7 +67,14 @@ test.describe("Requestor (mobile web)", () => {
     await page.getByText(routeType.name, { exact: true }).click();
 
     await page.getByPlaceholder("Type company name, area, or location…").fill(consignee.term);
-    const result = page.getByText(consignee.display, { exact: true });
+    // The same consignee can appear twice on this screen: once in the "Recent
+    // consignees" strip (populated from the requestor's past trips — this account
+    // books repeatedly across the suite) and once in the search-results list.
+    // Both render the full name (names ≤ RECENT_CHIP_MAX_CHARS aren't truncated),
+    // so an unscoped exact-text match is a strict-mode violation. The results row
+    // renders AFTER the recent strip, so .last() targets the actual search result
+    // we intend to click. (screenshots.spec guards the same locator with .first().)
+    const result = page.getByText(consignee.display, { exact: true }).last();
     await expect(result).toBeVisible();
     await result.click();
 

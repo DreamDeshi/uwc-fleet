@@ -109,7 +109,7 @@ test("DRIVER — all screens", async ({ page }) => {
 
   // Home / dashboard (shows the seeded assignment).
   await mobileLogin(page, DRIVER);
-  await shot(page, "driver-home", "Today's Assignment");
+  await shot(page, "driver-home", "Assignments");
 
   // Trips tab.
   await tapTab(page, "Trips");

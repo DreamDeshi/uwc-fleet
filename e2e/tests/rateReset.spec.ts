@@ -56,7 +56,8 @@ test.describe("Reset truck rates to UWC spec defaults (next-day cutoff)", () => 
       // "Truck Claim Rates" is the default tab. The PLX row still shows the
       // LIVE spec value, plus the staged-edit note with the DRIFTED value.
       const plxRow = page.locator("tr", { hasText: PLX });
-      await expect(plxRow.getByText(`RM ${SPEC_WEEKDAY}`, { exact: true })).toBeVisible();
+      // Rates render 2-dp (formatMoney): the live weekday cell shows "RM 11.00".
+      await expect(plxRow.getByText(`RM ${SPEC_WEEKDAY}.00`, { exact: true })).toBeVisible();
       await expect(plxRow.getByText(new RegExp(`New rates weekday RM ${DRIFT_WEEKDAY}.*take effect .*\\(MYT\\)`))).toBeVisible();
 
       // Reset → confirm dialog (which spells out the next-day rule) → Reset.

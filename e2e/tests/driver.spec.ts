@@ -27,7 +27,9 @@ test.describe("Driver (mobile web)", () => {
 
     await mobileLogin(page, DRIVER);
 
-    await expect(page.getByText("Today's Assignment")).toBeVisible();
+    // The driver home's assignment section title is i18n key driver.todaysAssignments,
+    // which renders as "Assignments" (the singular "Today's Assignment" key is dead).
+    await expect(page.getByText("Assignments", { exact: true })).toBeVisible();
     // The assignment card shows the assigned status (uppercased by StatusBadge)
     // and the PLX 2406 driver's truck.
     await expect(page.getByText("ASSIGNED").first()).toBeVisible();
@@ -38,7 +40,9 @@ test.describe("Driver (mobile web)", () => {
     const trip = await seedAssignedTrip(adminToken);
 
     await mobileLogin(page, DRIVER);
-    await expect(page.getByText("Today's Assignment")).toBeVisible();
+    // The driver home's assignment section title is i18n key driver.todaysAssignments,
+    // which renders as "Assignments" (the singular "Today's Assignment" key is dead).
+    await expect(page.getByText("Assignments", { exact: true })).toBeVisible();
 
     // Assignment card → Trip Details → Start Trip.
     await page.getByText("View Trip Details", { exact: true }).click();
