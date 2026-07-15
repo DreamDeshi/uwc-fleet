@@ -3,6 +3,7 @@ import {
   claimPendingTrip,
   rejectPendingTrip,
   cancelBookedTrip,
+  abortActiveTrip,
   outsourcePendingTrip,
   type TripExitClient,
   type TripClaimClient,
@@ -95,6 +96,32 @@ describe("cancelBookedTrip — status-guarded cancel", () => {
       expect(await cancelBookedTrip(client, "t1")).toBe(false);
       expect(row.status).toBe(status);
     }
+  });
+});
+
+describe("abortActiveTrip — status-guarded admin de-orphan (in_progress only)", () => {
+  it("aborts an in_progress trip → cancelled (frees the truck)", async () => {
+    const { row, client } = fakeTripStore({ status: "in_progress", driver_id: "d1", truck_plate: "PLX 2406" });
+    expect(await abortActiveTrip(client, "t1")).toBe(true);
+    expect(row.status).toBe("cancelled");
+    // Money fields are deliberately untouched — an abort never finalizes pay.
+    expect(row.incentive_earned).toBeUndefined();
+  });
+
+  it("never aborts a trip that is not in_progress (pending/approved/assigned/completed/cancelled)", async () => {
+    for (const status of ["pending", "approved", "assigned", "completed", "cancelled"]) {
+      const { row, client } = fakeTripStore({ status });
+      expect(await abortActiveTrip(client, "t1")).toBe(false);
+      expect(row.status).toBe(status);
+    }
+  });
+
+  it("loses cleanly to a trip that JUST completed — never cancels a finalized (paid) trip", async () => {
+    // Model the last-stop delivery landing first: the row is already completed.
+    const { row, client } = fakeTripStore({ status: "completed", incentive_earned: 55 });
+    expect(await abortActiveTrip(client, "t1")).toBe(false);
+    expect(row.status).toBe("completed");
+    expect(row.incentive_earned).toBe(55); // pay survives untouched
   });
 });
 

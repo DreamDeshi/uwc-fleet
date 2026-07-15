@@ -10,6 +10,7 @@ import {
   startAssignedTripForDriver,
   rejectPendingTrip,
   cancelBookedTrip,
+  abortActiveTrip,
   outsourcePendingTrip,
   type StartTripOutcome,
 } from "../services/tripAssignment";
@@ -1335,6 +1336,67 @@ router.patch("/:id/cancel", async (req, res, next) => {
       });
     }
 
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── PATCH /trips/:id/abort — admin aborts an IN-PROGRESS trip (de-orphan) ──
+// The only exit for an in_progress trip: unassign/reassign are `assigned`-only
+// and cancel is pending/approved-only, so a trip whose driver must be removed
+// (departed / incapacitated) is otherwise stranded in_progress forever — pay
+// never finalizes and the truck's capacity never frees. This is also what the
+// disable guard (PATCH /users/:id/approve → DRIVER_ON_ACTIVE_TRIP) points the
+// admin to. Abort → `cancelled` (frees the truck; excluded from every
+// candidate/occupancy query). NO incentive is finalized — an abandoned trip
+// doesn't pay, exactly like a cancel, so the money path is untouched. Admin-only.
+const abortTripSchema = z.object({ reason: z.string().max(500).optional() });
+
+router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body as { reason?: string };
+
+    const trip = await prisma.trip.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    });
+    if (!trip) {
+      throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+    }
+    if (trip.status !== "in_progress") {
+      throw new ApiError(
+        400,
+        "INVALID_STATUS",
+        "Only an in-progress trip can be aborted. Use unassign or reassign for a scheduled trip, or cancel for one not yet assigned."
+      );
+    }
+
+    // Status-guarded CAS: aborts ONLY while still in_progress. If the last stop
+    // was just delivered (trip → completed + finalized) the abort loses with a
+    // 409 rather than cancelling a paid trip.
+    await prisma.$transaction(async (tx) => {
+      const aborted = await abortActiveTrip(tx, id);
+      if (!aborted) {
+        throw new ApiError(
+          409,
+          "TRIP_STATE_CHANGED",
+          "This trip just changed state (it may have completed). Refresh and try again."
+        );
+      }
+      await tx.auditLog.create({
+        data: {
+          user_id: req.user!.id,
+          action: `trip.aborted${reason ? ` — ${reason}` : ""}`,
+          table_name: "Trip",
+          record_id: id,
+        },
+      });
+      await recordTripEvent(tx, { tripId: id, event: "cancelled", actorId: req.user!.id });
+    });
+
+    const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
     res.json(updated);
   } catch (err) {
     next(err);

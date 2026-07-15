@@ -219,6 +219,25 @@ router.patch("/:id/approve", validateBody(approveSchema), async (req, res, next)
           );
         }
       }
+      // A driver mid-delivery can't be disabled: status is re-checked on every
+      // request, so disabling cuts their login immediately and would STRAND the
+      // in_progress trip — there is no admin reassign/complete path for one
+      // (unassign/reassign are `assigned`-only). The admin must abort it
+      // (PATCH /trips/:id/abort) or let it complete first. Scheduled (assigned,
+      // not started) trips are fine — those are reassignable.
+      if (user.role === "driver") {
+        const activeTrip = await prisma.trip.findFirst({
+          where: { driver_id: id, status: "in_progress" },
+          select: { ticket_number: true },
+        });
+        if (activeTrip) {
+          throw new ApiError(
+            409,
+            "DRIVER_ON_ACTIVE_TRIP",
+            `This driver is out on trip ${activeTrip.ticket_number}. Abort or complete that trip before disabling them.`
+          );
+        }
+      }
     }
 
     const updated = await prisma.user.update({ where: { id }, data: { status } });

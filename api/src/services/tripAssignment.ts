@@ -124,10 +124,11 @@ export async function releaseAssignedTrip(
 // lost race returns false and the route answers 409 TRIP_STATE_CHANGED.
 
 // Minimal client slice for the exit CASes (same pattern as TripClaimClient).
+// Includes "in_progress" for the admin abort lever (abortActiveTrip).
 export interface TripExitClient {
   trip: {
     updateMany(args: {
-      where: { id: string; status: { in: ("pending" | "approved")[] } };
+      where: { id: string; status: { in: ("pending" | "approved" | "in_progress")[] } };
       data: Record<string, unknown>;
     }): Promise<{ count: number }>;
   };
@@ -166,6 +167,27 @@ export async function cancelBookedTrip(
 ): Promise<boolean> {
   const res = await client.trip.updateMany({
     where: { id: tripId, status: { in: ["pending", "approved"] } },
+    data: { status: "cancelled", auto_dispatch_failed: false, auto_dispatch_note: null },
+  });
+  return res.count === 1;
+}
+
+/**
+ * Admin abort of an IN-PROGRESS trip (the de-orphan lever). Returns true iff
+ * THIS caller flipped it — a trip that just COMPLETED (last stop delivered) or
+ * was already cancelled never matches, so an abort can never overwrite a
+ * finalized/paid trip. Sets `cancelled`, which frees the truck's dispatch
+ * capacity; deliberately does NOT touch incentive fields — an abandoned trip
+ * doesn't pay (same as any cancel), so the money path is untouched. The truck
+ * plate/driver stay on the row for history (the cancelled status excludes it
+ * from every occupancy/candidate query).
+ */
+export async function abortActiveTrip(
+  client: TripExitClient,
+  tripId: string
+): Promise<boolean> {
+  const res = await client.trip.updateMany({
+    where: { id: tripId, status: { in: ["in_progress"] } },
     data: { status: "cancelled", auto_dispatch_failed: false, auto_dispatch_note: null },
   });
   return res.count === 1;
