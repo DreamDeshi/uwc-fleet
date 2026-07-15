@@ -18,6 +18,7 @@ import {
   Avatar,
   Button,
   Card,
+  ChipGrid,
   ConfirmDialog,
   EmptyState,
   ErrorState,
@@ -94,7 +95,13 @@ export function AllUsersScreen() {
     >
       <View style={{ gap: 12 }}>
         <SearchInput value={search} onChange={setSearch} placeholder={t("admin.users.searchPlaceholder")} style={{ minWidth: 0 }} />
-        <SegmentedFilter<RoleFilter> value={roleFilter} onChange={setRoleFilter} options={roleFilters} />
+        {/* Even 2-col chip grid on phones (owner ruling: no ragged chip wrap
+            on narrow — same as Drivers/Trucks); inline pills on PC. */}
+        {wide ? (
+          <SegmentedFilter<RoleFilter> value={roleFilter} onChange={setRoleFilter} options={roleFilters} />
+        ) : (
+          <ChipGrid<RoleFilter> value={roleFilter} onChange={setRoleFilter} options={roleFilters} columns={2} />
+        )}
       </View>
 
       {filtered.length === 0 ? (
