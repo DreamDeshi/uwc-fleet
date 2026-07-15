@@ -46,6 +46,7 @@ import {
   groupStopsByDeliveryDay,
   isDocumentationComplete,
   mytDateKey,
+  scoreDrops,
 } from "../services/incentiveEngine";
 import { leaveDateFilter } from "../services/driverLeave";
 import { priorDeliveredDropsWhere } from "../services/dayLedger";
@@ -1821,12 +1822,11 @@ router.patch(
         // Per-day ledger: drops this driver already DELIVERED on this group's
         // MYT day BEFORE this group's first confirm, on OTHER trips that are
         // in_progress OR completed — regardless of when those trips were
-        // picked up. A stop whose zone is already on the ledger scores
-        // 1 point; the day's FIRST drop is the one the daily deduction lands
-        // on, so isFirstDeliveredDropOfDay is true only when the ledger is
-        // empty. Counting in_progress siblings + bounding by delivered-time
-        // order keeps the money right even if trips overlap (see dayLedger.ts
-        // — the RM88-instead-of-RM55 double-first-drop hole).
+        // picked up. A stop whose zone is already on the ledger scores 1 point;
+        // their summed points (priorPointsToday) fold the daily deduction in at
+        // the day-total level. Counting in_progress siblings + bounding by
+        // delivered-time order keeps the money right even if trips overlap (see
+        // dayLedger.ts — the RM88-instead-of-RM55 double-first-drop hole).
         const priorStopsToday = await prisma.tripStop.findMany({
           where: priorDeliveredDropsWhere({
             driverId: req.user!.id,
@@ -1834,16 +1834,24 @@ router.patch(
             dayStart: group.dayStart,
             anchor: group.anchor,
           }),
-          // Prior drops carry their own scored zone identity: snapshotted at
-          // assignment (in_progress siblings) or stamped at finalization
-          // (completed trips) — prefer it over the live consignee zone so the
-          // whole day's ledger keys on the zones the drops were PAID under.
-          select: { zone_code: true, consignee: { select: { zone_code: true } } },
+          // IN DELIVERED ORDER so the prior drops can be scored per-zone-per-day
+          // (first-in-zone full, repeat 1pt) to get the day's cumulative points
+          // BEFORE this group. Prior drops carry their own scored zone identity +
+          // points: snapshotted at assignment (in_progress siblings) or stamped at
+          // finalization (completed trips) — prefer it over the live consignee zone
+          // so the whole day keys on the zones/points the drops were PAID under.
+          orderBy: { delivered_at: "asc" },
+          select: { zone_code: true, zone_points: true, consignee: { select: { zone_code: true } } },
         });
-        const zonesDeliveredEarlierToday = priorStopsToday.map((s) =>
-          dropZoneCode(s, s.consignee.zone_code)
-        );
-        const isFirstDeliveredDropOfDay = zonesDeliveredEarlierToday.length === 0;
+        const priorDrops = priorStopsToday.map((s) => {
+          const zone = dropZoneCode(s, s.consignee.zone_code);
+          return { zoneCode: zone, zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone) };
+        });
+        const zonesDeliveredEarlierToday = priorDrops.map((d) => d.zoneCode);
+        // The driver's cumulative SCORED points delivered earlier today (0 iff this
+        // group holds the day's first drop). Folds the daily deduction in at the
+        // day-total level, telescoping the per-trip marginals (see the engine doc).
+        const priorPointsToday = scoreDrops(priorDrops).reduce((a, b) => a + b, 0);
 
         const drops = group.stops.map((s) => {
           const zone = dropZoneCode(s, s.consignee.zone_code);
@@ -1857,7 +1865,7 @@ router.patch(
           rateDateTime: group.anchor,
           drops,
           zonesDeliveredEarlierToday,
-          isFirstDeliveredDropOfDay,
+          priorPointsToday,
           publicHolidays,
           truck: truckRates,
         });

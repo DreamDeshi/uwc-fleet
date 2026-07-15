@@ -6,17 +6,20 @@ import {
 } from "../src/services/incentiveEngine";
 
 /**
- * Phase 1 (MONEY) — two boundary behaviours the existing incentive tests don't
- * pin exactly:
+ * Two boundary behaviours the other incentive tests don't pin exactly:
  *   1. The peak/off-peak cutoff EDGE (17:59 vs 18:00 MYT). A boundary bug here
  *      would systematically mis-pay every ~6pm delivery, so the exact hour the
  *      tier flips is worth locking.
- *   2. The zero-floor interaction with a MULTI-stop trip: the once-a-day
- *      deduction lands only on the day's first drop, floors at 0, and the
- *      unused remainder is NOT carried to later drops.
+ *   2. The daily deduction on a MULTI-stop trip: it comes off the day's TOTAL
+ *      points, floored at 0 (workbook rule) — a low-point FIRST drop carries its
+ *      excess deduction to the rest of the day, it is not lost.
  *
- * These assert the engine's ACTUAL current behaviour (documented in
- * incentiveEngine.ts). No rule is changed.
+ * ⚠ CORRECTED 2026-07-16: item 2's tests previously asserted a BUG — the
+ * deduction floored on the FIRST DROP only, dropping the unused remainder (they
+ * expected RM66 / RM11 / RM55). The authoritative workbook (INTERNAL LORRY RATE,
+ * "accumulate TOTAL 20 point/day → 18, minus 2") deducts from the day TOTAL, so
+ * the corrected expectations are RM55 / RM0 / RM0. See the engine + the fix in
+ * incentive.test.ts's "daily deduction folds into the DAY TOTAL" block.
  */
 
 const NO_HOLIDAYS: ReadonlySet<string> = new Set();
@@ -61,11 +64,11 @@ describe("isOffPeak — the exact peak/off-peak cutoff edge (MYT)", () => {
   });
 });
 
-describe("calculateDeliveryIncentive — zero-floor across a MULTI-stop trip", () => {
-  it("the deduction floors the FIRST drop at 0 and never touches later drops", () => {
-    // Day's first trip, weekday midday (peak → RM11). Drops: P2 (1pt) then A2
-    // (6pt). PLX deduction 2 lands on the first drop only: 1 − 2 → 0 (took 1),
-    // A2 keeps its full 6 → 6×11 = RM66.
+describe("calculateDeliveryIncentive — daily deduction off the DAY TOTAL, floored at 0", () => {
+  it("a low-point first drop carries the deduction across the day: [P2 1, A2 6] → (7−2)×11 = RM55", () => {
+    // CORRECTED (was RM66, which encoded the bug): the old code floored the first
+    // drop (1 − 2 → 0) and kept A2's 6 in full. The workbook deducts from the day
+    // TOTAL: (1 + 6 − 2) × 11 = RM55.
     const r = calculateDeliveryIncentive({
       rateDateTime: mytWeekday(12, 0),
       drops: [
@@ -73,7 +76,7 @@ describe("calculateDeliveryIncentive — zero-floor across a MULTI-stop trip", (
         { zoneCode: "A2", zonePoints: 6 },
       ],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0,
       publicHolidays: NO_HOLIDAYS,
       truck: PLX,
     });
@@ -81,14 +84,14 @@ describe("calculateDeliveryIncentive — zero-floor across a MULTI-stop trip", (
     expect(r.rateUsed).toBe(11);
     expect(r.dropPoints).toEqual([1, 6]);
     expect(r.wasRepeat).toEqual([false, false]);
-    expect(r.deductionApplied).toBe(1); // only 1 of the 2 points could be taken
-    expect(r.incentiveThisTrip).toBe(66); // 0×11 + 6×11
+    expect(r.deductionApplied).toBe(2); // the FULL 2-pt deduction, off the day total
+    expect(r.incentiveThisTrip).toBe(55); // (1 + 6 − 2) × 11
   });
 
-  it("the unused deduction remainder is NOT carried to the next drop", () => {
-    // Two drops into the SAME zone: first P2 (1pt) floors to 0 (took 1), the
-    // repeat P2 scores 1 and pays in full — the leftover 1 deduction point is
-    // dropped, not applied to the repeat. → 0×11 + 1×11 = RM11.
+  it("the whole deduction applies to the day total: [P2 1, P2 repeat 1] = 2 pts − deduction 2 → RM0", () => {
+    // CORRECTED (was RM11, which encoded the bug): total day points = 1 + 1 = 2;
+    // minus the 2-pt deduction = 0. The leftover deduction is NOT dropped — it
+    // applies to the day total, exactly as the workbook's "20 → 18 (minus 2)".
     const r = calculateDeliveryIncentive({
       rateDateTime: mytWeekday(12, 0),
       drops: [
@@ -96,19 +99,20 @@ describe("calculateDeliveryIncentive — zero-floor across a MULTI-stop trip", (
         { zoneCode: "P2", zonePoints: 1 },
       ],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0,
       publicHolidays: NO_HOLIDAYS,
       truck: PLX,
     });
     expect(r.dropPoints).toEqual([1, 1]);
     expect(r.wasRepeat).toEqual([false, true]);
-    expect(r.deductionApplied).toBe(1);
-    expect(r.incentiveThisTrip).toBe(11);
+    expect(r.deductionApplied).toBe(2); // both points absorbed by the deduction
+    expect(r.incentiveThisTrip).toBe(0);
   });
 
-  it("never yields negative pay even when the deduction exceeds the first drop", () => {
-    // Oversized deduction (10) vs a 1pt first drop: floors to 0, the second
-    // drop is untouched, and the trip total is >= 0.
+  it("never yields negative pay: an oversized deduction (10) vs a 6-point day → RM0", () => {
+    // CORRECTED (was RM55, which encoded the bug): the deduction is capped by
+    // flooring the day TOTAL at 0, so a 10-pt deduction against 6 points pays 0
+    // (never negative) and does NOT leave later drops untouched.
     const r = calculateDeliveryIncentive({
       rateDateTime: mytWeekday(12, 0),
       drops: [
@@ -116,12 +120,12 @@ describe("calculateDeliveryIncentive — zero-floor across a MULTI-stop trip", (
         { zoneCode: "A1", zonePoints: 5 },
       ],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0,
       publicHolidays: NO_HOLIDAYS,
       truck: { ...PLX, daily_deduction_points: 10 },
     });
-    expect(r.deductionApplied).toBe(1);
-    expect(r.incentiveThisTrip).toBe(55); // 0×11 + 5×11
+    expect(r.deductionApplied).toBe(6); // all 6 points absorbed
+    expect(r.incentiveThisTrip).toBe(0); // max(6 − 10, 0) × 11
     expect(r.incentiveThisTrip).toBeGreaterThanOrEqual(0);
   });
 });

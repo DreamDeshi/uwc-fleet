@@ -8,6 +8,7 @@ import {
   calculateDeliveryIncentive,
   groupStopsByDeliveryDay,
   getTripDayStart,
+  scoreDrops,
 } from "../src/services/incentiveEngine";
 
 /**
@@ -27,35 +28,41 @@ const PLX2406 = { daily_deduction_points: 2, entitled_claim_weekday: 11, entitle
 const NO_HOLIDAYS: ReadonlySet<string> = new Set();
 
 // A delivered stop row as the ledger sees it (DB shape flattened for the fake).
+// zone_points is the drop's full zone points — used when this row is a PRIOR
+// drop feeding another trip's day-total (priorPointsToday).
 interface StopRow {
   trip_id: string;
   trip_status: string;
   driver_id: string;
   zone_code: string;
+  zone_points: number;
   stop_status: string;
   delivered_at: Date;
 }
 
 // In-memory evaluator for exactly the where-shape priorDeliveredDropsWhere
 // builds — the test-side stand-in for Postgres applying it to trip_stops.
-function ledgerZones(stops: StopRow[], where: PriorDeliveredDropsWhere): string[] {
+// Returns the matching prior drops IN DELIVERED ORDER (as trips.ts queries).
+function ledgerDrops(stops: StopRow[], where: PriorDeliveredDropsWhere) {
   return stops
     .filter((s) => s.stop_status === where.status)
     .filter((s) => s.delivered_at >= where.delivered_at.gte && s.delivered_at < where.delivered_at.lt)
     .filter((s) => s.driver_id === where.trip.driver_id)
     .filter((s) => where.trip.status.in.includes(s.trip_status as "in_progress" | "completed"))
     .filter((s) => s.trip_id !== where.trip.id.not)
-    .map((s) => s.zone_code);
+    .sort((a, b) => a.delivered_at.getTime() - b.delivered_at.getTime())
+    .map((s) => ({ zoneCode: s.zone_code, zonePoints: s.zone_points }));
 }
 
 // Finalize one single-stop trip the way trips.ts does: group its stops, build
-// the ledger from the production where-builder, run the production engine.
+// the ledger from the production where-builder, score the prior drops for
+// priorPointsToday, run the production engine.
 function finalizeTrip(allStops: StopRow[], tripId: string, driverId: string, zonePoints: number) {
   const own = allStops.filter((s) => s.trip_id === tripId);
   const groups = groupStopsByDeliveryDay(own, new Date("2026-06-22T12:00:00Z"));
   expect(groups).toHaveLength(1);
   const group = groups[0];
-  const zones = ledgerZones(
+  const prior = ledgerDrops(
     allStops,
     priorDeliveredDropsWhere({
       driverId,
@@ -64,12 +71,14 @@ function finalizeTrip(allStops: StopRow[], tripId: string, driverId: string, zon
       anchor: group.anchor,
     })
   );
+  const zonesDeliveredEarlierToday = prior.map((d) => d.zoneCode);
+  const priorPointsToday = scoreDrops(prior).reduce((a, b) => a + b, 0);
   return calculateDeliveryIncentive({
     publicHolidays: NO_HOLIDAYS,
     rateDateTime: group.anchor,
     drops: group.stops.map((s) => ({ zoneCode: s.zone_code, zonePoints })),
-    zonesDeliveredEarlierToday: zones,
-    isFirstDeliveredDropOfDay: zones.length === 0,
+    zonesDeliveredEarlierToday,
+    priorPointsToday,
     truck: PLX2406,
   });
 }
@@ -111,6 +120,7 @@ describe("overlapping trips — the RM88→RM55 double-first-drop hole (MONEY)",
       trip_status: "in_progress",
       driver_id: "d1",
       zone_code: "A2",
+      zone_points: 6,
       stop_status: "delivered",
       delivered_at: new Date("2026-06-22T02:00:00Z"), // Mon 10:00 MYT
     },
@@ -119,6 +129,7 @@ describe("overlapping trips — the RM88→RM55 double-first-drop hole (MONEY)",
       trip_status: "in_progress",
       driver_id: "d1",
       zone_code: "A2",
+      zone_points: 6,
       stop_status: "delivered",
       delivered_at: new Date("2026-06-22T02:30:00Z"), // Mon 10:30 MYT
     },

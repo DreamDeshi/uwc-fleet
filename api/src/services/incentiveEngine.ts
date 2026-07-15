@@ -31,12 +31,17 @@ function hourFromEnv(name: string, fallback: number): number {
   return Number.isInteger(n) && n >= 0 && n <= 23 ? n : fallback;
 }
 
-// Off-peak cutoff (brief Section 3, open question 1 — was 6pm/9pm placeholder).
-// Override with OFFPEAK_CUTOFF_HOUR in the API env; defaults to 18 (6pm).
+// Off-peak cutoff = 18:00 (6pm). CONFIRMED by the authoritative spec workbook
+// (References/"TRUCK BOOKING SYSTEM (YS).xlsx", INTERNAL LORRY RATE sheet): the
+// weekday PEAK rate table is headed "Weekday 8am - 6pm"; the OFF-PEAK table is
+// headed "Public Holiday / Saturday - Sunday / Weekday after 6pm". So a weekday
+// delivery at/after 6pm earns the off-peak rate — this is spec, NOT a placeholder.
+// Env-tunable for flexibility only; do not re-flag it as an open question.
 export const OFFPEAK_CUTOFF_HOUR = hourFromEnv("OFFPEAK_CUTOFF_HOUR", 18);
 
-// Daily trip-counter reset hour (open question 2 — midnight vs 7am placeholder).
-// Override with DAILY_RESET_HOUR in the API env; defaults to 0 (midnight).
+// Incentive-day reset hour = midnight (00:00). CONFIRMED by Mr. Teh's written
+// answer Q1 (3 Jul 2026): "after 12am points refresh for next day". Env-tunable
+// only; not an open question.
 export const DAILY_RESET_HOUR = hourFromEnv("DAILY_RESET_HOUR", 0);
 
 // Malaysia is UTC+8 year-round (no daylight saving). We add this offset to a
@@ -237,13 +242,18 @@ export interface DeliveryIncentiveResult {
   wasRepeat: boolean[];
   /** Sum of dropPoints (pre-deduction) for this trip. */
   pointsThisTrip: number;
-  /** Deduction points actually subtracted (0 unless this trip holds the day's first drop). */
+  /**
+   * Deduction points THIS trip's group actually absorbed (= groupPoints −
+   * marginalPoints). Summed across a driver-day it equals min(dayTotal,
+   * deduction) — the deduction is spent exactly once, at the day-total level.
+   */
   deductionApplied: number;
   /**
-   * MARGINAL incentive (RM) this trip contributes — the value persisted in
-   * incentive_earned. Because the daily deduction is applied exactly once (on
-   * the day's first drop, which lives in the first trip), summing this across a
-   * day reproduces the day total without re-inflating.
+   * MARGINAL incentive (RM) this trip's group contributes — the value persisted
+   * in incentive_earned. Computed as the floored day-total WITH this group minus
+   * the floored day-total BEFORE it, so summing across a day telescopes to
+   * max(dayTotalPoints − deduction, 0) × rate — the daily deduction spent once,
+   * on the day's TOTAL (workbook rule), never double-counted.
    */
   incentiveThisTrip: number;
 }
@@ -257,9 +267,10 @@ export interface DeliveryIncentiveResult {
  *    zone code and that zone's full destination points.
  *  - zonesDeliveredEarlierToday: zones this driver already delivered to earlier
  *    today (across prior trips) — so a stop whose zone was already hit scores 1.
- *  - isFirstDeliveredDropOfDay: true iff no drop was delivered earlier today
- *    (i.e. this trip holds the day's first drop, so the daily deduction lands
- *    on its first stop).
+ *  - priorPointsToday: the driver's cumulative SCORED points already delivered
+ *    earlier today (across prior trips), before this group. 0 iff this group
+ *    holds the day's first drop. This is what makes the daily deduction fold in
+ *    at the DAY-TOTAL level (workbook rule), telescoping across trips.
  *
  * "Today" above means the MYT day the drops were DELIVERED, and rateDateTime
  * is the delivery-confirm anchor — per the client rule (3 Jul 2026) that
@@ -267,18 +278,31 @@ export interface DeliveryIncentiveResult {
  * groups a trip's stops per delivery day (groupStopsByDeliveryDay) and calls
  * this once per group.
  *
- * Worked example (this is the anchor case in the unit tests): PLX 2406 on a
- * weekday, day's first trip, one drop in Ipoh (A2 = 6 points). Ipoh is a new
- * zone so the drop earns the full 6; PLX's daily deduction is 2 and this is the
- * day's first drop, so it comes out here; weekday rate is RM11.
- *   → (6 − 2) × 11 = RM44.
+ * DEDUCTION (workbook, INTERNAL LORRY RATE sheet — "accumulate TOTAL 20 trip
+ * incentive point per day … calculate as 18 point (minus 2)"): the truck's daily
+ * deduction is subtracted ONCE per driver per day from the day's TOTAL points,
+ * floored at 0. We implement that as a marginal: this group contributes
+ *   max(priorPointsToday + groupPoints − deduction, 0)
+ *   − max(priorPointsToday − deduction, 0)   [× rate]
+ * so summing every trip's marginal over a driver-day telescopes to
+ * max(dayTotalPoints − deduction, 0) × rate — deduction spent once, at the
+ * total. Correct even under concurrent/out-of-order finalization because the
+ * caller derives priorPointsToday from drops delivered STRICTLY BEFORE this
+ * group's anchor (the dayLedger delivered_at bound). A low-point first drop
+ * (e.g. P2 = 1pt) no longer loses the excess deduction — it carries across the
+ * day, exactly as the sheet's day-total subtraction requires.
+ *
+ * Worked example (unit-test anchor): PLX 2406 weekday, day's first trip, one
+ * drop in Ipoh (A2 = 6). priorPointsToday = 0; deduction 2; rate RM11.
+ *   marginal = max(0+6−2,0) − max(0−2,0) = 4 − 0 = 4 pts → (6 − 2) × 11 = RM44.
  */
 export function calculateDeliveryIncentive(params: {
   /** The delivery-confirm instant the weekday/off-peak tier is read from (the day group's first delivered_at). */
   rateDateTime: Date;
   drops: ScoredDrop[];
   zonesDeliveredEarlierToday: string[];
-  isFirstDeliveredDropOfDay: boolean;
+  /** The driver's cumulative SCORED points delivered earlier today, before this group (0 iff day's first drop). */
+  priorPointsToday: number;
   /** MYT "YYYY-MM-DD" holiday keys from the PublicHoliday table (caller-supplied — the engine never reads the DB). */
   publicHolidays: ReadonlySet<string>;
   truck: {
@@ -297,25 +321,21 @@ export function calculateDeliveryIncentive(params: {
 
   const scored = scoreDropsDetailed(params.drops, params.zonesDeliveredEarlierToday);
   const dropPoints = scored.map((d) => d.points);
+  const groupPoints = dropPoints.reduce((a, b) => a + b, 0);
 
-  // Daily deduction applied once/day on the first drop ('daily' per client). If
-  // it should apply per new-zone instead, change here.
-  let deductionApplied = 0;
-  let incentive = 0;
-  for (let i = 0; i < dropPoints.length; i++) {
-    let points = dropPoints[i];
-    if (params.isFirstDeliveredDropOfDay && i === 0) {
-      // This trip holds the day's very FIRST drop, so the truck's daily
-      // deduction comes out of it — exactly once per driver per day. Later
-      // trips pass isFirstDeliveredDropOfDay=false and skip this entirely.
-      const before = points;
-      // TODO: zero-floor edge not client-confirmed (e.g. a 1pt P2 first drop
-      // minus a 2pt deduction floors to 0; the unused deduction is not carried).
-      points = Math.max(points - params.truck.daily_deduction_points, 0);
-      deductionApplied = before - points; // what we actually took (may be < the full deduction if floored)
-    }
-    incentive += points * rate;
-  }
+  // Daily deduction folds in at the DAY TOTAL, floored at 0 (workbook rule; see
+  // the function doc). The marginal = floored day-total WITH this group minus
+  // floored day-total BEFORE it, so the deduction is spent exactly once across
+  // the driver-day and a low-point first drop carries the excess forward.
+  const deduction = params.truck.daily_deduction_points;
+  const beforePoints = Math.max(params.priorPointsToday - deduction, 0);
+  const withPoints = Math.max(params.priorPointsToday + groupPoints - deduction, 0);
+  const marginalPoints = withPoints - beforePoints;
+  // How much of the deduction THIS group absorbed (0 when the day's earlier
+  // drops already covered it; the full deduction when this group holds enough
+  // of the day's first points). Sums to min(dayTotal, deduction) over the day.
+  const deductionApplied = groupPoints - marginalPoints;
+  const incentive = marginalPoints * rate;
 
   return {
     isOffPeak: offPeak,

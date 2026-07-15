@@ -102,7 +102,7 @@ describe("end-to-end: cutoff + rate lock through the engine (money path)", () =>
     publicHolidays: NO_HOLIDAYS,
     drops,
     zonesDeliveredEarlierToday: [] as string[],
-    isFirstDeliveredDropOfDay: true,
+    priorPointsToday: 0,
   };
 
   it("a trip ASSIGNED today (edit staged today) snapshots and pays the OLD rate: RM44", () => {
@@ -174,7 +174,7 @@ describe("effectiveZonePoints — the assignment-time points merge", () => {
       rateDateTime: editDayNoon,
       drops: [{ zoneCode: "A2", zonePoints: snapshotPoints }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0,
       truck: BASE,
     });
     expect(r.incentiveThisTrip).toBe(44); // the anchor, cutoff respected
@@ -187,7 +187,7 @@ describe("effectiveZonePoints — the assignment-time points merge", () => {
       rateDateTime: editDayNoon, // weekday tier — isolating the points change
       drops: [{ zoneCode: "A2", zonePoints: snapshotPoints }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0,
       truck: BASE,
     });
     expect(r.incentiveThisTrip).toBe(55);

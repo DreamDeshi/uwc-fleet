@@ -151,7 +151,7 @@ describe("end-to-end rate lock through the engine", () => {
       rateDateTime: pickup, // delivered same MYT day-part as pickup in this scenario
       drops: [{ zoneCode: "A2", zonePoints: dropZonePoints({ zone_points: 6 }, 6) }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0,
       truck: finalizationRateParams({ ...TRUCK_AT_ASSIGNMENT, truck: TRUCK_AFTER_EDIT }),
     });
     expect(r.incentiveThisTrip).toBe(44); // (6−2)×11, NOT (6−3)×12
@@ -163,7 +163,7 @@ describe("end-to-end rate lock through the engine", () => {
       rateDateTime: pickup, // delivered same MYT day-part as pickup in this scenario
       drops: [{ zoneCode: "A2", zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0,
       truck: finalizationRateParams({ ...truckRateSnapshot(TRUCK_AFTER_EDIT), truck: TRUCK_AFTER_EDIT }),
     });
     expect(r.incentiveThisTrip).toBe(36); // (6−3)×12

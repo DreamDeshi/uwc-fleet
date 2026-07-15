@@ -96,7 +96,7 @@ describe("mid-flight consignee zone correction (A2 → K1) — evidence stays wi
       rateDateTime: WEEKDAY,
       drops: [{ zoneCode: zone, zonePoints: points }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0,
       publicHolidays: NO_HOLIDAYS,
       truck: PLX,
     });
@@ -110,7 +110,7 @@ describe("mid-flight consignee zone correction (A2 → K1) — evidence stays wi
       rateDateTime: WEEKDAY,
       drops: [{ zoneCode: zone, zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0,
       publicHolidays: NO_HOLIDAYS,
       truck: PLX,
     });

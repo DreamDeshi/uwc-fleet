@@ -178,7 +178,7 @@ describe("calculateDeliveryIncentive — single-stop trips", () => {
       rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "A2", zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0, // day's first drop
       truck: PLX2406,
     });
     expect(r.isOffPeak).toBe(false);
@@ -194,7 +194,7 @@ describe("calculateDeliveryIncentive — single-stop trips", () => {
       rateDateTime: offpeakEvening,
       drops: [{ zoneCode: "K1", zonePoints: 3 }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0, // day's first drop
       truck: PLX2406,
     });
     expect(r.isOffPeak).toBe(true);
@@ -209,7 +209,7 @@ describe("calculateDeliveryIncentive — single-stop trips", () => {
       rateDateTime: offpeakEvening,
       drops: [{ zoneCode: "A2", zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0, // day's first drop
       truck: PRH5292,
     });
     expect(r.rateUsed).toBe(9);
@@ -222,23 +222,23 @@ describe("calculateDeliveryIncentive — single-stop trips", () => {
       rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "K2", zonePoints: 4 }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0, // day's first drop
       truck: TRUCK_17_5,
     });
     expect(r.incentiveThisTrip).toBe(10);
   });
 
-  it("floors the deducted first drop at 0 (P2=1 pt − 2 pt deduction → RM0)", () => {
+  it("a single-drop day worth less than the deduction pays RM0 (P2=1 − deduction 2, floored at the DAY total)", () => {
     const r = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
       rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "P2", zonePoints: 1 }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0, // day's first (and only) drop
       truck: PLX2406,
     });
-    expect(r.incentiveThisTrip).toBe(0);
-    expect(r.deductionApplied).toBe(1); // only the 1 available point is absorbed; remainder not carried
+    expect(r.incentiveThisTrip).toBe(0); // max(1 − 2, 0) × 11
+    expect(r.deductionApplied).toBe(1); // the day's only point is absorbed; never negative pay
   });
 });
 
@@ -251,7 +251,7 @@ describe("calculateDeliveryIncentive — multi-trip day (marginals sum, deductio
       rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "A2", zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0, // day's first drop
       truck: PLX2406,
     });
     const t2 = calculateDeliveryIncentive({
@@ -259,7 +259,7 @@ describe("calculateDeliveryIncentive — multi-trip day (marginals sum, deductio
       rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "K1", zonePoints: 3 }],
       zonesDeliveredEarlierToday: ["A2"],
-      isFirstDeliveredDropOfDay: false,
+      priorPointsToday: 6, // A2 (6pts) delivered earlier today
       truck: PLX2406,
     });
     const t3 = calculateDeliveryIncentive({
@@ -267,7 +267,7 @@ describe("calculateDeliveryIncentive — multi-trip day (marginals sum, deductio
       rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "P1", zonePoints: 3 }],
       zonesDeliveredEarlierToday: ["A2", "K1"],
-      isFirstDeliveredDropOfDay: false,
+      priorPointsToday: 9, // A2 (6) + K1 (3) delivered earlier today
       truck: PLX2406,
     });
     expect(t1.incentiveThisTrip).toBe(44); // (6−2)×11
@@ -283,7 +283,7 @@ describe("calculateDeliveryIncentive — multi-trip day (marginals sum, deductio
       rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "K1", zonePoints: 3 }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0, // day's first drop
       truck: PLX2406,
     });
     const t2 = calculateDeliveryIncentive({
@@ -291,7 +291,7 @@ describe("calculateDeliveryIncentive — multi-trip day (marginals sum, deductio
       rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "K1", zonePoints: 3 }],
       zonesDeliveredEarlierToday: ["K1"],
-      isFirstDeliveredDropOfDay: false,
+      priorPointsToday: 3, // K1 (3pts) delivered earlier today
       truck: PLX2406,
     });
     expect(t1.incentiveThisTrip).toBe(11); // (3−2)×11
@@ -312,7 +312,7 @@ describe("calculateDeliveryIncentive — multi-stop scoring within one trip", ()
         { zoneCode: "K1", zonePoints: 3 },
       ],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0, // day's first drop
       truck: PLX2406,
     });
     expect(r.dropPoints).toEqual([3, 1]);
@@ -330,12 +330,136 @@ describe("calculateDeliveryIncentive — multi-stop scoring within one trip", ()
         { zoneCode: "A2", zonePoints: 6 },
       ],
       zonesDeliveredEarlierToday: ["K1"],
-      isFirstDeliveredDropOfDay: false,
+      priorPointsToday: 3, // K1 (3pts) delivered earlier today
       truck: PLX2406,
     });
     expect(r.dropPoints).toEqual([1, 6]);
     expect(r.deductionApplied).toBe(0);
     expect(r.incentiveThisTrip).toBe(77); // (1 + 6) × 11
+  });
+});
+
+describe("calculateDeliveryIncentive — daily deduction folds into the DAY TOTAL (workbook rule)", () => {
+  // Workbook (INTERNAL LORRY RATE, row 2): "accumulate TOTAL 20 trip incentive
+  // point per day … calculate as 18 point (minus 2)" — the deduction comes off
+  // the day's TOTAL points, floored at 0, NOT off the first drop. (2026-07-16:
+  // this replaced the old first-drop-floored behaviour, which overpaid whenever
+  // the day's first drop was worth fewer points than the deduction.)
+
+  it("WORKBOOK EXAMPLE: a 20-point day minus the 2-pt deduction → 18 points ((20−2)×11 = RM198)", () => {
+    const r = calculateDeliveryIncentive({
+      publicHolidays: NO_HOLIDAYS,
+      rateDateTime: weekdayMorning,
+      drops: [
+        { zoneCode: "KL", zonePoints: 8 },
+        { zoneCode: "A2", zonePoints: 6 },
+        { zoneCode: "A1", zonePoints: 5 },
+        { zoneCode: "P2", zonePoints: 1 },
+      ],
+      zonesDeliveredEarlierToday: [],
+      priorPointsToday: 0,
+      truck: PLX2406,
+    });
+    expect(r.pointsThisTrip).toBe(20);
+    expect(r.deductionApplied).toBe(2);
+    expect(r.incentiveThisTrip).toBe(198); // (20 − 2) × 11
+  });
+
+  it("BUG FIX: a low-point FIRST drop no longer loses deduction — [P2 1, K1 3, P1 3] → (7−2)×11 = RM55, not RM66", () => {
+    // Old code floored the first drop (1 − 2 → 0) and kept K1+P1 in full → RM66.
+    // The workbook deducts from the day total: (1+3+3 − 2) × 11 = RM55.
+    const r = calculateDeliveryIncentive({
+      publicHolidays: NO_HOLIDAYS,
+      rateDateTime: weekdayMorning,
+      drops: [
+        { zoneCode: "P2", zonePoints: 1 },
+        { zoneCode: "K1", zonePoints: 3 },
+        { zoneCode: "P1", zonePoints: 3 },
+      ],
+      zonesDeliveredEarlierToday: [],
+      priorPointsToday: 0,
+      truck: PLX2406,
+    });
+    expect(r.dropPoints).toEqual([1, 3, 3]);
+    expect(r.deductionApplied).toBe(2); // the FULL deduction, off the day total
+    expect(r.incentiveThisTrip).toBe(55);
+  });
+
+  it("BUG FIX across trips: low-first-drop trip A then trip B — marginals telescope to (7−2)×11 = RM55", () => {
+    // Trip A: single P2 (1pt), day's first. Trip B: K1(3)+P1(3), prior points = 1.
+    // Old code: A=0, B=6×11=RM66 (no deduction on B). New: A=0, B=5×11=RM55.
+    const a = calculateDeliveryIncentive({
+      publicHolidays: NO_HOLIDAYS,
+      rateDateTime: weekdayMorning,
+      drops: [{ zoneCode: "P2", zonePoints: 1 }],
+      zonesDeliveredEarlierToday: [],
+      priorPointsToday: 0,
+      truck: PLX2406,
+    });
+    const b = calculateDeliveryIncentive({
+      publicHolidays: NO_HOLIDAYS,
+      rateDateTime: weekdayMorning,
+      drops: [
+        { zoneCode: "K1", zonePoints: 3 },
+        { zoneCode: "P1", zonePoints: 3 },
+      ],
+      zonesDeliveredEarlierToday: ["P2"],
+      priorPointsToday: 1, // trip A's P2 drop
+      truck: PLX2406,
+    });
+    expect(a.incentiveThisTrip).toBe(0); // max(1−2,0) × 11
+    expect(a.deductionApplied).toBe(1);
+    expect(b.incentiveThisTrip).toBe(55); // (max(1+6−2,0) − max(1−2,0)) × 11 = 5×11
+    expect(b.deductionApplied).toBe(1); // B absorbs the leftover 1 pt of deduction
+    expect(a.incentiveThisTrip + b.incentiveThisTrip).toBe(55); // day total = (7 − 2) × 11
+  });
+
+  it("never negative: a whole day worth less than the deduction pays RM0 (deduction 10 vs 4 points)", () => {
+    const r = calculateDeliveryIncentive({
+      publicHolidays: NO_HOLIDAYS,
+      rateDateTime: weekdayMorning,
+      drops: [
+        { zoneCode: "P2", zonePoints: 1 },
+        { zoneCode: "K1", zonePoints: 3 },
+      ],
+      zonesDeliveredEarlierToday: [],
+      priorPointsToday: 0,
+      truck: { ...PLX2406, daily_deduction_points: 10 },
+    });
+    expect(r.incentiveThisTrip).toBe(0);
+    expect(r.incentiveThisTrip).toBeGreaterThanOrEqual(0);
+    expect(r.deductionApplied).toBe(4); // only the 4 available points can be absorbed
+  });
+
+  it("midnight straddle: each MYT day folds its OWN deduction at its OWN day total (low first drop included)", () => {
+    // Group 1 (Monday off-peak): P2(1) + A2(6) → (7−2)×13 = RM65 — the low P2
+    // first drop does NOT lose the deduction. Group 2 (Tuesday weekday): fresh
+    // K1(3) with Tuesday's own deduction → (3−2)×11 = RM11.
+    const g1 = calculateDeliveryIncentive({
+      publicHolidays: NO_HOLIDAYS,
+      rateDateTime: new Date("2026-06-22T15:50:00Z"), // Mon 23:50 MYT — off-peak
+      drops: [
+        { zoneCode: "P2", zonePoints: 1 },
+        { zoneCode: "A2", zonePoints: 6 },
+      ],
+      zonesDeliveredEarlierToday: [],
+      priorPointsToday: 0,
+      truck: PLX2406,
+    });
+    const g2 = calculateDeliveryIncentive({
+      publicHolidays: NO_HOLIDAYS,
+      rateDateTime: new Date("2026-06-22T16:10:00Z"), // Tue 00:10 MYT — weekday
+      drops: [{ zoneCode: "K1", zonePoints: 3 }],
+      zonesDeliveredEarlierToday: [], // ledger refreshed at midnight
+      priorPointsToday: 0,
+      truck: PLX2406,
+    });
+    expect(g1.isOffPeak).toBe(true);
+    expect(g1.incentiveThisTrip).toBe(65); // (1 + 6 − 2) × 13
+    expect(g1.deductionApplied).toBe(2);
+    expect(g2.isOffPeak).toBe(false);
+    expect(g2.incentiveThisTrip).toBe(11); // (3 − 2) × 11
+    expect(g2.deductionApplied).toBe(2);
   });
 });
 
@@ -347,7 +471,7 @@ describe("calculateDeliveryIncentive — the admin holiday calendar drives the r
       rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "A2", zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0, // day's first drop
       truck: PLX2406,
     });
     expect(r.isOffPeak).toBe(true);
@@ -361,7 +485,7 @@ describe("calculateDeliveryIncentive — the admin holiday calendar drives the r
       rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "A2", zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0, // day's first drop
       truck: PLX2406,
     });
     expect(r.rateUsed).toBe(11);
@@ -436,7 +560,7 @@ describe("delivery-day attribution — ledger and deduction follow the delivery 
       rateDateTime: trip1Delivered,
       drops: [{ zoneCode: "K1", zonePoints: 3 }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0, // day's first drop
       truck: PLX2406,
     });
     // Trip 2's Monday ledger already holds trip 1's K1 drop (delivered Monday,
@@ -446,7 +570,7 @@ describe("delivery-day attribution — ledger and deduction follow the delivery 
       rateDateTime: trip2Delivered,
       drops: [{ zoneCode: "K1", zonePoints: 3 }],
       zonesDeliveredEarlierToday: ["K1"],
-      isFirstDeliveredDropOfDay: false,
+      priorPointsToday: 3, // K1 (3pts) delivered earlier today
       truck: PLX2406,
     });
 
@@ -471,7 +595,7 @@ describe("delivery-day attribution — ledger and deduction follow the delivery 
       rateDateTime: groups[0].anchor,
       drops: groups[0].stops.map((s) => ({ zoneCode: s.zone, zonePoints: 3 })),
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0, // day's first drop
       truck: PLX2406,
     });
     // Group 2 (Tuesday): the ledger REFRESHED at midnight — K1 is a fresh zone
@@ -481,7 +605,7 @@ describe("delivery-day attribution — ledger and deduction follow the delivery 
       rateDateTime: groups[1].anchor,
       drops: groups[1].stops.map((s) => ({ zoneCode: s.zone, zonePoints: 3 })),
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0, // day's first drop
       truck: PLX2406,
     });
 
@@ -500,7 +624,7 @@ describe("delivery-day attribution — ledger and deduction follow the delivery 
       rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "A2", zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0, // day's first drop
       truck: PLX2406,
     });
     expect(r.incentiveThisTrip).toBe(44);
@@ -541,7 +665,7 @@ describe("calculateDeliveryIncentive - breakdown fields persisted at finalizatio
       rateDateTime: weekdayMorning,
       drops: [{ zoneCode: "A2", zonePoints: 6 }],
       zonesDeliveredEarlierToday: [],
-      isFirstDeliveredDropOfDay: true,
+      priorPointsToday: 0, // day's first drop
       publicHolidays: NO_HOLIDAYS,
       truck: PLX2406,
     });
