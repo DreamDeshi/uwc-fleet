@@ -11,11 +11,12 @@ import {
   QueuedPoint,
 } from "../lib/locationQueue";
 import { LatLng } from "../lib/geo";
+import { trackingGate } from "../lib/gpsTracking";
 
 // How often the phone captures and posts its position during an active trip.
 const INTERVAL_MS = 30_000;
 
-export type TrackingStatus = "idle" | "requesting" | "tracking" | "denied";
+export type TrackingStatus = "idle" | "needs_consent" | "requesting" | "tracking" | "denied";
 
 export interface TripLocationState {
   status: TrackingStatus;
@@ -24,13 +25,22 @@ export interface TripLocationState {
   online: boolean;
 }
 
-// Drives GPS tracking for one active trip. While `enabled`, it:
-//   1. captures the phone's position every 30s,
+// Drives GPS tracking for one active trip. Only ever captures when the trip is
+// active (`enabled`) AND the driver has consented (`consented`) — the privacy
+// rule (see lib/gpsTracking). While active it:
+//   1. captures the phone's position every 30s (foreground only — a JS timer),
 //   2. appends it to the durable offline queue,
 //   3. flushes the queue to POST /locations whenever the network allows.
 // On reconnect (NetInfo) or when the app returns to foreground, it flushes
 // immediately so a backlog built up with no signal goes out right away.
-export function useTripLocation(tripId: string, enabled: boolean): TripLocationState {
+// `retryNonce` — bump it (from the badge's "tap to enable") to re-request a
+// permission that was previously denied without changing consent.
+export function useTripLocation(
+  tripId: string,
+  enabled: boolean,
+  consented: boolean,
+  retryNonce = 0
+): TripLocationState {
   const [status, setStatus] = useState<TrackingStatus>("idle");
   const [current, setCurrent] = useState<LatLng | null>(null);
   const [queued, setQueued] = useState(0);
@@ -82,8 +92,15 @@ export function useTripLocation(tripId: string, enabled: boolean): TripLocationS
   });
 
   useEffect(() => {
-    if (!enabled) {
+    const gate = trackingGate(enabled, consented);
+    if (gate === "idle") {
       setStatus("idle");
+      return;
+    }
+    if (gate === "needs_consent") {
+      // Trip is active but the driver hasn't agreed yet — do NOT request the OS
+      // permission or capture anything. The screen shows the consent explainer.
+      setStatus("needs_consent");
       return;
     }
 
@@ -122,7 +139,7 @@ export function useTripLocation(tripId: string, enabled: boolean): TripLocationS
       netSub();
       appSub.remove();
     };
-  }, [enabled, tripId]);
+  }, [enabled, tripId, consented, retryNonce]);
 
   return { status, current, queued, online };
 }

@@ -17,6 +17,7 @@ import {
 } from "../../hooks/queries";
 import { capturePodPhoto, toDurablePhotoUri } from "../../lib/photo";
 import { useTripLocation, TripLocationState } from "../../hooks/useTripLocation";
+import { getGpsConsent, setGpsConsent, type GpsConsent } from "../../lib/gpsConsent";
 import { useToast } from "../../components/Toast";
 import { apiErrorCode, apiErrorMessage, isNetworkError } from "../../services/api";
 import { enqueuePodItem, removePodItem, noteDirectPodUpload, findOutboxItem, type PodOutboxItem } from "../../lib/podOutbox";
@@ -55,10 +56,56 @@ export function ActiveTripScreen() {
   const { params } = useRoute<Rt>();
   const { data: trip, isLoading, isError, refetch, isRefetching } = useTrip(params.tripId);
 
-  // Phase 5: track this phone's GPS while the trip is active, and fetch the
-  // real road path. Both hooks run unconditionally (before the early returns
-  // below) to keep hook order stable across renders.
-  const tracking = useTripLocation(params.tripId, trip?.status === "in_progress");
+  // GPS consent (per device): the driver must agree to the active-trip-only,
+  // foreground-only explainer before we request the OS location permission.
+  const [gpsConsent, setGpsConsentState] = useState<GpsConsent | null>(null);
+  const [consentLoaded, setConsentLoaded] = useState(false);
+  const [showGpsConsent, setShowGpsConsent] = useState(false);
+  const [gpsRetry, setGpsRetry] = useState(0);
+  const gpsConsented = gpsConsent === "accepted";
+
+  React.useEffect(() => {
+    let alive = true;
+    getGpsConsent().then((c) => {
+      if (alive) {
+        setGpsConsentState(c);
+        setConsentLoaded(true);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // First time (never decided) a trip is active on this device, show the
+  // explainer. A driver who declined isn't nagged — they re-enable from the badge.
+  React.useEffect(() => {
+    if (consentLoaded && trip?.status === "in_progress" && gpsConsent === null) {
+      setShowGpsConsent(true);
+    }
+  }, [consentLoaded, trip?.status, gpsConsent]);
+
+  const acceptGps = async () => {
+    await setGpsConsent("accepted");
+    setGpsConsentState("accepted");
+    setGpsRetry((n) => n + 1); // re-request even if a prior OS denial is cached
+    setShowGpsConsent(false);
+  };
+  const declineGps = async () => {
+    await setGpsConsent("declined");
+    setGpsConsentState("declined");
+    setShowGpsConsent(false);
+  };
+
+  // Phase 5: track this phone's GPS while the trip is active AND consented, and
+  // fetch the real road path. Both hooks run unconditionally (before the early
+  // returns below) to keep hook order stable across renders.
+  const tracking = useTripLocation(
+    params.tripId,
+    trip?.status === "in_progress",
+    gpsConsented,
+    gpsRetry
+  );
   const { data: route } = useTripRoute(params.tripId, Boolean(trip));
 
   const sheetRef = useRef<BottomSheet>(null);
@@ -317,7 +364,9 @@ export function ActiveTripScreen() {
           <Text style={styles.headingSub}>
             ≈ {distance} {t("common.km")} · {trip.truck_plate ?? ""}
           </Text>
-          {trip.status === "in_progress" ? <TrackingBadge tracking={tracking} /> : null}
+          {trip.status === "in_progress" ? (
+            <TrackingBadge tracking={tracking} onReEnable={() => setShowGpsConsent(true)} />
+          ) : null}
         </View>
         {/* Real turn-by-turn handoff to Google Maps */}
         <TouchableOpacity style={styles.navBtn} onPress={openInMaps} activeOpacity={0.85}>
@@ -417,18 +466,60 @@ export function ActiveTripScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* GPS consent explainer — shown BEFORE the OS/browser location prompt. */}
+      <Modal visible={showGpsConsent} transparent animationType="fade" onRequestClose={declineGps}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={[styles.modalIcon, { backgroundColor: colors.blue }]}>
+              <Ionicons name="location" size={34} color={colors.white} />
+            </View>
+            <Text style={styles.modalTitle}>{t("trip.gpsConsentTitle")}</Text>
+            <Text style={styles.gpsConsentBody}>{t("trip.gpsConsentBody")}</Text>
+            <View style={styles.gpsPoints}>
+              {[t("trip.gpsPointActive"), t("trip.gpsPointForeground"), t("trip.gpsPointDispatch")].map(
+                (line) => (
+                  <View key={line} style={styles.gpsPointRow}>
+                    <Ionicons name="checkmark-circle" size={17} color={colors.green} />
+                    <Text style={styles.gpsPointText}>{line}</Text>
+                  </View>
+                )
+              )}
+            </View>
+            <Button
+              title={t("trip.gpsEnable")}
+              size="xl"
+              onPress={acceptGps}
+              style={{ alignSelf: "stretch", marginTop: 18 }}
+            />
+            <TouchableOpacity onPress={declineGps} style={{ marginTop: 12, padding: 6 }}>
+              <Text style={styles.gpsNotNow}>{t("trip.gpsNotNow")}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-// Small status chip in the heading card: live / locating / offline+queued.
-function TrackingBadge({ tracking }: { tracking: TripLocationState }) {
+// Small status chip in the heading card: live / locating / offline+queued /
+// off. When off (consent not given, or OS-denied) it's tappable to re-open the
+// consent explainer and re-request permission.
+function TrackingBadge({
+  tracking,
+  onReEnable,
+}: {
+  tracking: TripLocationState;
+  onReEnable: () => void;
+}) {
   const { t } = useTranslation();
   const offline = !tracking.online || tracking.queued > 0;
+  // "off" = the driver hasn't agreed yet, or the OS/browser denied permission.
+  const off = tracking.status === "needs_consent" || tracking.status === "denied";
 
   let dotColor: string = colors.green;
   let label = t("trip.live");
-  if (tracking.status === "denied") {
+  if (off) {
     dotColor = colors.red;
     label = t("trip.locationOff");
   } else if (offline) {
@@ -439,11 +530,20 @@ function TrackingBadge({ tracking }: { tracking: TripLocationState }) {
     label = t("trip.locating");
   }
 
-  return (
-    <View style={styles.trackBadge}>
+  const inner = (
+    <>
       <View style={[styles.trackDot, { backgroundColor: dotColor }]} />
       <Text style={styles.trackText}>{label}</Text>
-    </View>
+      {off ? <Text style={styles.trackEnable}>· {t("trip.gpsTapEnable")}</Text> : null}
+    </>
+  );
+
+  return off ? (
+    <TouchableOpacity style={styles.trackBadge} onPress={onReEnable} activeOpacity={0.7}>
+      {inner}
+    </TouchableOpacity>
+  ) : (
+    <View style={styles.trackBadge}>{inner}</View>
   );
 }
 
@@ -691,6 +791,12 @@ const styles = StyleSheet.create({
   trackBadge: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
   trackDot: { width: 8, height: 8, borderRadius: 4 },
   trackText: { fontSize: 13, fontWeight: "700", color: colors.navy },
+  trackEnable: { fontSize: 13, fontWeight: "700", color: colors.blue },
+  gpsConsentBody: { fontSize: 14.5, color: colors.textMuted, textAlign: "center", lineHeight: 21, marginBottom: 4 },
+  gpsPoints: { alignSelf: "stretch", gap: 10, marginTop: 16 },
+  gpsPointRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  gpsPointText: { flex: 1, fontSize: 14, fontWeight: "600", color: colors.navy },
+  gpsNotNow: { fontSize: 15, fontWeight: "700", color: colors.textMuted },
 
   sheetContent: { paddingHorizontal: 16, paddingBottom: 40 },
   sheetHandleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },

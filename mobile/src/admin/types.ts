@@ -260,6 +260,7 @@ export interface LivePosition {
   latitude: number;
   longitude: number;
   recorded_at: string;
+  source: string; // "phone" | "vendor" — fleet map prefers a fresh vendor fix
   stale: boolean; // no ping for >3 min — show as "signal lost"
 }
 

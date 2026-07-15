@@ -112,6 +112,7 @@ export interface TripLatestLocation {
   latitude: number;
   longitude: number;
   recorded_at: string;
+  source: string; // "phone" | "vendor"
   stale: boolean;
 }
 
