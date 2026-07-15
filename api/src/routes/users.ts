@@ -5,6 +5,7 @@ import { ApiError } from "../lib/apiError";
 import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
+import { normalizePhone, isNormalizedPhone } from "../lib/phone";
 import {
   computeScore,
   isTripOnTime,
@@ -199,6 +200,26 @@ router.patch("/:id/approve", validateBody(approveSchema), async (req, res, next)
       throw new ApiError(404, "USER_NOT_FOUND", "User not found.");
     }
 
+    // Disable guards (no such risk when activating). Mirror the role endpoint:
+    // never let an admin lock everyone (incl. themselves) out of the system.
+    if (status === "disabled") {
+      if (id === req.user!.id) {
+        throw new ApiError(400, "CANNOT_DISABLE_SELF", "You cannot disable your own account.");
+      }
+      if (user.role === "admin") {
+        const otherActiveAdmins = await prisma.user.count({
+          where: { role: "admin", status: "active", id: { not: id } },
+        });
+        if (otherActiveAdmins === 0) {
+          throw new ApiError(
+            409,
+            "LAST_ADMIN",
+            "Cannot disable the last active admin. Activate or promote another admin first."
+          );
+        }
+      }
+    }
+
     const updated = await prisma.user.update({ where: { id }, data: { status } });
 
     await prisma.auditLog.create({
@@ -291,6 +312,94 @@ router.patch("/:id/role", validateBody(roleSchema), async (req, res, next) => {
     });
 
     res.json({ id: updated.id, role: updated.role, status: updated.status });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /users/:id — admin edits a user's IDENTITY fields (name / phone /
+// department / employee number). Role and status have their own guarded
+// endpoints (/role, /approve); this one deliberately can't touch them. Phone is
+// the login ID, so it's normalized, format-checked and kept unique. Audit-logged.
+const adminUpdateUserSchema = z
+  .object({
+    name: z.string().trim().min(1, "Name cannot be empty").optional(),
+    phone: z.string().min(1).optional(),
+    department_id: z.string().min(1).optional(),
+    employee_number: z.string().trim().min(1).optional(),
+  })
+  .refine((b) => Object.keys(b).length > 0, { message: "No fields to update." });
+
+router.patch("/:id", validateBody(adminUpdateUserSchema), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { name, phone, department_id, employee_number } = req.body as {
+      name?: string;
+      phone?: string;
+      department_id?: string;
+      employee_number?: string;
+    };
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) throw new ApiError(404, "USER_NOT_FOUND", "User not found.");
+
+    const data: {
+      name?: string;
+      phone?: string;
+      department_id?: string;
+      employee_number?: string;
+    } = {};
+    if (name !== undefined) data.name = name;
+    if (employee_number !== undefined) data.employee_number = employee_number;
+
+    if (department_id !== undefined) {
+      const dept = await prisma.department.findUnique({ where: { id: department_id } });
+      if (!dept) {
+        throw new ApiError(400, "DEPARTMENT_NOT_FOUND", "Selected department does not exist.");
+      }
+      data.department_id = department_id;
+    }
+
+    if (phone !== undefined) {
+      const normalized = normalizePhone(phone);
+      if (!isNormalizedPhone(normalized)) {
+        throw new ApiError(400, "INVALID_PHONE", "Enter a valid Malaysian phone number.");
+      }
+      const clash = await prisma.user.findUnique({ where: { phone: normalized } });
+      if (clash && clash.id !== id) {
+        throw new ApiError(
+          409,
+          "PHONE_ALREADY_REGISTERED",
+          "Another account already uses this phone number."
+        );
+      }
+      data.phone = normalized;
+    }
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data,
+      select: {
+        id: true,
+        phone: true,
+        name: true,
+        employee_number: true,
+        role: true,
+        status: true,
+        department_id: true,
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        user_id: req.user!.id,
+        action: "user.admin_update",
+        table_name: "User",
+        record_id: id,
+      },
+    });
+
+    res.json(updated);
   } catch (err) {
     next(err);
   }

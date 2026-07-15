@@ -22,12 +22,14 @@ import type {
   PublicHoliday,
   RateAuditEntry,
   RateResetResult,
+  Role,
   Trip,
   TripPage,
   Truck,
   TruckExpiryAlert,
   TruckFuelLogs,
   TruckFuelSummary,
+  UserStatus,
 } from "../types";
 
 // ── Queries ──────────────────────────────────────────────────────────
@@ -311,6 +313,68 @@ export function usePendingUsers() {
     queryKey: ["users", "pending_approval"],
     queryFn: async () =>
       (await api.get<AdminUser[]>("/users", { params: { status: "pending_approval" } })).data,
+  });
+}
+
+// ── All Users (Part B) ─────────────────────────────────────────────────────
+export interface UserFilters {
+  role?: Role;
+  status?: UserStatus;
+}
+
+export function useUsers(filters: UserFilters = {}) {
+  return useQuery({
+    queryKey: ["users", "all", filters.role ?? "any", filters.status ?? "any"],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (filters.role) params.role = filters.role;
+      if (filters.status) params.status = filters.status;
+      return (await api.get<AdminUser[]>("/users", { params })).data;
+    },
+  });
+}
+
+// Broad ["users"] invalidation so BOTH the All-Users list and the pending queue
+// refresh after any user mutation (partial key match covers every sub-key).
+export function useChangeUserRole() {
+  const invalidate = useInvalidate([["users"], ["dashboard"]]);
+  return useMutation({
+    mutationFn: async (v: { id: string; role: Role }) =>
+      (await api.patch<AdminUser>(`/users/${v.id}/role`, { role: v.role })).data,
+    onSuccess: invalidate,
+  });
+}
+
+export function useSetUserStatus() {
+  const invalidate = useInvalidate([["users"], ["dashboard"]]);
+  return useMutation({
+    mutationFn: async (v: { id: string; status: UserStatus }) =>
+      (await api.patch(`/users/${v.id}/approve`, { status: v.status })).data,
+    onSuccess: invalidate,
+  });
+}
+
+export function useResetUserPassword() {
+  return useMutation({
+    mutationFn: async (v: { user_id: string; new_password: string }) =>
+      (await api.post("/auth/forgot-password", v)).data,
+  });
+}
+
+export interface AdminUpdateUserInput {
+  id: string;
+  name?: string;
+  phone?: string;
+  department_id?: string;
+  employee_number?: string;
+}
+
+export function useAdminUpdateUser() {
+  const invalidate = useInvalidate([["users"]]);
+  return useMutation({
+    mutationFn: async ({ id, ...body }: AdminUpdateUserInput) =>
+      (await api.patch<AdminUser>(`/users/${id}`, body)).data,
+    onSuccess: invalidate,
   });
 }
 

@@ -7,6 +7,7 @@ import { isNormalizedPhone, normalizePhone } from "../lib/phone";
 import { validateBody } from "../middleware/validate";
 import { accountStatusError, requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
+import { sensitiveRateLimiter } from "../middleware/rateLimit";
 import {
   signAccessToken,
   signRefreshToken,
@@ -177,6 +178,7 @@ const forgotPasswordSchema = z.object({
 
 router.post(
   "/forgot-password",
+  sensitiveRateLimiter,
   requireAuth,
   requireRole("admin"),
   validateBody(forgotPasswordSchema),
@@ -190,9 +192,20 @@ router.post(
       }
 
       const password_hash = await bcrypt.hash(new_password, BCRYPT_COST);
+      // Revoke the target's sessions (unlike a self-change): the point of an
+      // admin reset is to lock out whoever currently holds the account.
       await prisma.user.update({
         where: { id: user_id },
         data: { password_hash, refresh_token_hash: null },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          user_id: req.user!.id, // the admin who performed the reset
+          action: "user.password_reset_by_admin",
+          table_name: "User",
+          record_id: user_id,
+        },
       });
 
       res.json({ message: "Password reset successfully." });
