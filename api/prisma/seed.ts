@@ -65,20 +65,25 @@ interface UwcSpec {
 const SPEC_PATH = path.resolve(__dirname, "../../docs/uwc-spec.json");
 const spec: UwcSpec = JSON.parse(fs.readFileSync(SPEC_PATH, "utf-8"));
 
+// $UWC_REFS_DIR — the directory holding all NDA reference/spec material (the
+// consignee workbook + this private driver-identity overlay), set in api/.env.
+// It lives OUTSIDE the repo — e.g. a synced Google Drive folder — so the same
+// files are shared across machines without ever touching the public repo. When
+// unset, the code falls back to the in-repo (gitignored) References/ folder.
+const REFS_DIR = process.env.UWC_REFS_DIR;
+
 // PII overlay: the public docs/uwc-spec.json carries NEUTRAL placeholder driver
 // names/employee numbers (the repo is public; the real identities are NDA data).
-// The real values live in the repo's gitignored, local-only `References/` folder
-// — the home of all reference/spec material (the master doc, the consignee
-// workbook, and this private overlay). We look for the overlay in priority order:
-//   1. $UWC_PRIVATE_SPEC_PATH                   — explicit override, any absolute path
-//   2. References/uwc-spec.private.json         — the in-repo (gitignored) home
-//   3. ../uwc-master-doc/uwc-spec.private.json  — legacy sibling location (retired
-//      2026-07-15 when the material moved back into References/; kept as a
-//      fallback for any old checkout that still has it)
+// We look for the real-values overlay in priority order:
+//   1. $UWC_PRIVATE_SPEC_PATH                   — explicit file override, any path
+//   2. $UWC_REFS_DIR/uwc-spec.private.json      — the refs dir (e.g. Drive folder)
+//   3. References/uwc-spec.private.json         — in-repo, gitignored fallback
+//   4. ../uwc-master-doc/uwc-spec.private.json  — legacy sibling (retired 2026-07-15)
 // First existing candidate wins. If NONE is found we WARN LOUDLY and fall back to
 // the placeholder identities — never silently seeding placeholders as if real.
 const PRIVATE_SPEC_CANDIDATES: string[] = [
   process.env.UWC_PRIVATE_SPEC_PATH,
+  REFS_DIR ? path.join(REFS_DIR, "uwc-spec.private.json") : undefined,
   path.resolve(__dirname, "../../References/uwc-spec.private.json"),
   path.resolve(__dirname, "../../../uwc-master-doc/uwc-spec.private.json"),
 ].filter((p): p is string => Boolean(p));
@@ -105,8 +110,8 @@ if (privateSpecPath) {
       "   (Driver 1–6 / D001–D006), NOT the real UWC names/employee numbers.",
       "   Looked in:",
       ...PRIVATE_SPEC_CANDIDATES.map((p) => `     - ${p}`),
-      "   To seed the real identities: set UWC_PRIVATE_SPEC_PATH to the overlay file,",
-      "   or place uwc-spec.private.json in the repo's References/ folder.",
+      "   To seed the real identities: set UWC_REFS_DIR (or UWC_PRIVATE_SPEC_PATH)",
+      "   in api/.env to the folder holding uwc-spec.private.json (e.g. the Drive folder).",
       "",
     ].join("\n")
   );
@@ -317,13 +322,20 @@ async function seedAdmin() {
 }
 
 async function seedConsignees() {
-  const excelPath = path.resolve(__dirname, "../../References/TRUCK BOOKING SYSTEM (YS).xlsx");
-  // References/ is gitignored (consignee data is NDA-confidential and never
-  // committed), so on a fresh clone / clean environment the file is absent.
-  // Skip the consignee import gracefully instead of crashing the whole seed.
-  if (!fs.existsSync(excelPath)) {
+  // The consignee workbook is NDA-confidential and never committed. Look in
+  // $UWC_REFS_DIR (e.g. the synced Drive folder) first, then the in-repo
+  // gitignored References/ fallback. Absent on a fresh clone with neither set —
+  // skip the import gracefully instead of crashing the whole seed.
+  const EXCEL_NAME = "TRUCK BOOKING SYSTEM (YS).xlsx";
+  const excelPath = [
+    REFS_DIR ? path.join(REFS_DIR, EXCEL_NAME) : undefined,
+    path.resolve(__dirname, `../../References/${EXCEL_NAME}`),
+  ]
+    .filter((p): p is string => Boolean(p))
+    .find((p) => fs.existsSync(p));
+  if (!excelPath) {
     console.warn(
-      `Consignee workbook not found at ${excelPath} — skipping consignee import (References/ is gitignored, NDA-confidential).`
+      `Consignee workbook "${EXCEL_NAME}" not found ($UWC_REFS_DIR and References/ both absent) — skipping consignee import (NDA-confidential, gitignored).`
     );
     return;
   }
