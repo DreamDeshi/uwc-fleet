@@ -395,7 +395,13 @@ model TripDocument {
   trip_id     String
   trip        Trip         @relation(fields: [trip_id], references: [id])
   type        DocumentType
-  file_url    String
+  file_url    String // legacy rows: public URL; new rows: the private/authenticated URL
+  // Cloudinary handle for the AUTHENTICATED (private-delivery) asset. Set → the
+  // API serves a freshly-signed URL (lib/podPhotos.ts); NULL → legacy public
+  // file_url, until the backfill (prisma/secure-existing-documents.ts). Additive.
+  public_id     String?
+  resource_type String? // "image" | "raw" — sign the right delivery URL
+  format        String? // original extension (jpg/png/pdf…) so the signed URL keeps it
   uploaded_at DateTime     @default(now())
 }
 

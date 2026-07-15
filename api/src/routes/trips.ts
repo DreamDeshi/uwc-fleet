@@ -1503,10 +1503,24 @@ router.post(
         throw new ApiError(403, "FORBIDDEN", "You do not have permission to add documents to this trip.");
       }
 
-      const { url } = await uploadBuffer(req.file.buffer, "uwc/documents", { resourceType: "auto" });
+      // Authenticated (private) upload: the delivery URL 401s without a
+      // signature, so DO/invoice paperwork is no longer publicly accessible.
+      // Store the handles; the trips-router serializer signs file_url on read.
+      const { url, publicId, resourceType, format } = await uploadBuffer(
+        req.file.buffer,
+        "uwc/documents",
+        { type: "authenticated", resourceType: "auto" }
+      );
 
       await prisma.tripDocument.create({
-        data: { trip_id: id, type, file_url: url },
+        data: {
+          trip_id: id,
+          type,
+          file_url: url,
+          public_id: publicId,
+          resource_type: resourceType,
+          format,
+        },
       });
       await prisma.auditLog.create({
         data: { user_id: req.user!.id, action: "trip.document_uploaded", table_name: "TripDocument", record_id: id },

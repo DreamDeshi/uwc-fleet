@@ -121,4 +121,39 @@ describe("POD photo privacy", () => {
     );
     expect(found!.stops[0].pod_photo).toContain("s--");
   });
+
+  it("serves a SIGNED URL for a trip DOCUMENT with a public_id (extension preserved)", async () => {
+    const { requestor, admin, rt } = await setup();
+    const trip = await bookTrip(requestor, ["P1"], rt);
+    await prisma.tripDocument.create({
+      data: {
+        trip_id: trip.id,
+        type: "do_photo",
+        file_url: "https://res.cloudinary.com/testcloud/image/authenticated/uwc/documents/abc123",
+        public_id: "uwc/documents/abc123",
+        resource_type: "image",
+        format: "jpg",
+      },
+    });
+
+    const res = await api().get(`/api/v1/trips/${trip.id}`).set(auth(admin));
+    expect(res.status).toBe(200);
+    const served = res.body.documents[0].file_url as string;
+    expect(served).toContain("/authenticated/");
+    expect(served).toContain("s--");
+    expect(served).toMatch(/uwc\/documents\/abc123\.jpg/); // extension kept for the client's image check
+  });
+
+  it("serves a LEGACY document (no public_id) unchanged — backward compatible", async () => {
+    const { requestor, admin, rt } = await setup();
+    const trip = await bookTrip(requestor, ["P1"], rt);
+    const legacy = "https://res.cloudinary.com/dultrxlvm/image/upload/uwc/documents/old-doc.pdf";
+    await prisma.tripDocument.create({
+      data: { trip_id: trip.id, type: "other", file_url: legacy }, // public_id stays null
+    });
+
+    const res = await api().get(`/api/v1/trips/${trip.id}`).set(auth(admin));
+    expect(res.status).toBe(200);
+    expect(res.body.documents[0].file_url).toBe(legacy);
+  });
 });

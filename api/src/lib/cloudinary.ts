@@ -24,6 +24,12 @@ export interface UploadResult {
   url: string;
   /** Cloudinary public_id — the stable handle used to sign delivery URLs. */
   publicId: string;
+  /** Delivery resource type Cloudinary assigned ("image" | "raw" | "video"). For
+   *  `resourceType: "auto"` uploads (documents) this is needed to sign correctly. */
+  resourceType: string;
+  /** Original file format/extension (e.g. "jpg", "png", "pdf"), or undefined for
+   *  raw assets — kept so a signed URL preserves the extension. */
+  format?: string;
 }
 
 /**
@@ -63,7 +69,12 @@ export function uploadBuffer(
           reject(error ?? new Error("Cloudinary upload returned no result."));
           return;
         }
-        resolve({ url: result.secure_url, publicId: result.public_id });
+        resolve({
+          url: result.secure_url,
+          publicId: result.public_id,
+          resourceType: result.resource_type,
+          format: result.format,
+        });
       }
     );
     stream.end(buffer);
