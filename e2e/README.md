@@ -11,7 +11,8 @@ explicitly opt in:
 | *(none)* | Local targets: API `localhost:3000`, admin `localhost:5173`, mobile web `localhost:8081` — start them yourself. |
 | `E2E_ALLOW_PROD=1` | Targets the deployed Railway apps (post-deploy verification). Prints a loud warning. |
 | `E2E_API_URL` / `E2E_ADMIN_URL` / `E2E_MOBILE_URL` | Explicit per-service overrides (e.g. staging). A Railway host still requires `E2E_ALLOW_PROD=1`. |
-| `E2E_PASSWORD` | Account password override (default: the seeded `Password123`). Use after prod credentials are rotated. |
+| `E2E_PASSWORD` | Password for all three accounts (default: the local fresh-seed placeholder). Use after credentials are rotated. |
+| `E2E_ADMIN_PASSWORD` / `E2E_DRIVER_PASSWORD` / `E2E_REQUESTOR_PASSWORD` | Per-account overrides (each falls back to `E2E_PASSWORD`). Needed once accounts have distinct rotated passwords. |
 
 > ⚠ **The suite modifies real data on whatever backend it targets.** The
 > per-spec reset cancels **every** pending/approved trip, completes the test
@@ -27,13 +28,15 @@ workspace), so install its dependencies separately.
 
 - Node 18+ (uses the global `fetch`).
 - The seeded test accounts must exist in the target DB (they are created by
-  `api/prisma/seed.ts` / kept by `seed-clean.ts`):
+  `api/prisma/seed.ts` / kept by `seed-clean.ts`). Passwords come from the env
+  vars above — a LOCAL fresh seed uses a placeholder; any deployment has them
+  rotated, so supply the current values via `E2E_*_PASSWORD`:
 
-  | Role | Phone | Password |
+  | Role | Phone | Password source |
   | --- | --- | --- |
-  | Admin | `+60100000001` | `Password123` (or `E2E_PASSWORD`) |
-  | Driver (PLX 2406) | `+60100000101` | `Password123` (or `E2E_PASSWORD`) |
-  | Requestor | `+60199990001` | `Password123` (or `E2E_PASSWORD`) |
+  | Admin | `+60100000001` | `E2E_ADMIN_PASSWORD` → `E2E_PASSWORD` → local seed placeholder |
+  | Driver (PLX 2406) | `+60100000101` | `E2E_DRIVER_PASSWORD` → `E2E_PASSWORD` → local seed placeholder |
+  | Requestor | `+60199990001` | `E2E_REQUESTOR_PASSWORD` → `E2E_PASSWORD` → local seed placeholder |
 
 ## Install
 

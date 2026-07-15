@@ -32,10 +32,14 @@ with the **Expo Go** app on your phone.
 
 ## Test logins (from the seed)
 
-| Role      | Phone           | Password      |
-|-----------|-----------------|---------------|
-| Driver    | `+60100000101`  | `Password123` |
-| Admin     | `+60100000001`  | `Password123` |
+| Role      | Phone           | Password              |
+|-----------|-----------------|-----------------------|
+| Driver    | `+60100000101`  | fresh-seed default \* |
+| Admin     | `+60100000001`  | fresh-seed default \* |
+
+\* A local fresh seed creates a placeholder password; it is rotated away on any
+shared/live deployment (`api/prisma/rotate-passwords.ts`). Ask an admin for the
+current password, or set your own after logging into a local seed.
 
 The driver phone is typed in the login screen as the local part after `+60`
 (e.g. `100000101`). Register new requestor/driver accounts from the app — they

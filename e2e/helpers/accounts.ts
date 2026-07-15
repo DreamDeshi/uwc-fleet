@@ -13,9 +13,11 @@
  *   - E2E_API_URL / E2E_ADMIN_URL / E2E_MOBILE_URL → explicit per-service
  *     overrides (e.g. a staging deployment); a Railway host still requires
  *     E2E_ALLOW_PROD=1.
- *   - E2E_PASSWORD            → account password override (defaults to the
- *     seeded Password123, which local seeds create; use this after the prod
- *     credentials are rotated).
+ *   - E2E_PASSWORD            → password for ALL three accounts (defaults to the
+ *     local fresh-seed placeholder). Use after the credentials are rotated.
+ *   - E2E_ADMIN_PASSWORD / E2E_DRIVER_PASSWORD / E2E_REQUESTOR_PASSWORD →
+ *     per-account overrides (each falls back to E2E_PASSWORD). Needed once the
+ *     accounts have DISTINCT rotated passwords (the normal post-rotation state).
  *
  * The accounts already exist wherever the seeds ran (see api/prisma/seed.ts /
  * seed-clean.ts). Tests never create users — they log in as these and drive
@@ -77,13 +79,26 @@ export interface Account {
   password: string;
 }
 
-// Password for all seeded test accounts; override with E2E_PASSWORD once the
-// deployed credentials are rotated away from the seed default.
-const PASSWORD = process.env.E2E_PASSWORD ?? "Password123";
+// Account passwords. A LOCAL fresh seed still creates the placeholder default,
+// so that remains the ultimate fallback for local runs. Against any deployment
+// with rotated, per-account passwords, set the per-role vars (or a single
+// E2E_PASSWORD if they still share one). Precedence: per-role → E2E_PASSWORD →
+// local seed placeholder.
+const SEED_PLACEHOLDER = "Password123";
+const sharedPassword = process.env.E2E_PASSWORD ?? SEED_PLACEHOLDER;
 
-export const ADMIN: Account = { phone: "+60100000001", password: PASSWORD };
-export const DRIVER: Account = { phone: "+60100000101", password: PASSWORD }; // the PLX 2406 driver
-export const REQUESTOR: Account = { phone: "+60199990001", password: PASSWORD };
+export const ADMIN: Account = {
+  phone: "+60100000001",
+  password: process.env.E2E_ADMIN_PASSWORD ?? sharedPassword,
+};
+export const DRIVER: Account = {
+  phone: "+60100000101", // the PLX 2406 driver
+  password: process.env.E2E_DRIVER_PASSWORD ?? sharedPassword,
+};
+export const REQUESTOR: Account = {
+  phone: "+60199990001",
+  password: process.env.E2E_REQUESTOR_PASSWORD ?? sharedPassword,
+};
 
 // the PLX 2406 driver's assigned truck. The /approve endpoint requires truck_plate to match the
 // driver's assigned_truck_plate; helpers/api.ts resolves this live from

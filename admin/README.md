@@ -16,7 +16,10 @@ default CORS allowlist already includes `http://localhost:5173`.
 To point at a different API host, copy `.env.example` to `.env` and set
 `VITE_API_URL`.
 
-**Admin login (seeded):** `+60100000001` / `Password123`
+**Admin login:** phone `+60100000001`. On a fresh local seed the password is a
+placeholder; on any shared/live deployment it is rotated (see
+`api/prisma/rotate-passwords.ts`) — ask an admin for the current one. Locked out
+with no admin at all? Use the break-glass recovery (`api/prisma/break-glass-admin.ts`).
 
 > The dashboard is admin-only. Logging in with a driver/requestor account is
 > rejected client-side and server-side.
