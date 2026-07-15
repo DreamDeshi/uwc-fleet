@@ -11,6 +11,7 @@ import type {
   AttentionReport,
   Consignee,
   DashboardKpis,
+  Department,
   DestinationRate,
   DriverLeaveEntry,
   DriverPerf,
@@ -374,6 +375,108 @@ export function useAdminUpdateUser() {
   return useMutation({
     mutationFn: async ({ id, ...body }: AdminUpdateUserInput) =>
       (await api.patch<AdminUser>(`/users/${id}`, body)).data,
+    onSuccess: invalidate,
+  });
+}
+
+// ── Fleet management (add/retire drivers & trucks) ──────────────────────────
+// Departments feed the Add-Driver form's picker (same list registration uses).
+export function useDepartments() {
+  return useQuery({
+    queryKey: ["departments"],
+    queryFn: async () => (await api.get<Department[]>("/departments")).data,
+    staleTime: 1000 * 60 * 60,
+  });
+}
+
+export interface CreateDriverInput {
+  phone: string;
+  password: string;
+  name: string;
+  employee_number: string;
+  department_id: string;
+  assigned_truck_plate?: string;
+}
+
+// A fleet add/retire touches the driver board, the users list, the trucks
+// board (a bound/freed truck changes its "driver" cell) and the dashboard.
+export function useCreateDriver() {
+  const invalidate = useInvalidate([["drivers"], ["users"], ["trucks"], ["dashboard"]]);
+  return useMutation({
+    mutationFn: async (body: CreateDriverInput) => (await api.post("/users", body)).data,
+    onSuccess: invalidate,
+  });
+}
+
+// plate=string binds/reassigns; plate=null frees the truck (the departed-driver
+// path). Server enforces the 1:1 binding + not-retired + no-active-trip guards.
+export function useAssignDriverTruck() {
+  const invalidate = useInvalidate([["drivers"], ["users"], ["trucks"], ["dashboard"]]);
+  return useMutation({
+    mutationFn: async (v: { id: string; plate: string | null }) =>
+      (await api.patch(`/users/${v.id}/truck`, { plate: v.plate })).data,
+    onSuccess: invalidate,
+  });
+}
+
+// Retire (disable) / reactivate a driver — /approve, but invalidating the driver
+// board + trucks too (unlike the All-Users useSetUserStatus).
+export function useSetDriverStatus() {
+  const invalidate = useInvalidate([["drivers"], ["users"], ["trucks"], ["dashboard"]]);
+  return useMutation({
+    mutationFn: async (v: { id: string; status: "active" | "disabled" }) =>
+      (await api.patch(`/users/${v.id}/approve`, { status: v.status })).data,
+    onSuccess: invalidate,
+  });
+}
+
+export interface CreateTruckInput {
+  plate: string;
+  type: string;
+  max_pallets: number;
+  entitled_claim_weekday: number;
+  entitled_claim_offpeak: number;
+  daily_deduction_points: number;
+  priority_zones?: string[];
+  operating_hours_start?: string;
+  operating_hours_end?: string;
+}
+
+export function useCreateTruck() {
+  const invalidate = useInvalidate([["trucks"], ["dashboard"]]);
+  return useMutation({
+    mutationFn: async (body: CreateTruckInput) => (await api.post<Truck>("/trucks", body)).data,
+    onSuccess: invalidate,
+  });
+}
+
+// Edit NON-money attributes only (type / capacity / zones / hours). Rates and
+// documents keep their own endpoints — this never touches the money path.
+export function useUpdateTruck() {
+  const invalidate = useInvalidate([["trucks"], ["dashboard"]]);
+  return useMutation({
+    mutationFn: async (v: {
+      plate: string;
+      type?: string;
+      max_pallets?: number;
+      priority_zones?: string[];
+      operating_hours_start?: string;
+      operating_hours_end?: string;
+    }) => {
+      const { plate, ...body } = v;
+      return (await api.patch<Truck>(`/trucks/${encodeURIComponent(plate)}`, body)).data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+// Retire frees the truck's driver (server-side) and drops it from dispatch +
+// alerts, so refresh drivers/alerts alongside the fleet list.
+export function useRetireTruck() {
+  const invalidate = useInvalidate([["trucks"], ["trucks", "alerts"], ["drivers"], ["dashboard"]]);
+  return useMutation({
+    mutationFn: async (v: { plate: string; retired: boolean }) =>
+      (await api.patch(`/trucks/${encodeURIComponent(v.plate)}/retire`, { retired: v.retired })).data,
     onSuccess: invalidate,
   });
 }

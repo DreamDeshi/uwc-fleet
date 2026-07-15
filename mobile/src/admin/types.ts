@@ -243,7 +243,8 @@ export interface Truck {
   permit_expiry: string | null;
   road_tax_expiry: string | null;
   is_available: boolean;
-  status: "active" | "idle" | "maintenance";
+  retired_at: string | null;
+  status: "active" | "idle" | "maintenance" | "retired";
   driver: TripParty | null;
   current_load: number;
   current_route: string | null;

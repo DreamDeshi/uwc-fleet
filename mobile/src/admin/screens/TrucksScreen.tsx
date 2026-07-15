@@ -7,9 +7,16 @@ import React, { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
-import { useTrucks, useTruckAlerts, useUpdateTruckDocuments } from "../hooks/queries";
+import {
+  useCreateTruck,
+  useRetireTruck,
+  useTrucks,
+  useTruckAlerts,
+  useUpdateTruck,
+  useUpdateTruckDocuments,
+} from "../hooks/queries";
 import { colors, font, radius } from "../theme";
-import { Avatar, Button, Card, ChipGrid, EmptyState, ErrorState, Loading, Modal, Pill, SearchInput, SegmentedFilter } from "../components/ui";
+import { Avatar, Button, Card, ChipGrid, ConfirmDialog, EmptyState, ErrorState, Input, Loading, Modal, Pill, SearchInput, SegmentedFilter } from "../components/ui";
 import { LoadCapacityBar } from "../components/LoadCapacityBar";
 import { FuelPanel } from "../components/FuelPanel";
 import { DateField } from "../platform/datePicker";
@@ -22,9 +29,10 @@ const STATUS_META: Record<string, { labelKey: string; bg: string; fg: string; do
   active: { labelKey: "admin.trucks.statusActive", bg: colors.greenTint, fg: "#2E7D32", dot: colors.green },
   idle: { labelKey: "admin.trucks.statusIdle", bg: colors.blueTint, fg: colors.blue, dot: "#2563EB" },
   maintenance: { labelKey: "admin.trucks.statusMaintenance", bg: colors.orangeTint, fg: "#B45309", dot: colors.orange },
+  retired: { labelKey: "admin.trucks.statusRetired", bg: "#f3f4f6", fg: "#4B5563", dot: "#9CA3AF" },
 };
 
-type Filter = "all" | "active" | "idle" | "maintenance";
+type Filter = "all" | "active" | "idle" | "maintenance" | "retired";
 type Tab = "fleet" | "fuel";
 
 export function TrucksScreen() {
@@ -34,6 +42,8 @@ export function TrucksScreen() {
   const [tab, setTab] = useState<Tab>("fleet");
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [managing, setManaging] = useState<Truck | null>(null);
 
   const counts = useMemo(() => {
     const list = trucks.data ?? [];
@@ -42,6 +52,7 @@ export function TrucksScreen() {
       active: list.filter((tr) => tr.status === "active").length,
       idle: list.filter((tr) => tr.status === "idle").length,
       maintenance: list.filter((tr) => tr.status === "maintenance").length,
+      retired: list.filter((tr) => tr.status === "retired").length,
     };
   }, [trucks.data]);
 
@@ -81,13 +92,20 @@ export function TrucksScreen() {
         <>
           <AlertsPanel />
 
+          {/* Add a truck to the fleet. */}
+          <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+            <Button variant="primary" size="sm" onPress={() => setAdding(true)}>
+              {`+ ${t("admin.trucks.addTruck")}`}
+            </Button>
+          </View>
+
           {/* Narrow: an even 2-col chip grid; wide keeps the inline segmented row. */}
           {(() => {
             const filterOptions = [
               { value: "all" as Filter, label: t("admin.trucks.filterAll"), count: counts.all },
               { value: "active" as Filter, label: t("admin.trucks.statusActive"), count: counts.active },
               { value: "idle" as Filter, label: t("admin.trucks.statusIdle"), count: counts.idle },
-              { value: "maintenance" as Filter, label: t("admin.trucks.statusMaintenance"), count: counts.maintenance },
+              { value: "retired" as Filter, label: t("admin.trucks.statusRetired"), count: counts.retired },
             ];
             return wide ? (
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
@@ -110,11 +128,14 @@ export function TrucksScreen() {
             <View style={{ flexDirection: wide ? "row" : "column", flexWrap: wide ? "wrap" : "nowrap", gap: 16 }}>
               {filtered.map((tr) => (
                 <View key={tr.plate} style={wide ? { width: "48.9%", flexGrow: 1 } : undefined}>
-                  <TruckCard truck={tr} />
+                  <TruckCard truck={tr} onManage={() => setManaging(tr)} />
                 </View>
               ))}
             </View>
           )}
+
+          {adding ? <AddTruckModal onClose={() => setAdding(false)} /> : null}
+          {managing ? <ManageTruckModal truck={managing} onClose={() => setManaging(null)} /> : null}
         </>
       )}
     </ScrollView>
@@ -201,10 +222,11 @@ function AlertDocRow({ label, doc }: { label: string; doc: DocExpiry }) {
   );
 }
 
-function TruckCard({ truck: tr }: { truck: Truck }) {
+function TruckCard({ truck: tr, onManage }: { truck: Truck; onManage: () => void }) {
   const { t } = useTranslation();
   const meta = STATUS_META[tr.status] ?? STATUS_META.idle;
-  const hasAlert = tr.alerts.length > 0;
+  // Retired trucks are out of service — don't flag their doc expiries.
+  const hasAlert = !tr.retired_at && tr.alerts.length > 0;
   // Expired insurance/road tax hard-blocks dispatch (permit warns) — this
   // modal is the renewal path that un-bricks the truck.
   const [editingDocs, setEditingDocs] = useState(false);
@@ -250,7 +272,10 @@ function TruckCard({ truck: tr }: { truck: Truck }) {
         <DocRow label={t("admin.dashboard.doc_permit")} date={tr.permit_expiry} alert={findAlert(tr.alerts, "permit")} />
         <DocRow label={t("admin.dashboard.doc_road_tax")} date={tr.road_tax_expiry} alert={findAlert(tr.alerts, "road_tax")} />
       </View>
-      <View style={{ marginTop: 10 }}>
+      <View style={{ marginTop: 10, flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+        <Button variant="outline" size="sm" onPress={onManage}>
+          {t("admin.trucks.manage")}
+        </Button>
         <Button variant="ghost" size="sm" onPress={() => setEditingDocs(true)}>
           {t("admin.trucks.updateDocs")}
         </Button>
@@ -354,5 +379,182 @@ function RatePill({ label, value, color, bg }: { label: string; value: string; c
         {value}
       </Text>
     </View>
+  );
+}
+
+// ── Fleet CRUD: add / manage a truck ─────────────────────────────────────
+const TRUCK_SECTION = { fontSize: font.md, fontWeight: "800" as const, color: colors.text, marginTop: 18, marginBottom: 10 };
+
+function TruckBanner({ text, kind }: { text: string; kind: "error" | "success" }) {
+  const c = kind === "error" ? colors.red : colors.green;
+  return (
+    <View style={{ backgroundColor: `${c}14`, borderRadius: radius.md, padding: 11, marginBottom: 12 }}>
+      <Text style={{ color: c, fontSize: font.sm, fontWeight: "600" }}>{text}</Text>
+    </View>
+  );
+}
+
+const parseNum = (s: string): number => {
+  const n = Number(s.trim());
+  return Number.isFinite(n) ? n : NaN;
+};
+const splitZones = (s: string): string[] => s.split(",").map((z) => z.trim()).filter(Boolean);
+
+function AddTruckModal({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
+  const create = useCreateTruck();
+  const [plate, setPlate] = useState("");
+  const [type, setType] = useState("");
+  const [maxPallets, setMaxPallets] = useState("");
+  const [weekday, setWeekday] = useState("");
+  const [offpeak, setOffpeak] = useState("");
+  const [deduction, setDeduction] = useState("");
+  const [zones, setZones] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    setError(null);
+    const mp = parseNum(maxPallets);
+    const wd = parseNum(weekday);
+    const op = parseNum(offpeak);
+    const dd = parseNum(deduction);
+    if (!plate.trim() || !type.trim() || !(mp > 0) || !(wd > 0) || !(op > 0) || !(dd >= 0)) {
+      setError(t("admin.trucks.createValidation"));
+      return;
+    }
+    try {
+      await create.mutateAsync({
+        plate: plate.trim(),
+        type: type.trim(),
+        max_pallets: Math.round(mp),
+        entitled_claim_weekday: wd,
+        entitled_claim_offpeak: op,
+        daily_deduction_points: Math.round(dd),
+        ...(splitZones(zones).length ? { priority_zones: splitZones(zones) } : {}),
+        ...(start.trim() ? { operating_hours_start: start.trim() } : {}),
+        ...(end.trim() ? { operating_hours_end: end.trim() } : {}),
+      });
+      onClose();
+    } catch (e) {
+      setError(apiErrorMessage(e, t("admin.trucks.createFailed")));
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={t("admin.trucks.addTruckTitle")} width={480}>
+      {error ? <TruckBanner text={error} kind="error" /> : null}
+      <Input label={t("admin.trucks.fieldPlate")} value={plate} onChange={setPlate} placeholder="ABC 1234" />
+      <Input label={t("admin.trucks.fieldType")} value={type} onChange={setType} placeholder="10t-30ft" />
+      <Input label={t("admin.trucks.fieldMaxPallets")} value={maxPallets} onChange={setMaxPallets} type="number" />
+      <Input label={t("admin.trucks.fieldWeekday")} value={weekday} onChange={setWeekday} type="number" />
+      <Input label={t("admin.trucks.fieldOffpeak")} value={offpeak} onChange={setOffpeak} type="number" />
+      <Input label={t("admin.trucks.fieldDeduction")} value={deduction} onChange={setDeduction} type="number" />
+      <Input label={t("admin.trucks.fieldZones")} value={zones} onChange={setZones} placeholder={t("admin.trucks.zonesHint")} />
+      <Input label={t("admin.trucks.fieldHoursStart")} value={start} onChange={setStart} placeholder="07:00" />
+      <Input label={t("admin.trucks.fieldHoursEnd")} value={end} onChange={setEnd} placeholder="18:00" />
+      <Text style={{ fontSize: font.sm, color: colors.textFaint, marginBottom: 12 }}>{t("admin.trucks.ratesNote")}</Text>
+      <Button variant="primary" full disabled={create.isPending} onPress={submit}>
+        {create.isPending ? t("admin.trucks.creating") : t("admin.trucks.create")}
+      </Button>
+    </Modal>
+  );
+}
+
+function ManageTruckModal({ truck, onClose }: { truck: Truck; onClose: () => void }) {
+  const { t } = useTranslation();
+  const update = useUpdateTruck();
+  const retire = useRetireTruck();
+  const [type, setType] = useState(truck.type);
+  const [maxPallets, setMaxPallets] = useState(String(truck.max_pallets));
+  const [zones, setZones] = useState(truck.priority_zones.join(", "));
+  const [start, setStart] = useState(truck.operating_hours_start);
+  const [end, setEnd] = useState(truck.operating_hours_end);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [confirmRetire, setConfirmRetire] = useState(false);
+  const retired = !!truck.retired_at;
+  const clear = () => {
+    setError(null);
+    setNotice(null);
+  };
+
+  async function saveAttrs() {
+    clear();
+    const mp = parseNum(maxPallets);
+    if (!type.trim() || !(mp > 0)) {
+      setError(t("admin.trucks.createValidation"));
+      return;
+    }
+    try {
+      await update.mutateAsync({
+        plate: truck.plate,
+        type: type.trim(),
+        max_pallets: Math.round(mp),
+        priority_zones: splitZones(zones),
+        ...(start.trim() ? { operating_hours_start: start.trim() } : {}),
+        ...(end.trim() ? { operating_hours_end: end.trim() } : {}),
+      });
+      setNotice(t("admin.trucks.attributesSaved"));
+    } catch (e) {
+      setError(apiErrorMessage(e, t("admin.trucks.updateFailed")));
+    }
+  }
+  function toggleRetire(next: boolean) {
+    clear();
+    retire.mutate(
+      { plate: truck.plate, retired: next },
+      {
+        onSuccess: () => {
+          setNotice(next ? t("admin.trucks.retiredNotice") : t("admin.trucks.reactivatedNotice"));
+          setConfirmRetire(false);
+        },
+        onError: (e) => {
+          setError(apiErrorMessage(e, t("admin.trucks.retireFailed")));
+          setConfirmRetire(false);
+        },
+      }
+    );
+  }
+
+  return (
+    <Modal open onClose={onClose} title={t("admin.trucks.manageTitle", { plate: truck.plate })} width={480}>
+      {error ? <TruckBanner text={error} kind="error" /> : null}
+      {notice ? <TruckBanner text={notice} kind="success" /> : null}
+
+      <Text style={TRUCK_SECTION}>{t("admin.trucks.sectionAttributes")}</Text>
+      <Input label={t("admin.trucks.fieldType")} value={type} onChange={setType} />
+      <Input label={t("admin.trucks.fieldMaxPallets")} value={maxPallets} onChange={setMaxPallets} type="number" />
+      <Input label={t("admin.trucks.fieldZones")} value={zones} onChange={setZones} placeholder={t("admin.trucks.zonesHint")} />
+      <Input label={t("admin.trucks.fieldHoursStart")} value={start} onChange={setStart} />
+      <Input label={t("admin.trucks.fieldHoursEnd")} value={end} onChange={setEnd} />
+      <Text style={{ fontSize: font.sm, color: colors.textFaint, marginBottom: 12 }}>{t("admin.trucks.ratesNote")}</Text>
+      <Button variant="primary" size="sm" disabled={update.isPending} onPress={saveAttrs}>
+        {t("admin.trucks.saveAttributes")}
+      </Button>
+
+      <Text style={TRUCK_SECTION}>{t("admin.trucks.sectionRetire")}</Text>
+      {retired ? (
+        <Button variant="success" size="sm" disabled={retire.isPending} onPress={() => toggleRetire(false)}>
+          {t("admin.trucks.reactivate")}
+        </Button>
+      ) : (
+        <Button variant="danger" size="sm" disabled={retire.isPending} onPress={() => setConfirmRetire(true)}>
+          {t("admin.trucks.retire")}
+        </Button>
+      )}
+
+      {confirmRetire ? (
+        <ConfirmDialog
+          title={t("admin.trucks.retireTitle")}
+          body={t("admin.trucks.retireBody", { plate: truck.plate })}
+          confirmLabel={t("admin.trucks.retire")}
+          pending={retire.isPending}
+          onClose={() => setConfirmRetire(false)}
+          onConfirm={() => toggleRetire(true)}
+        />
+      ) : null}
+    </Modal>
   );
 }
