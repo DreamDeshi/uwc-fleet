@@ -416,8 +416,11 @@ model LocationLog {
   latitude    Decimal  @db.Decimal(10, 7)
   longitude   Decimal  @db.Decimal(10, 7)
   recorded_at DateTime @default(now())
-  // GPS source abstracted — phone GPS now, vendor API later.
-  // Swap source in POST /locations endpoint only, no schema change needed.
+  // GPS source: "phone" (driver app, foreground + active-trip only) or "vendor"
+  // (third-party hardware; ingestion not yet built, see POST /locations). The
+  // fleet map prefers the freshest vendor fix, then phone. Additive; legacy rows
+  // default to "phone" (all existing rows are phone GPS).
+  source      String   @default("phone")
 
   // Supports "latest fix per trip" (GET /fleet/live) and per-trip history reads
   // as this table grows by one row per active truck every 30s.

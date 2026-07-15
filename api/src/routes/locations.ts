@@ -118,6 +118,7 @@ router.post(
         driver_id: driverId,
         latitude: p.latitude,
         longitude: p.longitude,
+        source: "phone", // driver phone GPS (foreground + active-trip only); vendor path stamps "vendor"
         // Points that sat in the phone's offline queue keep their ORIGINAL
         // capture time; live ticks omit it and take the DB default (now).
         ...(p.recorded_at ? { recorded_at: new Date(p.recorded_at) } : {}),

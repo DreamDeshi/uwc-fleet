@@ -2,20 +2,19 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
+import { resolveFleetFix } from "../lib/gpsPosition";
 
 const router = Router();
 router.use(requireAuth, requireRole("admin"));
 
-// How stale a GPS fix can be before we treat the truck as "signal lost".
-// Phones ping every 30s, so 3 minutes of silence means something's wrong
-// (no signal, app closed, phone off).
-const STALE_AFTER_MS = 3 * 60 * 1000;
-
-// ── GET /fleet/live — latest real GPS position of every truck on an active trip ──
+// ── GET /fleet/live — best real GPS position of every truck on an active trip ──
 //
-// One row per in-progress trip that has a truck assigned. Trucks that haven't
-// pinged yet simply don't appear here — the admin map falls back to the truck's
-// zone centroid for those, so the map is never blank.
+// One row per in-progress trip that has a truck assigned. Each carries a
+// `source` ("phone" | "vendor") and a `stale` flag; the resolver prefers the
+// freshest vendor fix, then phone (see lib/gpsPosition). Trucks that haven't
+// pinged at all don't appear — the admin map falls back to the zone centroid,
+// so the map is never blank. Fetch the last 20 logs per trip (>> the 3-min
+// fresh window at the 30s cadence) so a fresh vendor fix is always in range.
 router.get("/live", async (_req, res, next) => {
   try {
     const trips = await prisma.trip.findMany({
@@ -27,29 +26,30 @@ router.get("/live", async (_req, res, next) => {
         driver: { select: { id: true, name: true } },
         location_logs: {
           orderBy: { recorded_at: "desc" },
-          take: 1,
-          select: { latitude: true, longitude: true, recorded_at: true },
+          take: 20,
+          select: { latitude: true, longitude: true, recorded_at: true, source: true },
         },
       },
     });
 
     const now = Date.now();
-    const positions = trips
-      .filter((t) => t.location_logs.length > 0)
-      .map((t) => {
-        const last = t.location_logs[0];
-        const ageMs = now - last.recorded_at.getTime();
-        return {
+    const positions = trips.flatMap((t) => {
+      const fix = resolveFleetFix(t.location_logs, now);
+      if (!fix) return [];
+      return [
+        {
           plate: t.truck_plate!,
           trip_id: t.id,
           ticket_number: t.ticket_number,
           driver: t.driver,
-          latitude: Number(last.latitude),
-          longitude: Number(last.longitude),
-          recorded_at: last.recorded_at,
-          stale: ageMs > STALE_AFTER_MS,
-        };
-      });
+          latitude: fix.latitude,
+          longitude: fix.longitude,
+          recorded_at: fix.recorded_at,
+          source: fix.source,
+          stale: fix.stale,
+        },
+      ];
+    });
 
     res.json(positions);
   } catch (err) {

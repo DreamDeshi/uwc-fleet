@@ -55,6 +55,7 @@ import { loadHolidaySet } from "../lib/holidays";
 import { upload } from "../lib/upload";
 import { uploadBuffer } from "../lib/cloudinary";
 import { signTripResponse } from "../lib/podPhotos";
+import { resolveFleetFix } from "../lib/gpsPosition";
 import { sendPushNotifications } from "../lib/pushNotifications";
 import { getDispatchMode } from "../lib/settings";
 import { autoDispatchTrip } from "../services/dispatchEngine";
@@ -510,12 +511,11 @@ router.get("/:id/route", async (req, res, next) => {
   }
 });
 
-// ── GET /trips/:id/location — latest GPS fix for this trip (owner/driver/admin) ──
+// ── GET /trips/:id/location — best GPS fix for this trip (owner/driver/admin) ──
 //
 // Lets the requestor track their own delivery without exposing the whole fleet
-// (GET /fleet/live is admin-only). Returns null when the driver hasn't pinged.
-const LOCATION_STALE_AFTER_MS = 3 * 60 * 1000;
-
+// (GET /fleet/live is admin-only). Same source-preference resolver as the fleet
+// map; returns null (→ approximate) when there are no fixes.
 router.get("/:id/location", async (req, res, next) => {
   try {
     const trip = await prisma.trip.findUnique({
@@ -533,21 +533,24 @@ router.get("/:id/location", async (req, res, next) => {
       throw new ApiError(403, "FORBIDDEN", "You do not have permission to view this trip.");
     }
 
-    const last = await prisma.locationLog.findFirst({
+    const logs = await prisma.locationLog.findMany({
       where: { trip_id: req.params.id },
       orderBy: { recorded_at: "desc" },
-      select: { latitude: true, longitude: true, recorded_at: true },
+      take: 20,
+      select: { latitude: true, longitude: true, recorded_at: true, source: true },
     });
-    if (!last) {
+    const fix = resolveFleetFix(logs);
+    if (!fix) {
       res.json(null);
       return;
     }
 
     res.json({
-      latitude: Number(last.latitude),
-      longitude: Number(last.longitude),
-      recorded_at: last.recorded_at,
-      stale: Date.now() - last.recorded_at.getTime() > LOCATION_STALE_AFTER_MS,
+      latitude: fix.latitude,
+      longitude: fix.longitude,
+      recorded_at: fix.recorded_at,
+      source: fix.source,
+      stale: fix.stale,
     });
   } catch (err) {
     next(err);
