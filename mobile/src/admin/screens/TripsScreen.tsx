@@ -13,6 +13,7 @@ import { Linking, Pressable, RefreshControl, ScrollView, Text, TextInput, View }
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import {
+  useAbortTrip,
   useApproveTrip,
   useAssignExternal,
   useCancelTrip,
@@ -1026,12 +1027,29 @@ function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
   const { t } = useTranslation();
   const cancel = useCancelTrip();
   const unassign = useUnassignTrip();
+  const abort = useAbortTrip();
   const [error, setError] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [confirmingUnassign, setConfirmingUnassign] = useState(false);
+  const [confirmingAbort, setConfirmingAbort] = useState(false);
   const [reassigning, setReassigning] = useState(false);
   const canCancel = trip.status === "pending" || trip.status === "approved";
   const canReassign = trip.status === "assigned" && !trip.is_external;
+  // in_progress has no unassign/reassign/cancel path — abort is the only exit
+  // (frees the truck + lets the driver be disabled; no pay finalized).
+  const canAbort = trip.status === "in_progress";
+
+  async function doAbort() {
+    setError(null);
+    try {
+      await abort.mutateAsync({ id: trip.id });
+      onDone();
+    } catch (e) {
+      setError(apiErrorMessage(e, t("admin.trips.abortFailed")));
+    } finally {
+      setConfirmingAbort(false);
+    }
+  }
 
   async function doCancel() {
     setError(null);
@@ -1098,6 +1116,23 @@ function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
             {t("admin.trips.cancelBooking")}
           </Button>
         </View>
+      )}
+      {canAbort && (
+        <View style={{ marginTop: 14 }}>
+          <Button variant="danger" size="sm" disabled={abort.isPending} onPress={() => setConfirmingAbort(true)}>
+            {t("admin.trips.abort")}
+          </Button>
+        </View>
+      )}
+      {confirmingAbort && (
+        <ConfirmDialog
+          title={t("admin.trips.abortTitle")}
+          body={t("admin.trips.abortBody", { ticket: trip.ticket_number })}
+          confirmLabel={t("admin.trips.abort")}
+          pending={abort.isPending}
+          onClose={() => setConfirmingAbort(false)}
+          onConfirm={doAbort}
+        />
       )}
       {confirmingCancel && (
         <ConfirmDialog

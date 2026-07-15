@@ -570,6 +570,19 @@ export function useCancelTrip() {
   });
 }
 
+// Admin de-orphan lever: abort an IN-PROGRESS trip whose driver can't finish
+// (departed/incapacitated) → cancelled, which frees the truck and lets the
+// driver be disabled. No pay is finalized. Refresh drivers/trucks too (the
+// freed truck + the now-tripless driver both change board state).
+export function useAbortTrip() {
+  const invalidate = useInvalidate([["trips"], ["dashboard"], ["drivers"], ["trucks"]]);
+  return useMutation({
+    mutationFn: async (v: { id: string; reason?: string }) =>
+      (await api.patch<Trip>(`/trips/${v.id}/abort`, v.reason ? { reason: v.reason } : {})).data,
+    onSuccess: invalidate,
+  });
+}
+
 export function useUpdateTruckRates() {
   const invalidate = useInvalidate([["trucks"], ["rates", "audit"]]);
   return useMutation({
