@@ -14,6 +14,37 @@ import type { DeliveryIncentiveResult } from "./incentiveEngine";
  */
 
 /**
+ * A stop may be marked ARRIVED only while it is still pending and its trip is
+ * actually out (in_progress). Factored from the route's inline checks (same
+ * checks, same order) so the guard is unit-testable without a database —
+ * mirroring assertStopDeliverable below.
+ *
+ * ORDER IS LOAD-BEARING: the stop-status check fires FIRST, so a genuine
+ * "already arrived/delivered" retry returns INVALID_STATUS even when the trip
+ * is no longer in_progress (e.g. completed). The mobile offline outbox treats
+ * INVALID_STATUS on the arrived step as "already done → proceed"
+ * (ARRIVED_STEP_ALREADY_CODES); if a non-pending stop on a finished trip
+ * returned TRIP_NOT_STARTED instead, a replayed outbox would treat a completed
+ * step as a hard failure and wedge. Pinned by tests/tripCompletion.test.ts and
+ * tests-integration/arrivedGuard.test.ts.
+ */
+export function assertStopArrivable(
+  trip: { status: string },
+  stop: { status: string }
+): void {
+  if (stop.status !== "pending") {
+    throw new ApiError(400, "INVALID_STATUS", "This stop has already been marked arrived.");
+  }
+  // Lifecycle order: assigned → started → arrived → delivered. Fires only for
+  // a still-pending stop on a not-yet-started (or no-longer-active) trip; the
+  // outbox never queues arrived before an online start, so the normal offline
+  // flow (trip already in_progress) never hits it.
+  if (trip.status !== "in_progress") {
+    throw new ApiError(400, "TRIP_NOT_STARTED", "Start the trip before marking a stop as arrived.");
+  }
+}
+
+/**
  * A stop may be marked delivered only while its trip is actually out
  * (in_progress), and only once. Throws the canonical 409s otherwise.
  */

@@ -14,6 +14,7 @@ import {
   type StartTripOutcome,
 } from "../services/tripAssignment";
 import {
+  assertStopArrivable,
   assertStopDeliverable,
   collectFinalizeBreakdown,
   finalizeTripOnce,
@@ -1579,24 +1580,10 @@ router.patch(
       }
 
       if (action === "arrived") {
-        if (stop.status !== "pending") {
-          throw new ApiError(400, "INVALID_STATUS", "This stop has already been marked arrived.");
-        }
-        // Lifecycle order: a stop can only be marked arrived once the trip is
-        // actually started (in_progress) — assigned → started → arrived →
-        // delivered. Checked AFTER the stop-status check above so a genuine
-        // "already arrived" retry still returns INVALID_STATUS (the offline
-        // outbox treats that as success). This new guard therefore fires only
-        // for a still-pending stop on a not-yet-started (or no-longer-active)
-        // trip; the outbox never queues arrived before an online start, so the
-        // normal offline flow (trip already in_progress) never hits it.
-        if (trip.status !== "in_progress") {
-          throw new ApiError(
-            400,
-            "TRIP_NOT_STARTED",
-            "Start the trip before marking a stop as arrived."
-          );
-        }
+        // Pure guard (services/tripCompletion.ts): stop-status check FIRST,
+        // then trip-status — the ordering the offline outbox depends on. Same
+        // checks that used to live inline here; see the function's doc.
+        assertStopArrivable(trip, stop);
         await prisma.tripStop.update({
           where: { id: stop.id },
           data: { status: "arrived", arrived_at: new Date() },

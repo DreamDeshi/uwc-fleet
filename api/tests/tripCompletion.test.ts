@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { ApiError } from "../src/lib/apiError";
 import {
+  assertStopArrivable,
   assertStopDeliverable,
   collectFinalizeBreakdown,
   finalizeTripOnce,
@@ -26,6 +27,41 @@ function expectApiError(fn: () => void, code: string, statusCode: number) {
     expect((err as ApiError).statusCode).toBe(statusCode);
   }
 }
+
+describe("assertStopArrivable", () => {
+  it("allows arriving a pending stop on an in_progress trip (happy path)", () => {
+    expect(() =>
+      assertStopArrivable({ status: "in_progress" }, { status: "pending" })
+    ).not.toThrow();
+  });
+
+  it("rejects arriving on a not-started (assigned) trip → TRIP_NOT_STARTED", () => {
+    expectApiError(
+      () => assertStopArrivable({ status: "assigned" }, { status: "pending" }),
+      "TRIP_NOT_STARTED",
+      400
+    );
+  });
+
+  it("rejects re-arriving an already-arrived stop mid-trip → INVALID_STATUS", () => {
+    expectApiError(
+      () => assertStopArrivable({ status: "in_progress" }, { status: "arrived" }),
+      "INVALID_STATUS",
+      400
+    );
+  });
+
+  it("ORDERING (outbox-critical): non-pending stop on a NO-LONGER-active trip → INVALID_STATUS, not TRIP_NOT_STARTED", () => {
+    // Both guards would fire here (delivered stop + completed trip); the
+    // stop-status check must win so an offline-outbox replay of a completed
+    // step reads as "already done → proceed" instead of a hard failure.
+    expectApiError(
+      () => assertStopArrivable({ status: "completed" }, { status: "delivered" }),
+      "INVALID_STATUS",
+      400
+    );
+  });
+});
 
 describe("assertStopDeliverable", () => {
   it("rejects delivery on a completed trip (re-finalization attempt)", () => {

@@ -25,9 +25,11 @@ import {
  * step as a hard failure and get stuck. This suite pins BOTH the guard and that
  * ordering.
  *
- * (Follow-up proposal, NOT done here to keep this tests-only: factor a pure
- * `assertStopArrivable(trip, stop)` mirroring assertStopDeliverable, so the
- * ordering can also be unit-tested without a DB. Flagged, not implemented.)
+ * (The once-flagged follow-up landed: the route now calls the pure
+ * `assertStopArrivable(trip, stop)` in services/tripCompletion.ts — same
+ * checks, same order — so the ordering is ALSO unit-tested without a DB
+ * (tests/tripCompletion.test.ts). This suite remains the end-to-end pin that
+ * the real HTTP route behaves identically.)
  */
 
 const PLX_PLATE = DRIVERS.PLX.plate;
