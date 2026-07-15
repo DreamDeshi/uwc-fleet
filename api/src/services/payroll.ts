@@ -50,6 +50,11 @@ export interface PayrollDriverRow {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+// Deterministic binary string compare (NOT localeCompare — that varies with the
+// server's locale/ICU build, and a month-end sheet must order identically
+// everywhere it's generated).
+const cmp = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
+
 export function buildPayrollRows(
   drivers: PayrollDriverInput[],
   bounds: { start: Date; end: Date }
@@ -77,5 +82,16 @@ export function buildPayrollRows(
         trips: monthTrips,
       };
     })
-    .sort((a, b) => b.total - a.total);
+    .sort(
+      // Total desc, then deterministic tiebreaks: name, employee number, id.
+      // Ties used to fall back to caller order (stable sort, no secondary key),
+      // so the same month's sheet could order tied drivers differently across
+      // runs depending on how the route happened to feed them. Now identical
+      // inputs produce an identical sheet regardless of input order.
+      (a, b) =>
+        b.total - a.total ||
+        cmp(a.name, b.name) ||
+        cmp(a.employee_number ?? "", b.employee_number ?? "") ||
+        cmp(a.driver_id, b.driver_id)
+    );
 }

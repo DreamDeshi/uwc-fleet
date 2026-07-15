@@ -3,28 +3,27 @@ import { buildPayrollRows, type PayrollDriverInput } from "../src/services/payro
 import { mytMonthBoundsForKey } from "../src/lib/myt";
 
 /**
- * Phase 1 (MONEY) — exact-tie ordering on the month-end payroll sheet.
- *
- * buildPayrollRows sorts by month total descending. Array.prototype.sort is
- * STABLE (V8 / ES2019+), so two drivers with equal totals keep the order they
- * arrived in — i.e. there is NO secondary tiebreak (name/employee number). The
- * ordering of a tie is therefore whatever the CALLER passes in.
- *
- * These tests lock that behaviour. They also make the flagged watch-item visible
- * (Phase 0 audit): the payroll ROUTE must feed drivers in a deterministic order
- * for month-end sheets to be reproducible across runs — the pure function alone
- * does not impose one. (Flagged, not changed — this is a test, not a fix.)
+ * Exact-tie ordering on the month-end payroll sheet — the formerly flagged
+ * watch-item, now FIXED: buildPayrollRows sorts by total desc with
+ * deterministic tiebreaks (name, then employee number, then driver id, all
+ * binary compares). Identical inputs produce an identical sheet no matter what
+ * order the route feeds drivers in.
  */
 
 const JULY = mytMonthBoundsForKey("2026-07")!;
 
 // A July trip carrying a given stored pay. pickup_datetime lands the trip in
 // the July bounds; incentive_earned is the stored per-trip marginal.
-function driver(id: string, name: string, total: number): PayrollDriverInput {
+function driver(
+  id: string,
+  name: string,
+  total: number,
+  employee_number: string | null = null
+): PayrollDriverInput {
   return {
     id,
     name,
-    employee_number: null,
+    employee_number,
     trips: [
       {
         id: `${id}-t`,
@@ -37,7 +36,7 @@ function driver(id: string, name: string, total: number): PayrollDriverInput {
   };
 }
 
-describe("buildPayrollRows — exact-tie ordering", () => {
+describe("buildPayrollRows — deterministic exact-tie ordering", () => {
   it("sorts by total desc; a non-tied top earner always leads", () => {
     const rows = buildPayrollRows(
       [driver("a", "Amir", 50), driver("b", "Bala", 50), driver("c", "Chong", 100)],
@@ -47,21 +46,35 @@ describe("buildPayrollRows — exact-tie ordering", () => {
     expect(rows[0].driver_id).toBe("c");
   });
 
-  it("resolves an exact tie by preserving the CALLER's input order (stable sort, no secondary key)", () => {
-    // Same two 50-total drivers, opposite input orders → the tie mirrors input.
+  it("resolves an exact tie by NAME regardless of the caller's input order", () => {
+    // Same two 50-total drivers, opposite input orders → identical output.
     const ab = buildPayrollRows([driver("a", "Amir", 50), driver("b", "Bala", 50)], JULY);
-    expect(ab.map((r) => r.driver_id)).toEqual(["a", "b"]);
-
     const ba = buildPayrollRows([driver("b", "Bala", 50), driver("a", "Amir", 50)], JULY);
-    expect(ba.map((r) => r.driver_id)).toEqual(["b", "a"]);
+    expect(ab.map((r) => r.driver_id)).toEqual(["a", "b"]); // Amir < Bala
+    expect(ba.map((r) => r.driver_id)).toEqual(["a", "b"]); // input order irrelevant
   });
 
-  it("keeps the tie stable even around a higher earner in the middle of the list", () => {
+  it("orders ties deterministically around a higher earner too", () => {
     const rows = buildPayrollRows(
-      [driver("a", "Amir", 50), driver("c", "Chong", 100), driver("b", "Bala", 50)],
+      [driver("b", "Bala", 50), driver("c", "Chong", 100), driver("a", "Amir", 50)],
       JULY
     );
-    // Chong (100) first; the 50-ties keep their relative input order (a before b).
     expect(rows.map((r) => r.driver_id)).toEqual(["c", "a", "b"]);
+  });
+
+  it("same name falls through to employee number, then driver id", () => {
+    // Two "Amir"s: employee number decides; missing numbers sort first ("" < any).
+    const byEmp = buildPayrollRows(
+      [driver("x", "Amir", 50, "E-2"), driver("y", "Amir", 50, "E-1")],
+      JULY
+    );
+    expect(byEmp.map((r) => r.driver_id)).toEqual(["y", "x"]);
+
+    // Identical name + employee number: driver id is the final, always-unique key.
+    const byId = buildPayrollRows(
+      [driver("z2", "Amir", 50, "E-1"), driver("z1", "Amir", 50, "E-1")],
+      JULY
+    );
+    expect(byId.map((r) => r.driver_id)).toEqual(["z1", "z2"]);
   });
 });
