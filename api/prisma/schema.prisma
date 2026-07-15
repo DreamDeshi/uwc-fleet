@@ -298,7 +298,12 @@ model TripStop {
   status       StopStatus @default(pending)
   arrived_at   DateTime?
   delivered_at DateTime?
-  pod_photo    String? // Cloudinary URL
+  pod_photo    String? // Cloudinary delivery URL (legacy rows: public; new rows: the private/authenticated URL, not directly accessible)
+  // Cloudinary public_id of the AUTHENTICATED (private-delivery) POD asset.
+  // Set → the API serves a freshly-signed, unguessable URL each read
+  // (lib/podPhotos.ts); NULL → legacy public pod_photo, until the backfill
+  // (prisma/secure-existing-pods.ts) flips + records it. Additive, nullable.
+  pod_public_id String?
   do_uploaded  Boolean    @default(false)
   k2_form_ack  Boolean    @default(false) // required only when destination zone is K2
   // This stop's destination-zone points, snapshotted at assignment (rate lock —

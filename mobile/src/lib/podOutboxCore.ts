@@ -4,8 +4,11 @@
 // the delivery: the POD photo, the K2 ack and the "Delivered" confirm are
 // captured locally, queued durably, and replayed automatically when
 // connectivity returns. The server already makes every replayed step safe:
-//   • POD upload   — overwrites the same Cloudinary publicId (ticket-stop-N),
-//                    no status guard → a retry never duplicates anything.
+//   • POD upload   — overwrites the same Cloudinary publicId (ticket-stop-N).
+//                    A replay after the trip FINALIZED gets POD_LOCKED, treated
+//                    as "already done" (PHOTO_STEP_ALREADY_CODES) — a finalized
+//                    trip already holds its POD (the delivered gate required
+//                    one). Otherwise no status guard → a retry never duplicates.
 //   • K2 ack       — a plain idempotent flag PATCH.
 //   • delivered    — write-once finalization; "already recorded" replies
 //                    (STOP_ALREADY_DELIVERED / TRIP_ALREADY_FINALIZED /
@@ -51,6 +54,11 @@ export interface PodOutboxItem {
 // is "already marked arrived" on the arrived action but a genuine refusal on
 // start). Must stay in sync with ActiveTripScreen's reconcile code sets.
 export const ARRIVED_STEP_ALREADY_CODES = ["INVALID_STATUS"] as const;
+// A queued photo whose trip has since FINALIZED can't be re-uploaded (the server
+// locks POD at completion) — but a finalized trip already has its POD, so a
+// stale replay hitting POD_LOCKED is "already done": commit the photo step and
+// carry on, rather than counting failures toward a needless drop.
+export const PHOTO_STEP_ALREADY_CODES = ["POD_LOCKED"] as const;
 export const DELIVERED_STEP_ALREADY_CODES = [
   "STOP_ALREADY_DELIVERED",
   "TRIP_ALREADY_FINALIZED",
@@ -168,7 +176,7 @@ async function flushOneItem(input: PodOutboxItem, api: PodOutboxApi): Promise<It
       item.arrivedMarked = true;
     }
     if (item.photo && !item.photoUploaded) {
-      await step(() => api.uploadPod(item), []);
+      await step(() => api.uploadPod(item), PHOTO_STEP_ALREADY_CODES);
       item.photoUploaded = true;
       item.photo = null; // free the (possibly large) queued image immediately
     }

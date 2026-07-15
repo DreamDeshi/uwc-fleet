@@ -142,6 +142,18 @@ describe("flushOutboxItems — replay when connectivity returns", () => {
     expect(r2.synced).toBe(1);
   });
 
+  it("a photo replay after the trip FINALIZED (POD_LOCKED) counts as done, not a failure", async () => {
+    // The trip completed before this queued retake flushed. The server locks POD
+    // at finalization → POD_LOCKED; the finalized trip already holds its POD, so
+    // the photo step is "already recorded": commit it and finish the item.
+    const api = fakeApi({ uploadFails: apiErr("POD_LOCKED") });
+    const res = await flushOutboxItems([item({ confirmDelivered: false })], api);
+    expect(api.calls).toEqual(["upload"]); // tried once, no retry loop
+    expect(res.outcomes[0].outcome).toBe("synced"); // NOT kept/dropped
+    expect(res.outcomes[0].item.photoUploaded).toBe(true);
+    expect(res.outcomes[0].item.apiFailures).toBe(0); // never counted as a failure
+  });
+
   it("a photo-only item (driver never tapped Delivered) uploads and dequeues without confirming", async () => {
     const api = fakeApi({});
     const res = await flushOutboxItems([item({ confirmDelivered: false })], api);

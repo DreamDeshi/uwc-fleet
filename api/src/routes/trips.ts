@@ -54,6 +54,7 @@ import { PLANT_ORIGIN, zoneCoord, getRoute, type LatLng } from "../lib/geo";
 import { loadHolidaySet } from "../lib/holidays";
 import { upload } from "../lib/upload";
 import { uploadBuffer } from "../lib/cloudinary";
+import { signTripResponse } from "../lib/podPhotos";
 import { sendPushNotifications } from "../lib/pushNotifications";
 import { getDispatchMode } from "../lib/settings";
 import { autoDispatchTrip } from "../services/dispatchEngine";
@@ -85,6 +86,17 @@ import { estimateOperatingWindow, formatMinutesToHm } from "../services/operatin
 // ──────────────────────────────────────────────────────────────────────────
 const router = Router();
 router.use(requireAuth);
+
+// POD photos are private (authenticated Cloudinary assets). This wraps res.json
+// so EVERY trip payload leaving this router serves POD photos as freshly-signed,
+// unguessable URLs (lib/podPhotos.ts) instead of the stored authenticated URL —
+// one choke point, so no handler can forget and no future route can leak. Only
+// touches objects that carry `stops`; everything else passes through unchanged.
+router.use((_req, res, next) => {
+  const json = res.json.bind(res);
+  res.json = (body: unknown) => json(signTripResponse(body));
+  next();
+});
 
 const tripInclude = {
   requestor: { select: { id: true, name: true, phone: true } },
@@ -1418,13 +1430,32 @@ router.post(
         throw new ApiError(400, "STOP_NOT_FOUND", "That stop is not part of this trip.");
       }
 
-      const url = await uploadBuffer(req.file.buffer, "uwc/pod", {
+      // POD lock — mirror the write-once pay pattern: once the trip is finalized
+      // (completed) its proof of delivery is frozen, so a re-upload can't
+      // overwrite the paid-against evidence. Checked BEFORE any Cloudinary call.
+      // The offline outbox treats this 409 as "already done" for the photo step
+      // (podOutboxCore PHOTO_STEP_ALREADY_CODES), so a stale replay is harmless.
+      if (trip.status === "completed" || trip.status === "cancelled") {
+        throw new ApiError(
+          409,
+          "POD_LOCKED",
+          "This trip is finalized — its proof of delivery can no longer be changed."
+        );
+      }
+
+      // Authenticated (private) upload: the delivery URL 401s without a signature,
+      // so it's no longer publicly enumerable by ticket number. We store the
+      // public_id (signed on read) AND the authenticated URL in pod_photo — the
+      // latter keeps the delivered-gate (isDocumentationComplete) unchanged; it
+      // is not publicly accessible even if a serialization step were missed.
+      const { url, publicId } = await uploadBuffer(req.file.buffer, "uwc/pod", {
+        type: "authenticated",
         publicId: `${trip.ticket_number}-stop-${stop.sequence}`,
       });
 
       await prisma.tripStop.update({
         where: { id: stopId },
-        data: { pod_photo: url, do_uploaded: true },
+        data: { pod_photo: url, pod_public_id: publicId, do_uploaded: true },
       });
       await prisma.auditLog.create({
         data: { user_id: req.user!.id, action: "stop.pod_uploaded", table_name: "TripStop", record_id: stopId },
@@ -1472,7 +1503,7 @@ router.post(
         throw new ApiError(403, "FORBIDDEN", "You do not have permission to add documents to this trip.");
       }
 
-      const url = await uploadBuffer(req.file.buffer, "uwc/documents", { resourceType: "auto" });
+      const { url } = await uploadBuffer(req.file.buffer, "uwc/documents", { resourceType: "auto" });
 
       await prisma.tripDocument.create({
         data: { trip_id: id, type, file_url: url },

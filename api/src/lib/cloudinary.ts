@@ -18,28 +18,44 @@ export function isCloudinaryConfigured(): boolean {
   );
 }
 
+export interface UploadResult {
+  /** secure_url as returned by Cloudinary. For `type: "authenticated"` uploads
+   *  this is NOT publicly accessible — delivery needs a signed URL. */
+  url: string;
+  /** Cloudinary public_id — the stable handle used to sign delivery URLs. */
+  publicId: string;
+}
+
 /**
- * Upload an in-memory file buffer (from multer) to Cloudinary and return the
- * secure HTTPS URL. `folder` groups assets in the Cloudinary media library
- * (e.g. "uwc/pod", "uwc/documents").
+ * Upload an in-memory file buffer (from multer) to Cloudinary. `folder` groups
+ * assets (e.g. "uwc/pod", "uwc/documents"). `type: "authenticated"` uploads a
+ * PRIVATE asset whose public URL 401s — it can only be delivered via a
+ * server-signed URL (see lib/podPhotos.ts) — closing the "public + guessable"
+ * hole for POD photos. Returns both the url and the public_id so the caller can
+ * store the id and sign on read.
  */
 export function uploadBuffer(
   buffer: Buffer,
   folder: string,
-  options: { resourceType?: "image" | "auto"; publicId?: string } = {}
-): Promise<string> {
+  options: {
+    resourceType?: "image" | "auto";
+    publicId?: string;
+    type?: "upload" | "authenticated";
+  } = {}
+): Promise<UploadResult> {
   if (!isCloudinaryConfigured()) {
     return Promise.reject(
       new Error("Cloudinary is not configured (missing CLOUDINARY_* environment variables).")
     );
   }
 
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<UploadResult>((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
         folder,
         resource_type: options.resourceType ?? "image",
         public_id: options.publicId,
+        type: options.type ?? "upload",
         overwrite: true,
       },
       (error, result) => {
@@ -47,7 +63,7 @@ export function uploadBuffer(
           reject(error ?? new Error("Cloudinary upload returned no result."));
           return;
         }
-        resolve(result.secure_url);
+        resolve({ url: result.secure_url, publicId: result.public_id });
       }
     );
     stream.end(buffer);

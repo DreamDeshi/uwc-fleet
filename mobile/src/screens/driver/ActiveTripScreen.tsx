@@ -212,6 +212,13 @@ export function ActiveTripScreen() {
       await noteDirectPodUpload(stop.id);
       toast(t("trip.podUploaded"), "success");
     } catch (err) {
+      // The trip finalized out from under us (a queued delivered that just
+      // landed, or another device): POD is locked. Resync to server truth
+      // instead of showing an error — the POD that mattered is already stored.
+      if (apiErrorCode(err) === "POD_LOCKED") {
+        await reconcile();
+        return;
+      }
       // Dead signal with the photo ALREADY captured: queue it locally and let
       // the driver carry on — this is a save, not a failure. The uri is made
       // reload-durable first (web blob: URLs die with the page).
