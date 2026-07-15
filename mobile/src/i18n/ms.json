@@ -204,6 +204,20 @@
     "logoutConfirm": "Log keluar dari akaun anda?",
     "logFuel": "Rekod Minyak"
   },
+  "account": {
+    "section": "Akaun",
+    "editProfile": "Kemas Kini Profil",
+    "changePassword": "Tukar Kata Laluan",
+    "name": "Nama",
+    "namePlaceholder": "Nama anda",
+    "selectDepartment": "Pilih jabatan",
+    "nameRequired": "Nama diperlukan.",
+    "currentPassword": "Kata Laluan Semasa",
+    "currentRequired": "Masukkan kata laluan semasa anda.",
+    "newPassword": "Kata Laluan Baharu",
+    "confirmPassword": "Sahkan Kata Laluan Baharu",
+    "updatePassword": "Kemas Kini Kata Laluan"
+  },
   "fuel": {
     "title": "Rekod Isi Minyak",
     "truck": "Lori",

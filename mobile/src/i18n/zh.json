@@ -204,6 +204,20 @@
     "logoutConfirm": "退出您的账户？",
     "logFuel": "记录加油"
   },
+  "account": {
+    "section": "账户",
+    "editProfile": "编辑资料",
+    "changePassword": "修改密码",
+    "name": "姓名",
+    "namePlaceholder": "您的姓名",
+    "selectDepartment": "选择部门",
+    "nameRequired": "请填写姓名。",
+    "currentPassword": "当前密码",
+    "currentRequired": "请输入您的当前密码。",
+    "newPassword": "新密码",
+    "confirmPassword": "确认新密码",
+    "updatePassword": "更新密码"
+  },
   "fuel": {
     "title": "记录加油",
     "truck": "卡车",

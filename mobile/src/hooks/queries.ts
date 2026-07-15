@@ -6,6 +6,7 @@ import {
   Consignee,
   Department,
   IncentiveSummary,
+  Me,
   RouteType,
   Trip,
 } from "../types";
@@ -389,5 +390,32 @@ export function useLogFuel() {
   return useMutation({
     mutationFn: async ({ plate, ...body }: LogFuelInput) =>
       (await api.post(`/trucks/${encodeURIComponent(plate)}/fuel`, body)).data,
+  });
+}
+
+// ── Self-service account (Part A) ──────────────────────────────────────────
+// The logged-in user edits their OWN profile / password. Phone (login ID) and
+// employee_number are admin-managed; role/status are never self-set.
+export interface UpdateProfileInput {
+  name?: string;
+  department_id?: string;
+}
+
+export function useUpdateProfile() {
+  return useMutation({
+    mutationFn: async (input: UpdateProfileInput) =>
+      (await api.patch<Me>("/users/me", input)).data,
+  });
+}
+
+export interface ChangePasswordInput {
+  current_password: string;
+  new_password: string;
+}
+
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: async (input: ChangePasswordInput) =>
+      (await api.patch<{ ok: true }>("/users/me/password", input)).data,
   });
 }

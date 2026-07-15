@@ -13,12 +13,15 @@ import { useLogFuel } from "../../hooks/queries";
 import { apiErrorMessage } from "../../services/api";
 import { initials } from "../../lib/format";
 import { AppLanguage } from "../../types";
+import { EditProfileModal, ChangePasswordModal } from "../../components/AccountModals";
 
 export function ProfileScreen() {
   const { t, i18n } = useTranslation();
   const { user, logout, setLanguage } = useAuth();
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [fuelOpen, setFuelOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
 
   const lang: AppLanguage = (["en", "ms", "zh"] as const).includes(i18n.language as AppLanguage)
     ? (i18n.language as AppLanguage)
@@ -66,6 +69,22 @@ export function ProfileScreen() {
             </View>
           ))}
         </Card>
+
+        {/* Account actions (any role) — edit own name/department + password */}
+        <Text style={styles.sectionTitle}>{t("account.section")}</Text>
+        <Button
+          title={t("account.editProfile")}
+          variant="outline"
+          onPress={() => setEditOpen(true)}
+          icon={<Ionicons name="create-outline" size={18} color={colors.blue} />}
+        />
+        <Button
+          title={t("account.changePassword")}
+          variant="outline"
+          onPress={() => setPwOpen(true)}
+          style={{ marginTop: 10 }}
+          icon={<Ionicons name="lock-closed-outline" size={18} color={colors.blue} />}
+        />
 
         {/* Fuel logging (drivers only) */}
         {user?.role === "driver" ? (
@@ -129,6 +148,9 @@ export function ProfileScreen() {
             : null
         }
       />
+
+      <EditProfileModal visible={editOpen} onClose={() => setEditOpen(false)} />
+      <ChangePasswordModal visible={pwOpen} onClose={() => setPwOpen(false)} />
     </View>
   );
 }

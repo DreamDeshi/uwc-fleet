@@ -204,6 +204,20 @@
     "logoutConfirm": "Log out of your account?",
     "logFuel": "Log Fuel"
   },
+  "account": {
+    "section": "Account",
+    "editProfile": "Edit Profile",
+    "changePassword": "Change Password",
+    "name": "Name",
+    "namePlaceholder": "Your name",
+    "selectDepartment": "Select department",
+    "nameRequired": "Name is required.",
+    "currentPassword": "Current Password",
+    "currentRequired": "Enter your current password.",
+    "newPassword": "New Password",
+    "confirmPassword": "Confirm New Password",
+    "updatePassword": "Update Password"
+  },
   "fuel": {
     "title": "Log Fuel Fill-up",
     "truck": "Truck",
