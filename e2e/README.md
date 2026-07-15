@@ -111,8 +111,14 @@ Postgres (see the repo-root [`TESTING.md`](../TESTING.md)):
 
 ```bash
 npm run test:db:up      # start + migrate + seed the Docker test DB (repo root)
-npm run test:db:api     # run the API dev server pointed at the Docker test DB
-# …start the admin + mobile web dev servers as usual, then:
+
+# API → Docker test DB. The two env vars matter — see the notes below.
+CORS_ORIGIN="http://localhost:5173,http://localhost:8081" RATE_LIMIT_MAX=0 \
+  npm run test:db:api
+
+npm run dev --workspace=admin        # admin on :5173
+cd mobile && npx expo start --web    # mobile web on :8081  (apiUrl note below)
+
 cd e2e && npm test
 ```
 
@@ -120,6 +126,27 @@ cd e2e && npm test
 `localhost:55432` (the Docker DB), so every trip the suite creates/cancels lands
 in the disposable test database, never prod. When you're done:
 `npm run test:db:down`.
+
+Three things the local stack needs (each bites as a confusing mid-suite failure
+if skipped):
+
+1. **CORS** — `api/.env` allows only `http://localhost:5173` (the admin), so the
+   mobile web app on `:8081` gets CORS-blocked. Set
+   `CORS_ORIGIN="http://localhost:5173,http://localhost:8081"` in the API's
+   environment (env vars win over `api/.env` — dotenv never overrides an
+   already-set variable).
+2. **Rate limit** — the API throttles at 100 requests/min per IP, and a full
+   suite run drives one API instance from one IP, so the shared budget trips
+   after ~6 specs (later specs die at their first `login()` with `429`). Set
+   `RATE_LIMIT_MAX=0` in the API's environment for the run — local testing
+   only, never in production (unset keeps the prod default).
+3. **Mobile API URL** — `mobile/app.json` → `extra.apiUrl` points at the prod
+   API and is **baked into the web bundle**. Temporarily set it to
+   `http://localhost:3000` while running the suite, and revert it afterwards
+   (don't commit the change).
+
+On PowerShell set the variables first (`$env:CORS_ORIGIN = "…"; $env:RATE_LIMIT_MAX = "0"`)
+and remove them afterwards.
 
 ## How isolation works
 

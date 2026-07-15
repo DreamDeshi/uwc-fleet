@@ -40,14 +40,26 @@ const corsOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:5173")
   .map((o) => o.trim())
   .filter(Boolean);
 app.use(cors({ origin: corsOrigins }));
-app.use(
-  rateLimit({
-    windowMs: 60 * 1000,
-    limit: 100,
-    standardHeaders: true,
-    legacyHeaders: false,
-  })
-);
+// Requests per minute per IP. RATE_LIMIT_MAX overrides the default 100; 0
+// disables throttling entirely — intended ONLY for local testing (the browser
+// e2e suite drives one API instance from one IP, so the whole Playwright run
+// shares a single budget and trips it after a few specs). Unset, blank, or
+// invalid values keep the production default, so a typo can never weaken the
+// deployed limiter.
+const rateLimitRaw = process.env.RATE_LIMIT_MAX?.trim();
+const rateLimitParsed = rateLimitRaw ? Number(rateLimitRaw) : NaN;
+const RATE_LIMIT_MAX =
+  Number.isInteger(rateLimitParsed) && rateLimitParsed >= 0 ? rateLimitParsed : 100;
+if (RATE_LIMIT_MAX > 0) {
+  app.use(
+    rateLimit({
+      windowMs: 60 * 1000,
+      limit: RATE_LIMIT_MAX,
+      standardHeaders: true,
+      legacyHeaders: false,
+    })
+  );
+}
 app.use(express.json());
 
 app.get("/api/v1/health", (_req, res) => {
