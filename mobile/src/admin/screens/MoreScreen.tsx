@@ -28,7 +28,7 @@ export function MoreScreen() {
     { route: "AdminIncentives", labelKey: "admin.nav.incentives", icon: "cash-outline" },
     { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline" },
     { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline" },
-    { route: "AdminApprovals", labelKey: "admin.nav.approvals", icon: "person-add-outline", count: pendingCount },
+    { route: "AdminUsers", labelKey: "admin.users.title", icon: "people-outline", count: pendingCount },
     { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },
   ];
 

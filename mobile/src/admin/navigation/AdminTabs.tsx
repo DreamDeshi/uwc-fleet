@@ -3,7 +3,7 @@
 //   HOME  — greeting home + dashboard merged (stats, attention, fleet map)
 //   TRIPS — the dispatch board
 //   FLEET — Drivers + Trucks behind a segment toggle
-//   MORE  — Incentives / Reports / Consignees / Approvals / Performance
+//   MORE  — Incentives / Reports / Consignees / User Management / Performance
 //           as a native stack, plus sign-out
 // Wide (PC) never mounts this — AdminNavigator keeps the permanent sidebar
 // drawer there. Tab badges carry the drawer's signals: truck document
@@ -24,7 +24,7 @@ import { MoreScreen } from "../screens/MoreScreen";
 import { IncentivesScreen } from "../screens/IncentivesScreen";
 import { ReportsScreen } from "../screens/ReportsScreen";
 import { ConsigneesScreen } from "../screens/ConsigneesScreen";
-import { ApprovalsScreen } from "../screens/ApprovalsScreen";
+import { UserManagementScreen } from "../screens/UserManagementScreen";
 import { PerformanceScreen } from "../screens/PerformanceScreen";
 import { AdminSettingsScreen } from "../screens/AdminSettingsScreen";
 
@@ -57,7 +57,7 @@ function MoreStack() {
       <Stack.Screen name="AdminIncentives" component={IncentivesScreen} options={{ title: t("admin.titles.incentives") }} />
       <Stack.Screen name="AdminReports" component={ReportsScreen} options={{ title: t("admin.titles.reports") }} />
       <Stack.Screen name="AdminConsignees" component={ConsigneesScreen} options={{ title: t("admin.titles.consignees") }} />
-      <Stack.Screen name="AdminApprovals" component={ApprovalsScreen} options={{ title: t("admin.titles.approvals") }} />
+      <Stack.Screen name="AdminUsers" component={UserManagementScreen} options={{ title: t("admin.users.title") }} />
       <Stack.Screen name="AdminPerformance" component={PerformanceScreen} options={{ title: t("admin.titles.performance") }} />
       <Stack.Screen name="AdminSettings" component={AdminSettingsScreen} options={{ title: t("admin.titles.settings") }} />
     </Stack.Navigator>

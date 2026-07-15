@@ -24,7 +24,7 @@ import { useLayoutMode } from "../hooks/useLayoutMode";
 import { installAdminWebFonts, adminFontScope } from "../platform/webFonts";
 import { AdminTabs } from "./AdminTabs";
 import { AdminHomeScreen } from "../screens/AdminHomeScreen";
-import { ApprovalsScreen } from "../screens/ApprovalsScreen";
+import { UserManagementScreen } from "../screens/UserManagementScreen";
 import { ConsigneesScreen } from "../screens/ConsigneesScreen";
 import { PerformanceScreen } from "../screens/PerformanceScreen";
 import { DriversScreen } from "../screens/DriversScreen";
@@ -59,7 +59,7 @@ const NAV_GROUPS: { headingKey: string; items: NavItem[] }[] = [
     headingKey: "admin.navGroups.administration",
     items: [
       { route: "AdminIncentives", labelKey: "admin.nav.incentives", icon: "cash-outline" },
-      { route: "AdminApprovals", labelKey: "admin.nav.approvals", icon: "person-add-outline" },
+      { route: "AdminUsers", labelKey: "admin.users.title", icon: "people-outline" },
       { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline" },
       { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline" },
     ],
@@ -78,7 +78,8 @@ function AdminDrawerContent(props: DrawerContentComponentProps) {
   const insets = useSafeAreaInsets();
   const mode = useLayoutMode();
   // Nav badges (old-admin parity): pending-approvals count on User
-  // Approvals, expiring-documents count on Truck Management.
+  // Management (Approvals is its first tab), expiring-documents count on
+  // Truck Management.
   const pending = usePendingUsers();
   const truckAlerts = useTruckAlerts();
   const pendingCount = pending.data?.length ?? 0;
@@ -172,7 +173,7 @@ function AdminDrawerContent(props: DrawerContentComponentProps) {
                     </Text>
                     {/* Count badges — approvals (yellow/navy swap on active) and
                         truck document alerts (red), exactly like the old admin. */}
-                    {item.route === "AdminApprovals" && pendingCount > 0 && (
+                    {item.route === "AdminUsers" && pendingCount > 0 && (
                       <View
                         style={{
                           backgroundColor: isActive ? colors.navy : colors.yellow,
@@ -256,7 +257,7 @@ const SUBTITLE_KEYS: Record<string, string> = {
   AdminPerformance: "admin.subtitles.performance",
   AdminTrucks: "admin.subtitles.trucks",
   AdminIncentives: "admin.subtitles.incentives",
-  AdminApprovals: "admin.subtitles.approvals",
+  AdminUsers: "admin.users.subtitle",
   AdminConsignees: "admin.subtitles.consignees",
   AdminReports: "admin.subtitles.reports",
   AdminSettings: "admin.subtitles.settings",
@@ -436,9 +437,9 @@ function AdminDrawerWide() {
         options={{ title: t("admin.titles.dashboard"), headerShown: mode === "wide" }}
       />
       <Drawer.Screen
-        name="AdminApprovals"
-        component={ApprovalsScreen}
-        options={{ title: t("admin.titles.approvals") }}
+        name="AdminUsers"
+        component={UserManagementScreen}
+        options={{ title: t("admin.users.title") }}
       />
       <Drawer.Screen
         name="AdminConsignees"

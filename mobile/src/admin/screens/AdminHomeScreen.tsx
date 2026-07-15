@@ -155,7 +155,7 @@ export function AdminHomeScreen() {
           <View style={styles.rowCard}>
             <TouchableOpacity
               style={styles.row}
-              onPress={() => navigation.navigate("AdminMore", { screen: "AdminApprovals", initial: false })}
+              onPress={() => navigation.navigate("AdminMore", { screen: "AdminUsers", initial: false })}
             >
               <View style={styles.rowIcon}>
                 <Ionicons name="person-add-outline" size={18} color={colors.blue} />
