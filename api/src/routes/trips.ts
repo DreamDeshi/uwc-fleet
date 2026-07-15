@@ -109,11 +109,26 @@ function tripDestinationLabel(trip: {
 // the same sequence, and ticket_number is @unique. The create route retries on
 // that unique violation (attempt bumps the sequence past the winner) instead
 // of 500ing the losing booking.
-const TICKET_CREATE_RETRIES = 3;
+const TICKET_CREATE_RETRIES = 5;
 
 /** "YYYYMMDD" of the MYT day — matches the MYT day-window the count uses. */
 export function ticketDatePart(now: Date): string {
   return mytDateKey(now).replace(/-/g, "");
+}
+
+/**
+ * Sequence number for an attempt. Attempt 0 is the clean sequential number
+ * (countToday + 1). Retries add a random spread ON TOP of the +attempt bump:
+ * simultaneous losers re-count the same countToday and would otherwise compute
+ * identical sequences on every retry round (lockstep collisions — how a burst
+ * of >~4 same-instant bookings used to exhaust the budget). The spread widens
+ * with each attempt, so contenders disperse fast; the cost is a small gap in
+ * that day's numbering, only ever under simultaneous-booking contention.
+ * Pure; `rand` injectable for deterministic tests. Exported for unit tests.
+ */
+export function ticketSequence(countToday: number, attempt: number, rand: () => number = Math.random): number {
+  const spread = attempt === 0 ? 0 : Math.floor(rand() * 8 * attempt);
+  return countToday + 1 + attempt + spread;
 }
 
 async function generateTicketNumber(now: Date, attempt = 0): Promise<string> {
@@ -122,7 +137,7 @@ async function generateTicketNumber(now: Date, attempt = 0): Promise<string> {
   const countToday = await prisma.trip.count({
     where: { created_at: { gte: dayStart, lt: dayEnd } },
   });
-  const sequence = String(countToday + 1 + attempt).padStart(3, "0");
+  const sequence = String(ticketSequence(countToday, attempt)).padStart(3, "0");
   return `TKT-${ticketDatePart(now)}-${sequence}`;
 }
 
@@ -242,10 +257,21 @@ router.post(
           });
           break;
         } catch (err) {
-          if (isUniqueViolation(err, "ticket_number") && attempt < TICKET_CREATE_RETRIES) {
+          if (!isUniqueViolation(err, "ticket_number")) {
+            throw err;
+          }
+          if (attempt < TICKET_CREATE_RETRIES) {
             continue;
           }
-          throw err;
+          // Budget exhausted under extreme same-instant booking load. The
+          // unique constraint held (no duplicate exists — that's exactly what
+          // fired); surface a clean retryable conflict instead of the raw
+          // P2002 500 this used to produce. Submitting again succeeds.
+          throw new ApiError(
+            409,
+            "TICKET_CONFLICT",
+            "The system is busy taking bookings right now — please submit again."
+          );
         }
       }
 

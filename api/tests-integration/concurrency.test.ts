@@ -176,7 +176,7 @@ describe("CONCURRENCY integration — Serializable → 409 under real contention
     const requestor = await loginAs(REQUESTOR);
     const rt = await firstRouteTypeId(requestor);
     const c = await ensureConsigneeInZone("P1");
-    const N = 8; // beyond TICKET_CREATE_RETRIES on purpose — stresses the invariant
+    const N = 8; // well past the first-attempt collision — stresses the invariant
 
     const results = await Promise.all(
       Array.from({ length: N }, () =>
@@ -206,10 +206,14 @@ describe("CONCURRENCY integration — Serializable → 409 under real contention
     expect(dbTickets.length).toBe(successes.length);
     expect(successes.length).toBeGreaterThanOrEqual(1);
 
-    // NOTE (reported separately, NOT fixed): with N beyond TICKET_CREATE_RETRIES(3)
-    // some concurrent bookings exhaust the retry budget and return 500 (a raw
-    // P2002) rather than a graceful retry/409. No duplicate is ever produced —
-    // this is a robustness limitation, not a correctness bug.
+    // ROBUSTNESS (the former flagged 500): retries now disperse with jitter
+    // (ticketSequence) and an exhausted budget maps to a retryable 409
+    // TICKET_CONFLICT — a booking burst must NEVER surface a raw-P2002 500.
+    const failures = results.filter((r) => r.status !== 201);
+    for (const f of failures) {
+      expect(f.status).toBe(409);
+      expect(f.body.error.code).toBe("TICKET_CONFLICT");
+    }
   });
 
   it("cancel vs approve on a pending trip → exactly one wins, no cancelled-with-driver", async () => {
