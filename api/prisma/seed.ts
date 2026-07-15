@@ -67,19 +67,20 @@ const spec: UwcSpec = JSON.parse(fs.readFileSync(SPEC_PATH, "utf-8"));
 
 // PII overlay: the public docs/uwc-spec.json carries NEUTRAL placeholder driver
 // names/employee numbers (the repo is public; the real identities are NDA data).
-// The real values live OUTSIDE this repo, in the local-only uwc-master-doc folder
-// (moved there when the reference files left the repo). We look for the overlay,
-// in priority order:
-//   1. $UWC_PRIVATE_SPEC_PATH        — explicit override, any absolute path
-//   2. ../uwc-master-doc/uwc-spec.private.json — sibling of the uwc-fleet repo
-//      (the current home of the reference/spec files)
-//   3. References/uwc-spec.private.json         — legacy in-repo location (now empty)
+// The real values live in the repo's gitignored, local-only `References/` folder
+// — the home of all reference/spec material (the master doc, the consignee
+// workbook, and this private overlay). We look for the overlay in priority order:
+//   1. $UWC_PRIVATE_SPEC_PATH                   — explicit override, any absolute path
+//   2. References/uwc-spec.private.json         — the in-repo (gitignored) home
+//   3. ../uwc-master-doc/uwc-spec.private.json  — legacy sibling location (retired
+//      2026-07-15 when the material moved back into References/; kept as a
+//      fallback for any old checkout that still has it)
 // First existing candidate wins. If NONE is found we WARN LOUDLY and fall back to
 // the placeholder identities — never silently seeding placeholders as if real.
 const PRIVATE_SPEC_CANDIDATES: string[] = [
   process.env.UWC_PRIVATE_SPEC_PATH,
-  path.resolve(__dirname, "../../../uwc-master-doc/uwc-spec.private.json"),
   path.resolve(__dirname, "../../References/uwc-spec.private.json"),
+  path.resolve(__dirname, "../../../uwc-master-doc/uwc-spec.private.json"),
 ].filter((p): p is string => Boolean(p));
 
 const privateSpecPath = PRIVATE_SPEC_CANDIDATES.find((p) => fs.existsSync(p));
@@ -105,7 +106,7 @@ if (privateSpecPath) {
       "   Looked in:",
       ...PRIVATE_SPEC_CANDIDATES.map((p) => `     - ${p}`),
       "   To seed the real identities: set UWC_PRIVATE_SPEC_PATH to the overlay file,",
-      "   or place uwc-spec.private.json in the uwc-master-doc folder beside this repo.",
+      "   or place uwc-spec.private.json in the repo's References/ folder.",
       "",
     ].join("\n")
   );
