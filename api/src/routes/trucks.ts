@@ -260,11 +260,13 @@ router.get("/", async (_req, res, next) => {
         .map((d) => ({ ...d, daysLeft: daysUntil(d.expiry, now) }))
         .filter((d) => d.daysLeft !== null && d.daysLeft <= ALERT_WINDOW_DAYS);
 
-      const status = inProgress
-        ? "active"
-        : t.is_available
-          ? "idle"
-          : "maintenance";
+      const status = t.retired_at
+        ? "retired"
+        : inProgress
+          ? "active"
+          : t.is_available
+            ? "idle"
+            : "maintenance";
 
       return {
         plate: t.plate,
@@ -292,6 +294,7 @@ router.get("/", async (_req, res, next) => {
         permit_expiry: t.permit_expiry,
         road_tax_expiry: t.road_tax_expiry,
         is_available: t.is_available,
+        retired_at: t.retired_at,
         status,
         driver: t.driver,
         current_load: activeLoad,
@@ -317,6 +320,8 @@ router.get("/alerts", async (_req, res, next) => {
   try {
     const now = new Date();
     const trucks = await prisma.truck.findMany({
+      // Retired trucks are out of service — don't nag about their expiries.
+      where: { retired_at: null },
       orderBy: { plate: "asc" },
       select: {
         plate: true,
@@ -587,6 +592,215 @@ router.patch("/:plate/rates", validateBody(rateSchema), async (req, res, next) =
         effective_date: updated.pending_rates_effective,
       },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /trucks — add a truck to the fleet (FR fleet CRUD) ──────────────
+// The fleet was seed-only: a newly bought lorry had no in-app path. Creates a
+// truck keyed by plate. Initial claim rates / deduction are DATA ENTRY for a
+// brand-new truck (there's no prior rate to protect, so they're set directly —
+// unlike a rate EDIT on an existing truck, which stays on the next-day-staged
+// /:plate/rates path; this endpoint deliberately does not touch that
+// mechanism). Audit-logged.
+const createTruckSchema = z.object({
+  plate: z.string().trim().min(1, "Plate is required"),
+  type: z.string().trim().min(1, "Type is required"),
+  max_pallets: z.number().int().positive("Capacity must be a positive whole number."),
+  entitled_claim_weekday: z.number().positive("Weekday rate must be positive."),
+  entitled_claim_offpeak: z.number().positive("Off-peak rate must be positive."),
+  daily_deduction_points: z.number().int().nonnegative("Deduction must be zero or more."),
+  priority_zones: z.array(z.string().trim().min(1)).optional(),
+  operating_hours_start: z.string().optional(),
+  operating_hours_end: z.string().optional(),
+  insurance_expiry: z.coerce.date().nullable().optional(),
+  permit_expiry: z.coerce.date().nullable().optional(),
+  road_tax_expiry: z.coerce.date().nullable().optional(),
+});
+
+router.post("/", validateBody(createTruckSchema), async (req, res, next) => {
+  try {
+    const body = req.body as z.infer<typeof createTruckSchema>;
+    const plate = body.plate.trim();
+
+    const existing = await prisma.truck.findUnique({ where: { plate }, select: { plate: true } });
+    if (existing) {
+      throw new ApiError(409, "TRUCK_EXISTS", `A truck with plate ${plate} already exists.`);
+    }
+
+    const truck = await prisma.truck.create({
+      data: {
+        plate,
+        type: body.type.trim(),
+        max_pallets: body.max_pallets,
+        entitled_claim_weekday: body.entitled_claim_weekday,
+        entitled_claim_offpeak: body.entitled_claim_offpeak,
+        daily_deduction_points: body.daily_deduction_points,
+        ...(body.priority_zones ? { priority_zones: body.priority_zones } : {}),
+        ...(body.operating_hours_start ? { operating_hours_start: body.operating_hours_start } : {}),
+        ...(body.operating_hours_end ? { operating_hours_end: body.operating_hours_end } : {}),
+        ...(body.insurance_expiry !== undefined ? { insurance_expiry: body.insurance_expiry } : {}),
+        ...(body.permit_expiry !== undefined ? { permit_expiry: body.permit_expiry } : {}),
+        ...(body.road_tax_expiry !== undefined ? { road_tax_expiry: body.road_tax_expiry } : {}),
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        user_id: req.user!.id,
+        action: `truck.created ${plate} (${truck.type}, ${truck.max_pallets}p)`,
+        table_name: "Truck",
+        record_id: plate,
+      },
+    });
+
+    res.status(201).json(truck);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── PATCH /trucks/:plate — edit NON-money attributes (audit-logged) ──────
+// Type, capacity, coverage zones, operating hours. Claim rates and document
+// expiries have their own guarded endpoints (/rates staged next-day, /documents)
+// and are deliberately NOT editable here — this keeps fleet edits off the money
+// path entirely.
+const updateTruckSchema = z
+  .object({
+    type: z.string().trim().min(1).optional(),
+    max_pallets: z.number().int().positive().optional(),
+    priority_zones: z.array(z.string().trim().min(1)).optional(),
+    operating_hours_start: z.string().optional(),
+    operating_hours_end: z.string().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, "No fields to update.");
+
+router.patch("/:plate", validateBody(updateTruckSchema), async (req, res, next) => {
+  try {
+    const { plate } = req.params;
+    const truck = await prisma.truck.findUnique({ where: { plate } });
+    if (!truck) {
+      throw new ApiError(404, "TRUCK_NOT_FOUND", "Truck not found.");
+    }
+
+    const body = req.body as z.infer<typeof updateTruckSchema>;
+    const changes: string[] = [];
+    if (body.type !== undefined && body.type !== truck.type) changes.push(`type ${truck.type}→${body.type}`);
+    if (body.max_pallets !== undefined && body.max_pallets !== truck.max_pallets)
+      changes.push(`pallets ${truck.max_pallets}→${body.max_pallets}`);
+    if (body.priority_zones !== undefined) changes.push(`zones [${truck.priority_zones.join(",")}]→[${body.priority_zones.join(",")}]`);
+    if (body.operating_hours_start !== undefined && body.operating_hours_start !== truck.operating_hours_start)
+      changes.push(`start ${truck.operating_hours_start}→${body.operating_hours_start}`);
+    if (body.operating_hours_end !== undefined && body.operating_hours_end !== truck.operating_hours_end)
+      changes.push(`end ${truck.operating_hours_end}→${body.operating_hours_end}`);
+
+    const updated = await prisma.truck.update({
+      where: { plate },
+      data: {
+        ...(body.type !== undefined ? { type: body.type.trim() } : {}),
+        ...(body.max_pallets !== undefined ? { max_pallets: body.max_pallets } : {}),
+        ...(body.priority_zones !== undefined ? { priority_zones: body.priority_zones } : {}),
+        ...(body.operating_hours_start !== undefined ? { operating_hours_start: body.operating_hours_start } : {}),
+        ...(body.operating_hours_end !== undefined ? { operating_hours_end: body.operating_hours_end } : {}),
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        user_id: req.user!.id,
+        action: `truck.updated ${changes.join(", ") || "(no change)"}`,
+        table_name: "Truck",
+        record_id: plate,
+      },
+    });
+
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── PATCH /trucks/:plate/retire — soft-retire / reactivate a truck ────────
+// Retire a departed truck WITHOUT deleting its history (trips, fuel). Retiring
+// sets retired_at + is_available=false (so the unchanged dispatch query skips
+// it) and FREES its driver (their assigned_truck_plate → null, so a replacement
+// truck can be assigned). Blocked while the truck is on a live trip. Reactivate
+// clears both flags (the driver is NOT auto-rebound — reassign explicitly).
+// Audit-logged.
+const retireSchema = z.object({ retired: z.boolean() });
+
+router.patch("/:plate/retire", validateBody(retireSchema), async (req, res, next) => {
+  try {
+    const { plate } = req.params;
+    const { retired } = req.body as { retired: boolean };
+
+    const truck = await prisma.truck.findUnique({
+      where: { plate },
+      include: { driver: { select: { id: true, name: true } } },
+    });
+    if (!truck) {
+      throw new ApiError(404, "TRUCK_NOT_FOUND", "Truck not found.");
+    }
+
+    if (retired) {
+      if (truck.retired_at) {
+        throw new ApiError(409, "ALREADY_RETIRED", "That truck is already retired.");
+      }
+      // A truck mid-trip can't be retired — the trip references it directly.
+      const activeTrip = await prisma.trip.findFirst({
+        where: { truck_plate: plate, status: { in: ["assigned", "in_progress"] } },
+        select: { id: true },
+      });
+      if (activeTrip) {
+        throw new ApiError(
+          409,
+          "TRUCK_HAS_ACTIVE_TRIP",
+          "This truck is on an active trip. Complete or reassign it before retiring the truck."
+        );
+      }
+
+      // Retire + free the driver atomically.
+      await prisma.$transaction([
+        prisma.user.updateMany({
+          where: { assigned_truck_plate: plate },
+          data: { assigned_truck_plate: null },
+        }),
+        prisma.truck.update({
+          where: { plate },
+          data: { retired_at: new Date(), is_available: false },
+        }),
+        prisma.auditLog.create({
+          data: {
+            user_id: req.user!.id,
+            action: `truck.retired${truck.driver ? ` (freed driver ${truck.driver.name})` : ""}`,
+            table_name: "Truck",
+            record_id: plate,
+          },
+        }),
+      ]);
+    } else {
+      if (!truck.retired_at) {
+        throw new ApiError(409, "NOT_RETIRED", "That truck is not retired.");
+      }
+      await prisma.$transaction([
+        prisma.truck.update({
+          where: { plate },
+          data: { retired_at: null, is_available: true },
+        }),
+        prisma.auditLog.create({
+          data: {
+            user_id: req.user!.id,
+            action: "truck.reactivated",
+            table_name: "Truck",
+            record_id: plate,
+          },
+        }),
+      ]);
+    }
+
+    const fresh = await prisma.truck.findUnique({ where: { plate } });
+    res.json({ plate, retired_at: fresh!.retired_at, is_available: fresh!.is_available });
   } catch (err) {
     next(err);
   }

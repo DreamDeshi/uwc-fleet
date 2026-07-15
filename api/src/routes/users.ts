@@ -1,4 +1,5 @@
 import { Router } from "express";
+import bcrypt from "bcrypt";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
@@ -400,6 +401,177 @@ router.patch("/:id", validateBody(adminUpdateUserSchema), async (req, res, next)
     });
 
     res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// A truck can be bound to a driver only if it exists, isn't retired, and isn't
+// already held by a DIFFERENT driver (the assigned_truck_plate @unique 1:1
+// binding). `forDriverId` is the driver we're binding to — a truck already
+// bound to THAT same driver is a no-op, not a clash.
+const BINDABLE_TRUCK = { id: true, name: true } as const;
+async function assertTruckAssignable(plate: string, forDriverId: string | null) {
+  const truck = await prisma.truck.findUnique({
+    where: { plate },
+    include: { driver: { select: BINDABLE_TRUCK } },
+  });
+  if (!truck) {
+    throw new ApiError(404, "TRUCK_NOT_FOUND", "Truck not found.");
+  }
+  if (truck.retired_at) {
+    throw new ApiError(409, "TRUCK_RETIRED", "That truck is retired. Reactivate it before assigning it.");
+  }
+  if (truck.driver && truck.driver.id !== forDriverId) {
+    throw new ApiError(
+      409,
+      "TRUCK_ALREADY_ASSIGNED",
+      `Truck ${plate} is already assigned to ${truck.driver.name}. Free it from that driver first.`
+    );
+  }
+}
+
+// ── POST /users — admin adds a DRIVER to the fleet (FR fleet CRUD) ────────
+// The fleet is otherwise seed-only: requestors self-register (→ pending_approval),
+// but a NEW driver had no in-app path — so a real hire couldn't be dispatched
+// without a re-seed. Creates an ACTIVE driver (an admin is doing this
+// deliberately, so it skips the approval queue) with a hashed password and a
+// normalized phone, mirroring auth.ts. A truck may be bound now or later via
+// PATCH /:id/truck; if given it must be free (1:1) and not retired. Audit-logged.
+const createDriverSchema = z.object({
+  phone: z.string().min(8, "Phone number is too short"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  name: z.string().trim().min(1, "Name is required"),
+  employee_number: z.string().trim().min(1, "Employee number is required"),
+  department_id: z.string().min(1, "Department is required"),
+  assigned_truck_plate: z.string().trim().min(1).optional(),
+});
+
+router.post("/", validateBody(createDriverSchema), async (req, res, next) => {
+  try {
+    const { password, name, employee_number, department_id, assigned_truck_plate } = req.body as {
+      password: string;
+      name: string;
+      employee_number: string;
+      department_id: string;
+      assigned_truck_plate?: string;
+    };
+
+    const phone = normalizePhone(req.body.phone);
+    if (!isNormalizedPhone(phone)) {
+      throw new ApiError(400, "INVALID_PHONE", "Enter a valid Malaysian phone number.");
+    }
+
+    const existing = await prisma.user.findUnique({ where: { phone } });
+    if (existing) {
+      throw new ApiError(409, "PHONE_ALREADY_REGISTERED", "An account with this phone number already exists.");
+    }
+
+    const department = await prisma.department.findUnique({ where: { id: department_id } });
+    if (!department) {
+      throw new ApiError(400, "DEPARTMENT_NOT_FOUND", "Selected department does not exist.");
+    }
+
+    if (assigned_truck_plate) {
+      await assertTruckAssignable(assigned_truck_plate, null);
+    }
+
+    const password_hash = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+      data: {
+        phone,
+        password_hash,
+        name,
+        employee_number,
+        department_id,
+        role: "driver",
+        status: "active",
+        ...(assigned_truck_plate ? { assigned_truck_plate } : {}),
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        user_id: req.user!.id,
+        action: `driver.created${assigned_truck_plate ? ` truck=${assigned_truck_plate}` : " (no truck)"}`,
+        table_name: "User",
+        record_id: user.id,
+      },
+    });
+
+    res.status(201).json({
+      id: user.id,
+      phone: user.phone,
+      name: user.name,
+      role: user.role,
+      status: user.status,
+      assigned_truck_plate: user.assigned_truck_plate,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── PATCH /users/:id/truck — assign / reassign / free a driver's truck ────
+// The 1:1 driver↔truck binding (assigned_truck_plate @unique) previously could
+// only be CLEARED as a side effect of promoting away from driver — there was no
+// way to bind a truck to a driver, so a fresh driver stayed undispatchable and
+// a departed driver's truck stayed locked. `{ plate }` binds (validated free +
+// not retired); `{ plate: null }` frees it (the "free a departed driver's truck"
+// path). Blocked while the driver holds an active trip so trip↔truck can't
+// desync. Audit-logged.
+const assignTruckSchema = z.object({
+  plate: z.string().trim().min(1).nullable(),
+});
+
+router.patch("/:id/truck", validateBody(assignTruckSchema), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { plate } = req.body as { plate: string | null };
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) {
+      throw new ApiError(404, "USER_NOT_FOUND", "User not found.");
+    }
+    if (user.role !== "driver") {
+      throw new ApiError(400, "NOT_A_DRIVER", "Only a driver account can be assigned a truck.");
+    }
+
+    // Changing the truck under a live trip would desync the trip's truck from
+    // the driver's — block until the trip is completed or reassigned.
+    const activeTrip = await prisma.trip.findFirst({
+      where: { driver_id: id, status: { in: ["assigned", "in_progress"] } },
+      select: { id: true },
+    });
+    if (activeTrip) {
+      throw new ApiError(
+        409,
+        "DRIVER_HAS_ACTIVE_TRIP",
+        "This driver has an active trip. Complete or reassign it before changing their truck."
+      );
+    }
+
+    if (plate) {
+      await assertTruckAssignable(plate, id);
+    }
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data: { assigned_truck_plate: plate },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        user_id: req.user!.id,
+        action: plate
+          ? `driver.truck_assigned:${plate}`
+          : `driver.truck_freed:${user.assigned_truck_plate ?? "—"}`,
+        table_name: "User",
+        record_id: id,
+      },
+    });
+
+    res.json({ id: updated.id, assigned_truck_plate: updated.assigned_truck_plate });
   } catch (err) {
     next(err);
   }

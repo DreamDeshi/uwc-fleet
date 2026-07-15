@@ -163,6 +163,12 @@ model Truck {
   permit_expiry          DateTime?
   road_tax_expiry        DateTime?
   is_available           Boolean   @default(true)
+  // Soft-retire for a departed truck (additive, 2026-07-15). null = active;
+  // set = permanently retired. Distinct from is_available (temporary/dispatch
+  // gate): retiring sets BOTH retired_at=now AND is_available=false, so the
+  // UNCHANGED dispatch candidate query (which filters is_available) excludes it
+  // with no engine change. History (trips, fuel) is preserved — never deleted.
+  retired_at             DateTime?
 
   driver       User?
   trips        Trip[]
