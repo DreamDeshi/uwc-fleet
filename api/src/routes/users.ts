@@ -216,4 +216,84 @@ router.patch("/:id/approve", validateBody(approveSchema), async (req, res, next)
   }
 });
 
+const roleSchema = z.object({
+  role: z.enum(["admin", "driver", "requestor"]),
+});
+
+// PATCH /users/:id/role — admin promotes/demotes an account's role.
+// This is the in-app cure for the single-admin SPOF: an existing admin can
+// promote a trusted requestor/driver to admin without any DB access, so there
+// is always more than one person who can administer the system. Guardrails:
+//   - LAST-ADMIN: refuses to move the only remaining ACTIVE admin off the admin
+//     role — that would leave nobody able to administer (or to promote a
+//     replacement), i.e. re-create the very lockout we're fixing.
+//   - TRUCK BINDING: a driver is pinned 1:1 to a truck (assigned_truck_plate is
+//     @unique). Promoting AWAY from driver releases that slot (else the plate
+//     stays locked to a non-driver and blocks a future assignment); promoting
+//     TO driver without a truck is rejected (assign one on the Drivers page
+//     first) so we never mint an undispatchable driver.
+//   - Audit-logged (from->to), same shape as the approve action.
+router.patch("/:id/role", validateBody(roleSchema), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { role: newRole } = req.body as { role: "admin" | "driver" | "requestor" };
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) {
+      throw new ApiError(404, "USER_NOT_FOUND", "User not found.");
+    }
+
+    // No-op — nothing to change, nothing to audit.
+    if (user.role === newRole) {
+      res.json({ id: user.id, role: user.role, status: user.status });
+      return;
+    }
+
+    // Last-admin guard: count ACTIVE admins OTHER than this user. A disabled
+    // admin can't log in, so it doesn't count as a usable fallback.
+    if (user.role === "admin" && newRole !== "admin") {
+      const otherActiveAdmins = await prisma.user.count({
+        where: { role: "admin", status: "active", id: { not: id } },
+      });
+      if (otherActiveAdmins === 0) {
+        throw new ApiError(
+          409,
+          "LAST_ADMIN",
+          "Cannot change the role of the last active admin. Promote another admin first."
+        );
+      }
+    }
+
+    if (newRole === "driver" && !user.assigned_truck_plate) {
+      throw new ApiError(
+        400,
+        "DRIVER_NEEDS_TRUCK",
+        "Assign a truck to this account on the Drivers page before making it a driver."
+      );
+    }
+    const releaseTruck = newRole !== "driver" && Boolean(user.assigned_truck_plate);
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data: {
+        role: newRole,
+        ...(releaseTruck ? { assigned_truck_plate: null } : {}),
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        user_id: req.user!.id,
+        action: `user.role_changed:${user.role}->${newRole}`,
+        table_name: "User",
+        record_id: id,
+      },
+    });
+
+    res.json({ id: updated.id, role: updated.role, status: updated.status });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

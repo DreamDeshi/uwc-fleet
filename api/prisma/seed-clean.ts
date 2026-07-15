@@ -73,9 +73,12 @@ async function main() {
   );
 
   // ── 2. Delete every user NOT on the seeded allowlist ─────────────────────
-  // Strict allowlist: keep ONLY the 8 seeded phones; everything else goes.
+  // Keep the seeded phones PLUS every admin account. A second admin (created
+  // in-app via PATCH /users/:id/role, or via the break-glass CLI) is real
+  // operational access — deleting it here would silently re-create the
+  // single-admin SPOF this reset must never introduce. Everything else goes.
   const keep = await prisma.user.findMany({
-    where: { phone: { in: SEEDED_PHONES } },
+    where: { OR: [{ phone: { in: SEEDED_PHONES } }, { role: "admin" }] },
     select: { id: true },
   });
   const keepIds = keep.map((u) => u.id);
@@ -121,10 +124,15 @@ async function main() {
     consignees: await prisma.consignee.count(),
   };
   console.log(`\nClean state (before: ${before.trips} trips, ${before.users} users):`, summary);
+  // Extra admins (beyond the one seeded bootstrap admin) are intentionally kept.
+  const extraAdmins = await prisma.user.count({
+    where: { role: "admin", phone: { notIn: SEEDED_PHONES } },
+  });
   console.log(
-    remainingUsers === SEEDED_PHONES.length
-      ? `✓ Exactly the ${SEEDED_PHONES.length} seeded accounts remain.`
-      : `⚠ Expected ${SEEDED_PHONES.length} seeded accounts but ${remainingUsers} remain — check the allowlist.`
+    remainingUsers === keepIds.length
+      ? `✓ Kept the ${SEEDED_PHONES.length} seeded accounts` +
+          (extraAdmins > 0 ? ` + ${extraAdmins} additional admin account(s).` : ".")
+      : `⚠ Expected ${keepIds.length} kept accounts but ${remainingUsers} remain — check the allowlist.`
   );
 }
 
