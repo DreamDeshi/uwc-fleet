@@ -2,10 +2,11 @@
  * Integration-suite setup — runs BEFORE any test module (and therefore before
  * the app / Prisma singleton) is imported. Two jobs:
  *
- *   1. Point DATABASE_URL at the LOCAL Docker test database, overriding
- *      api/.env (which points at the live Railway prod proxy). Because dotenv
- *      never overrides an already-set variable, setting it here — before app.ts
- *      runs `import "dotenv/config"` — guarantees Prisma connects to Docker.
+ *   1. Point DATABASE_URL at the LOCAL Docker test database, regardless of what
+ *      api/.env contains. Because dotenv never overrides an already-set
+ *      variable, setting it here — before app.ts runs `import "dotenv/config"` —
+ *      guarantees Prisma connects to Docker even if api/.env were pointed
+ *      elsewhere.
  *
  *   2. HARD SAFETY GATE: refuse to run against anything but localhost. This is
  *      the belt-and-suspenders that makes it impossible for the destructive

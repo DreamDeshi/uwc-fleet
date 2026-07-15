@@ -15,9 +15,11 @@
  *
  * "Production" is detected from the DATABASE_URL hostname: any Railway
  * database host (…rlwy.net public proxy, …railway.internal private network,
- * …railway.app) is treated as the live trial DB. Note the local api/.env
- * points DATABASE_URL at the live Railway proxy, so WITHOUT this guard every
- * locally-run seed hits production by default.
+ * …railway.app) is treated as the live trial DB. Local api/.env now points
+ * DATABASE_URL at the Docker test DB (localhost:55432), but this guard still
+ * matters: a reverted .env or a deliberate shell override could aim a seed at
+ * prod. It shares its host markers with the localhost-only dev/migrate guard
+ * (src/lib/dbGuard.ts).
  */
 import path from "path";
 import dotenv from "dotenv";

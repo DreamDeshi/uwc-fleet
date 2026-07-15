@@ -2,6 +2,19 @@ import { app } from "./app";
 import { startPendingTripAlerts } from "./services/pendingTripAlerts";
 import { startRateMaturation } from "./services/pendingRates";
 import { prisma } from "./lib/prisma";
+import { checkLocalDb, isDeployedRuntime } from "./lib/dbGuard";
+
+// Safety net for local dev: `npm run dev` must talk to the Docker test DB, not
+// the live trial DB. On the real Railway deployment (RAILWAY_* /
+// NODE_ENV=production) this is skipped so prod boots against its own database.
+// Set ALLOW_REMOTE_DB=1 to deliberately run a local server against a remote DB.
+if (!isDeployedRuntime()) {
+  const dbCheck = checkLocalDb("api dev server");
+  if (!dbCheck.ok) {
+    console.error(`\n✖ ${dbCheck.message}\n`);
+    process.exit(1);
+  }
+}
 
 const PORT = process.env.PORT ?? 3000;
 app.listen(PORT, () => {

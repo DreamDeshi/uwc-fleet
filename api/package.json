@@ -14,9 +14,9 @@
     "seed:test": "tsx prisma/seed-test.ts",
     "test": "vitest run",
     "test:integration": "vitest run -c vitest.integration.config.ts",
-    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate": "tsx prisma/dev-guard.ts prisma:migrate && prisma migrate dev",
     "prisma:generate": "prisma generate",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "tsx prisma/dev-guard.ts prisma:studio && prisma studio"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",
