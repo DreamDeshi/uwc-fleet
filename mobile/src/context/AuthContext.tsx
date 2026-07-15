@@ -11,6 +11,8 @@ import {
   setTokens,
 } from "../services/api";
 import { registerForPushNotificationsAsync } from "../lib/notifications";
+import { bootstrapActionForError } from "../lib/sessionGate";
+import { saveCachedMe, loadCachedMe, clearCachedMe } from "../lib/sessionCache";
 import { Me, AppLanguage, SUPPORTED_LANGUAGES } from "../types";
 import i18n from "../i18n";
 
@@ -35,6 +37,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchMe = async () => {
     const res = await api.get<Me>("/users/me");
     setUser(res.data);
+    // Cache the confirmed identity so a later offline cold start can still route
+    // into the app (see the bootstrap effect + lib/sessionCache).
+    saveCachedMe(res.data);
     if ((SUPPORTED_LANGUAGES as readonly string[]).includes(res.data.language_pref)) {
       i18n.changeLanguage(res.data.language_pref);
     }
@@ -65,11 +70,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await fetchMe();
         if (mounted) setStatus("authed");
         syncPushToken();
-      } catch {
-        await clearTokens();
-        if (mounted) {
-          setUser(null);
-          setStatus("guest");
+      } catch (err) {
+        // Distinguish "can't reach the server" from "the server rejected us".
+        // A network error on a COLD offline start must NOT log the driver out —
+        // keep the valid token, restore the last confirmed identity so the app
+        // routes to their trip, and re-validate once signal returns. Only a
+        // genuine auth failure (an HTTP response, e.g. an expired 401) clears
+        // the session — real auth expiry is untouched.
+        if (bootstrapActionForError(err) === "keep") {
+          const cached = await loadCachedMe();
+          if (mounted) {
+            if (cached) {
+              setUser(cached);
+              setStatus("authed");
+            } else {
+              // No cached identity to route with — can't enter the app, but keep
+              // the tokens (don't wipe) so the next online launch just works.
+              setStatus("guest");
+            }
+          }
+        } else {
+          await clearTokens();
+          await clearCachedMe();
+          if (mounted) {
+            setUser(null);
+            setStatus("guest");
+          }
         }
       }
     })();
@@ -78,9 +104,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // A failed token refresh (expired/rotated) forces a clean logout.
+  // A failed token refresh (expired/rotated) forces a clean logout. This fires
+  // only on a genuine server rejection (doRefresh keeps the session on a network
+  // error), so dropping the cached identity here is correct.
   useEffect(() => {
     setAuthFailureHandler(() => {
+      clearCachedMe();
       setUser(null);
       setStatus("guest");
     });
@@ -109,6 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       /* ignore — proceed with logout regardless */
     }
     await clearTokens();
+    await clearCachedMe();
     setUser(null);
     setStatus("guest");
   };

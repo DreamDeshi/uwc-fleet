@@ -77,7 +77,12 @@ async function doRefresh(): Promise<string | null> {
     );
     await setTokens(res.data.accessToken, res.data.refreshToken);
     return res.data.accessToken;
-  } catch {
+  } catch (err) {
+    // A CONNECTIVITY failure (signal dropped between the 401 and the refresh)
+    // is not an auth rejection — keep the tokens so the session survives and
+    // the request can be retried later. Only a genuine server rejection (the
+    // refresh token is expired/rotated → an HTTP response) logs the user out.
+    if (isNetworkError(err)) return null;
     await clearTokens();
     onAuthFailure?.();
     return null;
