@@ -6,7 +6,7 @@
 
 ## 1. Architecture Overview
 
-One monorepo, three independently deployed Railway services (auto-deploy from GitHub `main`):
+One monorepo, three independently deployed Railway services (auto-deploy from GitHub `main`, filtered by per-service watch paths: a push deploys only the services whose directory changed, plus all three if the root `package.json`/`package-lock.json` changed):
 
 | Service | Path | Stack | Live URL |
 |---|---|---|---|
