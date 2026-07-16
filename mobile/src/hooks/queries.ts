@@ -82,6 +82,9 @@ export function useTrip(tripId: string) {
   return useQuery({
     queryKey: ["trip", tripId],
     queryFn: async () => (await api.get<Trip>(`/trips/${tripId}`)).data,
+    // Guarded so callers that only sometimes have a trip (the booking form in
+    // edit mode) can pass "" without firing a bogus GET /trips/.
+    enabled: Boolean(tripId),
     // Keep the open booking/trip live as its status advances (assigned →
     // in transit → delivered) without push — see the note on useTrips.
     refetchInterval: TRIP_POLL_MS,
@@ -198,6 +201,22 @@ export function useCreateTrip() {
   return useMutation({
     mutationFn: async (input: CreateTripInput) => (await api.post<Trip>("/trips", input)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["trips"] }),
+  });
+}
+
+// Requestor fixes their own still-PENDING booking — same payload shape as
+// create (is_external and everything assignment/money-related is locked
+// server-side). A 400/409 means the booking just left pending under them.
+export function useUpdateTrip() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tripId, input }: { tripId: string; input: CreateTripInput }) =>
+      (await api.patch<Trip>(`/trips/${tripId}`, input)).data,
+    // Settled, not success — see useUpdateTripStatus (lost-response reconcile).
+    onSettled: (_trip, _err, vars) => {
+      qc.invalidateQueries({ queryKey: ["trips"] });
+      qc.invalidateQueries({ queryKey: ["trip", vars.tripId] });
+    },
   });
 }
 

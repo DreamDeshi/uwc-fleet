@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { RequestorStackParamList } from "./types";
 import { RequestorShell } from "./RequestorDrawer";
 import { BookingDetailScreen } from "../screens/requestor/BookingDetailScreen";
+import { BookingFormScreen } from "../screens/requestor/BookingFormScreen";
 
 const Stack = createNativeStackNavigator<RequestorStackParamList>();
 
@@ -15,6 +16,10 @@ export function RequestorStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Tabs" component={RequestorShell} />
       <Stack.Screen name="BookingDetail" component={BookingDetailScreen} />
+      {/* Same component as the NewBooking tab; the tripId param flips it into
+          edit mode (pending bookings only — the detail screen gates the button,
+          the server enforces it). */}
+      <Stack.Screen name="EditBooking" component={BookingFormScreen} />
     </Stack.Navigator>
   );
 }

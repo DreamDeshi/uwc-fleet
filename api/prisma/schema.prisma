@@ -52,6 +52,7 @@ enum StopStatus {
 // (arrived/delivered) repeat per stop on multi-stop trips.
 enum TripEvent {
   booked
+  edited // requestor corrected their still-pending booking; note lists what changed
   assigned
   unassigned // admin pulled the driver off an assigned trip (back to pending)
   reassigned // admin moved an assigned trip to a different driver+truck

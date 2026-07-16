@@ -319,6 +319,229 @@ router.post(
   }
 );
 
+// ── PATCH /trips/:id — requestor fixes their own still-PENDING booking ────
+// Full replace of the requestor-typo surface (route type, pickup, stops,
+// cargo/notes) with the same validation as create. Everything else is locked:
+// is_external (the assign-external flow is the admin's lever), documents
+// (their own endpoints), and every status/assignment/money field. Pending
+// only — once a driver is claimed the booking is immutable to the requestor.
+//
+// pickup_datetime deliberately drops create's not-in-the-past refine: a
+// requestor fixing a consignee 20 minutes after a "now" booking must not be
+// rejected over the pickup they aren't touching. The handler enforces the
+// grace window only when the pickup actually CHANGED.
+export const updateTripSchema = z.object({
+  route_type_id: z.string().min(1),
+  pickup_datetime: z.coerce.date(),
+  stops: createTripSchema.shape.stops,
+  cargo_details: createTripSchema.shape.cargo_details,
+});
+
+type UpdateTripInput = z.infer<typeof updateTripSchema>;
+
+// Existing-trip slice summarizeTripChanges compares against (plain shape so the
+// helper stays pure and unit-testable without a DB).
+export interface TripEditSnapshot {
+  route_type_id: string;
+  pickup_datetime: Date;
+  stops: { sequence: number; consignee_id: string }[];
+  cargo_details: {
+    pallet_type: string;
+    quantity: number;
+    cartons: number | null;
+    custom_size: string | null;
+    estimated_pallets: number | null;
+    remark: string | null;
+  }[];
+}
+
+/**
+ * Human summary of what an edit changed — the `note` on the `edited` history
+ * event ("who changed what"): e.g. "pickup time; consignees; cargo". Returns
+ * null when nothing differs (the route then skips the write entirely — a no-op
+ * submit must not pollute the audit trail or re-trigger dispatch). Notes
+ * (cargo-line remarks) are called out separately from real cargo changes
+ * because that's how the requestor thinks of them. Exported for unit tests.
+ */
+export function summarizeTripChanges(existing: TripEditSnapshot, next: UpdateTripInput): string | null {
+  const changed: string[] = [];
+
+  if (existing.route_type_id !== next.route_type_id) changed.push("route type");
+  if (existing.pickup_datetime.getTime() !== next.pickup_datetime.getTime()) changed.push("pickup time");
+
+  const orderedConsignees = (stops: { sequence?: number | null; consignee_id: string }[]) =>
+    stops
+      .map((s, idx) => ({ seq: s.sequence ?? idx + 1, id: s.consignee_id }))
+      .sort((a, b) => a.seq - b.seq)
+      .map((s) => s.id)
+      .join("|");
+  if (orderedConsignees(existing.stops) !== orderedConsignees(next.stops)) changed.push("consignees");
+
+  // Cargo compared line-by-line in order; remark-only differences report as
+  // "notes", anything else as "cargo".
+  const cargoLine = (c: UpdateTripInput["cargo_details"][number] | TripEditSnapshot["cargo_details"][number]) =>
+    [c.pallet_type, c.quantity, c.cartons ?? "", c.custom_size ?? "", c.estimated_pallets ?? ""].join("|");
+  const remarkLine = (c: { remark?: string | null }) => c.remark ?? "";
+  const sameCargo =
+    existing.cargo_details.length === next.cargo_details.length &&
+    existing.cargo_details.every((c, i) => cargoLine(c) === cargoLine(next.cargo_details[i]));
+  const sameRemarks =
+    existing.cargo_details.length === next.cargo_details.length &&
+    existing.cargo_details.every((c, i) => remarkLine(c) === remarkLine(next.cargo_details[i]));
+  if (!sameCargo) changed.push("cargo");
+  if (sameCargo && !sameRemarks) changed.push("notes");
+
+  return changed.length > 0 ? changed.join("; ") : null;
+}
+
+router.patch(
+  "/:id",
+  requireRole("requestor"),
+  validateBody(updateTripSchema),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { route_type_id, pickup_datetime, stops, cargo_details } = req.body as UpdateTripInput;
+
+      const existing = await prisma.trip.findUnique({
+        where: { id },
+        include: { stops: true, cargo_details: true },
+      });
+      if (!existing) {
+        throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      }
+      if (existing.requestor_id !== req.user!.id) {
+        throw new ApiError(403, "FORBIDDEN", "You cannot edit this booking.");
+      }
+      if (existing.status !== "pending") {
+        throw new ApiError(
+          400,
+          "INVALID_STATUS",
+          "Only bookings that have not been assigned yet can be edited."
+        );
+      }
+
+      // Same checks as create, against the NEW values.
+      if (pickup_datetime.getTime() !== existing.pickup_datetime.getTime()) {
+        if (pickup_datetime.getTime() < Date.now() - PICKUP_GRACE_MS) {
+          throw new ApiError(400, "PICKUP_IN_PAST", "Pickup time is in the past.");
+        }
+      }
+      const routeType = await prisma.routeType.findUnique({ where: { id: route_type_id } });
+      if (!routeType) {
+        throw new ApiError(400, "ROUTE_TYPE_NOT_FOUND", "Route type does not exist.");
+      }
+      const consigneeIds = stops.map((s) => s.consignee_id);
+      const foundConsignees = await prisma.consignee.findMany({
+        where: bookableConsigneesWhere(consigneeIds),
+      });
+      if (foundConsignees.length !== new Set(consigneeIds).size) {
+        throw new ApiError(
+          400,
+          "CONSIGNEE_NOT_FOUND",
+          "One or more consignees do not exist or are no longer active."
+        );
+      }
+      if (!existing.is_external) {
+        const orderPallets = palletEquivalents(cargo_details);
+        const largest = await prisma.truck.aggregate({ _max: { max_pallets: true } });
+        const fleetMax = largest._max.max_pallets;
+        if (fleetMax !== null && orderPallets > fleetMax) {
+          throw new ApiError(
+            400,
+            "CARGO_EXCEEDS_FLEET",
+            `This order is ${orderPallets} pallet-equivalents, but the largest truck holds ${fleetMax}. Split the order or book an external forwarder.`
+          );
+        }
+      }
+
+      const changeNote = summarizeTripChanges(existing, {
+        route_type_id,
+        pickup_datetime,
+        stops,
+        cargo_details,
+      });
+      if (changeNote === null) {
+        // Nothing changed — don't write, don't audit, don't poke dispatch.
+        const unchanged = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
+        res.json(unchanged);
+        return;
+      }
+
+      await prisma.$transaction(async (tx) => {
+        // Status-guarded CAS FIRST (mirrors cancel): writing the Trip row here
+        // both re-checks pending and takes the row lock, so an edit racing
+        // auto-dispatch/approve resolves cleanly — the edit loses with a 409,
+        // or an in-flight serializable dispatch that already read the OLD
+        // stops/cargo aborts on this very row write and retries against the
+        // new ones. The stale auto_dispatch flags are cleared because they
+        // describe cargo/destinations that may no longer exist; if dispatch
+        // still can't place the edited booking, the retry below re-sets them
+        // with the fresh reason.
+        const claimed = await tx.trip.updateMany({
+          where: { id, status: "pending" },
+          data: {
+            route_type_id,
+            pickup_datetime,
+            auto_dispatch_failed: false,
+            auto_dispatch_note: null,
+          },
+        });
+        if (claimed.count !== 1) {
+          throw new ApiError(
+            409,
+            "TRIP_STATE_CHANGED",
+            "This booking just changed state (a driver may have just been assigned). Refresh and try again."
+          );
+        }
+        // Pending stops/cargo have no PODs, no history references and no
+        // snapshots (those are written at assignment) — replace wholesale.
+        await tx.tripStop.deleteMany({ where: { trip_id: id } });
+        await tx.tripStop.createMany({
+          data: stops.map((s, idx) => ({
+            trip_id: id,
+            consignee_id: s.consignee_id,
+            sequence: s.sequence ?? idx + 1,
+          })),
+        });
+        await tx.cargoDetail.deleteMany({ where: { trip_id: id } });
+        await tx.cargoDetail.createMany({
+          data: cargo_details.map((c) => ({ ...c, trip_id: id })),
+        });
+        await tx.auditLog.create({
+          data: { user_id: req.user!.id, action: "trip.updated", table_name: "Trip", record_id: id },
+        });
+        await recordTripEvent(tx, {
+          tripId: id,
+          event: "edited",
+          actorId: req.user!.id,
+          note: changeNote,
+        });
+      });
+
+      // The edit may change what dispatch would pick (capacity, zone), and the
+      // minute-sweep never retries a booking that already alerted admins
+      // (pending_alert_sent) — so re-evaluate NOW in auto mode, exactly like
+      // create. Best-effort: a dispatch failure must never break the edit.
+      let result = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
+      try {
+        if ((await getDispatchMode()) === "auto") {
+          const dispatch = await autoDispatchTrip(id);
+          if (dispatch.assigned && dispatch.trip) {
+            result = dispatch.trip;
+          }
+        }
+      } catch (err) {
+        console.error("Auto-dispatch on edit failed:", err);
+      }
+
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // ── GET /trips — role-scoped list, with optional admin search/filters ─────
 // All query params are optional. When none are passed the result is identical
 // to the unfiltered list; any present params narrow it ON TOP of the role-based

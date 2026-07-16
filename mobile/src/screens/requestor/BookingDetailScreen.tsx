@@ -50,6 +50,9 @@ export function BookingDetailScreen() {
 
   const banner = bannerFor(trip.status);
   const canCancel = trip.status === "pending" || trip.status === "approved";
+  // Editing is narrower than cancelling: strictly pending (the server enforces
+  // the same rule — once a driver is claimed the booking is immutable).
+  const canEdit = trip.status === "pending";
 
   const onCancel = async () => {
     setError(null);
@@ -240,17 +243,27 @@ export function BookingDetailScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </ScrollView>
 
-      {/* Cancel */}
+      {/* Edit (pending only) + Cancel */}
       {canCancel ? (
         <View style={[styles.bottom, { paddingBottom: insets.bottom + 12 }]}>
           <View style={wide ? styles.bottomInner : undefined}>
-            <Button
-              title={t("bookingDetail.cancelRequest")}
-              variant="outline"
-              onPress={() => setConfirm(true)}
-              style={{ borderColor: colors.red }}
-              icon={<Ionicons name="close-circle-outline" size={18} color={colors.blue} />}
-            />
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              {canEdit ? (
+                <Button
+                  title={t("bookingDetail.editRequest")}
+                  onPress={() => navigation.navigate("EditBooking", { tripId: trip.id })}
+                  style={{ flex: 1 }}
+                  icon={<Ionicons name="create-outline" size={18} color={colors.white} />}
+                />
+              ) : null}
+              <Button
+                title={t("bookingDetail.cancelRequest")}
+                variant="outline"
+                onPress={() => setConfirm(true)}
+                style={{ flex: 1, borderColor: colors.red }}
+                icon={<Ionicons name="close-circle-outline" size={18} color={colors.blue} />}
+              />
+            </View>
           </View>
         </View>
       ) : null}

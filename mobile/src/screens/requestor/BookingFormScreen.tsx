@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,
   ScrollView,
@@ -11,13 +11,15 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { RequestorTabParamList } from "../../navigation/types";
 import {
   useRouteTypes,
   useConsignees,
   useCreateTrip,
+  useUpdateTrip,
+  useTrip,
   useTrips,
   useUploadTripDocument,
   CONSIGNEE_SEARCH_MIN,
@@ -33,6 +35,7 @@ import { LoadingState } from "../../components/States";
 import { useToast } from "../../components/Toast";
 import { pickDocumentImage, PickedPhoto } from "../../lib/photo";
 import { palletEquivalents } from "../../lib/pallets";
+import { pickupToSlot, tripRemarks } from "../../lib/bookingEdit";
 import { formatDate, formatTime } from "../../lib/format";
 import { Consignee, Trip } from "../../types";
 
@@ -82,9 +85,17 @@ export function BookingFormScreen() {
   const navigation = useNavigation<Nav>();
   const wide = useWide();
 
+  // Mounted two ways: as the NewBooking TAB (no params → create) and as the
+  // pushed EditBooking stack screen ({ tripId } → edit a still-pending booking).
+  const routeParams = useRoute().params as { tripId?: string } | undefined;
+  const editTripId = routeParams?.tripId;
+  const isEdit = Boolean(editTripId);
+
   const { data: routeTypes = [], isLoading: rtLoading } = useRouteTypes();
   const { data: trips = [] } = useTrips();
+  const { data: editTrip } = useTrip(editTripId ?? "");
   const createTrip = useCreateTrip();
+  const updateTrip = useUpdateTrip();
   const uploadDoc = useUploadTripDocument();
   const toast = useToast();
 
@@ -239,6 +250,24 @@ export function BookingFormScreen() {
     setStep(STEPS.length - 1); // jump to Confirm
   };
 
+  // EDIT mode: seed the wizard from the booking once it loads (cache-first —
+  // it's the trip the detail screen just displayed). Reuses the rebook mapping,
+  // plus the two things rebook deliberately skips: remarks and the pickup slot.
+  // An unrepresentable pickup (drifted past, outside picker buckets) keeps the
+  // next-bookable default — visibly a new time on the Confirm step.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (!isEdit || !editTrip || seededRef.current) return;
+    seededRef.current = true;
+    prefillFromTrip(editTrip);
+    setRemarks(tripRemarks(editTrip.cargo_details));
+    const slot = pickupToSlot(editTrip.pickup_datetime, new Date());
+    if (slot) {
+      setDayOffset(slot.dayOffset);
+      setHour(slot.hour);
+    }
+  }, [isEdit, editTrip]);
+
   const validateStep = (): string | null => {
     if (step === 0) {
       if (!routeTypeId) return t("booking.selectRouteType");
@@ -276,12 +305,34 @@ export function BookingFormScreen() {
     // Submit
     setSubmitting(true);
     try {
-      const trip = await createTrip.mutateAsync({
+      const payload = {
         route_type_id: routeTypeId!,
         pickup_datetime: pickupDate.toISOString(),
         stops: stops.map((c) => ({ consignee_id: c.id })),
         cargo_details: buildCargo(),
-      });
+      };
+
+      if (isEdit && editTripId) {
+        // EDIT: save over the existing pending booking, then return to its
+        // detail screen (invalidation re-fetches it). Docs attached during the
+        // edit upload against the existing trip, same partial-failure rule as
+        // create. A 400/409 (assigned meanwhile) surfaces in the error text.
+        await updateTrip.mutateAsync({ tripId: editTripId, input: payload });
+        let editDocFailed = false;
+        for (const photo of docs) {
+          try {
+            await uploadDoc.mutateAsync({ tripId: editTripId, photo, type: "other" });
+          } catch {
+            editDocFailed = true;
+          }
+        }
+        if (editDocFailed) toast(t("booking.docUploadPartial"), "error");
+        toast(t("booking.updatedToast"), "success");
+        navigation.goBack();
+        return;
+      }
+
+      const trip = await createTrip.mutateAsync(payload);
       // Upload any documents attached on the review screen against the new trip.
       // A failed upload must not hide the (already created) booking — flag it and
       // let the requestor add it later from the booking details.
@@ -304,11 +355,14 @@ export function BookingFormScreen() {
 
   const onBack = () => {
     setError(null);
-    if (step === 0) navigation.navigate("Home");
-    else setStep(step - 1);
+    if (step === 0) {
+      // Edit mode is a pushed screen — back returns to the booking's detail.
+      if (isEdit) navigation.goBack();
+      else navigation.navigate("Home");
+    } else setStep(step - 1);
   };
 
-  if (rtLoading) return <View style={styles.fill}><LoadingState /></View>;
+  if (rtLoading || (isEdit && !editTrip)) return <View style={styles.fill}><LoadingState /></View>;
 
   // ── Shared pieces (composed differently for phone vs PC) ──
   const stepper = (
@@ -350,7 +404,7 @@ export function BookingFormScreen() {
           stops={stops}
           setStops={setStops}
           recent={recentConsignees}
-          canRebook={Boolean(lastTrip)}
+          canRebook={Boolean(lastTrip) && !isEdit}
           onRebook={() => lastTrip && prefillFromTrip(lastTrip)}
         />
       )}
@@ -397,7 +451,7 @@ export function BookingFormScreen() {
         <Button title={t("common.back")} variant="outline" onPress={onBack} style={{ flex: 1 }} />
       ) : null}
       <Button
-        title={isLastStep ? t("booking.submit") : t("common.next")}
+        title={isLastStep ? t(isEdit ? "booking.saveChanges" : "booking.submit") : t("common.next")}
         onPress={onNext}
         loading={submitting}
         variant={isLastStep ? "accent" : "primary"}
@@ -421,7 +475,7 @@ export function BookingFormScreen() {
         <TouchableOpacity onPress={onBack} hitSlop={12}>
           <Ionicons name="chevron-back" size={24} color={colors.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t("booking.newRequest")}</Text>
+        <Text style={styles.headerTitle}>{t(isEdit ? "booking.editTitle" : "booking.newRequest")}</Text>
       </View>
 
       {wide ? (
