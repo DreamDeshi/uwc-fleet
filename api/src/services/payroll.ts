@@ -8,17 +8,18 @@ import { inMytMonth } from "../lib/myt";
  * every other money figure uses), sums and rounds. It never computes pay:
  * totals are sums of the stored per-trip incentive_earned.
  *
- * NOTE: bucketing keys on pickup_datetime to stay consistent with every other
- * "this month" figure (dashboard, drivers report, driver app). Moving all of
- * them to delivery-day bucketing is the known open item — do it everywhere at
- * once or the clerk sees disagreeing totals again.
+ * Bucketing keys on the DELIVERY instant (delivered_at, pickup fallback for
+ * the legacy null case) — the same day the incentive ledger paid the trip on,
+ * so this sheet and pay can never disagree about a month-crossing trip. Every
+ * other "this month" figure (dashboard, drivers report, performance, driver
+ * app) keys on the same instant; keep them moving together.
  */
 
 export interface PayrollTripInput {
   id: string;
   ticket_number: string;
   pickup_datetime: Date;
-  /** First delivery confirm (the pay-deciding instant) — display-only. */
+  /** First delivery confirm — the pay-deciding instant the month bucket keys on. */
   delivered_at: Date | null;
   incentive_earned: unknown; // Prisma Decimal | string | number | null
 }
@@ -61,9 +62,12 @@ export function buildPayrollRows(
 ): PayrollDriverRow[] {
   return drivers
     .map((d) => {
+      // Pay-day attribution: the month a trip DELIVERED in (pickup only as the
+      // legacy fallback) — same rule as services/tripCompletion payAttributionInstant.
+      const payInstant = (t: PayrollTripInput) => new Date(t.delivered_at ?? t.pickup_datetime);
       const monthTrips = d.trips
-        .filter((t) => inMytMonth(new Date(t.pickup_datetime), bounds))
-        .sort((a, b) => new Date(a.pickup_datetime).getTime() - new Date(b.pickup_datetime).getTime())
+        .filter((t) => inMytMonth(payInstant(t), bounds))
+        .sort((a, b) => payInstant(a).getTime() - payInstant(b).getTime())
         .map((t) => ({
           id: t.id,
           ticket_number: t.ticket_number,

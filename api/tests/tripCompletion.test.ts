@@ -6,6 +6,7 @@ import {
   collectFinalizeBreakdown,
   finalizeTripOnce,
   firstDeliveredAt,
+  payAttributionInstant,
   type FinalizeBreakdown,
   type TripFinalizeClient,
 } from "../src/services/tripCompletion";
@@ -246,5 +247,22 @@ describe("firstDeliveredAt - the surfaced pay-deciding timestamp (finding 1.5)",
   it("returns null when no stop has a delivered record", () => {
     expect(firstDeliveredAt([{ delivered_at: null }])).toBeNull();
     expect(firstDeliveredAt([])).toBeNull();
+  });
+});
+
+describe("payAttributionInstant - the ONE month-bucket key for trips and money", () => {
+  const pickup = new Date("2026-06-30T01:00:00Z");
+
+  it("keys on the first delivery confirm - a 30 June pickup delivered 1 July is July money", () => {
+    const delivered = new Date("2026-06-30T18:00:00Z"); // 1 Jul 02:00 MYT
+    expect(
+      payAttributionInstant({ pickup_datetime: pickup, stops: [{ delivered_at: delivered }] })
+    ).toBe(delivered);
+  });
+
+  it("falls back to pickup when no stop has a delivery confirm", () => {
+    expect(
+      payAttributionInstant({ pickup_datetime: pickup, stops: [{ delivered_at: null }] })
+    ).toBe(pickup);
   });
 });

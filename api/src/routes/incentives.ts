@@ -43,7 +43,7 @@ router.get("/mine", requireRole("driver"), async (req, res, next) => {
       ticket_number: t.ticket_number,
       pickup_datetime: t.pickup_datetime,
       // The first delivery confirm — the instant the rate tier and pay-day
-      // attribution actually keyed on (display-only, for boundary disputes).
+      // attribution actually keyed on; also the month-bucket key below.
       delivered_at: firstDeliveredAt(t.stops),
       incentive_earned: t.incentive_earned, // Decimal | null
       truck_plate: t.truck_plate,
@@ -64,8 +64,12 @@ router.get("/mine", requireRole("driver"), async (req, res, next) => {
     const now = new Date();
     // Both bounds ([start, end)) — the same predicate the admin reports use,
     // so the driver's own month total always matches theirs (finding 1.3).
+    // Keyed on delivered_at (pickup fallback): pay was written on the delivery
+    // day, so that's the month the driver actually gets the money in.
     const monthBounds = currentMytMonthBounds(now);
-    const monthTrips = trips.filter((t) => inMytMonth(new Date(t.pickup_datetime), monthBounds));
+    const monthTrips = trips.filter((t) =>
+      inMytMonth(new Date(t.delivered_at ?? t.pickup_datetime), monthBounds)
+    );
     const monthTotal = monthTrips.reduce((sum, t) => sum + Number(t.incentive_earned ?? 0), 0);
     const monthDistance = monthTrips.reduce((sum, t) => sum + t.distance_km, 0);
 

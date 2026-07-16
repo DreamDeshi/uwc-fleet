@@ -14,7 +14,7 @@ import {
 } from "../lib/myt";
 import { ApiError } from "../lib/apiError";
 import { buildPayrollRows } from "../services/payroll";
-import { firstDeliveredAt } from "../services/tripCompletion";
+import { firstDeliveredAt, payAttributionInstant } from "../services/tripCompletion";
 import { attentionConfig, hoursSince } from "../services/attention";
 
 import { requireAuth } from "../middleware/auth";
@@ -80,8 +80,17 @@ router.get("/dashboard", async (_req, res, next) => {
       prisma.truck.findMany({
         select: { insurance_expiry: true, permit_expiry: true, road_tax_expiry: true },
       }),
+      // Superset fetch (delivered-in-month OR picked-up-in-month); the precise
+      // pay-day predicate is applied below so the KPI's "this month" agrees
+      // with payroll about month-crossing trips.
       prisma.trip.findMany({
-        where: { status: "completed", pickup_datetime: { gte: monthStart, lt: monthEnd } },
+        where: {
+          status: "completed",
+          OR: [
+            { stops: { some: { delivered_at: { gte: monthStart, lt: monthEnd } } } },
+            { pickup_datetime: { gte: monthStart, lt: monthEnd } },
+          ],
+        },
         select: { pickup_datetime: true, stops: { select: { delivered_at: true } } },
       }),
     ]);
@@ -97,12 +106,16 @@ router.get("/dashboard", async (_req, res, next) => {
       return count + flagged;
     }, 0);
 
-    const onTimeCount = completedThisMonth.filter((t) =>
+    // "This month" = the pay-attribution month (delivery day), matching payroll.
+    const monthCompleted = completedThisMonth.filter((t) =>
+      inMytMonth(payAttributionInstant(t), { start: monthStart, end: monthEnd })
+    );
+    const onTimeCount = monthCompleted.filter((t) =>
       tripOnTime(t.pickup_datetime, t.stops)
     ).length;
     const onTimeRate =
-      completedThisMonth.length > 0
-        ? Math.round((onTimeCount / completedThisMonth.length) * 1000) / 10
+      monthCompleted.length > 0
+        ? Math.round((onTimeCount / monthCompleted.length) * 1000) / 10
         : null;
 
     res.json({
@@ -160,10 +173,11 @@ router.get("/drivers", async (_req, res, next) => {
             incentive_earned: true,
             pickup_datetime: true,
             cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } },
+            // All stops (not take:1): delivered_at across the whole trip feeds
+            // the pay-day month bucket; stops[0] still carries the route label.
             stops: {
               orderBy: { sequence: "asc" },
-              take: 1,
-              select: { consignee: { select: { area: true, zone_code: true } } },
+              select: { delivered_at: true, consignee: { select: { area: true, zone_code: true } } },
             },
           },
         },
@@ -190,9 +204,10 @@ router.get("/drivers", async (_req, res, next) => {
       );
       // Same [start, end) predicate as buildDriverPerformance (users.ts), so
       // the "Earned (mo.)" figure here and the performance page can never
-      // disagree on which trips are "this month" (finding 1.3).
+      // disagree on which trips are "this month" (finding 1.3) — keyed on the
+      // pay-attribution instant (delivery day), matching payroll.
       const monthTrips = d.trips_driven.filter(
-        (t) => t.status === "completed" && inMytMonth(new Date(t.pickup_datetime), monthBounds)
+        (t) => t.status === "completed" && inMytMonth(payAttributionInstant(t), monthBounds)
       );
       const tripsToday = d.trips_driven.filter((t) => {
         const p = new Date(t.pickup_datetime);
@@ -334,13 +349,22 @@ router.get("/monthly", async (_req, res, next) => {
     const { year: mytYear, month: mytMonth } = mytMonthParts(now);
     const windowStart = mytMonthStart(mytYear, mytMonth - 5);
 
+    // Superset fetch: a trip picked up before the window but delivered inside
+    // it still belongs to a window month (pay-day attribution); the bucket
+    // lookup below drops anything that resolves outside the window.
     const trips = await prisma.trip.findMany({
-      where: { pickup_datetime: { gte: windowStart } },
+      where: {
+        OR: [
+          { pickup_datetime: { gte: windowStart } },
+          { stops: { some: { delivered_at: { gte: windowStart } } } },
+        ],
+      },
       select: {
         status: true,
         incentive_earned: true,
         is_external: true,
         pickup_datetime: true,
+        stops: { select: { delivered_at: true } },
       },
     });
 
@@ -368,7 +392,11 @@ router.get("/monthly", async (_req, res, next) => {
     }
 
     for (const t of trips) {
-      const key = mytMonthKey(new Date(t.pickup_datetime));
+      // A trip's month is its pay-attribution month: the delivery day for
+      // delivered trips (matching payroll), pickup for everything not yet
+      // delivered — so the incentive column can never disagree with the
+      // payroll sheet about a month-crossing trip.
+      const key = mytMonthKey(payAttributionInstant(t));
       const b = buckets[key];
       if (!b) continue;
       b.trips += 1;
@@ -409,9 +437,16 @@ router.get("/payroll", async (req, res, next) => {
         name: true,
         employee_number: true,
         trips_driven: {
-          // SQL-bounded for efficiency; buildPayrollRows re-applies the same
-          // [start, end) predicate, so the figures match the other reports.
-          where: { status: "completed", pickup_datetime: { gte: bounds.start, lt: bounds.end } },
+          // Superset SQL bound (delivered-in-month OR picked-up-in-month, the
+          // latter covering the legacy null-delivered_at fallback);
+          // buildPayrollRows applies the precise pay-day [start, end) predicate.
+          where: {
+            status: "completed",
+            OR: [
+              { stops: { some: { delivered_at: { gte: bounds.start, lt: bounds.end } } } },
+              { pickup_datetime: { gte: bounds.start, lt: bounds.end } },
+            ],
+          },
           select: {
             id: true,
             ticket_number: true,

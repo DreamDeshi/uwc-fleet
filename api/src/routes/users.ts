@@ -16,6 +16,7 @@ import {
 } from "../lib/performanceScore";
 import { estimateTripDistanceKm } from "../lib/geo";
 import { currentMytMonthBounds, inMytMonth } from "../lib/myt";
+import { payAttributionInstant } from "../services/tripCompletion";
 
 const router = Router();
 
@@ -91,7 +92,9 @@ async function buildDriverPerformance() {
 
   const reduced = drivers.map((d) => {
     const completed = d.trips_driven.filter((t) => t.status === "completed");
-    const completedThisMonth = completed.filter((t) => inMonth(new Date(t.pickup_datetime)));
+    // "This month" keys on the pay-attribution instant (delivery day) so the
+    // points/RM figures agree with the payroll sheet (finding 1.3).
+    const completedThisMonth = completed.filter((t) => inMonth(payAttributionInstant(t)));
     const stats: DriverTripStats = {
       totalCompleted: completed.length,
       onTimeCompleted: completed.filter((t) => isTripOnTime(t.pickup_datetime, t.stops)).length,

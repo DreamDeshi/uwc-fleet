@@ -129,7 +129,7 @@ export function collectFinalizeBreakdown(groups: FinalizedGroup[]): FinalizeBrea
  * The trip's FIRST delivery confirm — the day-group anchor the rate tier
  * (weekday/off-peak) and pay-day attribution keyed on at finalization.
  * Surfaced on earnings payloads so an 18:05-boundary dispute is resolvable
- * without digging through status history. Pure; display-only.
+ * without digging through status history. Pure.
  */
 export function firstDeliveredAt(stops: { delivered_at: Date | null }[]): Date | null {
   return stops.reduce<Date | null>(
@@ -137,6 +137,22 @@ export function firstDeliveredAt(stops: { delivered_at: Date | null }[]): Date |
       s.delivered_at && (!earliest || s.delivered_at < earliest) ? s.delivered_at : earliest,
     null
   );
+}
+
+/**
+ * The instant a trip's month bucket keys on: the first delivery confirm — the
+ * same anchor finalization wrote the day ledger and pay against. Pay is
+ * earned on the DELIVERY day, so a trip picked up 30 June and delivered
+ * 1 July is July money; bucketing reports by any other date makes a report
+ * and the payroll sheet disagree about the same trip. Falls back to pickup
+ * only where no delivery confirm exists (not-yet-delivered, external, or the
+ * legacy null-delivered_at anomaly surfaced by /reports/attention).
+ */
+export function payAttributionInstant(trip: {
+  pickup_datetime: Date;
+  stops: { delivered_at: Date | null }[];
+}): Date {
+  return firstDeliveredAt(trip.stops) ?? trip.pickup_datetime;
 }
 
 // Minimal slice of the Prisma client the finalize needs. Lets tests substitute
