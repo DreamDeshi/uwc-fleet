@@ -50,6 +50,9 @@ export interface Consignee {
   vendor_code: string | null;
   area: string | null;
   state: string | null;
+  address_1?: string | null;
+  address_2?: string | null;
+  postal_code?: string | null;
   zone_code: string;
   is_active?: boolean;
 }

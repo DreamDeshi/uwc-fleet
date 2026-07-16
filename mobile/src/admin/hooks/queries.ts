@@ -157,12 +157,40 @@ export function useUpdateConsignee() {
       company_name?: string;
       zone_code?: string;
       is_active?: boolean;
+      contact_person?: string;
+      phone?: string;
+      address_1?: string;
+      address_2?: string;
+      area?: string;
+      state?: string;
+      postal_code?: string;
+      vendor_code?: string;
       // Past a 409 warning (rename SIMILAR_EXISTS / deactivate CONSIGNEE_IN_USE).
       force?: boolean;
     }) => {
       const { id, ...patch } = args;
       return (await api.patch<Consignee>(`/consignees/${id}`, patch)).data;
     },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["consignees"] }),
+  });
+}
+
+/** Admin add — same POST the requestor self-add uses (dedupe + force apply). */
+export function useCreateConsignee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: {
+      company_name: string;
+      zone_code: string;
+      address_1?: string;
+      address_2?: string;
+      postal_code?: string;
+      area?: string;
+      state?: string;
+      contact_person?: string;
+      phone?: string;
+      force?: boolean;
+    }) => (await api.post<Consignee>("/consignees", args)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["consignees"] }),
   });
 }

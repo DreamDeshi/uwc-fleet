@@ -80,6 +80,9 @@ interface ConsigneeRow {
   phone: string | null;
   area: string | null;
   state: string | null;
+  address_1: string | null;
+  address_2: string | null;
+  postal_code: string | null;
   zone_code: string;
   zone_name: string | null;
   is_active: boolean;
@@ -111,7 +114,8 @@ router.get("/", async (req, res, next) => {
         Prisma.sql`regexp_replace(lower(coalesce(${col}, '')), ${PG_NORMALISE_REGEX}, '', 'g')`;
       rows = await prisma.$queryRaw<ConsigneeRow[]>(Prisma.sql`
         SELECT c.id, c.company_name, c.vendor_code, c.contact_person, c.phone,
-               c.area, c.state, c.zone_code, z.name AS zone_name, c.is_active
+               c.area, c.state, c.address_1, c.address_2, c.postal_code,
+               c.zone_code, z.name AS zone_name, c.is_active
         FROM "Consignee" c
         LEFT JOIN "Zone" z ON z.code = c.zone_code
         WHERE ${includeInactive ? Prisma.sql`1 = 1` : Prisma.sql`c.is_active = true`}
@@ -145,6 +149,9 @@ router.get("/", async (req, res, next) => {
           phone: true,
           area: true,
           state: true,
+          address_1: true,
+          address_2: true,
+          postal_code: true,
           zone_code: true,
           is_active: true,
           zone: { select: { name: true } },
@@ -169,6 +176,9 @@ router.get("/", async (req, res, next) => {
         phone: r.phone,
         area: r.area,
         state: r.state,
+        address_1: r.address_1,
+        address_2: r.address_2,
+        postal_code: r.postal_code,
         zone_code: r.zone_code,
         is_active: r.is_active,
         zone: r.zone_name ? { code: r.zone_code, name: r.zone_name } : null,
@@ -287,10 +297,21 @@ const updateConsigneeSchema = z
     company_name: z.string().min(1).optional(),
     zone_code: z.string().min(1).optional(),
     is_active: z.boolean().optional(),
+    // Address/contact details (admin-editable — Mr. Teh 16 Jul 2026: "let admin
+    // amend the existing address, postal code"). Empty string clears a field
+    // (stored as null), matching the create route's optional semantics.
+    contact_person: z.string().optional(),
+    phone: z.string().optional(),
+    address_1: z.string().optional(),
+    address_2: z.string().optional(),
+    area: z.string().optional(),
+    state: z.string().optional(),
+    postal_code: z.string().optional(),
+    vendor_code: z.string().optional(),
     // Re-submit with force=true past a SIMILAR_EXISTS rename warning.
     force: z.boolean().optional(),
   })
-  .refine((b) => b.company_name !== undefined || b.zone_code !== undefined || b.is_active !== undefined, {
+  .refine((b) => Object.keys(b).some((k) => k !== "force" && b[k as keyof typeof b] !== undefined), {
     message: "Nothing to update.",
   });
 
@@ -301,12 +322,41 @@ router.patch(
   async (req, res, next) => {
     try {
       // `force` is control flow, not consignee data (same as the create route).
-      const { force, ...patch } = req.body as {
+      // Empty strings mean "clear this detail" → normalise to null before the
+      // write (mirrors the create route storing blank optionals as null).
+      const { force, ...raw } = req.body as {
         force?: boolean;
         company_name?: string;
         zone_code?: string;
         is_active?: boolean;
+        contact_person?: string;
+        phone?: string;
+        address_1?: string;
+        address_2?: string;
+        area?: string;
+        state?: string;
+        postal_code?: string;
+        vendor_code?: string;
       };
+      const DETAIL_FIELDS = [
+        "contact_person",
+        "phone",
+        "address_1",
+        "address_2",
+        "area",
+        "state",
+        "postal_code",
+        "vendor_code",
+      ] as const;
+      const patch: import("../services/consigneeUpdate").ConsigneePatch = {
+        company_name: raw.company_name,
+        zone_code: raw.zone_code,
+        is_active: raw.is_active,
+      };
+      for (const f of DETAIL_FIELDS) {
+        const v = raw[f];
+        if (v !== undefined) patch[f] = v.trim() === "" ? null : v.trim();
+      }
 
       // A RENAME goes through the same dedupe the self-add path enforces —
       // otherwise the directory could be renamed into the very near-duplicate

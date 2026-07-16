@@ -9,7 +9,7 @@ import React, { useEffect, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Switch, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
-import { useConsignees, useUpdateConsignee } from "../hooks/queries";
+import { useConsignees, useCreateConsignee, useUpdateConsignee } from "../hooks/queries";
 import { colors, font, radius } from "../theme";
 import { Button, Card, EmptyState, ErrorState, Input, Loading, Modal, Pill, SearchInput } from "../components/ui";
 import { apiErrorCode, apiErrorMessage } from "../services/api";
@@ -25,6 +25,7 @@ export function ConsigneesScreen() {
   const [debouncedQ, setDebouncedQ] = useState("");
   const [includeInactive, setIncludeInactive] = useState(false);
   const [editing, setEditing] = useState<Consignee | null>(null);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedQ(q), 300);
@@ -61,6 +62,9 @@ export function ConsigneesScreen() {
           <Text style={{ fontSize: font.sm, color: colors.textFaint, flex: 1, textAlign: "right" }}>
             {t("admin.consignees.showing", { count: rows.length })}
           </Text>
+          <Button size="sm" variant="primary" onPress={() => setAdding(true)}>
+            {t("admin.consignees.add")}
+          </Button>
         </View>
       </Card>
 
@@ -111,7 +115,108 @@ export function ConsigneesScreen() {
       </Card>
 
       {editing && <EditConsigneeModal consignee={editing} onClose={() => setEditing(null)} />}
+      {adding && <AddConsigneeModal onClose={() => setAdding(false)} />}
     </ScrollView>
+  );
+}
+
+// Admin add — Mr. Teh 16 Jul: "can help to let admin add new consignee,
+// address, postcode". Same POST (and SIMILAR_EXISTS force flow) as the
+// requestor self-add, plus the address fields the admin directory owns.
+function AddConsigneeModal({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
+  const create = useCreateConsignee();
+  const [name, setName] = useState("");
+  const [zone, setZone] = useState(ZONES[0]?.code ?? "P1");
+  const [address1, setAddress1] = useState("");
+  const [address2, setAddress2] = useState("");
+  const [postal, setPostal] = useState("");
+  const [zoneOpen, setZoneOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [needsForce, setNeedsForce] = useState(false);
+
+  const save = async (force = false) => {
+    setError(null);
+    if (!name.trim()) {
+      setError(t("admin.consignees.nameRequired"));
+      return;
+    }
+    try {
+      await create.mutateAsync({
+        company_name: name.trim(),
+        zone_code: zone,
+        ...(address1.trim() ? { address_1: address1.trim() } : {}),
+        ...(address2.trim() ? { address_2: address2.trim() } : {}),
+        ...(postal.trim() ? { postal_code: postal.trim() } : {}),
+        ...(force ? { force: true } : {}),
+      });
+      onClose();
+    } catch (e) {
+      setError(apiErrorMessage(e, t("admin.consignees.saveFailed")));
+      setNeedsForce(apiErrorCode(e) === "SIMILAR_EXISTS");
+    }
+  };
+
+  const zoneInfo = ZONES.find((z) => z.code === zone);
+
+  return (
+    <Modal open title={t("admin.consignees.addTitle")} onClose={onClose}>
+      <Input label={t("admin.consignees.companyName")} value={name} onChange={setName} />
+
+      <Text style={{ fontSize: font.md, fontWeight: "600", marginBottom: 6, color: colors.text }}>
+        {t("admin.consignees.deliveryZone")}
+      </Text>
+      <Pressable
+        onPress={() => setZoneOpen(true)}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingVertical: 11,
+          paddingHorizontal: 13,
+          borderRadius: radius.md,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.card,
+          marginBottom: 14,
+        }}
+      >
+        <Text style={{ fontSize: font.md, color: colors.text }}>
+          {zone}
+          {zoneInfo ? ` — ${zoneInfo.name}` : ""}
+        </Text>
+        <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
+      </Pressable>
+
+      <Input label={t("admin.consignees.addressLine1")} value={address1} onChange={setAddress1} />
+      <Input label={t("admin.consignees.addressLine2")} value={address2} onChange={setAddress2} />
+      <Input label={t("admin.consignees.postalCode")} value={postal} onChange={setPostal} />
+
+      {error ? <Text style={{ color: colors.red, fontSize: font.sm, fontWeight: "600", marginBottom: 10 }}>{error}</Text> : null}
+
+      <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+        <Button variant="ghost" onPress={onClose}>
+          {t("common.cancel")}
+        </Button>
+        {needsForce && (
+          <Button variant="outline" onPress={() => save(true)} disabled={create.isPending} style={{ borderColor: colors.red }}>
+            <Text style={{ color: colors.red, fontWeight: "700", fontSize: font.md }}>{t("admin.consignees.saveAnyway")}</Text>
+          </Button>
+        )}
+        <Button variant="primary" onPress={() => save()} disabled={create.isPending}>
+          {create.isPending ? t("admin.consignees.saving") : t("common.save")}
+        </Button>
+      </View>
+
+      <OptionsModal
+        visible={zoneOpen}
+        title={t("admin.consignees.deliveryZone")}
+        options={ZONES.map((z) => ({ label: `${z.code} — ${z.name}`, value: z.code }))}
+        selectedValue={zone}
+        onSelect={setZone}
+        onClose={() => setZoneOpen(false)}
+      />
+    </Modal>
   );
 }
 
@@ -123,6 +228,12 @@ function EditConsigneeModal({ consignee, onClose }: { consignee: Consignee; onCl
   const [name, setName] = useState(consignee.company_name_full ?? consignee.company_name);
   const [zone, setZone] = useState(consignee.zone_code);
   const [active, setActive] = useState(consignee.is_active !== false);
+  // Address details — admin-amendable (Mr. Teh 16 Jul: "amend the existing
+  // address, postal code"). Sent only when actually changed, so the audit row
+  // records real edits, not every save.
+  const [address1, setAddress1] = useState(consignee.address_1 ?? "");
+  const [address2, setAddress2] = useState(consignee.address_2 ?? "");
+  const [postal, setPostal] = useState(consignee.postal_code ?? "");
   const [error, setError] = useState<string | null>(null);
   const [zoneOpen, setZoneOpen] = useState(false);
   // A 409 warning from the server (rename would create a near-duplicate /
@@ -134,12 +245,17 @@ function EditConsigneeModal({ consignee, onClose }: { consignee: Consignee; onCl
 
   const save = async (force = false) => {
     setError(null);
+    const changedDetail = (next: string, current: string | null | undefined) =>
+      next.trim() !== (current ?? "").trim() ? next.trim() : undefined;
     try {
       await update.mutateAsync({
         id: consignee.id,
         company_name: name.trim() || undefined,
         zone_code: zone,
         is_active: active,
+        address_1: changedDetail(address1, consignee.address_1),
+        address_2: changedDetail(address2, consignee.address_2),
+        postal_code: changedDetail(postal, consignee.postal_code),
         ...(force ? { force: true } : {}),
       });
       onClose();
@@ -186,6 +302,10 @@ function EditConsigneeModal({ consignee, onClose }: { consignee: Consignee; onCl
           <Text style={{ fontSize: font.sm, color: colors.orange }}>{t("admin.consignees.zoneChangeNote")}</Text>
         </View>
       )}
+
+      <Input label={t("admin.consignees.addressLine1")} value={address1} onChange={setAddress1} />
+      <Input label={t("admin.consignees.addressLine2")} value={address2} onChange={setAddress2} />
+      <Input label={t("admin.consignees.postalCode")} value={postal} onChange={setPostal} />
 
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 }}>
         <Switch

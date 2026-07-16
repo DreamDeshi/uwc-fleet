@@ -23,6 +23,17 @@ export interface ConsigneePatch {
   company_name?: string;
   zone_code?: string;
   is_active?: boolean;
+  // Address/contact details — admin-editable since 16 Jul 2026 (Mr. Teh:
+  // "let admin amend the existing address, postal code"). Display/routing
+  // data only; none of these touch zone identity, dispatch, or pay.
+  contact_person?: string | null;
+  phone?: string | null;
+  address_1?: string | null;
+  address_2?: string | null;
+  area?: string | null;
+  state?: string | null;
+  postal_code?: string | null;
+  vendor_code?: string | null;
 }
 
 /**
@@ -90,6 +101,20 @@ export function consigneeAuditAction(
   if (patch.is_active !== undefined && patch.is_active !== before.is_active) {
     parts.push(patch.is_active ? "reactivated" : "deactivated");
   }
+  // Address/contact fields are summarised by name (the values can be long);
+  // the row itself holds the new state, the log records WHAT changed.
+  const detailFields = [
+    "contact_person",
+    "phone",
+    "address_1",
+    "address_2",
+    "area",
+    "state",
+    "postal_code",
+    "vendor_code",
+  ] as const;
+  const changedDetails = detailFields.filter((f) => patch[f] !== undefined);
+  if (changedDetails.length > 0) parts.push(`details: ${changedDetails.join("/")}`);
   return parts.length > 0 ? `consignee.updated ${parts.join(", ")}` : "consignee.updated (no-op)";
 }
 
