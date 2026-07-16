@@ -61,7 +61,7 @@ import { resolveFleetFix } from "../lib/gpsPosition";
 import { sendPushNotifications } from "../lib/pushNotifications";
 import { getDispatchMode } from "../lib/settings";
 import { autoDispatchTrip } from "../services/dispatchEngine";
-import { palletEquivalents, CARGO_PALLET_TYPES } from "../lib/pallets";
+import { palletEquivalents, CARGO_PALLET_TYPES, normalizePalletType } from "../lib/pallets";
 import { recordTripEvent } from "../lib/tripHistory";
 import { buildTripTimeline } from "../lib/tripTimeline";
 import {
@@ -192,10 +192,15 @@ export const createTripSchema = z.object({
     .array(
       z.object({
         // Closed vocabulary (workbook REQUESTOR INTERFACE): the five pallet
-        // footprints plus carton/"Others". Enumerated, not free text — a
-        // wrong-encoding "5x10" (ASCII x) has no known footprint and would
-        // silently under-count a 3.125-slot pallet into an overloaded truck.
-        pallet_type: z.enum(CARGO_PALLET_TYPES),
+        // footprints plus carton/"Others". Normalise the SPELLING first (ASCII
+        // "5x10"/"5 x 10" → "5×10", the workbook's own notation), THEN enum the
+        // VOCABULARY — so the spec's spelling round-trips and stores canonical,
+        // while a genuinely unknown footprint ("6x6") still 400s instead of
+        // silently under-counting a 3.125-slot pallet into an overloaded truck.
+        pallet_type: z.preprocess(
+          (v) => (typeof v === "string" ? normalizePalletType(v) : v),
+          z.enum(CARGO_PALLET_TYPES)
+        ),
         quantity: z.number().int().min(1),
         cartons: z.number().int().min(0).optional(),
         custom_size: z.string().optional(),

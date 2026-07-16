@@ -35,23 +35,32 @@ describe("pallet_type vocabulary is closed (capacity safety)", () => {
     await resetDb();
   });
 
-  it("rejects an ASCII-x size at CREATE instead of under-counting it", async () => {
+  it("normalises an ASCII-x size, books it, and counts it at full footprint", async () => {
     const requestor = await loginAs(REQUESTOR);
     const rt = await firstRouteTypeId(requestor);
 
-    // 6× 5×10 = 18.75 equivalents — more than the 16-pallet PLX 2406. Sent with
-    // an ASCII x this previously counted as 6 slots and sailed through.
-    const res = await bookRaw(requestor, rt, [{ pallet_type: "5x10", quantity: 6 }]);
-    expect(res.status).toBe(400);
+    // The workbook's own spelling. One 5x10 = 3.125 slots, well within the fleet,
+    // so it books — and stores canonical "5×10" so the capacity math sees 3.125,
+    // not a silently-dropped 0/1.
+    const res = await bookRaw(requestor, rt, [{ pallet_type: "5x10", quantity: 1 }]);
+    expect(res.status).toBe(201);
+    expect(res.body.cargo_details[0].pallet_type).toBe("5×10");
   });
 
-  it("still rejects the same load when correctly encoded — via the capacity guard", async () => {
+  it("normalises then still capacity-rejects an oversized load (no under-counting)", async () => {
     const requestor = await loginAs(REQUESTOR);
     const rt = await firstRouteTypeId(requestor);
 
-    const res = await bookRaw(requestor, rt, [{ pallet_type: "5×10", quantity: 6 }]);
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe("CARGO_EXCEEDS_FLEET");
+    // 6× 5×10 = 18.75 > the 16-pallet PLX 2406. Sent ASCII, this used to count as
+    // 6 slots and sail through; now it normalises to "5×10" and hits the guard —
+    // the SAME outcome as the canonical spelling below.
+    const ascii = await bookRaw(requestor, rt, [{ pallet_type: "5x10", quantity: 6 }]);
+    expect(ascii.status).toBe(400);
+    expect(ascii.body.error.code).toBe("CARGO_EXCEEDS_FLEET");
+
+    const canonical = await bookRaw(requestor, rt, [{ pallet_type: "5×10", quantity: 6 }]);
+    expect(canonical.status).toBe(400);
+    expect(canonical.body.error.code).toBe("CARGO_EXCEEDS_FLEET");
   });
 
   it("accepts every bookable type", async () => {
@@ -69,16 +78,18 @@ describe("pallet_type vocabulary is closed (capacity safety)", () => {
     expect(carton.status).toBe(201);
   });
 
-  it("rejects an unknown footprint on the EDIT path too", async () => {
+  it("rejects a genuinely unknown footprint on the EDIT path too (normalise ≠ accept-anything)", async () => {
     const requestor = await loginAs(REQUESTOR);
     const rt = await firstRouteTypeId(requestor);
     const trip = await bookTrip(requestor, ["P1"], rt);
 
+    // "6x6" normalises to "6×6" — still not a bookable size, so the enum rejects
+    // it on edit just as on create.
     const res = await editRaw(requestor, trip.id, {
       route_type_id: rt,
       pickup_datetime: futurePickupIso(),
       stops: trip.stops.map((s, i) => ({ consignee_id: s.consignee_id, sequence: i + 1 })),
-      cargo_details: [{ pallet_type: "5x10", quantity: 6 }],
+      cargo_details: [{ pallet_type: "6x6", quantity: 1 }],
     });
     expect(res.status).toBe(400);
   });

@@ -35,6 +35,20 @@ export const UNSIZED_CARGO_TYPES = ["carton", "custom"] as const;
  */
 export const CARGO_PALLET_TYPES = [...PALLET_SIZES, ...UNSIZED_CARGO_TYPES] as const;
 
+/**
+ * Canonicalise a pallet_type's SPELLING before it's checked against the enum.
+ * The sizes are stored with "×" (U+00D7), but the workbook itself prints them
+ * with an ASCII "x" ("5x10 x qty"), so a caller built from the spec naturally
+ * sends "5x10" / "5 x 10" / "5X10". Map [xX] → × and drop whitespace so those
+ * round-trip to the canonical key; carton/custom contain no x and pass through
+ * untouched. This only fixes the separator — it is NOT a vocabulary remap, so a
+ * genuinely unknown footprint ("6x6" → "6×6") still fails the enum and 400s.
+ * Non-ASCII lookalikes (✕, Cyrillic х) are deliberately out of scope.
+ */
+export function normalizePalletType(raw: string): string {
+  return raw.replace(/\s+/g, "").replace(/[xX]/g, "×");
+}
+
 /** Slots per pallet, relative to a single 4×4 (= 1 slot). Keyed by PALLET_SIZES
  *  so adding a size without its factor is a compile error, not a silent 0. */
 export const PALLET_FACTORS: Record<(typeof PALLET_SIZES)[number], number> = {

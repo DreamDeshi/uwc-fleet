@@ -60,15 +60,25 @@ describe("createTripSchema — pallet_type is the workbook's closed vocabulary",
     }
   });
 
-  // The regression this guards: "5x10" with an ASCII x has no known footprint,
-  // so it used to convert to a guessed 1 slot instead of 3.125 — six of them
-  // read as 6 slots against a real 18.75 and overloaded an 8-pallet truck.
-  it("rejects a wrong-encoding ASCII size instead of silently under-counting it", () => {
-    expect(withCargo([{ pallet_type: "5x10", quantity: 6 }]).success).toBe(false);
-    expect(withCargo([{ pallet_type: "4x8", quantity: 1 }]).success).toBe(false);
+  // Normalisation: the workbook prints "5x10" (ASCII x); it now round-trips to
+  // the canonical "5×10" and validates, rather than 400-ing the spec's own
+  // spelling. It must ALSO store canonical, so downstream capacity math (which
+  // keys on "×") sees a real 3.125-slot pallet, not a silently-dropped one.
+  it("normalises an ASCII-x size to the canonical key and accepts it", () => {
+    for (const [sent, canonical] of [
+      ["5x10", "5×10"],
+      ["5 x 10", "5×10"],
+      ["4X8", "4×8"],
+      ["2 X 2", "2×2"],
+    ] as const) {
+      const r = withCargo([{ pallet_type: sent, quantity: 1 }]);
+      expect(r.success, sent).toBe(true);
+      if (r.success) expect(r.data.cargo_details[0].pallet_type).toBe(canonical);
+    }
   });
 
-  it("rejects a footprint that is simply not in the spec", () => {
+  it("still rejects a footprint that is not in the spec — even after normalising the separator", () => {
+    expect(withCargo([{ pallet_type: "6x6", quantity: 1 }]).success).toBe(false); // → "6×6", not a size
     expect(withCargo([{ pallet_type: "6×6", quantity: 1 }]).success).toBe(false);
     expect(withCargo([{ pallet_type: "banana", quantity: 1 }]).success).toBe(false);
     expect(withCargo([{ pallet_type: "", quantity: 1 }]).success).toBe(false);

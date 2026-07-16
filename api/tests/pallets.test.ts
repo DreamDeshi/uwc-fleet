@@ -3,9 +3,31 @@ import {
   palletFactor,
   palletEquivalents,
   isUnsizedForDispatch,
+  normalizePalletType,
   CARGO_PALLET_TYPES,
   PALLET_SIZES,
 } from "../src/lib/pallets";
+
+describe("normalizePalletType — spelling only, not vocabulary", () => {
+  it("maps ASCII x/X and strips whitespace to the canonical × key", () => {
+    expect(normalizePalletType("5x10")).toBe("5×10");
+    expect(normalizePalletType("5 x 10")).toBe("5×10");
+    expect(normalizePalletType("4X8")).toBe("4×8");
+    expect(normalizePalletType(" 2 X 2 ")).toBe("2×2");
+  });
+
+  it("leaves already-canonical keys and carton/custom untouched", () => {
+    expect(normalizePalletType("5×10")).toBe("5×10");
+    expect(normalizePalletType("carton")).toBe("carton");
+    expect(normalizePalletType("custom")).toBe("custom");
+  });
+
+  it("only fixes the separator — an unknown footprint stays unknown", () => {
+    // "6x6" → "6×6": still not a bookable size, so the enum (not this fn) rejects it.
+    expect(normalizePalletType("6x6")).toBe("6×6");
+    expect(CARGO_PALLET_TYPES).not.toContain(normalizePalletType("6x6"));
+  });
+});
 
 describe("palletFactor", () => {
   it("maps each booking pallet size to its 4×4-equivalent", () => {
