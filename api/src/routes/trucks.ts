@@ -216,7 +216,17 @@ router.get("/", async (_req, res, next) => {
       include: {
         driver: { select: { id: true, name: true, phone: true } },
         trips: {
-          where: { status: { in: ["assigned", "in_progress"] } },
+          // Load shown on the card = what occupies the truck TODAY: cargo that
+          // is physically aboard (in_progress) plus today's assignments. A
+          // future day's assigned booking used to appear here, producing
+          // "Idle · 0 trips today" next to a non-zero load bar (Mr. Teh's
+          // 16 Jul 2026 screenshot) — capacity is per-day, so the card is too.
+          where: {
+            OR: [
+              { status: "in_progress" },
+              { status: "assigned", pickup_datetime: { gte: dayStart, lt: dayEnd } },
+            ],
+          },
           select: {
             id: true,
             status: true,
@@ -240,7 +250,8 @@ router.get("/", async (_req, res, next) => {
     );
 
     const payload = trucks.map((t) => {
-      // Current load = 4×4-pallet-equivalents on any active trip.
+      // Current load = 4×4-pallet-equivalents occupying the truck TODAY
+      // (in_progress + today's assignments — the include above is date-scoped).
       const activeLoad = t.trips.reduce(
         (sum, trip) => sum + palletEquivalents(trip.cargo_details),
         0

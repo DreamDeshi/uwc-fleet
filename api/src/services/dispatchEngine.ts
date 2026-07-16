@@ -28,6 +28,7 @@ import { truckRateSnapshot, snapshotStopZonePoints } from "./rateSnapshot";
 import { effectiveTruckRates, effectiveZonePoints } from "./pendingRates";
 import { leaveDateFilter } from "./driverLeave";
 import { mytDateKey } from "./incentiveEngine";
+import { mytDayBoundsForKey } from "../lib/myt";
 import { roadworthyWhere } from "./truckEligibility";
 import { recordTripEvent } from "../lib/tripHistory";
 import { CONFLICT_STATUSES, ASSIGNMENT_CONFLICT_BUFFER_MS } from "./schedulingConflict";
@@ -225,10 +226,12 @@ export function autoDispatchFailureNote(
 
 // ── DB helpers ─────────────────────────────────────────────────────────
 
-// What counts as "this driver/truck is already out on a job" for auto-dispatch.
-// Deliberately stricter than the manual path (which only blocks on in_progress):
-// auto never stacks work on a driver who holds an assignment they haven't started.
-const ACTIVE_TRIP_STATUSES = ["assigned", "in_progress"] as const;
+// What counts as "this driver/truck is already out on a job" for auto-dispatch:
+// in_progress always, plus assignments picked up on the SAME MYT day as the
+// booking being dispatched (see blockingTripWhere in autoDispatchTrip — the
+// date scope is Mr. Teh's 16 Jul 2026 trial fix). Still deliberately stricter
+// than the manual path, which hard-blocks only on in_progress and lets the
+// scheduling-conflict warning cover same-day stacking.
 
 // 4×4-pallet-equivalent load for a set of cargo lines (see lib/pallets).
 function orderPallets(
@@ -327,6 +330,22 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
   // but stays eligible for bookings picked up on other dates.
   const pickupDateKey = mytDateKey(trip.pickup_datetime);
 
+  // Capacity/busy checks are date-scoped the same way (Mr. Teh's trial bug,
+  // 16 Jul 2026: a 17-Jul assigned booking made the system report "capacity is
+  // full" for a 16-Jul one). An `in_progress` trip always blocks — the cargo is
+  // physically on the truck and the driver is out — but an `assigned` trip only
+  // occupies its own pickup MYT day; the truck is empty again on other days.
+  const pickupDayBounds = mytDayBoundsForKey(pickupDateKey)!;
+  const blockingTripWhere = {
+    OR: [
+      { status: "in_progress" as const },
+      {
+        status: "assigned" as const,
+        pickup_datetime: { gte: pickupDayBounds.start, lt: pickupDayBounds.end },
+      },
+    ],
+  };
+
   let selection: TruckSelection | null = null;
   let raced = false;
   let windowExceeded: OperatingWindowEstimate | null = null;
@@ -347,7 +366,10 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
             driver: {
               is: {
                 status: "active",
-                trips_driven: { none: { status: { in: [...ACTIVE_TRIP_STATUSES] } } },
+                // Busy = out NOW (in_progress) or already booked for THIS
+                // pickup day. An assignment on another day doesn't remove the
+                // driver from this day's pool (date-scope fix, 16 Jul 2026).
+                trips_driven: { none: blockingTripWhere },
                 // On leave for the pickup date → not a candidate (query form of
                 // driverLeave.leaveCoversDate).
                 leaves: { none: leaveDateFilter(pickupDateKey) },
@@ -357,7 +379,9 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
           include: {
             driver: { select: { id: true, name: true } },
             trips: {
-              where: { status: { in: [...ACTIVE_TRIP_STATUSES] }, id: { not: tripId } },
+              // Same date scope as the driver filter: only trips that actually
+              // occupy the truck on THIS booking's pickup day count as load.
+              where: { AND: [blockingTripWhere, { id: { not: tripId } }] },
               select: {
                 cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } },
                 stops: {

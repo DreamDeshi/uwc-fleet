@@ -836,11 +836,25 @@ async function assignTripInTx(
               where: { trip_id: id },
               select: { pallet_type: true, quantity: true, estimated_pallets: true },
             });
+            // Capacity is scoped to THIS trip's pickup MYT day (16 Jul 2026 trial
+            // fix): in_progress cargo is physically aboard and always counts, but
+            // an assignment only occupies the truck on its own pickup day — a
+            // 17-Jul booking must not make a 16-Jul assign TRUCK_OVERLOADED.
+            const pickupDay = mytDayBoundsForKey(mytDateKey(trip.pickup_datetime))!;
             const truck = await tx.truck.findUnique({
               where: { plate: truck_plate },
               include: {
                 trips: {
-                  where: { status: { in: ["assigned", "in_progress"] }, id: { not: id } },
+                  where: {
+                    id: { not: id },
+                    OR: [
+                      { status: "in_progress" },
+                      {
+                        status: "assigned",
+                        pickup_datetime: { gte: pickupDay.start, lt: pickupDay.end },
+                      },
+                    ],
+                  },
                   select: { cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } } },
                 },
               },
