@@ -24,13 +24,15 @@ import { sendPushNotifications } from "../src/lib/pushNotifications";
 
 const pushMock = vi.mocked(sendPushNotifications);
 
-/** How many "pending order" alerts have been pushed for this trip. */
-function pendingAlertCount(tripId: string): number {
+/** How many alerts of a given type have been pushed for this trip. */
+function alertCount(tripId: string, type: string): number {
   return pushMock.mock.calls.filter(([, payload]) => {
     const data = payload?.data as { type?: string; tripId?: string } | undefined;
-    return data?.type === "pending_alert" && data?.tripId === tripId;
+    return data?.type === type && data?.tripId === tripId;
   }).length;
 }
+const pendingAlertCount = (tripId: string) => alertCount(tripId, "pending_alert");
+const expiredAlertCount = (tripId: string) => alertCount(tripId, "pending_expired");
 
 async function setMode(mode: "auto" | "manual"): Promise<void> {
   await prisma.appSetting.upsert({
@@ -132,6 +134,41 @@ describe("pending sweep — retry decoupled from the one-shot alert", () => {
     t = await freshTrip(trip.id);
     expect(t.status).toBe("pending");
     expect(pendingAlertCount(trip.id)).toBe(1); // still one-shot
+  });
+
+  it("AUTO: a booking whose pickup has passed is EXPIRED — not retried even with free drivers — and alerts once (DG-T1 ceiling)", async () => {
+    await setMode("auto");
+    // Block create-time dispatch so the booking lands pending, then free everyone
+    // — proving the sweep does NOT assign it later purely because of the ceiling.
+    const leaves = await putAllDriversOnLeave();
+    const requestor = await loginAs(REQUESTOR);
+    const rt = await firstRouteTypeId(requestor);
+    const trip = await bookTrip(requestor, ["P1"], rt);
+    expect((await freshTrip(trip.id)).status).toBe("pending");
+
+    await prisma.driverLeave.deleteMany({ where: { id: { in: leaves } } }); // drivers now free
+    await prisma.trip.update({
+      where: { id: trip.id },
+      data: {
+        created_at: new Date(Date.now() - 11 * 60 * 1000), // stale enough to sweep
+        pickup_datetime: new Date(Date.now() - 60 * 1000), // pickup 1 min in the past
+      },
+    });
+
+    await sweepPendingTrips();
+    let t = await freshTrip(trip.id);
+    expect(t.status).toBe("pending"); // NOT assigned — the ceiling stopped the retry
+    expect(t.driver_id).toBeNull();
+    expect(t.auto_dispatch_failed).toBe(true); // flagged for manual handling
+    expect(t.auto_dispatch_note).toMatch(/pickup time passed/i);
+    expect(expiredAlertCount(trip.id)).toBe(1);
+
+    // A second sweep does not retry it and does not re-alert (one-shot).
+    await sweepPendingTrips();
+    t = await freshTrip(trip.id);
+    expect(t.status).toBe("pending");
+    expect(t.driver_id).toBeNull();
+    expect(expiredAlertCount(trip.id)).toBe(1);
   });
 
   it("a booking younger than the threshold is untouched by the sweep", async () => {
