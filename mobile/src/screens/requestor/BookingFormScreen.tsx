@@ -34,7 +34,7 @@ import { NewConsigneeModal } from "../../components/NewConsigneeModal";
 import { LoadingState } from "../../components/States";
 import { useToast } from "../../components/Toast";
 import { pickDocumentImage, PickedPhoto } from "../../lib/photo";
-import { palletEquivalents } from "../../lib/pallets";
+import { palletEquivalents, type PalletSize } from "../../lib/pallets";
 import { pickupToSlot, tripRemarks } from "../../lib/bookingEdit";
 import { formatDate, formatTime } from "../../lib/format";
 import { Consignee, Trip } from "../../types";
@@ -44,7 +44,10 @@ type Nav = BottomTabNavigationProp<RequestorTabParamList>;
 // Grab-style flow: 3 steps. Date/time/remarks (all defaulted) folded into the
 // final Confirm step so there's no near-empty "When" page.
 const STEPS = ["stepWhere", "stepWhat", "stepConfirm"] as const;
-const PALLET_SIZES = ["4×4", "3×4", "4×8", "5×10", "2×2"];
+// Display order (commonest first) — deliberately NOT the lib's order; palletQtys
+// is indexed by this. Typed as PalletSize so an ASCII "4x4" here fails to
+// compile rather than shipping a line the server's enum rejects.
+const PALLET_SIZES: PalletSize[] = ["4×4", "3×4", "4×8", "5×10", "2×2"];
 
 // Parse the optional "estimated pallets of space" field for carton/Others cargo:
 // a positive whole number, or undefined when blank (→ manual admin assignment).

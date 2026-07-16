@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PALLET_FACTORS, palletEquivalents, palletFactor } from "./pallets";
+import { CARGO_PALLET_TYPES, PALLET_FACTORS, palletEquivalents, palletFactor } from "./pallets";
 
 // These factors MUST stay identical to api/src/lib/pallets.ts — the server
 // enforces capacity in 4×4-equivalents, and the booking form warns with this
@@ -15,10 +15,19 @@ describe("pallet factors mirror the server", () => {
     });
   });
 
-  it("cartons/custom occupy no pallet slots; unknown types one (conservative)", () => {
+  it("gives cartons/custom and any unrecognised footprint no slots", () => {
     expect(palletFactor("carton")).toBe(0);
     expect(palletFactor("custom")).toBe(0);
-    expect(palletFactor("6×6")).toBe(1);
+    // Guessing one slot for an unknown is the UNSAFE direction — a 6×6 is ~2.25
+    // slots and an ASCII "5x10" is really 3.125, so a guessed 1 under-counts and
+    // the form would stay silent on a load that overloads the truck. The server
+    // enums pallet_type, so these can't be booked at all.
+    expect(palletFactor("6×6")).toBe(0);
+    expect(palletFactor("5x10")).toBe(0); // ASCII "x" — not the U+00D7 key
+  });
+
+  it("offers exactly the workbook's bookable vocabulary", () => {
+    expect([...CARGO_PALLET_TYPES]).toEqual(["2×2", "3×4", "4×4", "4×8", "5×10", "carton", "custom"]);
   });
 });
 

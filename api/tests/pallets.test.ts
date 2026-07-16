@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { palletFactor, palletEquivalents, isUnsizedForDispatch } from "../src/lib/pallets";
+import {
+  palletFactor,
+  palletEquivalents,
+  isUnsizedForDispatch,
+  CARGO_PALLET_TYPES,
+  PALLET_SIZES,
+} from "../src/lib/pallets";
 
 describe("palletFactor", () => {
   it("maps each booking pallet size to its 4×4-equivalent", () => {
@@ -15,8 +21,28 @@ describe("palletFactor", () => {
     expect(palletFactor("custom")).toBe(0);
   });
 
-  it("falls back to one slot for an unrecognised footprint (conservative)", () => {
-    expect(palletFactor("6×6")).toBe(1);
+  // Guessing one slot for an unknown footprint is the UNSAFE direction: a 6×6 is
+  // ~2.25 slots and a wrong-encoding ASCII "5x10" is 3.125, so a guessed 1
+  // under-counts and overloads the truck. Unknown → no footprint → the order is
+  // unsized and routes to manual assignment (see isUnsizedForDispatch).
+  it("gives an unrecognised footprint no slots rather than guessing one", () => {
+    expect(palletFactor("6×6")).toBe(0);
+    expect(palletFactor("5x10")).toBe(0); // ASCII "x" — not the U+00D7 key
+  });
+
+  it("treats an unrecognised footprint as unsized, so it can't auto-dispatch", () => {
+    expect(isUnsizedForDispatch([{ pallet_type: "5x10", quantity: 6 }])).toBe(true);
+    expect(isUnsizedForDispatch([{ pallet_type: "6×6", quantity: 1 }])).toBe(true);
+  });
+});
+
+describe("CARGO_PALLET_TYPES (the route's enum)", () => {
+  it("is exactly the workbook's closed vocabulary: 5 pallet sizes + carton/Others", () => {
+    expect([...CARGO_PALLET_TYPES]).toEqual(["2×2", "3×4", "4×4", "4×8", "5×10", "carton", "custom"]);
+  });
+
+  it("gives every bookable pallet size a factor (no size can enter unpriced)", () => {
+    for (const size of PALLET_SIZES) expect(palletFactor(size)).toBeGreaterThan(0);
   });
 });
 

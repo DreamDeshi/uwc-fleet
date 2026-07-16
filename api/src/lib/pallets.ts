@@ -8,7 +8,36 @@
  * are stored with the "×" (U+00D7) separator exactly as the booking form emits
  * them (see mobile BookingFormScreen PALLET_SIZES).
  */
-export const PALLET_FACTORS: Record<string, number> = {
+/**
+ * The pallet footprints the workbook's REQUESTOR INTERFACE offers ("4x4 x qty",
+ * "3x4 x qty", …). NOTE the separator is "×" (U+00D7), not an ASCII "x" — the
+ * workbook prints these with an ASCII x, so anything hand-built from the spec
+ * must convert. Sizes outside this list are not bookable (see CARGO_PALLET_TYPES).
+ */
+export const PALLET_SIZES = ["2×2", "3×4", "4×4", "4×8", "5×10"] as const;
+
+/** A bookable pallet footprint. Annotating a list with this makes a typo — an
+ *  ASCII "4x4" for the U+00D7 "4×4" — a compile error rather than a silent
+ *  zero-footprint line at runtime. */
+export type PalletSize = (typeof PALLET_SIZES)[number];
+
+/**
+ * Workbook REQUESTOR INTERFACE cargo types "Carton" and "Others": no pallet
+ * footprint by conversion, so they need the requestor's `estimated_pallets`.
+ */
+export const UNSIZED_CARGO_TYPES = ["carton", "custom"] as const;
+
+/**
+ * Every `pallet_type` the API accepts — the workbook's CLOSED vocabulary. The
+ * booking route enums on this, so an unrecognised footprint can never reach the
+ * capacity math from a new booking (a "5x10" with an ASCII x would otherwise
+ * convert to nothing and silently under-count a 3.125-slot pallet).
+ */
+export const CARGO_PALLET_TYPES = [...PALLET_SIZES, ...UNSIZED_CARGO_TYPES] as const;
+
+/** Slots per pallet, relative to a single 4×4 (= 1 slot). Keyed by PALLET_SIZES
+ *  so adding a size without its factor is a compile error, not a silent 0. */
+export const PALLET_FACTORS: Record<(typeof PALLET_SIZES)[number], number> = {
   "2×2": 0.25,
   "3×4": 0.75,
   "4×4": 1,
@@ -16,22 +45,25 @@ export const PALLET_FACTORS: Record<string, number> = {
   "5×10": 3.125,
 };
 
-/** 4×4-equivalent slots for one cargo line's pallet type. */
+const FACTORS: Record<string, number> = PALLET_FACTORS;
+
+/** 4×4-equivalent slots for one cargo line's pallet type. Anything without a
+ *  known footprint converts to 0 — never to a guessed slot count. */
 export function palletFactor(palletType: string): number {
-  if (palletType in PALLET_FACTORS) return PALLET_FACTORS[palletType];
-  // Cartons and free-form "Others" cargo don't occupy standard pallet slots, so
-  // they have no footprint by conversion — auto-dispatch can only size them from
-  // the requestor's estimate (see palletEquivalents / isUnsizedForDispatch).
-  if (isUnsizedType(palletType)) return 0;
-  return 1; // unknown footprint — treat as one standard slot (conservative)
+  return FACTORS[palletType] ?? 0;
 }
 
 /**
- * "carton" and "custom" (Others) cargo carry no pallet footprint by conversion,
- * so they need the requestor's optional `estimated_pallets` to be dispatchable.
+ * True for any type with no pallet footprint by conversion: "carton"/"custom"
+ * (Others), and any UNRECOGNISED type — a legacy row, or a caller that bypassed
+ * the route's enum. Such a line can only be sized by the requestor's
+ * `estimated_pallets`; without one the order routes to manual assignment rather
+ * than being guessed at (see isUnsizedForDispatch). Guessing is what makes an
+ * unknown dangerous: a wrong-encoding "5x10" counted as one slot under-counts a
+ * real 3.125-slot pallet and overloads the truck.
  */
 export function isUnsizedType(palletType: string): boolean {
-  return palletType === "carton" || palletType === "custom";
+  return !(palletType in PALLET_FACTORS);
 }
 
 /** A cargo line as it feeds the capacity math. `estimated_pallets` is the
@@ -58,11 +90,12 @@ export function palletEquivalents(cargo: CargoLine[]): number {
 }
 
 /**
- * True when the order cannot be sized for auto-dispatch: any carton/"Others"
- * (custom) line without a usable estimate. Such an order must NOT auto-dispatch
- * to the smallest truck (a 0-equivalent "fits everything") — it routes to manual
- * assignment via the needs-attention flag. Pallet lines never make an order
- * unsized (their pallet type always gives a footprint).
+ * True when the order cannot be sized for auto-dispatch: any line with no known
+ * footprint — carton/"Others" (custom), or an unrecognised type — and no usable
+ * estimate. Such an order must NOT auto-dispatch to the smallest truck (a
+ * 0-equivalent "fits everything") — it routes to manual assignment via the
+ * needs-attention flag so an admin sizes it. A line whose pallet size IS
+ * recognised never makes an order unsized (its type always gives a footprint).
  */
 export function isUnsizedForDispatch(cargo: CargoLine[]): boolean {
   return cargo.some(

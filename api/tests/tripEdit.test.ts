@@ -19,7 +19,7 @@ const existing: TripEditSnapshot = {
   ],
   cargo_details: [
     {
-      pallet_type: "4x4",
+      pallet_type: "4×4",
       quantity: 2,
       cartons: null,
       custom_size: null,
@@ -36,7 +36,7 @@ const sameInput = {
     { consignee_id: "c1", sequence: 1 },
     { consignee_id: "c2", sequence: 2 },
   ],
-  cargo_details: [{ pallet_type: "4x4", quantity: 2, remark: "fragile" }],
+  cargo_details: [{ pallet_type: "4×4", quantity: 2, remark: "fragile" }],
 };
 
 describe("updateTripSchema", () => {
@@ -103,7 +103,7 @@ describe("summarizeTripChanges", () => {
   it("reports a quantity change as cargo", () => {
     const r = summarizeTripChanges(existing, {
       ...sameInput,
-      cargo_details: [{ pallet_type: "4x4", quantity: 3, remark: "fragile" }],
+      cargo_details: [{ pallet_type: "4×4", quantity: 3, remark: "fragile" }],
     });
     expect(r).toBe("cargo");
   });
@@ -111,7 +111,7 @@ describe("summarizeTripChanges", () => {
   it("reports a remark-only change as notes, not cargo", () => {
     const r = summarizeTripChanges(existing, {
       ...sameInput,
-      cargo_details: [{ pallet_type: "4x4", quantity: 2, remark: "handle with care" }],
+      cargo_details: [{ pallet_type: "4×4", quantity: 2, remark: "handle with care" }],
     });
     expect(r).toBe("notes");
   });
@@ -123,7 +123,7 @@ describe("summarizeTripChanges", () => {
     const r = summarizeTripChanges(existing, {
       ...sameInput,
       cargo_details: [
-        { pallet_type: "4x4", quantity: 2, cartons: undefined, custom_size: undefined, remark: "fragile" },
+        { pallet_type: "4×4", quantity: 2, cartons: undefined, custom_size: undefined, remark: "fragile" },
       ],
     });
     expect(r).toBeNull();
@@ -134,7 +134,7 @@ describe("summarizeTripChanges", () => {
       route_type_id: "rt2",
       pickup_datetime: new Date("2026-07-21T02:00:00.000Z"),
       stops: [{ consignee_id: "c9" }],
-      cargo_details: [{ pallet_type: "4x2", quantity: 1, remark: "" }],
+      cargo_details: [{ pallet_type: "2×2", quantity: 1, remark: "" }],
     });
     expect(r).toBe("route type; pickup time; consignees; cargo");
   });

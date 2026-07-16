@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { bookableConsigneesWhere, createTripSchema, PICKUP_GRACE_MS } from "../src/routes/trips";
+import { CARGO_PALLET_TYPES } from "../src/lib/pallets";
 
 /**
  * Booking-creation validation: a pickup in the past is rejected at CREATE time
@@ -11,7 +12,7 @@ import { bookableConsigneesWhere, createTripSchema, PICKUP_GRACE_MS } from "../s
 const base = {
   route_type_id: "rt1",
   stops: [{ consignee_id: "c1" }],
-  cargo_details: [{ pallet_type: "4x4", quantity: 1 }],
+  cargo_details: [{ pallet_type: "4×4", quantity: 1 }],
 };
 
 describe("createTripSchema — pickup must not be in the past", () => {
@@ -45,6 +46,32 @@ describe("createTripSchema — pickup must not be in the past", () => {
       pickup_datetime: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     });
     expect(r.success).toBe(true);
+  });
+});
+
+describe("createTripSchema — pallet_type is the workbook's closed vocabulary", () => {
+  const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const withCargo = (cargo: unknown) =>
+    createTripSchema.safeParse({ ...base, cargo_details: cargo, pickup_datetime: future });
+
+  it("accepts every bookable type", () => {
+    for (const t of CARGO_PALLET_TYPES) {
+      expect(withCargo([{ pallet_type: t, quantity: 1 }]).success, t).toBe(true);
+    }
+  });
+
+  // The regression this guards: "5x10" with an ASCII x has no known footprint,
+  // so it used to convert to a guessed 1 slot instead of 3.125 — six of them
+  // read as 6 slots against a real 18.75 and overloaded an 8-pallet truck.
+  it("rejects a wrong-encoding ASCII size instead of silently under-counting it", () => {
+    expect(withCargo([{ pallet_type: "5x10", quantity: 6 }]).success).toBe(false);
+    expect(withCargo([{ pallet_type: "4x8", quantity: 1 }]).success).toBe(false);
+  });
+
+  it("rejects a footprint that is simply not in the spec", () => {
+    expect(withCargo([{ pallet_type: "6×6", quantity: 1 }]).success).toBe(false);
+    expect(withCargo([{ pallet_type: "banana", quantity: 1 }]).success).toBe(false);
+    expect(withCargo([{ pallet_type: "", quantity: 1 }]).success).toBe(false);
   });
 });
 

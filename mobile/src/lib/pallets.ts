@@ -4,7 +4,25 @@
 // warning must count the same way or it warns on loads that fit (16× 2×2 = 4
 // slots) and stays silent on loads that don't (6× 5×10 = 18.75 slots).
 // Pure module (no React Native imports) — unit-tested in pallets.test.ts.
-export const PALLET_FACTORS: Record<string, number> = {
+// The bookable pallet footprints (workbook REQUESTOR INTERFACE). "×" is U+00D7,
+// NOT an ASCII "x" — the server enums on these exact strings, so the booking
+// form must emit them verbatim.
+export const PALLET_SIZES = ["2×2", "3×4", "4×4", "4×8", "5×10"] as const;
+
+/** A bookable pallet footprint. Annotating a list with this makes a typo — an
+ *  ASCII "4x4" for the U+00D7 "4×4" — a compile error rather than a silent
+ *  zero-footprint line at runtime. */
+export type PalletSize = (typeof PALLET_SIZES)[number];
+
+/** "carton" / "custom" (Others) carry no pallet footprint by conversion. */
+export const UNSIZED_CARGO_TYPES = ["carton", "custom"] as const;
+
+/** Every pallet_type the API accepts — mirrors api/src/lib/pallets.ts. */
+export const CARGO_PALLET_TYPES = [...PALLET_SIZES, ...UNSIZED_CARGO_TYPES] as const;
+
+/** Slots per pallet, relative to a single 4×4 (= 1 slot). Keyed by PALLET_SIZES
+ *  so adding a size without its factor is a compile error, not a silent 0. */
+export const PALLET_FACTORS: Record<(typeof PALLET_SIZES)[number], number> = {
   "2×2": 0.25,
   "3×4": 0.75,
   "4×4": 1,
@@ -12,18 +30,19 @@ export const PALLET_FACTORS: Record<string, number> = {
   "5×10": 3.125,
 };
 
-/** 4×4-equivalent slots for one cargo line's pallet type. */
+const FACTORS: Record<string, number> = PALLET_FACTORS;
+
+/** 4×4-equivalent slots for one cargo line's pallet type. Anything without a
+ *  known footprint converts to 0 — never to a guessed slot count. */
 export function palletFactor(palletType: string): number {
-  if (palletType in PALLET_FACTORS) return PALLET_FACTORS[palletType];
-  // Cartons and free-form "Others" cargo have no footprint by conversion — they
-  // need the requestor's estimate to be sized (see palletEquivalents).
-  if (isUnsizedType(palletType)) return 0;
-  return 1; // unknown footprint — treat as one standard slot (conservative)
+  return FACTORS[palletType] ?? 0;
 }
 
-/** "carton" / "custom" (Others) carry no pallet footprint by conversion. */
+/** True for any type with no pallet footprint by conversion: carton/custom
+ *  (Others) and any unrecognised type — sizeable only from the requestor's
+ *  estimate, never guessed at. */
 export function isUnsizedType(palletType: string): boolean {
-  return palletType === "carton" || palletType === "custom";
+  return !(palletType in PALLET_FACTORS);
 }
 
 export interface CargoLine {

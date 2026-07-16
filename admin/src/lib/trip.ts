@@ -13,10 +13,11 @@ const PALLET_FACTORS: Record<string, number> = {
   "5×10": 3.125,
 };
 
+// Anything with no known footprint — carton/custom (Others), or an unrecognised
+// type on a legacy row — converts to 0 rather than a guessed slot. Mirrors
+// api/src/lib/pallets.ts: a guessed 1 under-counts any pallet bigger than 4×4.
 function palletFactor(palletType: string): number {
-  if (palletType in PALLET_FACTORS) return PALLET_FACTORS[palletType];
-  if (palletType === "carton" || palletType === "custom") return 0;
-  return 1;
+  return PALLET_FACTORS[palletType] ?? 0;
 }
 
 export function firstStop(trip: Trip) {

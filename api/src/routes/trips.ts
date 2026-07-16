@@ -61,7 +61,7 @@ import { resolveFleetFix } from "../lib/gpsPosition";
 import { sendPushNotifications } from "../lib/pushNotifications";
 import { getDispatchMode } from "../lib/settings";
 import { autoDispatchTrip } from "../services/dispatchEngine";
-import { palletEquivalents } from "../lib/pallets";
+import { palletEquivalents, CARGO_PALLET_TYPES } from "../lib/pallets";
 import { recordTripEvent } from "../lib/tripHistory";
 import { buildTripTimeline } from "../lib/tripTimeline";
 import {
@@ -191,7 +191,11 @@ export const createTripSchema = z.object({
   cargo_details: z
     .array(
       z.object({
-        pallet_type: z.string().min(1),
+        // Closed vocabulary (workbook REQUESTOR INTERFACE): the five pallet
+        // footprints plus carton/"Others". Enumerated, not free text — a
+        // wrong-encoding "5x10" (ASCII x) has no known footprint and would
+        // silently under-count a 3.125-slot pallet into an overloaded truck.
+        pallet_type: z.enum(CARGO_PALLET_TYPES),
         quantity: z.number().int().min(1),
         cartons: z.number().int().min(0).optional(),
         custom_size: z.string().optional(),
