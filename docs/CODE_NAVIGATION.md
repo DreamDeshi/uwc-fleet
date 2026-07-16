@@ -6,20 +6,20 @@
 
 ## 1. Architecture Overview
 
-One monorepo, three independently deployed Railway services (auto-deploy from GitHub `main`, filtered by per-service watch paths: a push deploys only the services whose directory changed, plus all three if the root `package.json`/`package-lock.json` changed):
+One monorepo, two independently deployed Railway services (auto-deploy from GitHub `main`, filtered by per-service watch paths: a push deploys only the services whose directory changed, plus both if the root `package.json`/`package-lock.json` changed):
 
 | Service | Path | Stack | Live URL |
 |---|---|---|---|
 | **API** | `api/` | Node.js + Express + TypeScript + Prisma + PostgreSQL | `uwc-api-production.up.railway.app` |
-| **Admin dashboard** | `admin/` | React 18 + Vite (web SPA) | `uwc-admin-production.up.railway.app` |
-| **Mobile (driver + requestor)** | `mobile/` | React Native + Expo SDK 54, also exported as a web app | `uwc-mobile-production.up.railway.app` |
+| **Mobile (driver + requestor + admin)** | `mobile/` | React Native + Expo SDK 54, also exported as a web app | `uwc-mobile-production.up.railway.app` |
+
+> The legacy Vite admin (`admin/`, `uwc-admin-production`) was retired 2026-07-16; the admin screens now live inside the Expo app (`mobile/src/admin/`), role-routed at login.
 
 ```
- mobile (RN/Expo web)  ──┐
-                         ├── HTTPS/JSON ──►  api (Express, /api/v1)  ──► Prisma ──► Railway PostgreSQL
- admin (React/Vite)   ──┘                     │
-                                              ├──► Cloudinary  (POD photos / documents)
-                                              └──► Expo Push   (notifications, direct HTTP)
+ mobile (RN/Expo web, incl. admin)  ── HTTPS/JSON ──►  api (Express, /api/v1)  ──► Prisma ──► Railway PostgreSQL
+                                                        │
+                                                        ├──► Cloudinary  (POD photos / documents)
+                                                        └──► Expo Push   (notifications, direct HTTP)
 ```
 
 - Clients never touch the DB — all business logic and authorization live in the API (three-tier).
@@ -186,7 +186,7 @@ Also useful: `api/src/lib/tripTimeline.ts` + `lib/tripHistory.ts` (append-only s
 | DB model + index | `LocationLog` in `api/prisma/schema.prisma` (`@@index([trip_id, recorded_at])`) |
 | Phone GPS capture (30s interval while a trip is active) | `mobile/src/hooks/useTripLocation.ts` (expo-location) |
 | Durable offline queue (AsyncStorage, newest-500, flush on reconnect/foreground) | `mobile/src/lib/locationQueue.ts` |
-| Admin live fleet map feed | `api/src/routes/fleet.ts` (`GET /fleet/live`) + `admin/src/components/FleetMap.tsx` |
+| Admin live fleet map feed | `api/src/routes/fleet.ts` (`GET /fleet/live`) + `mobile/src/admin/` fleet map |
 | Requestor/driver live maps | `GET /trips/:id/location` + `mobile/src/components/LiveTripMap(.web).tsx` / `ActiveTripMap(.web).tsx` |
 
 Row-level security on ingest: each posted point's trip must belong to the authenticated driver. Offline points keep their **original capture time** (`recorded_at` travels through the queue), so a flushed backlog reconstructs the true track.
@@ -230,24 +230,22 @@ Row-level security on ingest: each posted point's trip must belong to the authen
 
 ## 8. Frontend
 
-### Admin (`admin/src/`) — React + Vite, role: admin
-Routing in `admin/src/App.tsx`; auth context `admin/src/context/AuthContext.tsx`; API client `admin/src/services/api.ts` (Axios + JWT refresh interceptor); data hooks `admin/src/hooks/queries.ts`.
+### Admin (`mobile/src/admin/`) — inside the Expo app, role: admin
+The legacy Vite SPA (`admin/`) was retired 2026-07-16; the admin surface now lives inside the Expo app, entered at login via `mobile/src/navigation/RootNavigator.tsx` → `mobile/src/admin/navigation/AdminNavigator.tsx` (wide drawer) / `AdminTabs.tsx` (narrow). Data hooks `mobile/src/admin/hooks/queries.ts`; shared libs `mobile/src/admin/lib/` (payroll, csv, format, trip, zones).
 
-| URL | Page file | What's on it |
+| Screen | File | What's on it |
 |---|---|---|
-| `/` | `pages/DashboardPage.tsx` | KPI cards (incl. needs-attention split), live fleet map + zone overlays, dispatch toggle |
-| `/trips` | `pages/TripsPage.tsx` | Trip board + **dispatch panel** (free drivers, capacity bar, overload block, conflict/window overrides, external forwarder) |
-| `/drivers` | `pages/DriversPage.tsx` | Driver management + leave calendar manager |
-| `/performance` | `pages/PerformancePage.tsx` | Driver leaderboard / comparison |
-| `/trucks` | `pages/TrucksPage.tsx` | Fleet + expiry alerts + document renewal |
-| `/incentives` | `pages/IncentivesPage.tsx` | Rate editor + reset-to-spec + Public Holidays tab |
-| `/approvals` | `pages/ApprovalsPage.tsx` | User approval queue |
-| `/reports` | `pages/ReportsPage.tsx` | Reports + CSV export |
-| `/m` | `pages/MobileLitePage.tsx` | Phone-sized admin lite view |
+| Dashboard | `screens/AdminHomeScreen.tsx` / `DashboardWide.tsx` | KPI tiles, live fleet map, needs-attention panel, dispatch toggle |
+| Trips | `screens/TripsScreen.tsx` | Trip board + **dispatch panel** (free-driver grid, capacity, conflict/window overrides, external forwarder, **abort** in-progress) |
+| Drivers | `screens/DriversScreen.tsx` | Driver management + **CRUD** (add/retire, bind/free truck) + leave calendar |
+| Performance | `screens/PerformanceScreen.tsx` | Driver leaderboard / comparison |
+| Trucks | `screens/TrucksScreen.tsx` | Fleet + expiry alerts + document renewal + fuel + **CRUD/retire** |
+| Incentives | `screens/IncentivesScreen.tsx` | Rate editor + reset-to-spec + destination points + Public Holidays |
+| Approvals / Users | `screens/ApprovalsScreen.tsx`, `AllUsersScreen.tsx`, `UserManagementScreen.tsx` | Approval queue + **all-users** (role/status/reset) |
+| Reports | `screens/ReportsScreen.tsx` | Reports + payroll CSV export |
+| Settings | `screens/AdminSettingsScreen.tsx` | Language / preferences |
 
-Key shared components: `components/FleetMap.tsx`, `DispatchToggle.tsx`, `LoadCapacityBar.tsx`, `StatusTimeline.tsx`, `FuelPanel.tsx`, `ui.tsx` (incl. ConfirmDialog).
-
-### Mobile (`mobile/src/`) — React Native + Expo, roles: driver + requestor
+### Mobile (`mobile/src/`) — React Native + Expo, roles: driver + requestor + admin
 Navigation: `navigation/RootNavigator.tsx` → `AuthStack` → role tabs (`DriverTabs.tsx` / `RequestorTabs.tsx`). API client `services/api.ts`. i18n (en/ms/zh, all strings via `t()`): `src/i18n/index.ts`.
 
 | Role | Screen | File |
@@ -269,8 +267,8 @@ Navigation: `navigation/RootNavigator.tsx` → `AuthStack` → role tabs (`Drive
 | Suite | Where | Count (verified 2026-07-03) |
 |---|---|---|
 | **Unit (Vitest)** | `api/tests/*.test.ts` — 20 files | **180 tests, all passing** (~2s run: `npm test` in `api/`) |
-| **E2E (Playwright)** | `e2e/tests/*.spec.ts` — 9 files | **26 tests** (`npx playwright test --list` in `e2e/`) |
+| **E2E (Playwright)** | `e2e/tests/*.spec.ts` — 4 files (requestor, requestorEdit, driver, screenshots) | mobile-web only; the admin-UI browser specs were removed with the Vite app (`npx playwright test --list` in `e2e/`) |
 
 - Biggest unit files map 1:1 to the business logic in Section 4: `incentive.test.ts` (31), `dispatch.test.ts` (21), `operatingWindow.test.ts` (17), `performance.test.ts` (14), `rateSnapshot.test.ts` (12), `schedulingConflict.test.ts` (9), `tripCompletion.test.ts` (8), plus timeline, driverLeave, myt, truckEligibility, authStatus, tripValidation, ticketRetry, consigneeDedupe, pallets, rateReset, specSync, attention, tripAssignment.
 - Unit tests are possible **because** the engines are pure functions — no DB or clock mocking needed.
-- E2E config: `e2e/playwright.config.ts` — runs serially (`workers: 1`) **against the deployed Railway URLs** (no local server). ⚠️ Running the e2e suite creates real bookings in the production DB — don't run it casually during the trial-run window.
+- E2E config: `e2e/playwright.config.ts` — runs serially (`workers: 1`); targets are env-driven and default to **local dev servers**, refusing Railway hosts without `E2E_ALLOW_PROD=1` (see `e2e/README.md`). ⚠️ Running against prod creates real bookings — don't run it casually during the trial-run window.

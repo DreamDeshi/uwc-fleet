@@ -17,14 +17,15 @@ the driver assigned to truck PLX 2406.
 
 | App | URL |
 |---|---|
-| Admin (web) | https://uwc-admin-production.up.railway.app |
-| Mobile (web) | https://uwc-mobile-production.up.railway.app |
+| Mobile web (all roles — admin, requestor, driver — role-routed at login) | https://uwc-mobile-production.up.railway.app |
+
+*(The admin surface used to be a separate Vite app at `uwc-admin-production`; it was retired 2026-07-16 and now lives inside the mobile web app above.)*
 
 ## 2. Where the timeline shows
 
 | Role | Location |
 |---|---|
-| **Admin** | Trips → click a trip → **right-hand detail panel** ("Status timeline" section) |
+| **Admin** | Trips → select a trip → trip **detail** ("Status timeline" section) |
 | **Requestor** | open a booking → **Booking Detail** ("Timeline" card) |
 | **Driver** | open a trip → **Trip Details** ("Status timeline" card) |
 
