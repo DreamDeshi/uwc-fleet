@@ -33,9 +33,10 @@ export const app = express();
 app.set("trust proxy", 1);
 
 app.use(helmet());
-// CORS_ORIGIN may be a comma-separated allowlist (e.g. local admin +
-// the deployed admin domain). Falls back to the local Vite dev origin.
-const corsOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:5173")
+// CORS_ORIGIN may be a comma-separated allowlist. In prod Railway sets it
+// explicitly (the deployed mobile-web origin); this default only covers local
+// dev — the Expo web app's origin. (Was localhost:5173, the retired Vite admin.)
+const corsOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:8081")
   .split(",")
   .map((o) => o.trim())
   .filter(Boolean);
