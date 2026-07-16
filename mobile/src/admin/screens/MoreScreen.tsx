@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigation } from "@react-navigation/native";
 import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
-import { usePendingUsers } from "../hooks/queries";
+import { usePendingApprovals, usePendingUsers } from "../hooks/queries";
 import { colors, font, radius, shadow } from "../theme";
 import { Avatar, ConfirmDialog } from "../components/ui";
 
@@ -20,11 +20,14 @@ export function MoreScreen() {
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
   const { user, logout } = useAuth();
   const pending = usePendingUsers();
+  const pendingApprovals = usePendingApprovals();
   const pendingCount = pending.data?.length ?? 0;
+  const approvalCount = pendingApprovals.data?.length ?? 0;
   const [confirmOut, setConfirmOut] = useState(false);
 
   // Same icons the drawer used for these routes.
   const rows: { route: string; labelKey: string; icon: IoniconName; count?: number }[] = [
+    { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline", count: approvalCount },
     { route: "AdminIncentives", labelKey: "admin.nav.incentives", icon: "cash-outline" },
     { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline" },
     { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline" },

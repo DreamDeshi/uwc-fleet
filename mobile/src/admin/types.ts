@@ -8,6 +8,7 @@ export type TripStatus =
   | "rejected"
   | "assigned"
   | "in_progress"
+  | "pending_approval"
   | "completed"
   | "cancelled";
 export type StopStatus = "pending" | "arrived" | "delivered";
@@ -170,7 +171,13 @@ export interface Trip {
   route_type: RouteType;
   status: TripStatus;
   pickup_datetime: string;
-  incentive_earned: string | null;
+  incentive_earned: string | null; // the engine PROPOSAL (frozen at delivery)
+  // POD-approval gate (16 Jul 2026). incentive_final is the admin-APPROVED
+  // payable amount (null until approved / on pre-gate trips → paid at proposal).
+  incentive_final?: string | null;
+  incentive_override_reason?: string | null; // set only when the admin edited the amount
+  incentive_approved_at?: string | null;
+  incentive_approved_by?: string | null;
   // Finalize-time pay evidence (engine outputs persisted with the incentive).
   // Null on pre-feature trips; rate_used/off_peak also null on the rare
   // midnight-straddling trip (per-stop rows remain exact).

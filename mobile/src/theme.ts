@@ -41,6 +41,8 @@ export const statusColors: Record<string, { bg: string; fg: string }> = {
   approved: { bg: colors.teal, fg: colors.white },
   assigned: { bg: colors.blue, fg: colors.white },
   in_progress: { bg: colors.violet, fg: colors.white },
+  // Delivered, incentive proposed, awaiting admin POD approval (money held).
+  pending_approval: { bg: colors.orange, fg: colors.white },
   completed: { bg: colors.green, fg: colors.white },
   rejected: { bg: colors.red, fg: colors.white },
   cancelled: { bg: colors.grey, fg: colors.white },

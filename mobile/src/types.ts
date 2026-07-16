@@ -15,6 +15,7 @@ export type TripStatus =
   | "rejected"
   | "assigned"
   | "in_progress"
+  | "pending_approval"
   | "completed"
   | "cancelled";
 

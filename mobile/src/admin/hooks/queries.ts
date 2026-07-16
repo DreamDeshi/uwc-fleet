@@ -611,6 +611,42 @@ export function useAbortTrip() {
   });
 }
 
+// ── POD incentive-approval gate (Mr. Teh, 16 Jul 2026) ────────────────────
+// A delivered trip sits in `pending_approval` with its incentive PROPOSED but
+// not paid. The admin reviews the POD + amount and approves (optionally editing
+// the final amount, which requires a reason). Polled like the board so a newly
+// delivered trip surfaces here — and on the nav badge — without an F5.
+export function usePendingApprovals(opts: { poll?: boolean } = {}) {
+  const { poll = true } = opts;
+  return useQuery({
+    queryKey: ["trips", "pending-approvals"],
+    queryFn: async () =>
+      (await api.get<Trip[]>("/trips", { params: { status: "pending_approval", limit: "300" } })).data,
+    refetchInterval: poll ? 20_000 : false,
+  });
+}
+
+// Approve a delivered trip's incentive → the trip completes and the payable
+// `incentive_final` is set. Omit final_amount to confirm the proposal as-is;
+// pass it (with a reason) to edit. Refresh reports/drivers too: approving is
+// the moment the money becomes payable, so every earnings figure changes.
+export function useApproveIncentive() {
+  const invalidate = useInvalidate([
+    ["trips"],
+    ["dashboard"],
+    ["drivers"],
+    ["reports"],
+  ]);
+  return useMutation({
+    mutationFn: async (v: { id: string; final_amount?: number; reason?: string }) =>
+      (await api.patch<Trip>(`/trips/${v.id}/approve-incentive`, {
+        ...(v.final_amount !== undefined ? { final_amount: v.final_amount } : {}),
+        ...(v.reason ? { reason: v.reason } : {}),
+      })).data,
+    onSuccess: invalidate,
+  });
+}
+
 export function useUpdateTruckRates() {
   const invalidate = useInvalidate([["trucks"], ["rates", "audit"]]);
   return useMutation({

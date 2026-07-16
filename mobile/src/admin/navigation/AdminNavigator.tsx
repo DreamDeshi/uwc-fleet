@@ -16,7 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../context/AuthContext";
-import { useDashboard, usePendingUsers, useTruckAlerts } from "../hooks/queries";
+import { useDashboard, usePendingApprovals, usePendingUsers, useTruckAlerts } from "../hooks/queries";
 import { colors, font, gradients, radius } from "../theme";
 import { formatFullDate } from "../lib/format";
 import { Avatar } from "../components/ui";
@@ -31,6 +31,7 @@ import { DriversScreen } from "../screens/DriversScreen";
 import { TrucksScreen } from "../screens/TrucksScreen";
 import { ReportsScreen } from "../screens/ReportsScreen";
 import { IncentivesScreen } from "../screens/IncentivesScreen";
+import { IncentiveApprovalsScreen } from "../screens/IncentiveApprovalsScreen";
 import { TripsScreen } from "../screens/TripsScreen";
 import { AdminSettingsScreen } from "../screens/AdminSettingsScreen";
 
@@ -50,6 +51,7 @@ const NAV_GROUPS: { headingKey: string; items: NavItem[] }[] = [
     headingKey: "admin.navGroups.operations",
     items: [
       { route: "AdminTrips", labelKey: "admin.nav.trips", icon: "flash-outline" },
+      { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline" },
       { route: "AdminDrivers", labelKey: "admin.nav.drivers", icon: "person-outline" },
       { route: "AdminTrucks", labelKey: "admin.nav.trucks", icon: "bus-outline" },
       { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },
@@ -81,8 +83,10 @@ function AdminDrawerContent(props: DrawerContentComponentProps) {
   // Management (Approvals is its first tab), expiring-documents count on
   // Truck Management.
   const pending = usePendingUsers();
+  const pendingApprovals = usePendingApprovals();
   const truckAlerts = useTruckAlerts();
   const pendingCount = pending.data?.length ?? 0;
+  const approvalCount = pendingApprovals.data?.length ?? 0;
   const truckAlertCount = truckAlerts.data?.length ?? 0;
   const active = props.state.routeNames[props.state.index];
   const registered = new Set(props.state.routeNames);
@@ -187,6 +191,20 @@ function AdminDrawerContent(props: DrawerContentComponentProps) {
                         </Text>
                       </View>
                     )}
+                    {item.route === "AdminIncentiveApprovals" && approvalCount > 0 && (
+                      <View
+                        style={{
+                          backgroundColor: isActive ? colors.card : colors.orange,
+                          borderRadius: radius.pill,
+                          paddingVertical: 1,
+                          paddingHorizontal: 7,
+                        }}
+                      >
+                        <Text style={{ color: isActive ? colors.orange : colors.card, fontSize: font.xs, fontWeight: "800" }}>
+                          {approvalCount}
+                        </Text>
+                      </View>
+                    )}
                     {item.route === "AdminTrucks" && truckAlertCount > 0 && (
                       <View style={{ backgroundColor: colors.red, borderRadius: radius.pill, paddingVertical: 1, paddingHorizontal: 7 }}>
                         <Text style={{ color: "#fff", fontSize: font.xs, fontWeight: "800" }}>{truckAlertCount}</Text>
@@ -253,6 +271,7 @@ function AdminDrawerContent(props: DrawerContentComponentProps) {
 const SUBTITLE_KEYS: Record<string, string> = {
   AdminDashboard: "admin.subtitles.dashboard",
   AdminTrips: "admin.subtitles.trips",
+  AdminIncentiveApprovals: "admin.subtitles.incentiveApprovals",
   AdminDrivers: "admin.subtitles.drivers",
   AdminPerformance: "admin.subtitles.performance",
   AdminTrucks: "admin.subtitles.trucks",
@@ -475,6 +494,11 @@ function AdminDrawerWide() {
         name="AdminTrips"
         component={TripsScreen}
         options={{ title: t("admin.titles.trips") }}
+      />
+      <Drawer.Screen
+        name="AdminIncentiveApprovals"
+        component={IncentiveApprovalsScreen}
+        options={{ title: t("admin.titles.incentiveApprovals") }}
       />
       <Drawer.Screen
         name="AdminSettings"

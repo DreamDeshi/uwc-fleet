@@ -320,7 +320,10 @@ export function ActiveTripScreen() {
         // Delivered through the normal online path — clear any leftover
         // queued intent for this stop so the flush has nothing to replay.
         await removePodItem(stop.id);
-        if (updated.status === "completed") {
+        // Last stop delivered → the trip flips to pending_approval (POD-approval
+        // gate, 16 Jul 2026): its incentive is PROPOSED, shown to the driver as
+        // "awaiting approval", and only paid once an admin approves the POD.
+        if (updated.status === "pending_approval") {
           setEarned(updated.incentive_earned);
         } else {
           toast(t("trip.toastDelivered"), "success");
@@ -449,8 +452,9 @@ export function ActiveTripScreen() {
               <Ionicons name="checkmark" size={36} color={colors.white} />
             </View>
             <Text style={styles.modalTitle}>{t("trip.completedTitle")}</Text>
-            <Text style={styles.modalSub}>{t("trip.incentiveEarned")}</Text>
+            <Text style={styles.modalSub}>{t("trip.incentivePending")}</Text>
             <Text style={styles.modalAmount}>{formatMoney(earned)}</Text>
+            <Text style={styles.modalNote}>{t("trip.incentivePendingNote")}</Text>
             <Button
               title={t("trip.backToDashboard")}
               size="xl"
@@ -847,4 +851,12 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 22, fontWeight: "800", color: colors.navy, marginBottom: 8 },
   modalSub: { fontSize: 14, color: colors.textMuted },
   modalAmount: { fontSize: 42, fontWeight: "900", color: colors.green, marginTop: 4 },
+  modalNote: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: "center",
+    marginTop: 10,
+    paddingHorizontal: 8,
+    lineHeight: 18,
+  },
 });

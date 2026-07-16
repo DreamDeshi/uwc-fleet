@@ -9,6 +9,7 @@ const LABEL_KEY: Record<TripStatus, string> = {
   approved: "trip.statusApproved",
   assigned: "trip.statusAssigned",
   in_progress: "trip.statusInProgress",
+  pending_approval: "trip.statusPendingApproval",
   completed: "trip.statusCompleted",
   rejected: "trip.statusRejected",
   cancelled: "trip.statusCancelled",

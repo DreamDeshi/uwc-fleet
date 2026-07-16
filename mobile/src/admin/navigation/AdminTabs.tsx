@@ -14,7 +14,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator, type NativeStackHeaderProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
-import { usePendingUsers, useTruckAlerts } from "../hooks/queries";
+import { usePendingApprovals, usePendingUsers, useTruckAlerts } from "../hooks/queries";
 import { colors } from "../theme";
 import { AdminMobileHeader } from "../components/MobileHeader";
 import { AdminHomeScreen } from "../screens/AdminHomeScreen";
@@ -26,6 +26,7 @@ import { ReportsScreen } from "../screens/ReportsScreen";
 import { ConsigneesScreen } from "../screens/ConsigneesScreen";
 import { UserManagementScreen } from "../screens/UserManagementScreen";
 import { PerformanceScreen } from "../screens/PerformanceScreen";
+import { IncentiveApprovalsScreen } from "../screens/IncentiveApprovalsScreen";
 import { AdminSettingsScreen } from "../screens/AdminSettingsScreen";
 
 // Same web-height fix as DriverTabs/RequestorTabs: RN-Web under-reserves
@@ -54,6 +55,7 @@ function MoreStack() {
   return (
     <Stack.Navigator screenOptions={{ header }}>
       <Stack.Screen name="MoreHome" component={MoreScreen} options={{ title: t("admin.titles.more") }} />
+      <Stack.Screen name="AdminIncentiveApprovals" component={IncentiveApprovalsScreen} options={{ title: t("admin.titles.incentiveApprovals") }} />
       <Stack.Screen name="AdminIncentives" component={IncentivesScreen} options={{ title: t("admin.titles.incentives") }} />
       <Stack.Screen name="AdminReports" component={ReportsScreen} options={{ title: t("admin.titles.reports") }} />
       <Stack.Screen name="AdminConsignees" component={ConsigneesScreen} options={{ title: t("admin.titles.consignees") }} />
@@ -68,8 +70,11 @@ export function AdminTabs() {
   const { t } = useTranslation();
   // The drawer's nav badges, relocated to the tab bar.
   const pending = usePendingUsers();
+  const pendingApprovals = usePendingApprovals();
   const truckAlerts = useTruckAlerts();
-  const pendingCount = pending.data?.length ?? 0;
+  // MORE badge sums the two queues living behind it: user approvals + POD
+  // incentive approvals (money awaiting sign-off).
+  const pendingCount = (pending.data?.length ?? 0) + (pendingApprovals.data?.length ?? 0);
   const truckAlertCount = truckAlerts.data?.length ?? 0;
 
   return (
