@@ -84,8 +84,11 @@ export function TripsScreen() {
   const [status, setStatus] = useState("");
   const [driverId, setDriverId] = useState("");
   const [zone, setZone] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  // The board opens on TODAY's trips (MYT) — Mr. Teh 16 Jul: "can the date
+  // direct always show today date everyday we sign in?, if they want view
+  // others date only manual select". Change the dates or Clear to widen.
+  const [dateFrom, setDateFrom] = useState(() => mytDateKey(new Date()));
+  const [dateTo, setDateTo] = useState(() => mytDateKey(new Date()));
   const [needsAttentionOnly, setNeedsAttentionOnly] = useState(false);
   const [driverPickerOpen, setDriverPickerOpen] = useState(false);
   const [zonePickerOpen, setZonePickerOpen] = useState(false);
@@ -188,9 +191,19 @@ export function TripsScreen() {
   );
 
   // Secondary-filter chip (auto-dispatch failures) — used by both layouts.
+  // Turning it ON clears the date bounds: attention filtering runs client-side
+  // over the fetched page, so the today-by-default date filter would otherwise
+  // hide a failed booking whose pickup is on another day.
   const attentionChip = (
     <Pressable
-      onPress={() => setNeedsAttentionOnly(!needsAttentionOnly)}
+      onPress={() => {
+        const next = !needsAttentionOnly;
+        setNeedsAttentionOnly(next);
+        if (next) {
+          setDateFrom("");
+          setDateTo("");
+        }
+      }}
       style={{
         flexDirection: "row",
         alignItems: "center",
