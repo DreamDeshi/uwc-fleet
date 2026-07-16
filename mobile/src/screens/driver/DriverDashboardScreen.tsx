@@ -75,7 +75,9 @@ export function DriverDashboardScreen() {
             </View>
           </View>
           <Text style={styles.date}>{formatDate(new Date())}</Text>
-          <Text style={styles.greeting}>{t("driver.greeting", { name: firstName(user?.name) })} 👋</Text>
+          {/* Full name, not the first word — Mr. Teh 16 Jul: "Need show the
+              driver full name in driver page" (the split showed just "Mohd"). */}
+          <Text style={styles.greeting}>{t("driver.greeting", { name: user?.name ?? "" })} 👋</Text>
           <Text style={styles.sub}>{t("driver.tripsToday", { count: assignedToday })}</Text>
         </View>
       </View>
@@ -227,10 +229,6 @@ function AssignmentCard({
       </View>
     </View>
   );
-}
-
-function firstName(name?: string) {
-  return name ? name.split(" ")[0] : "";
 }
 
 const styles = StyleSheet.create({
