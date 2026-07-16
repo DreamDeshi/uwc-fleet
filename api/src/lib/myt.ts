@@ -86,3 +86,12 @@ export function mytDayBoundsForKey(key: string): { start: Date; end: Date } | nu
 export function mytDayIndex(d: Date): number {
   return Math.floor((d.getTime() + MYT_OFFSET_MS) / DAY_MS);
 }
+
+/**
+ * The UTC instant of 00:00 MYT for the calendar day containing `d` — the start
+ * of "today" in Malaysia time. Used by the daily 3am stale-ticket sweep to cut
+ * "prior days" from "today" independent of the server's TZ env.
+ */
+export function mytDayStart(d: Date): Date {
+  return new Date(mytDayIndex(d) * DAY_MS - MYT_OFFSET_MS);
+}

@@ -1,6 +1,7 @@
 import { app } from "./app";
 import { startPendingTripAlerts } from "./services/pendingTripAlerts";
 import { startRateMaturation } from "./services/pendingRates";
+import { startStaleTicketSweep } from "./services/staleTicketSweep";
 import { prisma } from "./lib/prisma";
 import { checkLocalDb, isDeployedRuntime } from "./lib/dbGuard";
 
@@ -26,4 +27,7 @@ app.listen(PORT, () => {
   // depend on it (the assignment path merges pending rates itself) — this
   // keeps the displayed rates fresh.
   startRateMaturation(prisma);
+  // Background job (feedback item 8): every 03:00 MYT, auto-cancel undelivered
+  // tickets from prior days so their drivers/trucks are freed for the new day.
+  startStaleTicketSweep();
 });
