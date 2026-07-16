@@ -40,7 +40,11 @@ export function EarningsScreen() {
     const nextMonday = new Date(monday);
     nextMonday.setDate(monday.getDate() + 7);
     for (const tr of data.trips) {
-      const d = new Date(tr.pickup_datetime);
+      // Bucket on the pay-attribution instant — the delivery-confirm day the
+      // incentive is keyed on (server: payAttributionInstant), pickup only as
+      // the not-yet-delivered fallback. Bucketing on pickup made this chart
+      // disagree with the month total above it for any overnight trip.
+      const d = new Date(tr.delivered_at ?? tr.pickup_datetime);
       if (d >= monday && d < nextMonday) {
         buckets[(d.getDay() + 6) % 7] += Number(tr.incentive_earned ?? 0);
       }
