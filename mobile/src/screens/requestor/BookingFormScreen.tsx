@@ -951,8 +951,16 @@ function StepConfirm({
 
       <Section title={t("booking.route")} editStep={0}>
         <Row k={t("booking.routeType")} v={routeTypeName ?? "—"} />
+        {/* Mr. Teh 16 Jul: "Can show the zone area and cargo pickup point after
+            requestor select customer name in confirmation page?" — the pickup
+            origin (single-origin model today) plus each stop's zone + area. */}
+        <Row k={t("booking.pickupPoint")} v="UWC Batu Kawan" />
         {stops.map((c, i) => (
-          <Row key={c.id} k={t("booking.stopN", { n: i + 1 })} v={c.company_name} />
+          <Row
+            key={c.id}
+            k={t("booking.stopN", { n: i + 1 })}
+            v={`${c.company_name}\n${[c.zone?.name ? `${c.zone_code} — ${c.zone.name}` : c.zone_code, c.area].filter(Boolean).join(" · ")}`}
+          />
         ))}
       </Section>
 
