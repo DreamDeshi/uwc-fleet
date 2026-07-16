@@ -83,7 +83,11 @@ const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
-router.post("/login", validateBody(loginSchema), async (req, res, next) => {
+// Login carries the strict per-IP limiter (10/min, same as password change/reset):
+// the global 100/min budget is shared with all traffic and far too loose to slow
+// credential stuffing against known phones. `SENSITIVE_RATE_LIMIT_MAX=0` disables
+// it (the test/e2e suites drive one API from one IP); prod sets nothing → 10/min.
+router.post("/login", sensitiveRateLimiter, validateBody(loginSchema), async (req, res, next) => {
   try {
     const { password } = req.body;
 

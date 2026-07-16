@@ -116,7 +116,7 @@ Postgres (see the repo-root [`TESTING.md`](../TESTING.md)):
 npm run test:db:up      # start + migrate + seed the Docker test DB (repo root)
 
 # API → Docker test DB. The two env vars matter — see the notes below.
-CORS_ORIGIN="http://localhost:5173,http://localhost:8081" RATE_LIMIT_MAX=0 \
+CORS_ORIGIN="http://localhost:5173,http://localhost:8081" RATE_LIMIT_MAX=0 SENSITIVE_RATE_LIMIT_MAX=0 \
   npm run test:db:api
 
 npm run dev --workspace=admin        # admin on :5173
@@ -142,13 +142,15 @@ if skipped):
    suite run drives one API instance from one IP, so the shared budget trips
    after ~6 specs (later specs die at their first `login()` with `429`). Set
    `RATE_LIMIT_MAX=0` in the API's environment for the run — local testing
-   only, never in production (unset keeps the prod default).
+   only, never in production (unset keeps the prod default). Also set
+   `SENSITIVE_RATE_LIMIT_MAX=0`: `/login` now carries the strict 10/min limiter,
+   which a login-per-spec run trips even faster. Both unset in prod → real limits.
 3. **Mobile API URL** — `mobile/app.json` → `extra.apiUrl` points at the prod
    API and is **baked into the web bundle**. Temporarily set it to
    `http://localhost:3000` while running the suite, and revert it afterwards
    (don't commit the change).
 
-On PowerShell set the variables first (`$env:CORS_ORIGIN = "…"; $env:RATE_LIMIT_MAX = "0"`)
+On PowerShell set the variables first (`$env:CORS_ORIGIN = "…"; $env:RATE_LIMIT_MAX = "0"; $env:SENSITIVE_RATE_LIMIT_MAX = "0"`)
 and remove them afterwards.
 
 ## How isolation works

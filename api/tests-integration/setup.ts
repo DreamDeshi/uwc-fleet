@@ -47,3 +47,8 @@ process.env.JWT_REFRESH_SECRET ||= "integration-test-refresh-secret";
 process.env.JWT_ACCESS_EXPIRY ||= "30m";
 process.env.JWT_REFRESH_EXPIRY ||= "7d";
 process.env.NODE_ENV = "test";
+
+// The suite drives one in-process app from one IP and logs in on nearly every
+// test, so leave the sensitive limiter (now on /login too) as a pass-through —
+// same reason the browser e2e run sets RATE_LIMIT_MAX=0. Prod sets neither.
+process.env.SENSITIVE_RATE_LIMIT_MAX ||= "0";
