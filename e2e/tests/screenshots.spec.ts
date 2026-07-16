@@ -1,9 +1,9 @@
 import { test } from "@playwright/test";
 import fs from "fs";
 import path from "path";
-import { ADMIN, DRIVER, REQUESTOR, ADMIN_URL, MOBILE_URL } from "../helpers/accounts";
+import { DRIVER, REQUESTOR, MOBILE_URL } from "../helpers/accounts";
 import { login } from "../helpers/api";
-import { adminLogin, mobileLogin } from "../helpers/ui";
+import { mobileLogin } from "../helpers/ui";
 import { resetState } from "../helpers/reset";
 import {
   seedAssignedTrip,
@@ -13,11 +13,14 @@ import {
 } from "../helpers/seed";
 
 /**
- * Visual sweep — visits every screen across the three apps and saves a full-page
- * screenshot. No assertions: the goal is a folder of images to eyeball for
- * truncation / missing data / broken layout. Waits are best-effort (wrapped so a
- * missing element never aborts the capture) precisely so a BROKEN screen is still
- * photographed rather than failing the run.
+ * Visual sweep — visits the driver and requestor screens of the mobile web app
+ * and saves a full-page screenshot. No assertions: the goal is a folder of images
+ * to eyeball for truncation / missing data / broken layout. Waits are best-effort
+ * (wrapped so a missing element never aborts the capture) precisely so a BROKEN
+ * screen is still photographed rather than failing the run.
+ *
+ * (Admin screens now live inside this same app, role-routed; a capture block for
+ * them could be added via mobileLogin(page, ADMIN) if visual coverage is wanted.)
  *
  * Run just this file:  npx playwright test screenshots.spec.ts
  */
@@ -62,43 +65,6 @@ async function shot(
 async function tapTab(page: import("@playwright/test").Page, label: string): Promise<void> {
   await page.getByText(label, { exact: true }).last().click();
 }
-
-test("ADMIN — all screens", async ({ page }) => {
-  // Login page (pre-auth).
-  await page.goto(`${ADMIN_URL}/login`);
-  await shot(page, "admin-login", "Sign In");
-
-  // Dashboard.
-  await adminLogin(page, ADMIN);
-  await shot(page, "admin-dashboard", "Live fleet overview");
-
-  // Trip Management — one grouped board (pending / active / completed columns),
-  // not tabs, so a single capture shows all three groups.
-  await page.getByRole("link", { name: "Trip Management" }).click();
-  await shot(page, "admin-trips", "total trips");
-
-  // Driver Management (performance scores).
-  await page.getByRole("link", { name: "Driver Management" }).click();
-  await shot(page, "admin-drivers", "Driver Management");
-
-  // Truck Management — Fleet tab, then Fuel tab.
-  await page.getByRole("link", { name: "Truck Management" }).click();
-  await shot(page, "admin-trucks-fleet", "Fleet");
-  await page.getByText("Fuel", { exact: true }).first().click();
-  await shot(page, "admin-trucks-fuel", "Fuel");
-
-  // Reports.
-  await page.getByRole("link", { name: "Reports" }).click();
-  await shot(page, "admin-reports", "Reports & Analytics");
-
-  // There is no dedicated "Settings" page; the nearest config screens are
-  // Incentive Rates and User Approvals — capture both for review.
-  await page.getByRole("link", { name: "Incentive Rates" }).click();
-  await shot(page, "admin-incentive-rates", "Incentive Rate Management");
-
-  await page.getByRole("link", { name: "User Approvals" }).click();
-  await shot(page, "admin-approvals", "User Approval Queue");
-});
 
 test("DRIVER — all screens", async ({ page }) => {
   await page.setViewportSize(PHONE);

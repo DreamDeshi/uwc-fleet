@@ -6,8 +6,8 @@ import { defineConfig, devices } from "@playwright/test";
  * Targets are env-driven (see helpers/accounts.ts): by default the suite
  * points at LOCAL dev servers; running against the deployed Railway apps
  * requires the explicit E2E_ALLOW_PROD=1 opt-in because the per-spec reset
- * modifies real data. The three targets (mobile web for requestor + driver,
- * admin dashboard) share one API, so per-test isolation is done in code
+ * modifies real data. The mobile web app (requestor, driver, and role-routed
+ * admin) and the API share one backend, so per-test isolation is done in code
  * (see helpers/reset.ts), not by spinning up fresh servers.
  *
  * Tests run serially (workers: 1). They share a single backend and a single
@@ -31,8 +31,7 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "retain-on-failure",
     // Force English so the i18n text selectors match, and a desktop viewport so
-    // the admin SPA renders the full dashboard instead of redirecting to its
-    // mobile-lite (/m) view.
+    // the responsive web app renders its wide layout (the admin screens use it).
     locale: "en-US",
     viewport: { width: 1440, height: 900 },
     // The driver ActiveTrip screen reads GPS; grant a fixed fix so the map/location

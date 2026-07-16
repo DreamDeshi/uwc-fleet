@@ -7,12 +7,11 @@
  * one spec edits a truck's rates), so hitting the live deployment must be a
  * conscious choice:
  *
- *   - Default: local dev servers (start api/admin/mobile yourself).
+ *   - Default: local dev servers (start api/mobile yourself).
  *   - E2E_ALLOW_PROD=1        → targets the deployed Railway apps (the old
  *     behaviour, used for post-deploy verification) with a loud warning.
- *   - E2E_API_URL / E2E_ADMIN_URL / E2E_MOBILE_URL → explicit per-service
- *     overrides (e.g. a staging deployment); a Railway host still requires
- *     E2E_ALLOW_PROD=1.
+ *   - E2E_API_URL / E2E_MOBILE_URL → explicit per-service overrides (e.g. a
+ *     staging deployment); a Railway host still requires E2E_ALLOW_PROD=1.
  *   - E2E_PASSWORD            → password for ALL three accounts (defaults to the
  *     local fresh-seed placeholder). Use after the credentials are rotated.
  *   - E2E_ADMIN_PASSWORD / E2E_DRIVER_PASSWORD / E2E_REQUESTOR_PASSWORD →
@@ -26,25 +25,21 @@
  */
 
 const PROD_MOBILE_URL = "https://uwc-mobile-production.up.railway.app";
-const PROD_ADMIN_URL = "https://uwc-admin-production.up.railway.app";
 const PROD_API_URL = "https://uwc-api-production.up.railway.app";
 
 const LOCAL_MOBILE_URL = "http://localhost:8081"; // expo web dev server
-const LOCAL_ADMIN_URL = "http://localhost:5173"; // vite dev server
 const LOCAL_API_URL = "http://localhost:3000"; // api dev server
 
 const ALLOW_PROD = process.env.E2E_ALLOW_PROD === "1";
 
 export const MOBILE_URL =
   process.env.E2E_MOBILE_URL ?? (ALLOW_PROD ? PROD_MOBILE_URL : LOCAL_MOBILE_URL);
-export const ADMIN_URL =
-  process.env.E2E_ADMIN_URL ?? (ALLOW_PROD ? PROD_ADMIN_URL : LOCAL_ADMIN_URL);
 export const API_URL = process.env.E2E_API_URL ?? (ALLOW_PROD ? PROD_API_URL : LOCAL_API_URL);
 export const API_BASE = `${API_URL}/api/v1`;
 
 // Any Railway host counts as production for the opt-in check.
 const isProdUrl = (url: string) => /railway\.app|rlwy\.net/i.test(new URL(url).hostname);
-const prodTargets = [API_URL, ADMIN_URL, MOBILE_URL].filter(isProdUrl);
+const prodTargets = [API_URL, MOBILE_URL].filter(isProdUrl);
 
 if (prodTargets.length > 0 && !ALLOW_PROD) {
   throw new Error(
@@ -55,7 +50,7 @@ if (prodTargets.length > 0 && !ALLOW_PROD) {
       "pending/approved trip, completes the test driver's active trips with a stub",
       "POD photo, and the rate-reset spec edits a real truck's rates.",
       "Set E2E_ALLOW_PROD=1 to consciously run against production, or point",
-      "E2E_API_URL / E2E_ADMIN_URL / E2E_MOBILE_URL at non-prod targets.",
+      "E2E_API_URL / E2E_MOBILE_URL at non-prod targets.",
     ].join("\n")
   );
 }
@@ -104,8 +99,3 @@ export const REQUESTOR: Account = {
 // driver's assigned_truck_plate; helpers/api.ts resolves this live from
 // GET /users/me, but this is the expected value for reference.
 export const DRIVER_TRUCK_PLATE = "PLX 2406";
-
-// localStorage keys the admin SPA reads its session from (admin/src/services/api.ts).
-// Seeding these lets admin specs skip the login UI on every test.
-export const ADMIN_TOKEN_KEY = "uwc.admin.accessToken";
-export const ADMIN_REFRESH_KEY = "uwc.admin.refreshToken";

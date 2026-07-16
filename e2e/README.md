@@ -1,6 +1,8 @@
 # UWC Fleet — End-to-End Tests (Playwright)
 
-Browser end-to-end tests covering the three real user roles.
+Browser end-to-end tests for the mobile web app — the requestor and driver
+flows. (Admin now lives in the same app, role-routed; it isn't UI-tested here
+yet — its behaviour is covered at the integration tier.)
 
 **Targets are env-driven** (`helpers/accounts.ts`) — the suite defaults to
 **local dev servers** and refuses to touch the deployed Railway apps unless you
@@ -8,9 +10,9 @@ explicitly opt in:
 
 | Env var | Effect |
 | --- | --- |
-| *(none)* | Local targets: API `localhost:3000`, admin `localhost:5173`, mobile web `localhost:8081` — start them yourself. |
+| *(none)* | Local targets: API `localhost:3000`, mobile web `localhost:8081` — start them yourself. |
 | `E2E_ALLOW_PROD=1` | Targets the deployed Railway apps (post-deploy verification). Prints a loud warning. |
-| `E2E_API_URL` / `E2E_ADMIN_URL` / `E2E_MOBILE_URL` | Explicit per-service overrides (e.g. staging). A Railway host still requires `E2E_ALLOW_PROD=1`. |
+| `E2E_API_URL` / `E2E_MOBILE_URL` | Explicit per-service overrides (e.g. staging). A Railway host still requires `E2E_ALLOW_PROD=1`. |
 | `E2E_PASSWORD` | Password for all three accounts (default: the local fresh-seed placeholder). Use after credentials are rotated. |
 | `E2E_ADMIN_PASSWORD` / `E2E_DRIVER_PASSWORD` / `E2E_REQUESTOR_PASSWORD` | Per-account overrides (each falls back to `E2E_PASSWORD`). Needed once accounts have distinct rotated passwords. |
 
@@ -56,7 +58,6 @@ npm run report           # open the HTML report from the last run
 
 # single role
 npm run test:requestor
-npm run test:admin
 npm run test:driver
 
 # post-deploy verification against the live Railway apps (conscious opt-in;
@@ -85,23 +86,20 @@ removed; what remains is genuine per-role UI and visual coverage.
    sidebar shell; the booking flow is identical, so we target the stable phone
    layout. The desktop shell is exercised visually by `screenshots.spec.ts`.)*
 
-**Admin (dashboard)** — `tests/admin.spec.ts`
-4. Login → sees the dashboard.
-5. A requestor's pending trip appears on the board.
-6. Manually assign a driver → status becomes **Assigned**.
-7. With auto mode on, a new booking is auto-dispatched → **Assigned**.
-8. Toggle dispatch mode between manual and auto.
-
-**Admin scheduling-conflict override** — `tests/conflict.spec.ts`
-9. Assigning a scheduled driver shows the inline **⚠ Scheduling conflict**
-   warning; **Assign anyway** re-submits with force and the trip is assigned.
+**Requestor booking edit** — `tests/requestorEdit.spec.ts`
+4. Edit a still-**pending** booking; an **assigned** booking is locked from edits.
 
 **Driver (mobile web)** — `tests/driver.spec.ts`
-10. Login → home shows the assigned trip.
-11. Start trip → status becomes **in progress**.
-12. Upload a DO/POD photo and mark delivered → trip **completed**, incentive shown.
+5. Login → home shows the assigned trip.
+6. Start trip → status becomes **in progress**.
+7. Upload a DO/POD photo and mark delivered → trip **completed**, incentive shown.
 
-**Admin rate reset** — `tests/rateReset.spec.ts` · **Visual sweep** — `tests/screenshots.spec.ts`.
+**Visual sweep** — `tests/screenshots.spec.ts` (driver + requestor screens).
+
+> The admin dispatch/rate/conflict browser specs were removed with the legacy
+> Vite admin app. Those behaviours (auto-dispatch, manual assign, the
+> scheduling-conflict and operating-window guards, rate reset) are covered at
+> the integration tier — see [`../TESTING.md`](../TESTING.md).
 
 ## Database isolation — run the local API against the Docker test DB
 
@@ -116,10 +114,9 @@ Postgres (see the repo-root [`TESTING.md`](../TESTING.md)):
 npm run test:db:up      # start + migrate + seed the Docker test DB (repo root)
 
 # API → Docker test DB. The two env vars matter — see the notes below.
-CORS_ORIGIN="http://localhost:5173,http://localhost:8081" RATE_LIMIT_MAX=0 SENSITIVE_RATE_LIMIT_MAX=0 \
+CORS_ORIGIN="http://localhost:8081" RATE_LIMIT_MAX=0 SENSITIVE_RATE_LIMIT_MAX=0 \
   npm run test:db:api
 
-npm run dev --workspace=admin        # admin on :5173
 cd mobile && npx expo start --web    # mobile web on :8081  (apiUrl note below)
 
 cd e2e && npm test
@@ -133,11 +130,10 @@ in the disposable test database, never prod. When you're done:
 Three things the local stack needs (each bites as a confusing mid-suite failure
 if skipped):
 
-1. **CORS** — `api/.env` allows only `http://localhost:5173` (the admin), so the
-   mobile web app on `:8081` gets CORS-blocked. Set
-   `CORS_ORIGIN="http://localhost:5173,http://localhost:8081"` in the API's
-   environment (env vars win over `api/.env` — dotenv never overrides an
-   already-set variable).
+1. **CORS** — if `api/.env` `CORS_ORIGIN` doesn't already include the mobile
+   web origin `http://localhost:8081`, the app gets CORS-blocked. Set
+   `CORS_ORIGIN="http://localhost:8081"` in the API's environment (env vars win
+   over `api/.env` — dotenv never overrides an already-set variable).
 2. **Rate limit** — the API throttles at 100 requests/min per IP, and a full
    suite run drives one API instance from one IP, so the shared budget trips
    after ~6 specs (later specs die at their first `login()` with `429`). Set
@@ -184,8 +180,6 @@ Neither front-end ships `data-testid`/`accessibilityLabel` hooks, so selectors u
 - The mobile app is React Native Web — buttons render as clickable `<div>`s, so we
   click by visible text (`getByText("Sign In")`). Status badges render **UPPERCASE**
   (e.g. `ASSIGNED`).
-- The admin app uses real `<button>`s with stable labels
-  (`getByRole("button", { name: "Assign" })`).
 - The mobile login phone field shows a fixed `+60` prefix and submits `+60` + the
   digits typed, so helpers enter only the national part.
 
@@ -194,6 +188,6 @@ these tests far more robust than text matching.
 
 ## Config
 
-`playwright.config.ts`: Chromium only, desktop viewport (1440×900, so the admin app
-shows the full dashboard instead of its `/m` mobile-lite view), English locale,
-serial execution, traces/screenshots/video retained on failure.
+`playwright.config.ts`: Chromium only, desktop viewport (1440×900, so the
+responsive web app renders its wide layout), English locale, serial execution,
+traces/screenshots/video retained on failure.
