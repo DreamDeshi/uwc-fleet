@@ -34,7 +34,10 @@ export async function claimPendingTrip(
 ): Promise<boolean> {
   const res = await client.trip.updateMany({
     where: { id: tripId, status: "pending" },
-    data: { ...data, status: "assigned" },
+    // Any pending → assigned claim clears the manual-hold pin (feedback item 15):
+    // the trip is now assigned, so the "don't auto-dispatch" flag has served its
+    // purpose and must not linger if the trip ever returns to pending later.
+    data: { ...data, status: "assigned", auto_dispatch_paused: false },
   });
   return res.count === 1;
 }

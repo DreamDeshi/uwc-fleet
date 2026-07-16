@@ -42,6 +42,11 @@ const CHECK_INTERVAL_MS = 60 * 1000; // sweep once a minute
 export const staleSweepWhere = (cutoff: Date) => ({
   status: "pending" as const,
   created_at: { lte: cutoff },
+  // Manual-hold pin (feedback item 15): a trip an admin unassigned stays pinned
+  // to manual handling — the sweep neither auto-dispatches nor re-alerts on it.
+  // Cleared the moment it's (re-)assigned, so this only ever excludes trips the
+  // admin is deliberately holding in pending.
+  auto_dispatch_paused: false,
 });
 
 export type ExpiryReason = "pickup_passed" | "retry_ceiling";

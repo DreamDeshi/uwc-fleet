@@ -1226,6 +1226,12 @@ router.patch(
             "This trip just changed state (the driver may have started it). Refresh and try again."
           );
         }
+        // Pin the trip to MANUAL handling (feedback item 15, 16 Jul 2026: "no
+        // more auto after unassign"). Back in pending, the sweep would otherwise
+        // auto-re-dispatch it — often straight back to a truck the admin just
+        // pulled it off. This flag makes the sweep skip it; the admin now rejects
+        // or manually re-assigns. Cleared automatically on the next assign claim.
+        await tx.trip.update({ where: { id }, data: { auto_dispatch_paused: true } });
         // Drop the per-stop zone-point snapshots too — they belong to the old
         // assignment; the next assignment re-takes them.
         // Clear BOTH stop snapshots (points + zone identity): back in pending,

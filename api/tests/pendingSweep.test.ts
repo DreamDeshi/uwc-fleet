@@ -10,16 +10,23 @@ import { staleSweepWhere, pendingRetryExpired, PENDING_RETRY_CEILING_MINUTES } f
  * not in this query. Behavior is covered by tests-integration/pendingSweep.
  */
 describe("staleSweepWhere — retry selection is decoupled from alerting", () => {
-  it("selects on status + age ONLY — no pending_alert_sent filter", () => {
+  it("selects on status + age + not-manually-paused — no pending_alert_sent filter", () => {
     const cutoff = new Date("2026-07-16T00:00:00Z");
     expect(staleSweepWhere(cutoff)).toEqual({
       status: "pending",
       created_at: { lte: cutoff },
+      auto_dispatch_paused: false, // feedback item 15: skip manually-held trips
     });
   });
 
   it("never regains a pending_alert_sent key (the dead-zone bug)", () => {
     expect("pending_alert_sent" in staleSweepWhere(new Date())).toBe(false);
+  });
+
+  it("excludes manually-held (unassigned) trips so they're never auto-re-dispatched", () => {
+    // feedback item 15: an admin who unassigns pins the trip to manual — the
+    // sweep must not claim it back. The predicate carries the exclusion.
+    expect(staleSweepWhere(new Date()).auto_dispatch_paused).toBe(false);
   });
 });
 

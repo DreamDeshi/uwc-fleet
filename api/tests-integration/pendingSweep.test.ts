@@ -7,8 +7,8 @@ vi.mock("../src/lib/pushNotifications", () => ({
   sendPushNotifications: vi.fn(async () => {}),
 }));
 
-import { prisma, resetDb, loginAs, REQUESTOR } from "./helpers/harness";
-import { bookTrip, firstRouteTypeId, pickupDateKey } from "./helpers/flow";
+import { api, auth, prisma, resetDb, loginAs, ADMIN, DRIVER, REQUESTOR } from "./helpers/harness";
+import { bookTrip, firstRouteTypeId, pickupDateKey, approveTrip, userIdByPhone } from "./helpers/flow";
 import { sweepPendingTrips } from "../src/services/pendingTripAlerts";
 import { sendPushNotifications } from "../src/lib/pushNotifications";
 
@@ -183,5 +183,45 @@ describe("pending sweep — retry decoupled from the one-shot alert", () => {
     expect(t.status).toBe("pending");
     expect(t.pending_alert_sent).toBe(false);
     expect(pendingAlertCount(trip.id)).toBe(0);
+  });
+
+  // ── feedback item 15: a manual unassign PINS the trip to manual handling ──
+  it("AUTO: an admin-unassigned trip is pinned to manual — the sweep never re-dispatches it", async () => {
+    // Book + assign in MANUAL mode so create-time auto-dispatch doesn't claim it
+    // first; switch to AUTO only for the sweep — the exact mode where the sweep
+    // WOULD normally re-dispatch a pending trip, so the pin is what stops it.
+    await setMode("manual");
+    const requestor = await loginAs(REQUESTOR);
+    const admin = await loginAs(ADMIN);
+    const driverId = await userIdByPhone(DRIVER.phone);
+    const rt = await firstRouteTypeId(requestor);
+
+    const trip = await bookTrip(requestor, ["A2"], rt);
+    await approveTrip(admin, trip.id, driverId, "PLX 2406");
+    expect((await freshTrip(trip.id)).status).toBe("assigned");
+
+    // The admin pulls the driver off (unassign) → pending + pinned to manual.
+    const un = await api().patch(`/api/v1/trips/${trip.id}/unassign`).set(auth(admin)).send({ reason: "reshuffle" });
+    expect(un.status).toBe(200);
+    let t = await freshTrip(trip.id);
+    expect(t.status).toBe("pending");
+    expect(t.auto_dispatch_paused).toBe(true); // PINNED to manual
+    expect(t.driver_id).toBeNull();
+
+    // AUTO mode + sweep-eligible by age: the sweep would re-dispatch an ordinary
+    // pending trip, but the pin makes it skip this one entirely.
+    await setMode("auto");
+    await backdate(trip.id);
+    await sweepPendingTrips();
+    t = await freshTrip(trip.id);
+    expect(t.status).toBe("pending"); // still pending — NOT auto-re-dispatched
+    expect(t.driver_id).toBeNull();
+    expect(pendingAlertCount(trip.id)).toBe(0); // paused trips aren't even re-alerted
+
+    // The admin can still MANUALLY re-assign — which clears the pin.
+    await approveTrip(admin, trip.id, driverId, "PLX 2406");
+    t = await freshTrip(trip.id);
+    expect(t.status).toBe("assigned");
+    expect(t.auto_dispatch_paused).toBe(false); // pin cleared on re-assign
   });
 });

@@ -275,6 +275,13 @@ model Trip {
   // auto_dispatch_failed so it inherits the self-clearing lifecycle.
   // Display-only: no dispatch or incentive logic ever reads it.
   auto_dispatch_note   String?
+  // Set true when an admin MANUALLY unassigns an assigned trip (feedback item 15,
+  // 16 Jul 2026: "no more auto after unassign"). While true, the pending sweep
+  // will NOT auto-dispatch this booking — it stays pinned to manual handling
+  // (admin reject or manual re-assign). Cleared on any pending → assigned claim
+  // (claimPendingTrip), so it strictly means "this pending trip is here because
+  // an admin pulled the driver, and must not be auto-re-dispatched."
+  auto_dispatch_paused Boolean @default(false)
   created_at       DateTime   @default(now())
 
   stops               TripStop[]

@@ -184,6 +184,10 @@ export interface Trip {
   auto_dispatch_failed: boolean;
   // WHY the engine couldn't place it — cleared together with the flag.
   auto_dispatch_note: string | null;
+  // True when an admin manually unassigned this trip (feedback item 15): it sits
+  // in pending but is PINNED to manual handling — the auto-dispatch sweep skips
+  // it, so it won't be silently re-assigned. Cleared on the next manual assign.
+  auto_dispatch_paused?: boolean;
   created_at: string;
   stops: TripStop[];
   cargo_details: CargoDetail[];
