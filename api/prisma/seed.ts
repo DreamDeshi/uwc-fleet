@@ -224,11 +224,16 @@ async function seedTrucks() {
   //   - entitled_claim_weekday / _offpeak are the two-tier "Entitled Claim per
   //     point" rates; BOTH are stored per truck even when equal (PRJ/PQL/PRH have
   //     no off-peak uplift; PLX/PND jump 11->13; PPE 10->12).
-  //   - 4 Wheel (Generic) has NO off-peak row in the sheet; offpeak_rate is
-  //     defaulted to the peak rate (11). TODO confirm generic off-peak rate.
-  //   - daily_deduction: ONLY PLX 2406 = 2 is client-confirmed. The others
-  //     (PND/PRH = 2, PRJ/PQL/PPE = 3) are as-seeded — verify deduction value
-  //     with the client before treating as authoritative; left unchanged here.
+  //   - 4 Wheel (Generic): weekday AND off-peak are both 11 — CONFIRMED by the
+  //     sheet, which lists a real "4 Wheel" row (= 11) in BOTH the peak and
+  //     off-peak tables (not a default). The one genuine gap the workbook itself
+  //     leaves: 4 Wheel has no assigned driver / priority_zones, so whether it's
+  //     a dispatchable 7th truck or a standby fallback is an open OWNER decision.
+  //   - daily_deduction: CONFIRMED for all 7 plates by the sheet's "Daily
+  //     Deduction POINT" column — PLX 2, PND 2, PRJ 3, PQL 3, PPE 3, PRH 2,
+  //     4 Wheel 2. These match the seed exactly; NOT a guess. (An older note here
+  //     called all but PLX unconfirmed — that was wrong; see uwc-spec.json + the
+  //     workbook. Do not re-raise as a client question.)
   // NOTE: live-DB rates are admin-editable, so this seed only governs FRESH
   // deploys; an already-running DB may have drifted and needs an admin-UI edit
   // or a re-seed to match (e.g. a live PLX 2406 weekday rate of 12 vs spec 11).
