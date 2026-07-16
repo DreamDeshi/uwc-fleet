@@ -17,8 +17,10 @@ import {
 import {
   assertStopArrivable,
   assertStopDeliverable,
+  assertIncentiveApprovable,
   collectFinalizeBreakdown,
-  finalizeTripOnce,
+  proposeTripIncentiveOnce,
+  approveTripIncentiveOnce,
   type FinalizedGroup,
 } from "../services/tripCompletion";
 import {
@@ -561,6 +563,7 @@ const TRIP_STATUSES = [
   "rejected",
   "assigned",
   "in_progress",
+  "pending_approval",
   "completed",
   "cancelled",
 ] as const;
@@ -1627,8 +1630,9 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
     }
 
     // Status-guarded CAS: aborts ONLY while still in_progress. If the last stop
-    // was just delivered (trip → completed + finalized) the abort loses with a
-    // 409 rather than cancelling a paid trip.
+    // was just delivered (trip → pending_approval, its incentive proposed) the
+    // abort loses with a 409 rather than cancelling an already-delivered trip —
+    // a delivered POD is resolved by admin approval, not by abort.
     await prisma.$transaction(async (tx) => {
       const aborted = await abortActiveTrip(tx, id);
       if (!aborted) {
@@ -1748,12 +1752,20 @@ router.post(
         throw new ApiError(400, "STOP_NOT_FOUND", "That stop is not part of this trip.");
       }
 
-      // POD lock — mirror the write-once pay pattern: once the trip is finalized
-      // (completed) its proof of delivery is frozen, so a re-upload can't
-      // overwrite the paid-against evidence. Checked BEFORE any Cloudinary call.
-      // The offline outbox treats this 409 as "already done" for the photo step
-      // (podOutboxCore PHOTO_STEP_ALREADY_CODES), so a stale replay is harmless.
-      if (trip.status === "completed" || trip.status === "cancelled") {
+      // POD lock — mirror the write-once pay pattern: once the trip's delivery
+      // is recorded its proof of delivery is frozen, so a re-upload can't
+      // overwrite the evidence the incentive was proposed/paid against. This
+      // covers `pending_approval` (POD-approval gate, 16 Jul 2026): the POD is
+      // exactly what the admin approves against, so it must not change while the
+      // trip awaits sign-off — as well as `completed` (approved/paid) and
+      // `cancelled`. Checked BEFORE any Cloudinary call. The offline outbox
+      // treats this 409 as "already done" for the photo step (podOutboxCore
+      // PHOTO_STEP_ALREADY_CODES), so a stale replay is harmless.
+      if (
+        trip.status === "pending_approval" ||
+        trip.status === "completed" ||
+        trip.status === "cancelled"
+      ) {
         throw new ApiError(
           409,
           "POD_LOCKED",
@@ -2130,30 +2142,130 @@ router.patch(
       // Guard against float dust from summing per-group marginals.
       incentiveThisTrip = Math.round(incentiveThisTrip * 100) / 100;
 
-      // Store the MARGINAL (per-trip) incentive, not the running day total,
-      // so the endpoints that SUM incentive_earned across a day are correct.
-      // Write-once compare-and-set: a concurrent (or repeated) finalization
-      // loses the guard and must never overwrite the stored pay. The per-drop
-      // breakdown (the engine's own outputs) commits atomically with it —
-      // one transaction, so pay and its evidence can't diverge.
+      // Store the MARGINAL (per-trip) incentive as the PROPOSAL, and move the
+      // trip to `pending_approval` — the amount is frozen (this day's ledger +
+      // snapshot rates) but NOT paid until an admin approves the POD (Mr. Teh
+      // 16 Jul 2026). Write-once compare-and-set: a concurrent/repeated delivery
+      // loses the guard and never overwrites the stored proposal. The per-drop
+      // breakdown commits atomically in the same transaction.
       const breakdown = collectFinalizeBreakdown(finalizedGroups);
-      const finalized = await prisma.$transaction((tx) =>
-        finalizeTripOnce(tx, id, incentiveThisTrip, breakdown)
+      const proposed = await prisma.$transaction((tx) =>
+        proposeTripIncentiveOnce(tx, id, incentiveThisTrip, breakdown)
       );
-      if (!finalized) {
+      if (!proposed) {
         throw new ApiError(
           409,
           "TRIP_ALREADY_FINALIZED",
-          "This trip has already been completed and its incentive finalized."
+          "This trip has already been delivered and its incentive proposed."
         );
       }
       const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
 
+      // The trip is delivered + awaiting approval, NOT completed. The `completed`
+      // audit + timeline event now fire at approval (PATCH /trips/:id/approve-incentive).
       await prisma.auditLog.create({
-        data: { user_id: req.user!.id, action: "trip.completed", table_name: "Trip", record_id: id },
+        data: { user_id: req.user!.id, action: "trip.delivered_pending_approval", table_name: "Trip", record_id: id },
       });
-      await recordTripEvent(prisma, { tripId: id, event: "completed", actorId: req.user!.id });
 
+      // Notify admins there's a POD to approve (money is held until they do).
+      const adminsToNotify = await prisma.user.findMany({
+        where: { role: "admin", status: "active", expo_push_token: { not: null } },
+        select: { expo_push_token: true },
+      });
+      await sendPushNotifications(
+        adminsToNotify.map((a) => a.expo_push_token),
+        {
+          title: "Trip awaiting approval",
+          body: `Trip ${updated?.ticket_number ?? ""} was delivered — approve the POD to release the incentive`,
+          data: { type: "pending_approval", tripId: id },
+        }
+      );
+
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ── PATCH /trips/:id/approve-incentive — admin approves a delivered trip's POD ──
+// Mr. Teh 16 Jul 2026 (TEST QUERY item 9): "After driver complete the delivery,
+// they will have to upload the proof of delivery (the chop sign return copy on
+// DO), then together with the incentive rate, submit to admin for approval,
+// admin also can edit the final rate prior approval." This is the point of pay:
+// the incentive was PROPOSED at delivery (pending_approval); approving here flips
+// the trip to `completed` and sets the payable `incentive_final`. Editing the
+// amount requires a reason; the original proposal (`incentive_earned`) is kept.
+const approveIncentiveSchema = z.object({
+  final_amount: z.number().min(0).optional(), // omit → confirm the proposal as-is
+  reason: z.string().optional(), // required iff final_amount differs from the proposal
+});
+router.patch(
+  "/:id/approve-incentive",
+  requireRole("admin"),
+  validateBody(approveIncentiveSchema),
+  async (req, res, next) => {
+    try {
+      const id = req.params.id;
+      const { final_amount, reason } = req.body as { final_amount?: number; reason?: string };
+      const trip = await prisma.trip.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          status: true,
+          incentive_earned: true,
+          ticket_number: true,
+          driver: { select: { expo_push_token: true } },
+        },
+      });
+      if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      assertIncentiveApprovable(trip, final_amount, reason);
+
+      const proposedAmount = Number(trip.incentive_earned ?? 0);
+      const approved = await approveTripIncentiveOnce(prisma, id, {
+        proposedAmount,
+        finalAmount: final_amount,
+        reason,
+        adminId: req.user!.id,
+        approvedAt: new Date(),
+      });
+      if (!approved) {
+        throw new ApiError(409, "TRIP_STATE_CHANGED", "This trip is no longer awaiting approval.");
+      }
+
+      const finalAmount = final_amount === undefined ? proposedAmount : Math.round(final_amount * 100) / 100;
+      const edited = Math.round(finalAmount * 100) !== Math.round(proposedAmount * 100);
+      await prisma.auditLog.create({
+        data: {
+          user_id: req.user!.id,
+          action: edited
+            ? `trip.incentive_approved (edited RM${proposedAmount}→RM${finalAmount}: ${reason})`
+            : "trip.incentive_approved",
+          table_name: "Trip",
+          record_id: id,
+        },
+      });
+      await recordTripEvent(prisma, {
+        tripId: id,
+        event: "incentive_approved",
+        actorId: req.user!.id,
+        note: edited ? `Rate edited to RM${finalAmount}` : undefined,
+      });
+      // The trip reaches its terminal `completed` state only now (approval is
+      // what completes it under the POD-approval gate) — record it so the
+      // timeline's completed milestone lands on the approval instant.
+      await recordTripEvent(prisma, {
+        tripId: id,
+        event: "completed",
+        actorId: req.user!.id,
+      });
+      await sendPushNotifications([trip.driver?.expo_push_token], {
+        title: "Incentive approved",
+        body: `Trip ${trip.ticket_number}: RM${finalAmount} approved`,
+        data: { type: "incentive_approved", tripId: id },
+      });
+
+      const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
       res.json(updated);
     } catch (err) {
       next(err);

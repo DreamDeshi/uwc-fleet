@@ -1,13 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { ApiError } from "../src/lib/apiError";
 import {
+  approveTripIncentiveOnce,
+  assertIncentiveApprovable,
   assertStopArrivable,
   assertStopDeliverable,
   collectFinalizeBreakdown,
-  finalizeTripOnce,
   firstDeliveredAt,
   payAttributionInstant,
+  payableIncentive,
+  proposeTripIncentiveOnce,
   type FinalizeBreakdown,
+  type TripApproveClient,
   type TripFinalizeClient,
 } from "../src/services/tripCompletion";
 
@@ -116,10 +120,10 @@ function anchorBreakdown(): FinalizeBreakdown {
   ]);
 }
 
-describe("finalizeTripOnce (write-once compare-and-set)", () => {
+describe("proposeTripIncentiveOnce (POD-approval gate: write-once propose)", () => {
   // In-memory model of the status-guarded conditional update: the trip row
-  // only matches while it is in_progress with no incentive written yet, and
-  // stop rows record whatever breakdown the winner persisted.
+  // only matches while it is in_progress with no incentive written yet. The
+  // winner flips it to pending_approval (NOT completed) and records evidence.
   function fakeTrip(initial: { status: string; incentive_earned: number | null }) {
     const row: Record<string, unknown> = { ...initial };
     const stopRows: Record<string, Record<string, unknown>> = {};
@@ -143,51 +147,196 @@ describe("finalizeTripOnce (write-once compare-and-set)", () => {
     return { row, stopRows, client };
   }
 
-  it("finalizes an in_progress trip exactly once, persisting pay + evidence atomically", async () => {
+  it("proposes an in_progress trip exactly once → pending_approval, pay frozen but unpaid, evidence atomic", async () => {
     const { row, stopRows, client } = fakeTrip({ status: "in_progress", incentive_earned: null });
-    expect(await finalizeTripOnce(client, "t1", 44, anchorBreakdown())).toBe(true);
+    expect(await proposeTripIncentiveOnce(client, "t1", 44, anchorBreakdown())).toBe(true);
     expect(row).toEqual({
-      status: "completed",
-      incentive_earned: 44,
+      status: "pending_approval", // NOT completed — money is held until approval
+      incentive_earned: 44, // the PROPOSAL is frozen here
       rate_used: 11,
       off_peak: false,
       deduction_applied: 2,
     });
+    // No incentive_final yet — payroll counts only `completed` trips.
+    expect(row.incentive_final).toBeUndefined();
     expect(stopRows["s1"]).toEqual({ points_awarded: 6, was_repeat: false, zone_code: "A2" });
   });
 
-  it("a second finalization loses and never overwrites the stored incentive OR evidence", async () => {
+  it("a second proposal loses and never overwrites the stored proposal OR evidence", async () => {
     const { row, stopRows, client } = fakeTrip({ status: "in_progress", incentive_earned: null });
-    await finalizeTripOnce(client, "t1", 44, anchorBreakdown());
-    // Re-delivery scenario: rates/day-ledger have changed, recompute says 66.
+    await proposeTripIncentiveOnce(client, "t1", 44, anchorBreakdown());
     const rerun = collectFinalizeBreakdown([
       {
         stops: [{ id: "s1", zoneCode: "A2" }],
         result: { dropPoints: [6], wasRepeat: [false], rateUsed: 13, isOffPeak: true, deductionApplied: 0 },
       },
     ]);
-    expect(await finalizeTripOnce(client, "t1", 66, rerun)).toBe(false);
-    expect(row.incentive_earned).toBe(44); // pay unchanged
+    expect(await proposeTripIncentiveOnce(client, "t1", 66, rerun)).toBe(false);
+    expect(row.incentive_earned).toBe(44); // proposal unchanged
     expect(row.rate_used).toBe(11); // evidence unchanged
     expect(stopRows["s1"].points_awarded).toBe(6); // loser never touched stop rows
   });
 
-  it("never finalizes a trip that is not in_progress", async () => {
-    const { row, client } = fakeTrip({ status: "completed", incentive_earned: 44 });
-    expect(await finalizeTripOnce(client, "t1", 66, anchorBreakdown())).toBe(false);
+  it("never proposes a trip that is not in_progress (already delivered/approved)", async () => {
+    const { row, client } = fakeTrip({ status: "pending_approval", incentive_earned: 44 });
+    expect(await proposeTripIncentiveOnce(client, "t1", 66, anchorBreakdown())).toBe(false);
     expect(row.incentive_earned).toBe(44);
   });
+});
 
-  it("holiday-calendar edits never touch stored pay: a re-finalization at the new tier loses", async () => {
-    // Weekday Ipoh trip finalized at RM44 with an empty calendar; an admin then
-    // adds that date as a holiday. Recomputing WOULD give (6−2)×13 = RM52, but
-    // the decision ran exactly once at finalization — the CAS refuses a rerun
-    // and the stored pay stays RM44 (readers only ever sum the stored value).
-    const { row, client } = fakeTrip({ status: "in_progress", incentive_earned: null });
-    await finalizeTripOnce(client, "t1", 44, anchorBreakdown());
-    expect(await finalizeTripOnce(client, "t1", 52, anchorBreakdown())).toBe(false);
-    expect(row.status).toBe("completed");
-    expect(row.incentive_earned).toBe(44);
+describe("assertIncentiveApprovable (approval guard)", () => {
+  it("allows confirming the proposal as-is (no final amount)", () => {
+    expect(() =>
+      assertIncentiveApprovable({ status: "pending_approval", incentive_earned: 44 }, undefined, undefined)
+    ).not.toThrow();
+  });
+
+  it("allows an edit that carries a reason", () => {
+    expect(() =>
+      assertIncentiveApprovable({ status: "pending_approval", incentive_earned: 44 }, 50, "extra pallet")
+    ).not.toThrow();
+  });
+
+  it("allows a 'final amount' equal to the proposal with no reason (not really an edit)", () => {
+    expect(() =>
+      assertIncentiveApprovable({ status: "pending_approval", incentive_earned: 44 }, 44, undefined)
+    ).not.toThrow();
+  });
+
+  it("rejects approving a trip that is not pending_approval → 409", () => {
+    expectApiError(
+      () => assertIncentiveApprovable({ status: "in_progress", incentive_earned: null }, undefined, undefined),
+      "TRIP_NOT_PENDING_APPROVAL",
+      409
+    );
+    expectApiError(
+      () => assertIncentiveApprovable({ status: "completed", incentive_earned: 44 }, undefined, undefined),
+      "TRIP_NOT_PENDING_APPROVAL",
+      409
+    );
+  });
+
+  it("rejects a negative final amount → 400", () => {
+    expectApiError(
+      () => assertIncentiveApprovable({ status: "pending_approval", incentive_earned: 44 }, -1, "x"),
+      "INVALID_AMOUNT",
+      400
+    );
+  });
+
+  it("rejects an EDITED amount with no reason → 400 (money edits are audited)", () => {
+    expectApiError(
+      () => assertIncentiveApprovable({ status: "pending_approval", incentive_earned: 44 }, 50, undefined),
+      "REASON_REQUIRED",
+      400
+    );
+    // Whitespace-only reason is not a reason.
+    expectApiError(
+      () => assertIncentiveApprovable({ status: "pending_approval", incentive_earned: 44 }, 50, "   "),
+      "REASON_REQUIRED",
+      400
+    );
+  });
+});
+
+describe("approveTripIncentiveOnce (write-once approve → completed + payable)", () => {
+  function fakeTrip(initial: { status: string; incentive_earned: number }) {
+    const row: Record<string, unknown> = { ...initial };
+    const client: TripApproveClient = {
+      trip: {
+        async updateMany({ data }) {
+          if (row.status !== "pending_approval") return { count: 0 };
+          Object.assign(row, data);
+          return { count: 1 };
+        },
+      },
+    };
+    return { row, client };
+  }
+
+  const approvedAt = new Date("2026-07-16T09:00:00Z");
+
+  it("approving without an edit pays the proposal exactly and clears the override reason", async () => {
+    const { row, client } = fakeTrip({ status: "pending_approval", incentive_earned: 44 });
+    const ok = await approveTripIncentiveOnce(client, "t1", {
+      proposedAmount: 44,
+      adminId: "admin1",
+      approvedAt,
+    });
+    expect(ok).toBe(true);
+    expect(row).toEqual({
+      status: "completed",
+      incentive_earned: 44, // proposal preserved
+      incentive_final: 44, // payable == proposal
+      incentive_override_reason: null, // not edited
+      incentive_approved_at: approvedAt,
+      incentive_approved_by: "admin1",
+    });
+  });
+
+  it("approving with an edit stores the edited final + reason and preserves the proposal", async () => {
+    const { row, client } = fakeTrip({ status: "pending_approval", incentive_earned: 44 });
+    const ok = await approveTripIncentiveOnce(client, "t1", {
+      proposedAmount: 44,
+      finalAmount: 50,
+      reason: "extra pallet on the DO",
+      adminId: "admin1",
+      approvedAt,
+    });
+    expect(ok).toBe(true);
+    expect(row.incentive_earned).toBe(44); // proposal preserved for the audit trail
+    expect(row.incentive_final).toBe(50); // payroll pays this
+    expect(row.incentive_override_reason).toBe("extra pallet on the DO");
+  });
+
+  it("a final amount equal to the proposal is NOT an edit (reason nulled even if passed)", async () => {
+    const { row, client } = fakeTrip({ status: "pending_approval", incentive_earned: 44 });
+    await approveTripIncentiveOnce(client, "t1", {
+      proposedAmount: 44,
+      finalAmount: 44,
+      reason: "should be ignored",
+      adminId: "admin1",
+      approvedAt,
+    });
+    expect(row.incentive_final).toBe(44);
+    expect(row.incentive_override_reason).toBeNull();
+  });
+
+  it("a second approval loses — the amount is never double-set", async () => {
+    const { row, client } = fakeTrip({ status: "pending_approval", incentive_earned: 44 });
+    await approveTripIncentiveOnce(client, "t1", { proposedAmount: 44, adminId: "a1", approvedAt });
+    const second = await approveTripIncentiveOnce(client, "t1", {
+      proposedAmount: 44,
+      finalAmount: 99,
+      reason: "late edit",
+      adminId: "a2",
+      approvedAt,
+    });
+    expect(second).toBe(false);
+    expect(row.incentive_final).toBe(44); // first approval stands
+    expect(row.incentive_approved_by).toBe("a1");
+  });
+});
+
+describe("payableIncentive (the ONE 'what did this trip pay' read)", () => {
+  it("pays the admin-approved final when present", () => {
+    expect(payableIncentive({ incentive_final: 50, incentive_earned: 44 })).toBe(50);
+  });
+
+  it("grandfathers a pre-gate trip: final null → pays the engine proposal", () => {
+    expect(payableIncentive({ incentive_final: null, incentive_earned: 44 })).toBe(44);
+    expect(payableIncentive({ incentive_earned: 44 })).toBe(44);
+  });
+
+  it("an approved-down-to-zero trip pays 0, not the proposal (0 is a real final)", () => {
+    // Editing the final to 0 must win over the proposal — ?? only falls through
+    // on null/undefined, so a legitimate zero payout is honoured.
+    expect(payableIncentive({ incentive_final: 0, incentive_earned: 44 })).toBe(0);
+  });
+
+  it("pays 0 when nothing is recorded", () => {
+    expect(payableIncentive({})).toBe(0);
+    expect(payableIncentive({ incentive_final: null, incentive_earned: null })).toBe(0);
   });
 });
 

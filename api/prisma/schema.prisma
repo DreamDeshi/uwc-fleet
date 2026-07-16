@@ -36,6 +36,7 @@ enum TripStatus {
   rejected
   assigned
   in_progress
+  pending_approval // all stops delivered; incentive computed but NOT paid until an admin approves the POD (Mr. Teh 16 Jul 2026)
   completed
   cancelled
 }
@@ -64,6 +65,7 @@ enum TripEvent {
   cancelled
   assigned_external
   rerouted // reserved for the reroute workflow (roadmap item #3)
+  incentive_approved // admin approved the POD + confirmed/edited the incentive (16 Jul 2026 approval gate)
 }
 
 enum DocumentType {
@@ -249,6 +251,18 @@ model Trip {
   rate_used         Decimal?  @db.Decimal(10, 2) // RM/point actually paid
   off_peak          Boolean? // which tier picked rate_used
   deduction_applied Int? // deduction points actually subtracted (may be < the truck's figure when floored at 0)
+  // POD-approval gate (Mr. Teh 16 Jul 2026): `incentive_earned` above is the
+  // engine's PROPOSAL, computed and frozen when the last stop is delivered (the
+  // trip then sits `pending_approval`). At admin approval `incentive_final` is
+  // set — equal to `incentive_earned`, or an admin-edited amount with a
+  // mandatory `incentive_override_reason` (the original proposal is preserved
+  // forever). Payroll pays COALESCE(incentive_final, incentive_earned) for
+  // `completed` trips: trips completed BEFORE this feature keep incentive_final
+  // NULL and are paid at their engine amount (grandfathered, no data migration).
+  incentive_final          Decimal?  @db.Decimal(10, 2) // admin-confirmed pay (may differ from the proposal)
+  incentive_override_reason String? // required iff incentive_final != incentive_earned
+  incentive_approved_at    DateTime?
+  incentive_approved_by    String? // admin User id
   // Rate-lock snapshot, written at ASSIGNMENT time (manual approve and
   // auto-dispatch both claim through it): a trip finalizes at the rates it was
   // dispatched under — a later admin rate edit affects future assignments only.

@@ -68,6 +68,18 @@ export function assertStopDeliverable(
   }
 }
 
+/**
+ * The RM a COMPLETED trip actually pays. Under the POD-approval gate (16 Jul
+ * 2026) that is the admin-approved `incentive_final`; a trip completed BEFORE
+ * the gate has `incentive_final = null` and is paid at its engine proposal
+ * `incentive_earned` (grandfathered — no data migration). This is the ONE
+ * function every "what did this trip pay" read must use. Only meaningful for
+ * `completed` trips; a `pending_approval` proposal is not yet payable.
+ */
+export function payableIncentive(t: { incentive_final?: unknown; incentive_earned?: unknown }): number {
+  return Number(t.incentive_final ?? t.incentive_earned ?? 0);
+}
+
 // ── Per-drop pay evidence (clerk verification) ────────────────────────────
 //
 // The engine already computes per-drop points, the repeat flag, the rate tier
@@ -155,12 +167,12 @@ export function payAttributionInstant(trip: {
   return firstDeliveredAt(trip.stops) ?? trip.pickup_datetime;
 }
 
-// Minimal slice of the Prisma client the finalize needs. Lets tests substitute
-// an in-memory store that models the atomic conditional update.
+// Minimal slice of the Prisma client the propose/approve steps need. Lets tests
+// substitute an in-memory store that models the atomic conditional update.
 export interface TripFinalizeClient {
   trip: {
     updateMany(args: {
-      where: { id: string; status: "in_progress"; incentive_earned: null };
+      where: { id: string; status: "in_progress" | "pending_approval"; incentive_earned?: null };
       data: Record<string, unknown>;
     }): Promise<{ count: number }>;
   };
@@ -173,15 +185,20 @@ export interface TripFinalizeClient {
 }
 
 /**
- * Flip in_progress → completed and persist the trip's incentive plus the
- * per-drop breakdown, as a write-once compare-and-set (same shape as
- * claimPendingTrip): only the writer that still sees the trip in_progress with
- * no incentive wins. Returns true iff THIS caller finalized the trip; a
- * completed / already-finalized trip is never overwritten — and a loser never
- * touches the stop rows either. Run inside one transaction so the incentive
- * and its evidence commit atomically.
+ * PROPOSE the incentive (POD-approval gate, 16 Jul 2026): flip
+ * in_progress → pending_approval and persist the ENGINE-COMPUTED incentive plus
+ * the per-drop breakdown, as a write-once compare-and-set (same shape as
+ * claimPendingTrip). The amount is frozen here (`incentive_earned`, computed at
+ * delivery under that day's ledger + snapshot rates) but NOT yet paid — payroll
+ * only counts `completed` trips. Returns true iff THIS caller proposed; a trip
+ * already past in_progress (or already carrying an incentive) is never
+ * overwritten, and a loser never touches the stop rows. One transaction, so the
+ * proposal and its evidence commit atomically.
+ *
+ * (Was `finalizeTripOnce`, which flipped straight to `completed`; the approval
+ * step below now owns the completed transition + the payable amount.)
  */
-export async function finalizeTripOnce(
+export async function proposeTripIncentiveOnce(
   client: TripFinalizeClient,
   tripId: string,
   incentiveThisTrip: number,
@@ -190,7 +207,7 @@ export async function finalizeTripOnce(
   const res = await client.trip.updateMany({
     where: { id: tripId, status: "in_progress", incentive_earned: null },
     data: {
-      status: "completed",
+      status: "pending_approval",
       incentive_earned: incentiveThisTrip,
       ...breakdown.tripData,
     },
@@ -201,4 +218,72 @@ export async function finalizeTripOnce(
     await client.tripStop.updateMany({ where: { id }, data });
   }
   return true;
+}
+
+/**
+ * A trip's incentive may be approved only while it is `pending_approval` (all
+ * stops delivered, proposal computed, not yet paid). The admin may confirm the
+ * proposal as-is or edit the final amount — an edit REQUIRES a reason (the
+ * original proposal in `incentive_earned` is preserved). Pure guard, throws the
+ * canonical 400s so it is unit-testable without a DB.
+ */
+export function assertIncentiveApprovable(
+  trip: { status: string; incentive_earned: unknown },
+  finalAmount: number | undefined,
+  reason: string | undefined
+): void {
+  if (trip.status !== "pending_approval") {
+    throw new ApiError(
+      409,
+      "TRIP_NOT_PENDING_APPROVAL",
+      "Only a delivered trip awaiting approval can be approved."
+    );
+  }
+  if (finalAmount !== undefined) {
+    if (!Number.isFinite(finalAmount) || finalAmount < 0) {
+      throw new ApiError(400, "INVALID_AMOUNT", "The final amount must be zero or more.");
+    }
+    const proposed = Number(trip.incentive_earned ?? 0);
+    const edited = Math.round(finalAmount * 100) !== Math.round(proposed * 100);
+    if (edited && !(reason && reason.trim().length > 0)) {
+      throw new ApiError(400, "REASON_REQUIRED", "A reason is required when editing the final amount.");
+    }
+  }
+}
+
+export interface TripApproveClient {
+  trip: {
+    updateMany(args: {
+      where: { id: string; status: "pending_approval" };
+      data: Record<string, unknown>;
+    }): Promise<{ count: number }>;
+  };
+}
+
+/**
+ * APPROVE the incentive: flip pending_approval → completed and set the payable
+ * `incentive_final` (= the proposal, or an admin-edited amount + reason). The
+ * proposal `incentive_earned` is never overwritten. Write-once CAS on
+ * pending_approval — a concurrent approval loses. Returns true iff THIS caller
+ * approved. `proposedAmount` is the trip's stored `incentive_earned`; the final
+ * defaults to it when the admin doesn't edit.
+ */
+export async function approveTripIncentiveOnce(
+  client: TripApproveClient,
+  tripId: string,
+  opts: { proposedAmount: number; finalAmount?: number; reason?: string; adminId: string; approvedAt: Date }
+): Promise<boolean> {
+  const final = opts.finalAmount === undefined ? opts.proposedAmount : Math.round(opts.finalAmount * 100) / 100;
+  const edited = Math.round(final * 100) !== Math.round(opts.proposedAmount * 100);
+  const res = await client.trip.updateMany({
+    where: { id: tripId, status: "pending_approval" },
+    data: {
+      status: "completed",
+      incentive_final: final,
+      incentive_override_reason: edited ? (opts.reason ?? null) : null,
+      incentive_approved_at: opts.approvedAt,
+      incentive_approved_by: opts.adminId,
+    },
+  });
+  return res.count === 1;
 }

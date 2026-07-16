@@ -48,7 +48,7 @@ function ledgerDrops(stops: StopRow[], where: PriorDeliveredDropsWhere) {
     .filter((s) => s.stop_status === where.status)
     .filter((s) => s.delivered_at >= where.delivered_at.gte && s.delivered_at < where.delivered_at.lt)
     .filter((s) => s.driver_id === where.trip.driver_id)
-    .filter((s) => where.trip.status.in.includes(s.trip_status as "in_progress" | "completed"))
+    .filter((s) => where.trip.status.in.includes(s.trip_status as "in_progress" | "pending_approval" | "completed"))
     .filter((s) => s.trip_id !== where.trip.id.not)
     .sort((a, b) => a.delivered_at.getTime() - b.delivered_at.getTime())
     .map((s) => ({ zoneCode: s.zone_code, zonePoints: s.zone_points }));
@@ -93,9 +93,12 @@ describe("priorDeliveredDropsWhere — the ledger's semantics, pinned", () => {
     anchor,
   });
 
-  it("counts drops from in_progress AND completed trips (not completed-only)", () => {
-    expect(LEDGER_TRIP_STATUSES).toEqual(["in_progress", "completed"]);
-    expect(where.trip.status).toEqual({ in: ["in_progress", "completed"] });
+  it("counts drops from in_progress, pending_approval AND completed trips (not completed-only)", () => {
+    // pending_approval added with the POD-approval gate (16 Jul 2026): a
+    // delivered-but-unapproved trip's drops are physical facts on the road and
+    // can't un-deliver, so they must feed the day ledger like in_progress does.
+    expect(LEDGER_TRIP_STATUSES).toEqual(["in_progress", "pending_approval", "completed"]);
+    expect(where.trip.status).toEqual({ in: ["in_progress", "pending_approval", "completed"] });
   });
 
   it("only counts drops delivered before this group's first confirm ([dayStart, anchor))", () => {
@@ -195,6 +198,22 @@ describe("overlapping trips — the RM88→RM55 double-first-drop hole (MONEY)",
     ];
     const b = finalizeTrip(serial, "tB", "d1", 6);
     expect(b.dropPoints).toEqual([1]);
+    expect(b.incentiveThisTrip).toBe(11);
+  });
+
+  it("a pending_approval sibling's earlier drop feeds the ledger (POD-approval gate)", () => {
+    // Trip A delivered Ipoh at 10:00 and is now pending_approval (its POD is
+    // awaiting admin sign-off). B delivers Ipoh at 10:30. B must still see A's
+    // drop — approval only sets pay, it never un-delivers — so B is a repeat
+    // and the day's deduction is not re-applied. Without pending_approval in
+    // the ledger, both would look like the day's first drop again (RM88 bug).
+    const withPending: StopRow[] = [
+      { ...stops[0], trip_status: "pending_approval" }, // A delivered, awaiting approval
+      stops[1],
+    ];
+    const b = finalizeTrip(withPending, "tB", "d1", 6);
+    expect(b.dropPoints).toEqual([1]); // same-zone repeat
+    expect(b.deductionApplied).toBe(0); // deduction already spent on A
     expect(b.incentiveThisTrip).toBe(11);
   });
 

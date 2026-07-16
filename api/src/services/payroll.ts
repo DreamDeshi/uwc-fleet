@@ -1,4 +1,5 @@
 import { inMytMonth } from "../lib/myt";
+import { payableIncentive } from "./tripCompletion";
 
 /**
  * The clerk's month-end payroll sheet (audit part B): one row per driver with
@@ -21,7 +22,8 @@ export interface PayrollTripInput {
   pickup_datetime: Date;
   /** First delivery confirm — the pay-deciding instant the month bucket keys on. */
   delivered_at: Date | null;
-  incentive_earned: unknown; // Prisma Decimal | string | number | null
+  incentive_earned: unknown; // Prisma Decimal | string | number | null — the engine PROPOSAL
+  incentive_final?: unknown; // admin-approved payable amount; null on pre-approval-gate trips
 }
 
 export interface PayrollDriverInput {
@@ -73,7 +75,10 @@ export function buildPayrollRows(
           ticket_number: t.ticket_number,
           pickup_datetime: t.pickup_datetime,
           delivered_at: t.delivered_at,
-          incentive_earned: round2(Number(t.incentive_earned ?? 0)),
+          // The PAID amount: admin-approved final, or the engine proposal for
+          // grandfathered pre-gate trips (payableIncentive). The row field keeps
+          // its name — it is what payroll pays.
+          incentive_earned: round2(payableIncentive(t)),
         }));
       return {
         driver_id: d.id,

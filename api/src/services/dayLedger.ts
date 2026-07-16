@@ -36,8 +36,14 @@
 
 import type { Prisma } from "@prisma/client";
 
-/** Trip statuses whose delivered drops feed the day ledger. */
-export const LEDGER_TRIP_STATUSES = ["in_progress", "completed"] as const;
+// Trip statuses whose delivered drops feed the day ledger. `pending_approval`
+// is included (16 Jul 2026): a trip whose last stop is delivered but whose
+// incentive is awaiting admin approval still HAS those drops on the road — the
+// same "a delivered drop is a physical fact regardless of whether its trip has
+// finalized yet" argument as in_progress. It can't un-deliver either (approval
+// only sets the pay amount; it never reverses a delivery), so counting it keeps
+// the per-zone-per-day ledger correct for the driver's later trips that day.
+export const LEDGER_TRIP_STATUSES = ["in_progress", "pending_approval", "completed"] as const;
 
 // Concrete shape (rather than the wide Prisma input type) so tests can assert
 // the exact semantics; structurally assignable to Prisma.TripStopWhereInput.
@@ -46,7 +52,7 @@ export interface PriorDeliveredDropsWhere {
   delivered_at: { gte: Date; lt: Date };
   trip: {
     driver_id: string;
-    status: { in: ("in_progress" | "completed")[] };
+    status: { in: ("in_progress" | "pending_approval" | "completed")[] };
     id: { not: string };
   };
 }

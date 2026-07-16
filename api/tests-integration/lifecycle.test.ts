@@ -4,6 +4,7 @@ import {
   firstRouteTypeId,
   bookTrip,
   approveTrip,
+  approveIncentiveRaw,
   startTrip,
   arriveRaw,
   deliverRaw,
@@ -69,7 +70,10 @@ describe("FULL LIFECYCLE integration — book → assign → deliver → pay", (
     expect(arrived.status).toBe(200);
     expect((await prisma.tripStop.findUnique({ where: { id: stopId } }))!.status).toBe("arrived");
 
-    // ── DRIVER: POD + delivered → completed + pay finalized ─────────────
+    // ── DRIVER: POD + delivered → pending_approval + pay PROPOSED ────────
+    // Under the POD-approval gate (16 Jul 2026) delivering the last stop no
+    // longer completes the trip: it proposes the incentive and waits for admin
+    // sign-off. The money is computed and frozen but NOT yet payable.
     await prisma.tripStop.update({
       where: { id: stopId },
       data: { pod_photo: "test://pod.jpg", do_uploaded: true },
@@ -77,17 +81,29 @@ describe("FULL LIFECYCLE integration — book → assign → deliver → pay", (
     const delivered = await deliverRaw(driver, trip.id, stopId);
     expect(delivered.status).toBe(200);
 
+    const proposed = (await prisma.trip.findUnique({ where: { id: trip.id }, include: { stops: true } }))!;
+    expect(proposed.status).toBe("pending_approval");
+    expect(proposed.stops[0].status).toBe("delivered");
+    expect(proposed.stops[0].delivered_at).not.toBeNull();
+    expect(proposed.incentive_final).toBeNull(); // proposed, not yet payable
+
+    // ── PAY (proposal): A2 (6pts) − PLX deduction (2) = 4 pts × snapshot rate ─
+    const rate = num(proposed.rate_used);
+    expect(proposed.stops[0].points_awarded).toBe(6);
+    expect(proposed.deduction_applied).toBe(2);
+    expect(num(proposed.incentive_earned)).toBeCloseTo((6 - 2) * rate, 2);
+    if (proposed.off_peak === false) expect(num(proposed.incentive_earned)).toBe(44); // weekday-daytime
+
+    // ── ADMIN: approve the POD → completed + incentive_final set (payable) ─
+    const approveRes = await approveIncentiveRaw(admin, trip.id);
+    expect(approveRes.status).toBe(200);
     const done = (await prisma.trip.findUnique({ where: { id: trip.id }, include: { stops: true } }))!;
     expect(done.status).toBe("completed");
-    expect(done.stops[0].status).toBe("delivered");
-    expect(done.stops[0].delivered_at).not.toBeNull();
-
-    // ── PAY: A2 (6pts) − PLX deduction (2) = 4 points × the snapshot rate ─
-    const rate = num(done.rate_used);
-    expect(done.stops[0].points_awarded).toBe(6);
-    expect(done.deduction_applied).toBe(2);
-    expect(num(done.incentive_earned)).toBeCloseTo((6 - 2) * rate, 2);
-    if (done.off_peak === false) expect(num(done.incentive_earned)).toBe(44); // weekday-daytime figure
+    expect(num(done.incentive_final)).toBeCloseTo((6 - 2) * rate, 2); // approved == proposal
+    expect(num(done.incentive_earned)).toBeCloseTo((6 - 2) * rate, 2); // proposal preserved
+    expect(done.incentive_override_reason).toBeNull(); // not edited
+    expect(done.incentive_approved_by).toBeTruthy();
+    expect(done.incentive_approved_at).not.toBeNull();
 
     // ── The whole lifecycle is recorded in the status history ────────────
     const events = (
@@ -97,7 +113,15 @@ describe("FULL LIFECYCLE integration — book → assign → deliver → pay", (
         select: { event: true },
       })
     ).map((e) => e.event);
-    for (const e of ["booked", "assigned", "started", "stop_arrived", "stop_delivered", "completed"]) {
+    for (const e of [
+      "booked",
+      "assigned",
+      "started",
+      "stop_arrived",
+      "stop_delivered",
+      "incentive_approved",
+      "completed",
+    ]) {
       expect(events).toContain(e);
     }
 

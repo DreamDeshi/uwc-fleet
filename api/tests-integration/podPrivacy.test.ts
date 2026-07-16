@@ -49,9 +49,11 @@ describe("POD photo privacy", () => {
     const trip = await bookTrip(requestor, ["P1"], rt);
     await approveTrip(admin, trip.id, plx, PLX.plate);
     await startTrip(driver, trip.id);
-    await arriveAndDeliver(driver, trip.id, trip.stops[0].id); // → completed
+    await arriveAndDeliver(driver, trip.id, trip.stops[0].id); // → pending_approval
 
-    expect((await prisma.trip.findUnique({ where: { id: trip.id } }))!.status).toBe("completed");
+    // The POD locks the moment delivery is recorded (pending_approval) — the
+    // admin approves against this evidence, so it must not change under review.
+    expect((await prisma.trip.findUnique({ where: { id: trip.id } }))!.status).toBe("pending_approval");
 
     // A fake photo just satisfies multer's file check; the lock fires before any
     // Cloudinary call, so no upload happens.

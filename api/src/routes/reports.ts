@@ -14,7 +14,7 @@ import {
 } from "../lib/myt";
 import { ApiError } from "../lib/apiError";
 import { buildPayrollRows } from "../services/payroll";
-import { firstDeliveredAt, payAttributionInstant } from "../services/tripCompletion";
+import { firstDeliveredAt, payAttributionInstant, payableIncentive } from "../services/tripCompletion";
 import { attentionConfig, hoursSince } from "../services/attention";
 
 import { requireAuth } from "../middleware/auth";
@@ -171,6 +171,7 @@ router.get("/drivers", async (_req, res, next) => {
           select: {
             status: true,
             incentive_earned: true,
+            incentive_final: true,
             pickup_datetime: true,
             cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } },
             // All stops (not take:1): delivered_at across the whole trip feeds
@@ -213,10 +214,7 @@ router.get("/drivers", async (_req, res, next) => {
         const p = new Date(t.pickup_datetime);
         return p >= dayStart && p < dayEnd;
       }).length;
-      const incentiveThisMonth = monthTrips.reduce(
-        (sum, t) => sum + Number(t.incentive_earned ?? 0),
-        0
-      );
+      const incentiveThisMonth = monthTrips.reduce((sum, t) => sum + payableIncentive(t), 0);
 
       // on_trip ⇐ actually OUT on a trip (in_progress) — the only state that
       // blocks a new assignment. A driver with only scheduled trips is available.
@@ -362,6 +360,7 @@ router.get("/monthly", async (_req, res, next) => {
       select: {
         status: true,
         incentive_earned: true,
+        incentive_final: true,
         is_external: true,
         pickup_datetime: true,
         stops: { select: { delivered_at: true } },
@@ -402,7 +401,7 @@ router.get("/monthly", async (_req, res, next) => {
       b.trips += 1;
       if (t.status === "completed") {
         b.completed += 1;
-        b.incentive += Number(t.incentive_earned ?? 0);
+        b.incentive += payableIncentive(t);
       }
       if (t.is_external) b.external += 1;
     }
@@ -452,6 +451,7 @@ router.get("/payroll", async (req, res, next) => {
             ticket_number: true,
             pickup_datetime: true,
             incentive_earned: true,
+            incentive_final: true,
             stops: { select: { delivered_at: true } },
           },
         },
@@ -469,6 +469,7 @@ router.get("/payroll", async (req, res, next) => {
           pickup_datetime: t.pickup_datetime,
           delivered_at: firstDeliveredAt(t.stops),
           incentive_earned: t.incentive_earned,
+          incentive_final: t.incentive_final,
         })),
       })),
       bounds

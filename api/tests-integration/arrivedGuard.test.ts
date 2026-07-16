@@ -88,17 +88,18 @@ describe("ARRIVED-GUARD integration", () => {
   });
 
   it("ORDERING: a non-pending stop on a NO-LONGER-in_progress trip → INVALID_STATUS, not TRIP_NOT_STARTED", async () => {
-    // The outbox-critical case. Drive a trip all the way to completed (its stop
-    // is 'delivered', the trip is 'completed' — so BOTH guards would fire), then
-    // re-issue `arrived`. The stop-status check must win → INVALID_STATUS.
+    // The outbox-critical case. Drive a trip until its last stop is delivered
+    // (stop is 'delivered', trip is 'pending_approval' under the POD-approval
+    // gate — so BOTH guards would fire), then re-issue `arrived`. The
+    // stop-status check must win → INVALID_STATUS.
     const { requestor, admin, driver, rt, plx } = await setup();
     const trip = await bookTrip(requestor, ["P1"], rt);
     await approveTrip(admin, trip.id, plx, PLX_PLATE);
     await startTrip(driver, trip.id);
-    await arriveAndDeliver(driver, trip.id, trip.stops[0].id); // → completed
+    await arriveAndDeliver(driver, trip.id, trip.stops[0].id); // → pending_approval
 
     const completed = (await prisma.trip.findUnique({ where: { id: trip.id } }))!;
-    expect(completed.status).toBe("completed"); // trip is NOT in_progress…
+    expect(completed.status).toBe("pending_approval"); // trip is NOT in_progress…
 
     const res = await arriveRaw(driver, trip.id, trip.stops[0].id);
     expect(res.status).toBe(400);

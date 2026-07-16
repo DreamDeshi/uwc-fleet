@@ -165,7 +165,10 @@ export async function startTrip(driverToken: string, tripId: string): Promise<Fl
 
 /**
  * Arrive at a stop, satisfy the POD gate (stubbed photo), then mark delivered.
- * Delivering the LAST stop triggers finalization (incentive computation).
+ * Delivering the LAST stop PROPOSES the incentive and moves the trip to
+ * `pending_approval` (POD-approval gate, 16 Jul 2026) — the incentive is
+ * computed and frozen in `incentive_earned` but NOT yet payable. Use
+ * `approveIncentive` (or `arriveDeliverApprove`) to reach `completed`.
  */
 export async function arriveAndDeliver(
   driverToken: string,
@@ -189,6 +192,43 @@ export async function arriveAndDeliver(
     .send({ action: "delivered", stop_id: stopId });
   if (delivered.status !== 200) throw new Error(`delivered failed: ${delivered.status} ${delivered.text}`);
   return delivered.body;
+}
+
+/** Admin approves a pending_approval trip's incentive — RAW response. Omit
+ *  body to confirm the proposal as-is; pass {final_amount, reason} to edit. */
+export function approveIncentiveRaw(
+  adminToken: string,
+  tripId: string,
+  body: { final_amount?: number; reason?: string } = {}
+) {
+  return api()
+    .patch(`/api/v1/trips/${tripId}/approve-incentive`)
+    .set(auth(adminToken))
+    .send(body);
+}
+
+/** Approve a pending_approval trip → completed (throws on non-200). */
+export async function approveIncentive(
+  adminToken: string,
+  tripId: string,
+  body: { final_amount?: number; reason?: string } = {}
+): Promise<FlowTrip> {
+  const res = await approveIncentiveRaw(adminToken, tripId, body);
+  if (res.status !== 200) throw new Error(`approve failed: ${res.status} ${res.text}`);
+  return res.body;
+}
+
+/** Deliver the last stop AND approve it → the trip reaches `completed` with the
+ *  proposal paid as `incentive_final`. Restores the pre-gate one-call "delivery
+ *  finalizes" behaviour for tests that only care about the terminal paid state. */
+export async function arriveDeliverApprove(
+  driverToken: string,
+  adminToken: string,
+  tripId: string,
+  stopId: string
+): Promise<FlowTrip> {
+  await arriveAndDeliver(driverToken, tripId, stopId);
+  return approveIncentive(adminToken, tripId);
 }
 
 /** Sorted stops (by sequence) — the create response order isn't guaranteed. */

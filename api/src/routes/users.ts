@@ -16,7 +16,7 @@ import {
 } from "../lib/performanceScore";
 import { estimateTripDistanceKm } from "../lib/geo";
 import { currentMytMonthBounds, inMytMonth } from "../lib/myt";
-import { payAttributionInstant } from "../services/tripCompletion";
+import { payAttributionInstant, payableIncentive } from "../services/tripCompletion";
 
 const router = Router();
 
@@ -77,6 +77,7 @@ async function buildDriverPerformance() {
           status: true,
           pickup_datetime: true,
           incentive_earned: true,
+          incentive_final: true,
           stops: {
             orderBy: { sequence: "asc" },
             select: { delivered_at: true, consignee: { select: { zone_code: true } } },
@@ -99,10 +100,7 @@ async function buildDriverPerformance() {
       totalCompleted: completed.length,
       onTimeCompleted: completed.filter((t) => isTripOnTime(t.pickup_datetime, t.stops)).length,
       cancelled: d.trips_driven.filter((t) => t.status === "cancelled").length,
-      pointsThisMonth: completedThisMonth.reduce(
-        (sum, t) => sum + Number(t.incentive_earned ?? 0),
-        0
-      ),
+      pointsThisMonth: completedThisMonth.reduce((sum, t) => sum + payableIncentive(t), 0),
     };
     // Estimated round-trip km of this month's completed trips (zone-centroid
     // proxy, same basis as the driver earnings summary — not a billing figure).
