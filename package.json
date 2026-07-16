@@ -5,8 +5,7 @@
   "description": "UWC Trucking Management System — monorepo",
   "workspaces": [
     "api",
-    "mobile",
-    "admin"
+    "mobile"
   ],
   "scripts": {
     "dev:api": "npm run dev --workspace=api",
