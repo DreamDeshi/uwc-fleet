@@ -157,7 +157,12 @@ export function BookingFormScreen() {
   const [routeTypeId, setRouteTypeId] = useState<string | undefined>();
   const [stops, setStops] = useState<Consignee[]>([]);
   const [cargoType, setCargoType] = useState<"pallet" | "carton" | "others">("pallet");
-  const [palletQtys, setPalletQtys] = useState<number[]>([0, 0, 0, 0, 0]);
+  // Index-aligned with PALLET_SIZES — DERIVE the length, never hard-code it.
+  // This was [0, 0, 0, 0, 0] when there were five sizes; item 2 took the list
+  // to ten and left the array at five, so the five new sizes rendered blank,
+  // their +/− did nothing (updateQty's .map can't grow an array), and
+  // buildCargo dropped them silently because `undefined > 0` is false.
+  const [palletQtys, setPalletQtys] = useState<number[]>(() => PALLET_SIZES.map(() => 0));
   const [cartonQty, setCartonQty] = useState(0);
   const [othersText, setOthersText] = useState("");
   // Optional 4×4-pallet estimate for carton/Others cargo (blank → manual dispatch).
@@ -235,7 +240,7 @@ export function BookingFormScreen() {
     setRouteTypeId(undefined);
     setStops([]);
     setCargoType("pallet");
-    setPalletQtys([0, 0, 0, 0, 0]);
+    setPalletQtys(PALLET_SIZES.map(() => 0));
     setCartonQty(0);
     setOthersText("");
     setSizeEstimate("");
