@@ -1,5 +1,6 @@
-import type { Trip } from "../types";
+import type { Trip, TripStatus } from "../types";
 import { palletFactor } from "../../lib/pallets";
+import { assertNever } from "../../lib/tripStatus";
 
 export const ORIGIN_LABEL = "UWC Batu Kawan";
 
@@ -56,10 +57,36 @@ export function tripProgress(trip: Trip): number {
   return Math.round((delivered / trip.stops.length) * 100);
 }
 
-// Coarse grouping for the trip board.
-export function tripGroup(status: string): "pending" | "active" | "completed" | "cancelled" {
-  if (status === "pending") return "pending";
-  if (status === "assigned" || status === "in_progress" || status === "approved") return "active";
-  if (status === "completed") return "completed";
-  return "cancelled"; // cancelled | rejected
+// Coarse grouping for the trip board's four columns.
+//
+// The parameter is TripStatus, NOT `string`: it was `string`, which meant no
+// exhaustiveness check was even possible and the trailing `return "cancelled"`
+// silently absorbed anything it did not recognise. When item 9 added
+// `pending_approval`, that fallback filed successfully DELIVERED trips into the
+// CANCELLED column of the dispatch board — the screen an admin works from all
+// day. Live in prod since the 17 Jul deploy.
+export function tripGroup(status: TripStatus): "pending" | "active" | "completed" | "cancelled" {
+  switch (status) {
+    case "pending":
+      return "pending";
+    case "approved":
+    case "assigned":
+    case "in_progress":
+      return "active";
+    // The goods arrived. `pending_approval` is delivered work whose incentive is
+    // waiting on an admin — it belongs with completed trips, not with failures.
+    // Approving it is done from the dedicated POD Approvals screen, not here.
+    case "pending_approval":
+    case "completed":
+      return "completed";
+    case "cancelled":
+    case "rejected":
+      return "cancelled";
+    default:
+      // NOT a catch-all — `cancelled`/`rejected` are spelled out above precisely
+      // so this narrows to `never`. A 9th TripStatus now fails the build instead
+      // of being quietly filed as cancelled, which is the exact bug this
+      // function shipped.
+      return assertNever(status, "TripStatus");
+  }
 }

@@ -431,6 +431,7 @@
       "approved": "Approved",
       "assigned": "Assigned",
       "in_progress": "In Progress",
+      "pending_approval": "Awaiting Approval",
       "completed": "Completed",
       "cancelled": "Cancelled",
       "rejected": "Rejected"

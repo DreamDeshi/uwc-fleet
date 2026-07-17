@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { totalPallets } from "./trip";
-import type { Trip } from "../types";
+import { totalPallets, tripGroup } from "./trip";
+import { tripStatusColor, tripStatusLabelKey } from "../theme";
+import en from "../../i18n/en.json";
+import ms from "../../i18n/ms.json";
+import zh from "../../i18n/zh.json";
+import type { Trip, TripStatus } from "../types";
+
+const ALL_STATUSES: TripStatus[] = [
+  "pending",
+  "approved",
+  "rejected",
+  "assigned",
+  "in_progress",
+  "pending_approval",
+  "completed",
+  "cancelled",
+];
 
 /**
  * The pallet→4×4 conversion is duplicated across four files (api/src/lib/pallets,
@@ -51,5 +66,59 @@ describe("totalPallets — 4×4-equivalents (mirrors api/src/lib/pallets.ts)", (
         ])
       )
     ).toBe(8.25);
+  });
+});
+
+describe("tripGroup — the dispatch board's four columns", () => {
+  it("REGRESSION: a delivered trip awaiting POD approval is NOT filed as cancelled", () => {
+    // The defect: `tripGroup(status: string)` ended in a bare
+    // `return "cancelled"`, so item 9's new status was absorbed by the fallback
+    // and the board showed successfully DELIVERED trips in the CANCELLED
+    // column — on the screen an admin works from all day.
+    expect(tripGroup("pending_approval")).not.toBe("cancelled");
+    expect(tripGroup("pending_approval")).toBe("completed");
+  });
+
+  it("groups every status the way the board expects", () => {
+    expect(tripGroup("pending")).toBe("pending");
+    expect(tripGroup("approved")).toBe("active");
+    expect(tripGroup("assigned")).toBe("active");
+    expect(tripGroup("in_progress")).toBe("active");
+    expect(tripGroup("pending_approval")).toBe("completed");
+    expect(tripGroup("completed")).toBe("completed");
+    expect(tripGroup("cancelled")).toBe("cancelled");
+    expect(tripGroup("rejected")).toBe("cancelled");
+  });
+
+  it("only files genuine failures under cancelled", () => {
+    const cancelled = ALL_STATUSES.filter((s) => tripGroup(s) === "cancelled");
+    expect(cancelled.sort()).toEqual(["cancelled", "rejected"]);
+  });
+});
+
+describe("admin status badge — colour and label exist for EVERY status", () => {
+  // These two maps have no type relationship to TripStatus that TypeScript can
+  // enforce end-to-end: tripStatusColor is now keyed on the union (so tsc
+  // covers it), but the i18n JSON is just JSON — a missing key there compiles
+  // fine and renders the raw enum. That is exactly what shipped: an admin saw
+  // the literal text "PENDING_APPROVAL" on the board in all three languages.
+  it.each(ALL_STATUSES)("tripStatusColor has an entry for %s", (status) => {
+    expect(tripStatusColor[status]).toBeDefined();
+  });
+
+  const bundles: Array<[string, Record<string, unknown>]> = [
+    ["en", en as Record<string, unknown>],
+    ["ms", ms as Record<string, unknown>],
+    ["zh", zh as Record<string, unknown>],
+  ];
+
+  it.each(bundles)("%s has an admin.status label for every status", (_lang, bundle) => {
+    const labels = (bundle.admin as { status: Record<string, string> }).status;
+    for (const status of ALL_STATUSES) {
+      const key = tripStatusLabelKey(status).replace("admin.status.", "");
+      expect(labels[key], `missing admin.status.${status}`).toBeTruthy();
+      // A label that is just the enum echoed back is not a translation.
+      expect(labels[key]).not.toBe(status);
+    }
   });
 });

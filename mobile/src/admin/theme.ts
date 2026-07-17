@@ -5,6 +5,7 @@
 // forms: shadows as style objects (shadow* + elevation), gradients as
 // color-stop tuples for expo-linear-gradient.
 import type { ViewStyle } from "react-native";
+import type { TripStatus } from "./types";
 
 export const colors = {
   blue: "#003087", // Corporate Blue
@@ -101,11 +102,23 @@ export const kpiShadow: Record<"blue" | "yellow" | "green" | "red", ViewStyle> =
 // assigned blue → in-progress violet → completed green; cancelled gray,
 // rejected red) so a glance at the board separates them without reading —
 // the label text is always present, so color is never the only signal.
-export const tripStatusColor: Record<string, { bg: string; fg: string; border: string; dot: string }> = {
+// Keyed on TripStatus, NOT Record<string, …>. A string-keyed map yields
+// `undefined` for a status it has no entry for, and TripStatusBadge fell back to
+// the `pending` swatch — so when item 9 added `pending_approval` this map went
+// on compiling while painting delivered trips AMBER, as if they were still
+// awaiting admin review. Keying on the union makes a missing status a compile
+// error instead.
+export const tripStatusColor: Record<TripStatus, { bg: string; fg: string; border: string; dot: string }> = {
   pending: { bg: "#FFF3D6", fg: "#A16207", border: "#F0D98A", dot: "#F59E0B" },
   approved: { bg: colors.tealTint, fg: colors.teal, border: "#A7DED6", dot: "#14B8A6" },
   assigned: { bg: "#E8F0FE", fg: "#1D4ED8", border: "#BBD2F5", dot: "#2563EB" },
   in_progress: { bg: colors.violetTint, fg: colors.violet, border: "#D5C8F7", dot: "#8B5CF6" },
+  // Delivered; incentive proposed, awaiting POD approval. The GREEN family —
+  // the goods arrived — with a deeper dot than `completed` so the two are
+  // distinguishable at a glance on the board without implying a failure. Not
+  // orange (the 7 Jul ruling reserves it for offline/queued) and not grey (that
+  // is `cancelled`). The label carries the real distinction.
+  pending_approval: { bg: colors.greenTint, fg: "#2E7D32", border: "#CCE7C9", dot: "#2A7F24" },
   completed: { bg: colors.greenTint, fg: "#2E7D32", border: "#CCE7C9", dot: colors.green },
   cancelled: { bg: "#F3F4F6", fg: "#4B5563", border: "#E5E7EB", dot: "#9CA3AF" },
   rejected: { bg: colors.redTint, fg: "#C62828", border: "#F3C2C0", dot: colors.red },
@@ -113,6 +126,13 @@ export const tripStatusColor: Record<string, { bg: string; fg: string; border: s
 
 // Status labels are i18n'd in the in-app admin (admin.status.*) — unlike the
 // web admin's hardcoded English map. Use tripStatusLabelKey with t().
-export function tripStatusLabelKey(status: string): string {
+//
+// TripStatus, not `string`: the key is built by interpolation, so a status with
+// no `admin.status.*` entry produces a key that resolves to nothing and the
+// badge renders the raw enum. That is what shipped — an admin saw the literal
+// text "PENDING_APPROVAL" on the board, in all three languages. Narrowing the
+// parameter does not by itself prove the i18n key exists (JSON has no type
+// relationship to the union), so admin.status is covered by a test instead.
+export function tripStatusLabelKey(status: TripStatus): string {
   return `admin.status.${status}`;
 }

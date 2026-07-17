@@ -431,6 +431,7 @@
       "approved": "Diluluskan",
       "assigned": "Ditugaskan",
       "in_progress": "Dalam Perjalanan",
+      "pending_approval": "Menunggu Kelulusan",
       "completed": "Selesai",
       "cancelled": "Dibatalkan",
       "rejected": "Ditolak"

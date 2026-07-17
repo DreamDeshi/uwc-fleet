@@ -22,6 +22,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { colors, font, radius, shadow, tripStatusColor, tripStatusLabelKey } from "../theme";
+import type { TripStatus } from "../types";
 import { initials } from "../lib/format";
 import { adminFontScope } from "../platform/webFonts";
 
@@ -225,9 +226,17 @@ export function Pill({
 // Status badge — louder than a generic Pill (uppercase micro-type, tinted
 // fill, real border, status dot). Label text via i18n; color is always
 // reinforcement, never the only channel.
-export function TripStatusBadge({ status }: { status: string }) {
+// `status: TripStatus`, not `string`. As `string` this prop threw away the
+// union at the component boundary, so nothing downstream could be checked: the
+// colour lookup fell back to the `pending` swatch and the label fell back to
+// the raw enum. A delivered trip awaiting POD approval rendered as an amber
+// badge reading "PENDING_APPROVAL".
+export function TripStatusBadge({ status }: { status: TripStatus }) {
   const { t } = useTranslation();
-  const c = tripStatusColor[status] ?? tripStatusColor.pending;
+  // No `?? tripStatusColor.pending` fallback: tripStatusColor is keyed on
+  // TripStatus, so every status resolves by construction. The fallback was not
+  // defensive — it was the thing that hid the missing entry.
+  const c = tripStatusColor[status];
   return (
     <View
       style={{
