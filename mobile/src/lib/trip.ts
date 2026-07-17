@@ -51,7 +51,7 @@ export function cargoSummary(trip: Trip): string {
 // and stored on the trip. If admin edits a zone's points this can drift, which
 // is acceptable for an estimate.
 const ZONE_POINTS: Record<string, number> = {
-  P1: 3, P2: 1, P3: 3, K1: 3, K2: 4, A1: 5, A2: 6, JH: 8, SL: 8,
+  P1: 3, P2: 1, P3: 3, K1: 3, K2: 4, A1: 5, A2: 6,
 };
 
 // Malaysia time is a fixed UTC+8 with no daylight saving, so we evaluate the

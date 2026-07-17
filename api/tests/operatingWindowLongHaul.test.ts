@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { estimateOperatingWindow } from "../src/services/operatingWindow";
 
 /**
- * Phase 2 (DISPATCH) — the 8-point long-haul window tier (KL / JH / SL).
+ * Phase 2 (DISPATCH) — the 8-point long-haul window tier (KL).
  *
  * The existing operatingWindow tests exercise 1-point (Juru) and 6-point (Ipoh)
  * legs; the newer long-haul zones score 8, which scales a drive leg to
@@ -16,7 +16,7 @@ function mytPickup(hour: number): Date {
   return new Date(Date.UTC(2026, 6, 15, hour - 8, 0));
 }
 
-describe("estimateOperatingWindow — 8-point long-haul leg (KL/JH/SL)", () => {
+describe("estimateOperatingWindow — 8-point long-haul leg (KL)", () => {
   it("scales a single 8-point leg to 120 minutes (170 total added)", () => {
     const est = estimateOperatingWindow({
       pickupDateTime: mytPickup(9),

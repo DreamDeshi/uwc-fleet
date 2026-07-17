@@ -74,8 +74,8 @@ export function finalizationRateParams(trip: {
  * when present, else the live DestinationRate points (legacy fallback).
  *
  * A zone with NEITHER is a configuration error in a money path — it used to
- * silently pay 1 point (so a mis-seeded KL/JH/SL zone would quietly underpay
- * an 8-point run). Now it throws ZONE_POINTS_MISSING so the trip cannot
+ * silently pay 1 point (so a mis-seeded KL zone would quietly underpay an
+ * 8-point run). Now it throws ZONE_POINTS_MISSING so the trip cannot
  * finalize at wrong pay; the fix is adding the zone's DestinationRate row.
  */
 export function dropZonePoints(

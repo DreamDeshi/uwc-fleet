@@ -33,13 +33,13 @@ One monorepo, two independently deployed Railway services (auto-deploy from GitH
 
 - **Schema:** `api/prisma/schema.prisma` — 20 models, PostgreSQL, money is always `Decimal` (never `Float`).
 - **Migrations:** `api/prisma/migrations/` — 11 SQL migrations, from `20260623123304_init` to `20260702200000_dedupe_destination_rates` (includes `rate_lock_snapshots`, `public_holiday_calendar`, `driver_leave_calendar`).
-- **Seeds:** `api/prisma/seed.ts` (full seed; reads `docs/uwc-spec.json` + the gitignored NDA consignee Excel + private driver-name overlay) · `seed-clean.ts` (reset to blank operational slate) · `seed-demo-trips.ts` (5 demo trips) · `seed-jh-sl-zones.ts` (KL/JH/SL extension zones).
+- **Seeds:** `api/prisma/seed.ts` (full seed; reads `docs/uwc-spec.json` + the gitignored NDA consignee Excel + private driver-name overlay) · `seed-clean.ts` (reset to blank operational slate) · `seed-demo-trips.ts` (5 demo trips).
 
 | Model | Purpose | Key relations |
 |---|---|---|
 | `User` | All 3 roles (admin/driver/requestor); phone = login ID; account `status` gate | → Department, → assigned `Truck` (1:1 for drivers) |
 | `Truck` | 7-truck fleet: capacity, weekday/off-peak claim rates, daily deduction, priority zones, doc expiries, operating hours | ← User (driver), ← Trip |
-| `Zone` | P1/P2/P3/K1/K2/A1/A2 + KL/JH/SL; adjacency via implicit self-relation join table (`ZoneAdjacency`) | ← Consignee, ← DestinationRate |
+| `Zone` | P1/P2/P3/K1/K2/A1/A2 + KL; adjacency via implicit self-relation join table (`ZoneAdjacency`) | ← Consignee, ← DestinationRate |
 | `RouteType` | The 6 route types (Customer/Supplier/Inter-Plant × Delivery/Return) | ← Trip |
 | `DestinationRate` | Zone → incentive points table (11 bookable destinations) | → Zone |
 | `Trip` | A booking through its lifecycle (`pending → approved/assigned → in_progress → completed`); holds `incentive_earned` (per-trip **marginal**) + **rate-lock snapshot** columns + `auto_dispatch_failed` flag | → requestor/driver (User), → Truck, → RouteType |

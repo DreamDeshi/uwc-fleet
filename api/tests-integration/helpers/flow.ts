@@ -27,8 +27,8 @@ export async function firstRouteTypeId(token: string): Promise<string> {
 /**
  * A consignee in `zone`, created if the zone has none yet (via Prisma — test
  * setup, not the money/dispatch path). The synthetic seed covers the Penang/
- * Kedah/Perak zones + KL; JH/SL and any other zone are materialised on demand.
- * The zone must exist as a Zone row (all are seeded, incl. KL/JH/SL).
+ * Kedah/Perak zones + KL; any other zone is materialised on demand. The zone
+ * must exist as a Zone row (all spec zones are seeded, incl. KL).
  */
 export async function ensureConsigneeInZone(zone: string): Promise<{ id: string; zone_code: string }> {
   const existing = await prisma.consignee.findFirst({ where: { zone_code: zone, is_active: true } });

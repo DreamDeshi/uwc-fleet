@@ -8,9 +8,9 @@ import {
 } from "../src/services/dispatchEngine";
 import { estimateOperatingWindow } from "../src/services/operatingWindow";
 
-// Adjacency from the seed (Mr. Teh's email): P2↔K1, P2↔A1. KL/JH/SL are the
-// newer long-haul zones — out of the adjacency matrix (no neighbours), same as
-// the seed's ZONE_ADJACENCY, so an order there falls back to "any free truck".
+// Adjacency from the seed (Mr. Teh's email): P2↔K1, P2↔A1. KL is the newer
+// long-haul zone — out of the adjacency matrix (no neighbours), same as the
+// seed's ZONE_ADJACENCY, so an order there falls back to "any free truck".
 const ADJACENCY: Record<string, string[]> = {
   P1: [],
   P2: ["K1", "A1"],
@@ -20,8 +20,6 @@ const ADJACENCY: Record<string, string[]> = {
   A1: ["P2"],
   A2: [],
   KL: [],
-  JH: [],
-  SL: [],
 };
 
 // Real fleet capacities (Brief Section 2).
@@ -256,11 +254,11 @@ describe("autoDispatchFailureNote — the persisted failure reason", () => {
   });
 });
 
-describe("selectTruck — new long-haul zones (KL / JH / SL)", () => {
-  // These zones are out of every truck's coverage AND the adjacency matrix, so
-  // an order there falls back to tier 2 ("any free truck") — the smallest that
-  // fits. Previously untested; the ADJACENCY fixture above now includes them.
-  it.each(["KL", "JH", "SL"])(
+describe("selectTruck — long-haul zone (KL)", () => {
+  // KL is out of every truck's coverage AND the adjacency matrix, so an order
+  // there falls back to tier 2 ("any free truck") — the smallest that fits.
+  // Previously untested; the ADJACENCY fixture above includes it.
+  it.each(["KL"])(
     "assigns a %s order to the smallest fitting truck (no coverage, no adjacency)",
     (zone) => {
       const candidates = [

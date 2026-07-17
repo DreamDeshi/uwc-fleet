@@ -18,7 +18,7 @@ import {
  *
  * The seeded fleet (all cover the Penang/Kedah P-zones): PLX 2406 (16, the only
  * A1/A2 primary), PND 1888 (14, A1/A2 backup), PRJ/PQL/PPE 5292 (8), PRH 5292
- * (2). KL/JH/SL are long-haul zones no truck covers.
+ * (2). KL is a long-haul zone no truck covers.
  */
 
 async function assignedTruckMax(tripId: string): Promise<number> {
@@ -119,9 +119,9 @@ describe("DISPATCH integration — auto-dispatch engine", () => {
     });
   });
 
-  // ── New long-haul zones (KL / JH / SL) ────────────────────────────────────
-  describe("new long-haul zones (KL / JH / SL)", () => {
-    it.each(["KL", "JH", "SL"])(
+  // ── Long-haul zone (KL) ───────────────────────────────────────────────────
+  describe("long-haul zone (KL)", () => {
+    it.each(["KL"])(
       "dispatches a %s order (no truck covers it) and prices the drop at 8 points",
       async (zone) => {
         const [requestor, admin] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN)]);
@@ -135,7 +135,7 @@ describe("DISPATCH integration — auto-dispatch engine", () => {
         }))!;
         expect(after.status).toBe("assigned");
         expect(after.driver_id).not.toBeNull();
-        // The zone's points snapshotted at assignment — proves KL/JH/SL resolve
+        // The zone's points snapshotted at assignment — proves KL resolves
         // to 8 (not a silent 1pt / ZONE_POINTS_MISSING).
         expect(after.stops[0].zone_points).toBe(8);
       }

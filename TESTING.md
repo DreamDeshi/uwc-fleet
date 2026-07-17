@@ -79,7 +79,7 @@ independent without re-seeding the whole DB:
 | File | Focus |
 | --- | --- |
 | `money.test.ts` | per-zone-per-day ledger (RM44+RM11=RM55 through Postgres), midnight-straddle summation, rate-lock across a mid-day edit |
-| `dispatch.test.ts` | cargo-estimate consequence (unsized → manual, not smallest truck), capacity boundaries, KL/JH/SL long-haul, candidate filtering |
+| `dispatch.test.ts` | cargo-estimate consequence (unsized → manual, not smallest truck), capacity boundaries, KL long-haul, candidate filtering |
 | `guardLadder.test.ts` | manual-approve ladder — overload/leave not forcible, unroadworthy hard, permit/conflict forcible + audit rows |
 | `concurrency.test.ts` | real Serializable→409 under contention — double-assign, one-active-trip, reassign-vs-start, leave collision, ticket race, cancel/reject-vs-claim |
 | `arrivedGuard.test.ts` | the arrived guard + the outbox-critical `INVALID_STATUS`-before-`TRIP_NOT_STARTED` ordering |

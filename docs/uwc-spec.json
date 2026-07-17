@@ -21,7 +21,7 @@
       "destination_points are the first-trip-of-day point values per destination (the yellow 'trip incentive point' row).",
       "trucks[].priority_zones is the coverage of the truck's assigned driver (see driver_assignments, the primary source). '4 Wheel' has no driver in the workbook, so it has no priority zones.",
       "cargo.pallet_sizes[].factor is the agreed 4x4-equivalent capacity convention (mirrors api/src/lib/pallets.ts); the workbook lists the pallet sizes but not the factors.",
-      "Kuala Lumpur is zone code KL (8 points, the furthest) — a real spec destination, wired like the other zones. Johor & Selangor appear only in the REQUESTOR destination dropdown with no points or zone code in the rate sheet, so they are kept OUT of the authoritative datasets above and live in the separate 'extensions' block at the end of this file (added as 8-point JH/SL zones).",
+      "Kuala Lumpur is zone code KL (8 points, the furthest) — a real spec destination, wired like the other zones. Johor & Selangor were placeholder destinations (REQUESTOR dropdown only, no points or zone code in the rate sheet); Mr. Teh confirmed 16 Jul 2026 they won't be used, so the JH/SL placeholder zones were removed 18 Jul 2026 (this file's former 'extensions' block, the seed, and a data migration for any already-seeded rows).",
       "Rate reconciliation (2026-06-30): trucks[].weekday_rate / offpeak_rate / max_pallets were verified against Mr. Teh's authoritative INTERNAL LORRY RATE sheet — all 7 plates and both rate tiers match exactly.",
       "daily_deduction: CONFIRMED for all 7 plates by the authoritative INTERNAL LORRY RATE sheet ('Daily Deduction POINT' column in References/'TRUCK BOOKING SYSTEM (YS).xlsx') — PLX 2, PND 2, PRJ 3, PQL 3, PPE 3, PRH 2, 4 Wheel 2. These values match the sheet exactly; not a guess.",
       "4 Wheel (Generic): weekday AND off-peak rates are both 11 — CONFIRMED by the INTERNAL LORRY RATE sheet, which lists a 4 Wheel row (= 11) in BOTH the peak and off-peak tables (not a default). Still OPEN (a genuine gap the workbook itself leaves): '4 Wheel' has no assigned driver and no priority_zones in the workbook, so whether it is a dispatchable 7th truck or an external/standby fallback is undecided.",
@@ -117,17 +117,5 @@
     { "name": "Driver 4", "employee_no": "D004", "department": "Marketing", "truck": "PQL 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
     { "name": "Driver 5", "employee_no": "D005", "department": "Marketing", "truck": "PPE 1804", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
     { "name": "Driver 6", "employee_no": "D006", "department": "Marketing", "truck": "PRH 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2", "A1", "A2"], "priority_zones_raw": "ALL",            "notes": "If A1 & A2 with less than 2 pallets of 4x4, give the priority." }
-  ],
-
-  "extensions": {
-    "_note": "⚠ PLACEHOLDER / UNCONFIRMED — NOT authoritative spec data. Johor & Selangor appear in the REQUESTOR INTERFACE destination dropdown but carry NO zone code or incentive points in the INTERNAL LORRY RATE sheet. The 8-point values below are a TEST PLACEHOLDER (matching Kuala Lumpur, the long-haul reference) so JH/SL bookings score during testing instead of throwing ZONE_POINTS_MISSING. They MUST be replaced with Mr. Teh's real values before go-live and must not be mistaken for confirmed spec values. Seeded by seed.ts into the same Zone/DestinationRate tables as the spec zones (marked placeholder there too); kept in this separate 'extensions' block so the spec-vs-placeholder boundary stays clear.",
-    "zones": [
-      { "code": "JH", "coverage_area": "Johor" },
-      { "code": "SL", "coverage_area": "Selangor" }
-    ],
-    "destination_points": [
-      { "zone_code": "JH", "location_name": "Johor", "points": 8 },
-      { "zone_code": "SL", "location_name": "Selangor", "points": 8 }
-    ]
-  }
+  ]
 }
