@@ -11,6 +11,14 @@ import { prisma, resetDb, loginAs, api, auth, ADMIN } from "./helpers/harness";
 describe("PATCH /consignees/:id — address details", () => {
   beforeEach(async () => {
     await resetDb();
+    // resetDb() truncates TRANSACTIONAL data and re-ensures master data — and
+    // consignees are master data, so a row this file creates in one test
+    // survives into the next. Without this the list test below matched the
+    // LEAKED consignee from the first test (whose address_1 the first test had
+    // patched to "PLOT 88, …") instead of its own fresh one, and failed.
+    await prisma.consignee.deleteMany({
+      where: { company_name: { startsWith: "ADDRESS EDIT TEST" } },
+    });
   });
   afterAll(async () => {
     await prisma.$disconnect();
@@ -68,15 +76,16 @@ describe("PATCH /consignees/:id — address details", () => {
 
   it("list payload now carries the address fields (the editor prefills from it)", async () => {
     const admin = await loginAs(ADMIN);
-    await seedConsignee();
+    const c = await seedConsignee();
 
     const res = await api()
       .get("/api/v1/consignees?search=ADDRESS EDIT TEST")
       .set(auth(admin));
     expect(res.status).toBe(200);
-    const hit = res.body.find((r: { company_name_full?: string }) =>
-      r.company_name_full?.startsWith("ADDRESS EDIT TEST")
-    );
+    // Match on id, not the name prefix: the prefix cannot distinguish this row
+    // from another test's same-named one, which is exactly how this test used
+    // to read a stale address off the wrong record.
+    const hit = res.body.find((r: { id?: string }) => r.id === c.id);
     expect(hit).toBeTruthy();
     expect(hit.address_1).toBe("OLD LINE 1");
     expect(hit.postal_code).toBe("10000");
