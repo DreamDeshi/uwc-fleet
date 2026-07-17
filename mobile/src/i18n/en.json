@@ -843,7 +843,13 @@
       "needAttention_one": "{{count}} truck needs attention",
       "needAttention_other": "{{count}} trucks need attention",
       "fuelSub_one": "Total spend {{total}} across {{count}} truck",
-      "fuelSub_other": "Total spend {{total}} across {{count}} trucks"
+      "fuelSub_other": "Total spend {{total}} across {{count}} trucks",
+      "capacityDate": "Capacity date",
+      "capacityToday": "Today",
+      "capacityPrevDay": "Previous day",
+      "capacityNextDay": "Next day",
+      "loadingTitle": "Current loading",
+      "loadingNone": "Nothing loaded on this date"
     },
     "signOut": "Sign Out",
     "tabs": {

@@ -262,8 +262,38 @@ export interface Truck {
   driver: TripParty | null;
   current_load: number;
   current_route: string | null;
+  /**
+   * What MAKES UP current_load — one entry per trip aboard on the day being
+   * viewed, always summing to it (item 7b). The load bar says how full a truck
+   * is; this says with what, for whom, and from which ticket.
+   */
+  current_loading: TruckLoading[];
   trips_today: number;
   alerts: TruckAlert[];
+}
+
+export interface TruckLoading {
+  trip_id: string;
+  ticket_number: string;
+  status: TripStatus;
+  /** The assignment's pickup instant — "the date of assigment cargo". */
+  pickup_datetime: string;
+  /** The LAST stop's consignee company name; null if the trip has no stops. */
+  destination: string | null;
+  /** That stop's area, falling back to its zone code — the old route label. */
+  destination_area: string | null;
+  stop_count: number;
+  /** This trip's 4×4-equivalents; the entries sum to the truck's current_load. */
+  pallets: number;
+  cargo: TruckLoadingCargo[];
+}
+
+export interface TruckLoadingCargo {
+  /** "4×4"… for pallets, or "carton"/"custom" — there is no separate type column. */
+  pallet_type: string;
+  quantity: number;
+  estimated_pallets: number | null;
+  remark: string | null;
 }
 
 // Phase 5: a truck's latest real GPS fix (from GET /fleet/live).

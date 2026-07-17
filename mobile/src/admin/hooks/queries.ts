@@ -195,10 +195,24 @@ export function useCreateConsignee() {
   });
 }
 
-export function useTrucks() {
+/**
+ * The fleet, with each truck's load and loading detail for ONE MYT day.
+ *
+ * `date` ("YYYY-MM-DD" MYT) is item 7b — "let admin to select to show the cargo
+ * capacity based on different date". Omitted = today, the screen's long-standing
+ * behaviour, so every other caller is unaffected.
+ *
+ * The query key keeps its "trucks" prefix so the ~10 existing
+ * invalidateQueries({ queryKey: ["trucks"] }) calls still match every date's
+ * cache entry; keepPreviousData stops the fleet blanking out while a newly
+ * picked date loads.
+ */
+export function useTrucks(date?: string) {
+  const params = date ? { date } : {};
   return useQuery({
-    queryKey: ["trucks"],
-    queryFn: async () => (await api.get<Truck[]>("/trucks")).data,
+    queryKey: ["trucks", params],
+    queryFn: async () => (await api.get<Truck[]>("/trucks", { params })).data,
+    placeholderData: keepPreviousData,
   });
 }
 

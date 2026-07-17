@@ -831,7 +831,13 @@
       "valCost": "Kos (RM) mesti nombor positif.",
       "valOdometer": "Odometer (km) mesti nombor positif.",
       "logSaveFailed": "Tidak dapat menyimpan rekod minyak.",
-      "saveLog": "Simpan Rekod"
+      "saveLog": "Simpan Rekod",
+      "capacityDate": "Tarikh kapasiti",
+      "capacityToday": "Hari ini",
+      "capacityPrevDay": "Hari sebelumnya",
+      "capacityNextDay": "Hari seterusnya",
+      "loadingTitle": "Muatan semasa",
+      "loadingNone": "Tiada muatan pada tarikh ini"
     },
     "signOut": "Log Keluar",
     "tabs": {

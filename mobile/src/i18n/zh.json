@@ -831,7 +831,13 @@
       "valCost": "费用 (RM) 必须为正数。",
       "valOdometer": "里程表 (km) 必须为正数。",
       "logSaveFailed": "无法保存加油记录。",
-      "saveLog": "保存记录"
+      "saveLog": "保存记录",
+      "capacityDate": "运力日期",
+      "capacityToday": "今天",
+      "capacityPrevDay": "前一天",
+      "capacityNextDay": "后一天",
+      "loadingTitle": "当前装载",
+      "loadingNone": "该日期没有装载"
     },
     "signOut": "退出登录",
     "tabs": {

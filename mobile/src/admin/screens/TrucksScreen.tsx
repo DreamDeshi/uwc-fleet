@@ -21,9 +21,9 @@ import { LoadCapacityBar } from "../components/LoadCapacityBar";
 import { FuelPanel } from "../components/FuelPanel";
 import { DateField } from "../platform/datePicker";
 import { apiErrorMessage } from "../services/api";
-import { formatDate, formatMoney } from "../lib/format";
+import { formatDate, formatMoney, formatTime, mytDateKey } from "../lib/format";
 import { useLayoutMode } from "../hooks/useLayoutMode";
-import type { DocExpiry, ExpiryStatus, Truck, TruckAlert, TruckExpiryAlert } from "../types";
+import type { DocExpiry, ExpiryStatus, Truck, TruckAlert, TruckExpiryAlert, TruckLoading } from "../types";
 
 const STATUS_META: Record<string, { labelKey: string; bg: string; fg: string; dot: string }> = {
   active: { labelKey: "admin.trucks.statusActive", bg: colors.greenTint, fg: "#2E7D32", dot: colors.green },
@@ -35,10 +35,20 @@ const STATUS_META: Record<string, { labelKey: string; bg: string; fg: string; do
 type Filter = "all" | "active" | "idle" | "maintenance" | "retired";
 type Tab = "fleet" | "fuel";
 
+/** Shift a "YYYY-MM-DD" MYT key by whole days, staying in MYT. */
+function shiftDateKey(key: string, days: number): string {
+  const [y, m, d] = key.split("-").map(Number);
+  return mytDateKey(new Date(Date.UTC(y, m - 1, d + days, 12))); // noon: never trips a boundary
+}
+
 export function TrucksScreen() {
   const { t } = useTranslation();
   const mode = useLayoutMode();
-  const trucks = useTrucks();
+  // Which MYT day's capacity is on screen (item 7b). Opens on TODAY — same
+  // default as the Trips board, per Mr. Teh 16 Jul: "always show today date
+  // everyday we sign in".
+  const [date, setDate] = useState(() => mytDateKey(new Date()));
+  const trucks = useTrucks(date);
   const [tab, setTab] = useState<Tab>("fleet");
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
@@ -110,11 +120,15 @@ export function TrucksScreen() {
             return wide ? (
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
                 <SegmentedFilter<Filter> value={filter} onChange={setFilter} options={filterOptions} />
-                <SearchInput value={search} onChange={setSearch} placeholder={t("admin.trucks.searchPlaceholder")} />
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                  <CapacityDatePicker date={date} onChange={setDate} wide />
+                  <SearchInput value={search} onChange={setSearch} placeholder={t("admin.trucks.searchPlaceholder")} />
+                </View>
               </View>
             ) : (
               <View style={{ gap: 12 }}>
                 <ChipGrid<Filter> value={filter} onChange={setFilter} options={filterOptions} columns={2} />
+                <CapacityDatePicker date={date} onChange={setDate} />
                 <SearchInput value={search} onChange={setSearch} placeholder={t("admin.trucks.searchPlaceholder")} style={{ minWidth: 0, alignSelf: "stretch" }} />
               </View>
             );
@@ -140,6 +154,134 @@ export function TrucksScreen() {
       )}
     </ScrollView>
   );
+}
+
+/**
+ * Which day's capacity the fleet cards describe (item 7b: "let admin to select
+ * to show the cargo capacity based on different date").
+ *
+ * The ‹ › steppers matter more than the text field here: the actual job is
+ * "which day has room for this load", which means walking forward a day at a
+ * time, not typing dates. Today is one tap back from anywhere.
+ */
+function CapacityDatePicker({
+  date,
+  onChange,
+  wide = false,
+}: {
+  date: string;
+  onChange: (v: string) => void;
+  wide?: boolean;
+}) {
+  const { t } = useTranslation();
+  const today = mytDateKey(new Date());
+  const isToday = date === today;
+
+  return (
+    <View style={{ gap: 6, alignSelf: wide ? "auto" : "stretch" }}>
+      <Text style={{ fontSize: font.xs, color: colors.textMuted, fontWeight: "600" }}>
+        {t("admin.trucks.capacityDate")}
+      </Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        <Button
+          variant="outline"
+          onPress={() => onChange(shiftDateKey(date, -1))}
+        >
+          <Ionicons name="chevron-back" size={16} color={colors.text} />
+        </Button>
+        {/* Fixed width on wide keeps the row from reflowing as the date changes;
+            narrow lets it fill so the field stays tappable. */}
+        <View style={wide ? { width: 150 } : { flex: 1 }}>
+          <DateField value={date} onChange={onChange} />
+        </View>
+        <Button
+          variant="outline"
+          onPress={() => onChange(shiftDateKey(date, 1))}
+        >
+          <Ionicons name="chevron-forward" size={16} color={colors.text} />
+        </Button>
+        {!isToday ? (
+          <Button variant="outline" onPress={() => onChange(today)}>
+            {t("admin.trucks.capacityToday")}
+          </Button>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * What the truck is carrying on the selected day — item 7b's core ask: "show
+ * the current loading is assigned from which ticket, destination company name
+ * and cargo details" + "should show the date of assigment cargo as well".
+ *
+ * Rendered as stacked rows inside the truck card in BOTH layouts, never a
+ * table: the card is already half-width on wide, so a table here would be the
+ * horizontal-scroll-on-a-phone failure the standing ruling exists to prevent.
+ * Each row is one ticket.
+ */
+function CurrentLoading({ loading }: { loading: TruckLoading[] }) {
+  const { t } = useTranslation();
+
+  if (loading.length === 0) {
+    return (
+      <Text style={{ fontSize: font.xs, color: colors.textMuted, fontStyle: "italic" }}>
+        {t("admin.trucks.loadingNone")}
+      </Text>
+    );
+  }
+
+  return (
+    <View style={{ gap: 8 }}>
+      {loading.map((l) => (
+        <View
+          key={l.trip_id}
+          style={{
+            borderLeftWidth: 3,
+            borderLeftColor: l.status === "in_progress" ? colors.green : colors.blue,
+            paddingLeft: 8,
+            gap: 2,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <Text style={{ fontSize: font.xs, fontWeight: "700", color: colors.text }} numberOfLines={1}>
+              {l.ticket_number}
+            </Text>
+            <Text style={{ fontSize: font.xs, color: colors.textMuted }}>
+              {t("admin.trucks.palletsCount", { count: l.pallets })}
+            </Text>
+          </View>
+          {/* Destination company — the ask. A multi-drop run names its final
+              consignee and counts the rest, as the Trips board words it. */}
+          <Text style={{ fontSize: font.xs, color: colors.text }} numberOfLines={1}>
+            {l.destination ?? l.destination_area ?? "—"}
+            {l.stop_count > 1 ? ` +${l.stop_count - 1}` : ""}
+          </Text>
+          <Text style={{ fontSize: font.xs, color: colors.textMuted }} numberOfLines={2}>
+            {formatCargo(l.cargo, t)}
+          </Text>
+          {/* The assignment's own pickup date+time. */}
+          <Text style={{ fontSize: font.xs, color: colors.textMuted }}>
+            {formatDate(l.pickup_datetime)} · {formatTime(l.pickup_datetime)}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+type TFn = ReturnType<typeof useTranslation>["t"];
+
+/** "4×4 × 15, Carton × 3" — pallet sizes read verbatim, carton/custom named. */
+function formatCargo(cargo: TruckLoading["cargo"], t: TFn): string {
+  if (cargo.length === 0) return "—";
+  return cargo
+    .map((c) => {
+      if (c.pallet_type === "carton") return t("cargo.carton", { qty: c.quantity });
+      if (c.pallet_type === "custom") return t("cargo.custom");
+      return t("cargo.pallet", { size: c.pallet_type, qty: c.quantity });
+    })
+    .join(", ");
 }
 
 // ── FR-MT1: maintenance & document-expiry alerts panel ──────────────────
@@ -252,6 +394,16 @@ function TruckCard({ truck: tr, onManage }: { truck: Truck; onManage: () => void
 
       <View style={{ marginBottom: 14 }}>
         <LoadCapacityBar load={tr.current_load} capacity={tr.max_pallets} />
+      </View>
+
+      {/* What that bar is made of (item 7b). Directly under it on purpose: the
+          bar is the number admin queries, this is the answer to "made up of
+          what?" they previously had to open the Trips board to get. */}
+      <View style={{ marginBottom: 14, gap: 6 }}>
+        <Text style={{ fontSize: font.xs, color: colors.textMuted, fontWeight: "600" }}>
+          {t("admin.trucks.loadingTitle")}
+        </Text>
+        <CurrentLoading loading={tr.current_loading} />
       </View>
 
       <View style={{ flexDirection: "row", backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.md, overflow: "hidden", marginBottom: 12 }}>

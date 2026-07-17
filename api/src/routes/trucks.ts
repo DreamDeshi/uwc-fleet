@@ -5,7 +5,8 @@ import { ApiError } from "../lib/apiError";
 import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
-import { getTripDayStart, getTripDayEnd } from "../services/incentiveEngine";
+import { getTripDayStart, getTripDayEnd, mytDateKey } from "../services/incentiveEngine";
+import { mytDayBoundsForKey } from "../lib/myt";
 import { palletEquivalents } from "../lib/pallets";
 import { loadSpecTrucks } from "../lib/uwcSpec";
 import { planRateReset } from "../services/rateReset";
@@ -205,35 +206,72 @@ function expiryStatus(daysLeft: number): ExpiryStatus {
 }
 
 // ── GET /trucks — full fleet with driver, live load, doc-expiry alerts ──
-router.get("/", async (_req, res, next) => {
+//
+// ?date=YYYY-MM-DD (MYT) — which day's capacity to report (item 7b, Mr. Teh
+// 17 Jul 2026: "let admin to select to show the cargo capacity based on
+// different date"). Omitted, or malformed, means TODAY — the same default the
+// screen has always had, so every existing caller is unaffected. Malformed is
+// ignored rather than a 400, matching how GET /trips treats its date filters.
+router.get("/", async (req, res, next) => {
   try {
     const now = new Date();
-    const dayStart = getTripDayStart(now);
-    const dayEnd = getTripDayEnd(now);
+    const requestedKey = typeof req.query.date === "string" ? req.query.date : null;
+    const requestedBounds = requestedKey ? mytDayBoundsForKey(requestedKey) : null;
+    const dayStart = requestedBounds?.start ?? getTripDayStart(now);
+    const dayEnd = requestedBounds?.end ?? getTripDayEnd(now);
+    // Is the day being viewed the one happening now? Only then does cargo
+    // physically aboard a truck count toward it — see the where below.
+    const isToday = mytDateKey(dayStart) === mytDateKey(now);
 
     const trucks = await prisma.truck.findMany({
       orderBy: { plate: "asc" },
       include: {
         driver: { select: { id: true, name: true, phone: true } },
         trips: {
-          // Load shown on the card = what occupies the truck TODAY: cargo that
-          // is physically aboard (in_progress) plus today's assignments. A
-          // future day's assigned booking used to appear here, producing
-          // "Idle · 0 trips today" next to a non-zero load bar (Mr. Teh's
-          // 16 Jul 2026 screenshot) — capacity is per-day, so the card is too.
+          // Load shown on the card = what occupies the truck on the day being
+          // viewed: cargo physically aboard (in_progress) plus that day's
+          // assignments. A future day's assigned booking used to appear on
+          // TODAY's card, producing "Idle · 0 trips today" next to a non-zero
+          // load bar (Mr. Teh's 16 Jul 2026 screenshot) — capacity is per-day,
+          // so the card is too.
+          //
+          // in_progress counts only when TODAY is what's on screen: a trip in
+          // flight right now says nothing about a truck's free space next
+          // Tuesday, and counting it there would re-introduce the same
+          // wrong-day load the 16 Jul fix removed, just in the other direction.
           where: {
             OR: [
-              { status: "in_progress" },
-              { status: "assigned", pickup_datetime: { gte: dayStart, lt: dayEnd } },
+              ...(isToday ? [{ status: "in_progress" as const }] : []),
+              { status: "assigned" as const, pickup_datetime: { gte: dayStart, lt: dayEnd } },
             ],
           },
           select: {
             id: true,
             status: true,
-            cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } },
+            // ticket_number + pickup_datetime + the consignee's company name
+            // are what item 7b puts on the card ("show the current loading is
+            // assigned from which ticket, destination company name and cargo
+            // details" / "should show the date of assigment cargo as well").
+            // The trips were already being fetched for the load bar and then
+            // collapsed to two scalars — this only stops throwing the rest away.
+            ticket_number: true,
+            pickup_datetime: true,
+            cargo_details: {
+              select: {
+                // There is no separate cargo_type column — the type IS the
+                // pallet_type ("4×4"… for pallets, "carton"/"custom" for the
+                // unsized ones), so the client formats from this alone.
+                pallet_type: true,
+                quantity: true,
+                estimated_pallets: true,
+                remark: true,
+              },
+            },
             stops: {
               orderBy: { sequence: "asc" },
-              select: { consignee: { select: { area: true, zone_code: true } } },
+              select: {
+                consignee: { select: { company_name: true, area: true, zone_code: true } },
+              },
             },
           },
         },
@@ -250,8 +288,8 @@ router.get("/", async (_req, res, next) => {
     );
 
     const payload = trucks.map((t) => {
-      // Current load = 4×4-pallet-equivalents occupying the truck TODAY
-      // (in_progress + today's assignments — the include above is date-scoped).
+      // Current load = 4×4-pallet-equivalents occupying the truck on the day
+      // being viewed (the include above is date-scoped).
       const activeLoad = t.trips.reduce(
         (sum, trip) => sum + palletEquivalents(trip.cargo_details),
         0
@@ -261,6 +299,37 @@ router.get("/", async (_req, res, next) => {
         inProgress?.stops[0]?.consignee.area ??
         inProgress?.stops[0]?.consignee.zone_code ??
         null;
+
+      // What makes up that load, one entry per trip aboard (item 7b). The
+      // load bar answers "how full", this answers "with what, for whom, from
+      // which ticket" — the question admin had to open the Trips board to
+      // answer before. Same trips, same order, so the entries always sum to
+      // current_load above.
+      const currentLoading = t.trips.map((trip) => ({
+        trip_id: trip.id,
+        ticket_number: trip.ticket_number,
+        status: trip.status,
+        // The assignment's own pickup date — "the date of assigment cargo".
+        pickup_datetime: trip.pickup_datetime,
+        // Destination = the LAST stop's company (where the load ends up), with
+        // the earlier stops counted, mirroring how the Trips board words a
+        // multi-drop run. company_name is the ask; area/zone stay for the
+        // existing route label.
+        destination:
+          trip.stops[trip.stops.length - 1]?.consignee.company_name ?? null,
+        destination_area:
+          trip.stops[trip.stops.length - 1]?.consignee.area ??
+          trip.stops[trip.stops.length - 1]?.consignee.zone_code ??
+          null,
+        stop_count: trip.stops.length,
+        pallets: palletEquivalents(trip.cargo_details),
+        cargo: trip.cargo_details.map((c) => ({
+          pallet_type: c.pallet_type,
+          quantity: c.quantity,
+          estimated_pallets: c.estimated_pallets,
+          remark: c.remark,
+        })),
+      }));
 
       const docs = [
         { doc: "insurance" as const, expiry: t.insurance_expiry },
@@ -310,6 +379,7 @@ router.get("/", async (_req, res, next) => {
         driver: t.driver,
         current_load: activeLoad,
         current_route: currentRoute,
+        current_loading: currentLoading,
         trips_today: todayCount.get(t.plate) ?? 0,
         alerts,
       };
