@@ -161,7 +161,10 @@ model Truck {
   pending_rates_effective  String?
   priority_zones         String[]
   operating_hours_start  String    @default("07:00")
-  operating_hours_end    String    @default("18:00")
+  // 02:00 (not 18:00) since item 12 — the operating day WRAPS midnight, running
+  // 07:00 → 02:00 the next calendar day. A truck may still be given a
+  // conventional same-day window (end > start); operatingWindow.ts handles both.
+  operating_hours_end    String    @default("02:00")
   insurance_expiry       DateTime?
   permit_expiry          DateTime?
   road_tax_expiry        DateTime?

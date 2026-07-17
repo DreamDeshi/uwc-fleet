@@ -990,7 +990,7 @@
       ],
       "timeRatesTitle": "基于时间的费率",
       "weekdayCardTitle": "工作日 — 标准费率",
-      "weekdayCardBody": "周一至周五，正常运营时段 07:00–18:00。",
+      "weekdayCardBody": "周一至周五，正常运营时段 07:00–02:00。",
       "weekendCardTitle": "周末 / 假期 — 较高费率",
       "weekendCardBody": "周六、周日及马来西亚公共假期。"
     },

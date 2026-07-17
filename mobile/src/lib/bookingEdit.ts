@@ -1,13 +1,38 @@
 import type { CargoDetail } from "../types";
 
-// The booking form's quick pickers only offer whole hours 08:00–18:00 within
-// the next 7 days (see BookingFormScreen dayOptions/timeOptions). When a
-// booking is opened for EDITING, its stored pickup_datetime has to be reversed
-// into those buckets so an untouched pickup round-trips unchanged (the server
-// only enforces the not-in-the-past rule when the pickup actually CHANGED).
-export const PICKUP_MIN_HOUR = 8;
-export const PICKUP_MAX_HOUR = 18;
+// The booking form's quick pickers offer whole hours across the fleet operating
+// window within the next 7 days (see BookingFormScreen dayOptions/timeOptions).
+// When a booking is opened for EDITING, its stored pickup_datetime has to be
+// reversed into those buckets so an untouched pickup round-trips unchanged (the
+// server only enforces the not-in-the-past rule when the pickup actually
+// CHANGED).
+//
+// The window is 07:00 → 02:00 and WRAPS midnight (item 12, Mr. Teh 17 Jul 2026:
+// "can pickup time allow set until 2AM instead of 6pm"), so the offered hours
+// are a union of two halves, not a min..max range. Mirrors the server's
+// DEFAULT_WINDOW_START/END in api/src/services/operatingWindow.ts.
+//
+// The old bounds were 08..18, which ALSO never offered 07:00 even though the
+// server has always opened the window then — an hour of the fleet's day was
+// unbookable from the form. Starting the list at 07:00 closes that gap.
+export const PICKUP_WINDOW_START_HOUR = 7;
+export const PICKUP_WINDOW_END_HOUR = 2;
 export const PICKUP_MAX_DAY_OFFSET = 6;
+
+/**
+ * The bookable hours in OPERATING-DAY order: 07:00…23:00 then 00:00…02:00, so
+ * the picker reads the way the shift runs rather than jumping back to midnight.
+ * An hour is a valid pickup iff it appears here.
+ */
+export const PICKUP_HOURS: readonly number[] = [
+  ...Array.from({ length: 24 - PICKUP_WINDOW_START_HOUR }, (_, i) => PICKUP_WINDOW_START_HOUR + i),
+  ...Array.from({ length: PICKUP_WINDOW_END_HOUR + 1 }, (_, i) => i),
+];
+
+/** Is this whole hour inside the (wrapping) pickup window? */
+export function isPickupHour(hour: number): boolean {
+  return PICKUP_HOURS.includes(hour);
+}
 
 /**
  * Map a stored pickup to the form's {dayOffset, hour} buckets, or null when it
@@ -35,7 +60,7 @@ export function pickupToSlot(
 
   if (dayOffset < 0 || dayOffset > PICKUP_MAX_DAY_OFFSET) return null;
   const hour = pickup.getHours();
-  if (hour < PICKUP_MIN_HOUR || hour > PICKUP_MAX_HOUR) return null;
+  if (!isPickupHour(hour)) return null;
   if (pickup.getMinutes() !== 0) return null;
   return { dayOffset, hour };
 }

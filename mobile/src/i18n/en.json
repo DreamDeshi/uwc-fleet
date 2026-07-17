@@ -1004,7 +1004,7 @@
       ],
       "timeRatesTitle": "Time-Based Rates",
       "weekdayCardTitle": "Weekday — Standard Rate",
-      "weekdayCardBody": "Mon–Fri, normal operating window 07:00–18:00.",
+      "weekdayCardBody": "Mon–Fri, normal operating window 07:00–02:00.",
       "weekendCardTitle": "Weekend / Holiday — Higher Rate",
       "weekendCardBody": "Saturdays, Sundays & Malaysian public holidays."
     },

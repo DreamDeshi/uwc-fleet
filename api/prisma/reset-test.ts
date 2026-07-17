@@ -95,7 +95,7 @@ export async function restoreTruckDefaults(client: PrismaClient = prisma): Promi
         is_available: true,
         retired_at: null, // undo any soft-retire a fleet-CRUD test performed
         operating_hours_start: "07:00",
-        operating_hours_end: "18:00",
+        operating_hours_end: "02:00",
       },
     });
   }

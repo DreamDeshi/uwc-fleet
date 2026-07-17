@@ -2,9 +2,27 @@
  * Operating-window cutoff (Phase 3 — AUTO DISPATCH LOGIC A36–A38).
  *
  * Estimates when a delivery run would FINISH and flags routes that spill past
- * the truck's operating window (default 07:00–18:00), or whose pickup itself is
+ * the truck's operating window (default 07:00–02:00), or whose pickup itself is
  * outside the window. Pure (no DB, no Date.now()) so it is unit-testable; the
  * caller passes the pickup instant, the stop count, and the truck's window.
+ *
+ * WRAPPING WINDOWS: since item 12 (Mr. Teh, 17 Jul 2026 — "can pickup time
+ * allow set until 2AM instead of 6pm") the default window ends at 02:00, i.e.
+ * PAST midnight, so an operating day is 07:00 → 02:00 the next calendar day and
+ * the interval is a union of two halves rather than a simple [start, end] scan.
+ * A truck given a conventional same-day window (start < end) keeps exactly the
+ * old behaviour — see windowWraps/isWithinWindow.
+ *
+ * The window bounds BOTH the pickup and the estimated completion, which is one
+ * decision, not two: a pickup is valid inside the window, and the run must be
+ * done before the same operating day closes. Widening the end to 02:00 grants
+ * daytime runs far more slack than the old 18:00 (an evening long-haul now
+ * auto-dispatches where it used to be held), and it means a pickup close to
+ * 02:00 still trips completion_past_window — exactly as an 18:00 pickup did
+ * under the old window. ⚠ OPEN QUESTION for Mr. Teh: is 02:00 the latest a
+ * truck may LEAVE, or the time it must be BACK? This code assumes the latter
+ * (one shift-shaped window); if he means the former, the completion bound needs
+ * to become its own setting.
  *
  * Estimate (configurable via env, all minutes):
  *   estimated_completion = pickup
@@ -50,9 +68,13 @@ function baselineFromEnv(): number {
 }
 export const OP_DRIVE_POINTS_BASELINE = baselineFromEnv();
 
-// The default operating window (matches Truck.operating_hours_* seed + spec §8).
+// The default operating window (matches Truck.operating_hours_* default + spec §8).
+//
+// The end moved 18:00 → 02:00 on 17 Jul 2026 (Mr. Teh, item 12: "can pickup
+// time allow set until 2AM instead of 6pm"), which makes the window WRAP past
+// midnight: the operating day runs 07:00 → 02:00 the NEXT calendar day.
 export const DEFAULT_WINDOW_START = "07:00";
-export const DEFAULT_WINDOW_END = "18:00";
+export const DEFAULT_WINDOW_END = "02:00";
 
 /** Parse "HH:MM" → minutes-from-midnight. Returns `fallback` on malformed input. */
 export function parseHmToMinutes(hm: string | null | undefined, fallback: number): number {
@@ -80,13 +102,57 @@ function mytMinutesOfDay(date: Date): number {
   return myt.getUTCHours() * 60 + myt.getUTCMinutes();
 }
 
-/** The UTC instant of `windowEndMin` MYT on the SAME MYT day as `date`. */
-function windowEndInstant(date: Date, windowEndMin: number): Date {
+/**
+ * Does this window wrap past midnight (e.g. 07:00 → 02:00)? Strictly `end <
+ * start`; an end EQUAL to the start stays non-wrapping (a degenerate
+ * zero-length window) rather than silently meaning "open 24h".
+ */
+export function windowWraps(windowStartMin: number, windowEndMin: number): boolean {
+  return windowEndMin < windowStartMin;
+}
+
+/**
+ * Is a MYT time-of-day inside [start, end]? For a wrapping window the interval
+ * is the UNION of [start, 23:59] and [00:00, end] — the two halves of one
+ * operating day either side of midnight.
+ */
+export function isWithinWindow(minutesMyt: number, windowStartMin: number, windowEndMin: number): boolean {
+  return windowWraps(windowStartMin, windowEndMin)
+    ? minutesMyt >= windowStartMin || minutesMyt <= windowEndMin
+    : minutesMyt >= windowStartMin && minutesMyt <= windowEndMin;
+}
+
+/**
+ * The UTC instant at which the operating day CONTAINING `date` closes.
+ *
+ * Non-wrapping window (07:00–18:00): the end is `windowEndMin` on `date`'s own
+ * MYT day — the original behaviour, unchanged.
+ *
+ * Wrapping window (07:00–02:00): the operating day straddles midnight, so
+ * WHICH day's 02:00 closes it depends on which half `date` falls in —
+ *   • 07:00–23:59 (the evening half) → the shift started today and closes at
+ *     02:00 TOMORROW.
+ *   • 00:00–02:00 (the small-hours half) → this is the tail of the shift that
+ *     started at 07:00 YESTERDAY, so it closes at 02:00 TODAY.
+ * That is the answer to "a 2AM pickup belongs to which operating day?": the
+ * previous calendar day's. A time in neither half is outside the window
+ * entirely (the caller flags it); we close it on its own day so the estimate
+ * stays finite rather than throwing.
+ */
+function windowEndInstant(date: Date, windowStartMin: number, windowEndMin: number): Date {
   const myt = new Date(date.getTime() + MYT_OFFSET_MS);
-  // Date.UTC normalises an over-60 minutes field into the right hour/day.
+  const minutesMyt = myt.getUTCHours() * 60 + myt.getUTCMinutes();
+  const rollsToNextDay = windowWraps(windowStartMin, windowEndMin) && minutesMyt >= windowStartMin;
+  // Date.UTC normalises an over-60 minutes field (and a +1 day) into the right
+  // hour/day, including across month and year ends.
   return new Date(
-    Date.UTC(myt.getUTCFullYear(), myt.getUTCMonth(), myt.getUTCDate(), 0, windowEndMin) -
-      MYT_OFFSET_MS
+    Date.UTC(
+      myt.getUTCFullYear(),
+      myt.getUTCMonth(),
+      myt.getUTCDate() + (rollsToNextDay ? 1 : 0),
+      0,
+      windowEndMin
+    ) - MYT_OFFSET_MS
   );
 }
 
@@ -160,13 +226,17 @@ export function estimateOperatingWindow(input: OperatingWindowInput): OperatingW
   const completionMinutesMyt = mytMinutesOfDay(estimatedCompletion);
 
   // Two separate breach modes: a pickup already outside the window (e.g. booked
-  // for 19:00) fails immediately, no estimating needed…
-  const pickupOutsideWindow = pickupMinutesMyt < windowStartMin || pickupMinutesMyt > windowEndMin;
-  // …and a valid pickup whose run wouldn't get the driver home in time. We
-  // compare absolute instants against 18:00 on the PICKUP's MYT day, so a run
-  // that spills past midnight is still (correctly) "past the window".
+  // for 05:00, which is in neither half of a 07:00–02:00 day) fails
+  // immediately, no estimating needed…
+  const pickupOutsideWindow = !isWithinWindow(pickupMinutesMyt, windowStartMin, windowEndMin);
+  // …and a valid pickup whose run wouldn't get the driver home before the
+  // operating day closes. Comparing ABSOLUTE instants (not times-of-day) is
+  // what makes this correct across midnight: a 23:00 pickup on a 07:00–02:00
+  // window is measured against 02:00 TOMORROW, while a 01:00 pickup — the tail
+  // of yesterday's shift — is measured against 02:00 TODAY, an hour away.
   const completionPastWindow =
-    estimatedCompletion.getTime() > windowEndInstant(input.pickupDateTime, windowEndMin).getTime();
+    estimatedCompletion.getTime() >
+    windowEndInstant(input.pickupDateTime, windowStartMin, windowEndMin).getTime();
 
   const reason: OperatingWindowEstimate["reason"] = pickupOutsideWindow
     ? "pickup_outside_window"

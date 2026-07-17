@@ -159,7 +159,7 @@ Best-Fit Decreasing bin-packing per Mr. Teh's spec: smallest available truck tha
 
 A candidate conflicts when the same driver **or** truck has another trip in `{approved, assigned, in_progress}` whose pickup falls within a configurable buffer (`ASSIGNMENT_CONFLICT_BUFFER_MIN`, default 120 min). Manual assign returns `409 SCHEDULING_CONFLICT` with the clashing trips and supports an audited `force=true` "Assign anyway" override; auto-dispatch silently skips conflicted candidates.
 
-### Operating-window (07:00–18:00) check
+### Operating-window (07:00–02:00, wraps midnight) check
 - `api/src/services/operatingWindow.ts` — pure `estimateOperatingWindow()` (17 unit tests).
 
 Estimates completion as `pickup + load + Σ(zone-scaled drive per leg) + Σ(unload per stop)` (envs `OP_LOAD_MIN`/`OP_DRIVE_MIN_PER_LEG`/`OP_UNLOAD_MIN_PER_STOP`; drive time scales with the destination's zone points — Juru ≈15 min vs Ipoh ≈90 min). Compared in MYT against the **per-truck** `operating_hours_start/end`. Auto-dispatch skips + flags routes that would finish past the window; manual assign warns (`409 OPERATING_WINDOW`) with an audited override. Deliberately an estimate, not a routing API — no external dependency.

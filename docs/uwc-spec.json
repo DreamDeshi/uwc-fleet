@@ -10,8 +10,10 @@
     ],
     "operating_window": {
       "start": "07:00",
-      "end": "18:00",
-      "note": "Weekday operating hours (AUTO DISPATCH LOGIC). Off-peak rates apply on public holidays, Saturday/Sunday, and weekdays after 18:00 (INTERNAL LORRY RATE)."
+      "end": "02:00",
+      "wraps_midnight": true,
+      "note": "Operating hours (AUTO DISPATCH LOGIC). The end moved 18:00 -> 02:00 on 2026-07-17 (Mr. Teh item 12: 'can pickup time allow set until 2AM instead of 6pm'), so an operating day runs 07:00 to 02:00 the NEXT calendar day; a 00:00-02:00 pickup belongs to the previous calendar day's operating day. The window bounds both the pickup time and the estimated completion. OPEN QUESTION: whether 02:00 is the latest a truck may LEAVE or the time it must be BACK - the code assumes the latter.",
+      "rate_tier_note": "Distinct from the window: the PEAK rate band is the workbook's 'Weekday 8am - 6pm' (INTERNAL LORRY RATE). Off-peak rates apply on public holidays, Saturday/Sunday, and weekdays at/after 18:00 OR before 08:00 - the two rate tables partition the day, so the early-morning hours the widened window opens up are off-peak."
     },
     "incentive_formula": "incentive_RM = (accumulated_daily_trip_incentive_points - daily_deduction) x rate_per_point. Worked examples in the workbook: PLX 2406 assigned to Kulim earns 11 x 3 = RM 33; a driver accumulating 20 points in a day nets 20 - 2 = 18 points.",
     "notes": [

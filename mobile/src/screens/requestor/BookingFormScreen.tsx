@@ -35,7 +35,13 @@ import { LoadingState } from "../../components/States";
 import { useToast } from "../../components/Toast";
 import { pickDocumentImage, PickedPhoto } from "../../lib/photo";
 import { palletEquivalents, type PalletSize } from "../../lib/pallets";
-import { pickupToSlot, tripRemarks } from "../../lib/bookingEdit";
+import {
+  pickupToSlot,
+  tripRemarks,
+  PICKUP_HOURS,
+  PICKUP_WINDOW_START_HOUR,
+  PICKUP_WINDOW_END_HOUR,
+} from "../../lib/bookingEdit";
 import { formatDate, formatTime } from "../../lib/format";
 import { Consignee, Trip } from "../../types";
 
@@ -73,13 +79,23 @@ const truncateName = (name: string) =>
 // Default pickup = the NEXT bookable slot, never a fixed "Today 09:00": the
 // server rejects past pickups at create, so a fixed morning default would make
 // every same-day afternoon booking fail until the user noticed the time field.
-// Next full hour inside the 08:00–18:00 picker window; past 17:00, roll to
-// tomorrow 08:00.
+// Next full hour inside the 07:00–02:00 picker window.
+//
+// The window wraps midnight (item 12), so the roll-forward has three cases
+// rather than two. Note 23:00 + 1 = 24:00 is midnight TOMORROW: it stays a
+// valid pickup, but as hour 0 on dayOffset 1 — the one case where "the next
+// hour" changes the calendar day.
 function nextBookableSlot(): { dayOffset: number; hour: number } {
   const nextHour = new Date().getHours() + 1;
-  if (nextHour <= 8) return { dayOffset: 0, hour: 8 };
-  if (nextHour <= 18) return { dayOffset: 0, hour: nextHour };
-  return { dayOffset: 1, hour: 8 };
+  // Small hours (now 00:00–01:59 → next 01:00–02:00): still today's tail of
+  // yesterday's shift.
+  if (nextHour <= PICKUP_WINDOW_END_HOUR) return { dayOffset: 0, hour: nextHour };
+  // The closed gap (now 02:00–05:59 → next 03:00–06:59): wait for today's open.
+  if (nextHour <= PICKUP_WINDOW_START_HOUR) return { dayOffset: 0, hour: PICKUP_WINDOW_START_HOUR };
+  // Inside the day, up to and including 23:00.
+  if (nextHour <= 23) return { dayOffset: 0, hour: nextHour };
+  // 23:00 → midnight: hour 0 of the NEXT calendar day, still this shift.
+  return { dayOffset: 1, hour: 0 };
 }
 
 export function BookingFormScreen() {
@@ -167,10 +183,12 @@ export function BookingFormScreen() {
       }),
     []
   );
+  // 07:00…23:00 then 00:00…02:00 — PICKUP_HOURS is already in operating-day
+  // order, so the list reads the way the shift runs instead of wrapping back to
+  // midnight in the middle.
   const timeOptions = useMemo(
     () =>
-      Array.from({ length: 11 }, (_, i) => {
-        const h = 8 + i; // 08:00 – 18:00
+      PICKUP_HOURS.map((h) => {
         const d = new Date();
         d.setHours(h, 0, 0, 0);
         return { label: formatTime(d), value: String(h) };
