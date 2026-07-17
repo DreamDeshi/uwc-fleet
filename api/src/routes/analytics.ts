@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
+import { statusBreakdown } from "../lib/statusBreakdown";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 
@@ -62,31 +63,11 @@ router.get("/mine", requireRole("requestor"), async (req, res, next) => {
       if (idx !== undefined) monthly_activity[idx].count += 1;
     }
 
-    // ── FR-RS2: status_breakdown — counts by status. "approved" folds into
-    // pending and "rejected" into cancelled (mirroring the requestor app's own
-    // grouping), so the five buckets always sum to the requestor's total trips. ──
-    const status_breakdown = { completed: 0, pending: 0, assigned: 0, in_progress: 0, cancelled: 0 };
-    for (const t of trips) {
-      switch (t.status) {
-        case "completed":
-          status_breakdown.completed += 1;
-          break;
-        case "assigned":
-          status_breakdown.assigned += 1;
-          break;
-        case "in_progress":
-          status_breakdown.in_progress += 1;
-          break;
-        case "pending":
-        case "approved":
-          status_breakdown.pending += 1;
-          break;
-        case "cancelled":
-        case "rejected":
-          status_breakdown.cancelled += 1;
-          break;
-      }
-    }
+    // ── FR-RS2: status_breakdown — counts by status, five buckets that always
+    // sum to the requestor's total. The folds and the exhaustiveness guard live
+    // in lib/statusBreakdown so they can be unit-tested; this route had no test
+    // of any kind, which is how item 9 silently broke the sum contract. ──
+    const status_breakdown = statusBreakdown(trips.map((t) => t.status));
 
     // ── FR-RS3: top_destinations — 5 most frequent first-stop area/zone ──
     const destCounts = new Map<string, number>();
