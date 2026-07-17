@@ -13,7 +13,8 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { LoadingState, ErrorState, EmptyState } from "../../components/States";
 import { dayMonth, formatDate } from "../../lib/format";
 import { tripDestination, ORIGIN_LABEL } from "../../lib/trip";
-import { Trip, TripStatus } from "../../types";
+import { ACTIVE_STATUSES, DELIVERED_STATUSES } from "../../lib/tripStatus";
+import { Trip } from "../../types";
 
 // Tab screen, but it can also push BookingDetail onto the parent requestor stack.
 type Nav = CompositeNavigationProp<
@@ -22,8 +23,6 @@ type Nav = CompositeNavigationProp<
 >;
 type Rt = RouteProp<RequestorTabParamList, "BookingsTab">;
 type Filter = "all" | "active" | "completed";
-
-const ACTIVE: TripStatus[] = ["pending", "approved", "assigned", "in_progress"];
 
 export function BookingListScreen() {
   const { t } = useTranslation();
@@ -42,8 +41,10 @@ export function BookingListScreen() {
     const list = (trips ?? []).slice().sort(
       (a, b) => +new Date(b.created_at) - +new Date(a.created_at)
     );
-    if (filter === "active") return list.filter((tr) => ACTIVE.includes(tr.status));
-    if (filter === "completed") return list.filter((tr) => tr.status === "completed");
+    if (filter === "active") return list.filter((tr) => ACTIVE_STATUSES.includes(tr.status));
+    // DELIVERED_STATUSES, not `=== "completed"`: a booking awaiting POD approval
+    // has still been delivered, and belongs here rather than in no tab at all.
+    if (filter === "completed") return list.filter((tr) => DELIVERED_STATUSES.includes(tr.status));
     return list;
   }, [trips, filter]);
 

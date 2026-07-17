@@ -1,6 +1,8 @@
 // UWC design identity — ported from the Figma prototype + UWC_UI_BRIEF.md.
 // Single source of truth for colors, spacing, radius, shadow and type.
 
+import type { TripStatus } from "./types";
+
 export const colors = {
   blue: "#003087", // Corporate Blue (primary)
   blueDark: "#001a4d",
@@ -36,13 +38,23 @@ export const colors = {
 // rejected red) so a booking reads the same color on the driver's phone and
 // the dispatcher's board — but kept as SOLID, high-contrast fills because
 // drivers read these outdoors in sunlight. Labels always accompany color.
-export const statusColors: Record<string, { bg: string; fg: string }> = {
+// Keyed on TripStatus, NOT Record<string, …>. A `Record<string, …>` accepts any
+// key, so a status with no entry yields `undefined` and callers silently fall
+// back to the "pending" swatch — which is exactly how the admin app ended up
+// painting delivered-awaiting-approval trips amber. Keying on the union makes a
+// missing status a COMPILE error instead.
+export const statusColors: Record<TripStatus, { bg: string; fg: string }> = {
   pending: { bg: colors.yellow, fg: colors.navy },
   approved: { bg: colors.teal, fg: colors.white },
   assigned: { bg: colors.blue, fg: colors.white },
   in_progress: { bg: colors.violet, fg: colors.white },
   // Delivered, incentive proposed, awaiting admin POD approval (money held).
-  pending_approval: { bg: colors.orange, fg: colors.white },
+  // GREEN — same as completed — because the goods DID arrive; the outstanding
+  // step is an internal pay approval. The distinction is carried by the label
+  // ("Awaiting Approval") and, where money is at stake, by the Earnings pending
+  // badge. Deliberately not orange (the 7 Jul ruling reserves orange for
+  // offline/queued) and not grey (that reads as `cancelled`).
+  pending_approval: { bg: colors.green, fg: colors.white },
   completed: { bg: colors.green, fg: colors.white },
   rejected: { bg: colors.red, fg: colors.white },
   cancelled: { bg: colors.grey, fg: colors.white },

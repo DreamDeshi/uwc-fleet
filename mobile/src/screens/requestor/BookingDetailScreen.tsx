@@ -21,8 +21,8 @@ import { LiveTripMap } from "../../components/LiveTripMap";
 import { StatusTimeline } from "../../components/StatusTimeline";
 import { LoadingState, ErrorState } from "../../components/States";
 import { tripDestination, tripConsigneeName, cargoSummary, tripDestZone, ORIGIN_LABEL } from "../../lib/trip";
+import { bannerFor } from "../../lib/bookingBanner";
 import { formatDateTime, initials as nameInitials } from "../../lib/format";
-import { TripStatus } from "../../types";
 
 type Nav = NativeStackNavigationProp<RequestorStackParamList, "BookingDetail">;
 type Rt = RouteProp<RequestorStackParamList, "BookingDetail">;
@@ -202,7 +202,7 @@ export function BookingDetailScreen() {
       {/* Status banner (full-width strip on every layout) */}
       <View style={[styles.banner, { backgroundColor: banner.bg }]}>
         <Ionicons name={banner.icon} size={18} color={banner.fg} />
-        <Text style={[styles.bannerText, { color: banner.fg }]}>{banner.text(t)}</Text>
+        <Text style={[styles.bannerText, { color: banner.fg }]}>{t(banner.textKey)}</Text>
       </View>
 
       <ScrollView
@@ -343,29 +343,6 @@ function Detail({ k, v }: { k: string; v: string }) {
       <Text style={styles.detailVal}>{v}</Text>
     </View>
   );
-}
-
-function bannerFor(status: TripStatus): {
-  bg: string;
-  fg: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  text: (t: (k: string) => string) => string;
-} {
-  switch (status) {
-    case "pending":
-    case "approved":
-      return { bg: colors.yellow, fg: colors.navy, icon: "time-outline", text: (t) => t("bookingDetail.bannerPending") };
-    case "assigned":
-      return { bg: colors.green, fg: colors.white, icon: "checkmark-circle", text: (t) => t("bookingDetail.bannerAccepted") };
-    case "in_progress":
-      return { bg: colors.blue, fg: colors.white, icon: "navigate", text: (t) => t("bookingDetail.bannerInProgress") };
-    case "completed":
-      return { bg: colors.green, fg: colors.white, icon: "checkmark-done", text: (t) => t("bookingDetail.bannerCompleted") };
-    case "rejected":
-      return { bg: colors.red, fg: colors.white, icon: "close-circle", text: (t) => t("bookingDetail.bannerRejected") };
-    default:
-      return { bg: colors.red, fg: colors.white, icon: "close-circle", text: (t) => t("bookingDetail.bannerCancelled") };
-  }
 }
 
 const styles = StyleSheet.create({
