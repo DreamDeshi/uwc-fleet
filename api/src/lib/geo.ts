@@ -20,6 +20,7 @@ export const ZONE_COORDS: Record<string, LatLng> = {
   K2: { latitude: 5.647, longitude: 100.487 }, // Sungai Petani / Kuala Ketil
   A1: { latitude: 4.85, longitude: 100.7333 }, // Taiping
   A2: { latitude: 4.5975, longitude: 101.0901 }, // Ipoh
+  KL: { latitude: 3.139, longitude: 101.6869 }, // Kuala Lumpur (city centre)
 };
 
 export function zoneCoord(zoneCode?: string | null): LatLng {
