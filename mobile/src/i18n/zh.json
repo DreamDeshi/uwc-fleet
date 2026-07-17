@@ -179,7 +179,9 @@
     "tripsCompleted": "完成行程",
     "avgPerTrip": "平均 / 行程",
     "km": "公里",
-    "noChartData": "本周尚无收入记录。"
+    "noChartData": "本周尚无收入记录。",
+    "awaitingApproval": "等待审批",
+    "awaitingTotal": "{{amount}} 等待审批（{{count}} 个行程）"
   },
   "myPerformance": {
     "title": "我的表现",

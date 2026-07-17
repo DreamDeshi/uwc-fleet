@@ -179,7 +179,9 @@
     "tripsCompleted": "Perjalanan Selesai",
     "avgPerTrip": "Purata / Perjalanan",
     "km": "km",
-    "noChartData": "Tiada pendapatan direkodkan minggu ini lagi."
+    "noChartData": "Tiada pendapatan direkodkan minggu ini lagi.",
+    "awaitingApproval": "Menunggu kelulusan",
+    "awaitingTotal": "{{amount}} menunggu kelulusan ({{count}} perjalanan)"
   },
   "myPerformance": {
     "title": "Prestasi Saya",

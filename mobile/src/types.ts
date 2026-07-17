@@ -169,6 +169,15 @@ export interface IncentiveTrip {
   // attribution keyed on. Null on trips without a delivered stop record.
   delivered_at: string | null;
   incentive_earned: string | number | null;
+  /**
+   * True while this trip's incentive is PROPOSED but not yet approved by an
+   * admin (trip status `pending_approval`) — the money exists but is NOT
+   * payable. The server has always sent this (`GET /incentives/mine`) and
+   * excludes such trips from `summary.total`; this field was missing here, so
+   * the Earnings screen could not read it and rendered an unapproved proposal
+   * as if it were paid. Never present pending money as earned.
+   */
+  pending: boolean;
   truck_plate: string | null;
   route_type: string | null;
   destination: string | null;

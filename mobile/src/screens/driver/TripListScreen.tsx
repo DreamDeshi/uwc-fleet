@@ -10,12 +10,10 @@ import { Header } from "../../components/Header";
 import { TripCard } from "../../components/TripCard";
 import { LoadingState, ErrorState, EmptyState } from "../../components/States";
 import { cargoSummary } from "../../lib/trip";
-import { TripStatus } from "../../types";
+import { ACTIVE_STATUSES, DELIVERED_STATUSES } from "../../lib/tripStatus";
 
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripList">;
 type Filter = "all" | "active" | "completed";
-
-const ACTIVE_STATUSES: TripStatus[] = ["assigned", "in_progress", "approved", "pending"];
 
 export function TripListScreen() {
   const { t } = useTranslation();
@@ -28,7 +26,9 @@ export function TripListScreen() {
       (a, b) => +new Date(b.pickup_datetime) - +new Date(a.pickup_datetime)
     );
     if (filter === "active") return list.filter((tr) => ACTIVE_STATUSES.includes(tr.status));
-    if (filter === "completed") return list.filter((tr) => tr.status === "completed");
+    // DELIVERED_STATUSES, not `=== "completed"`: a trip awaiting POD approval is
+    // driven and delivered — it belongs here, not in no tab at all.
+    if (filter === "completed") return list.filter((tr) => DELIVERED_STATUSES.includes(tr.status));
     return list;
   }, [trips, filter]);
 

@@ -14,6 +14,7 @@ import { WeeklyEarningsChart } from "../../components/WeeklyEarningsChart";
 import { LoadingState, ErrorState, EmptyState } from "../../components/States";
 import { WebRefreshButton } from "../../components/WebRefreshButton";
 import { formatMoney, formatDate, formatDateTime, monthYear, weekdayShortNames } from "../../lib/format";
+import { isPaid, pendingCount, pendingTotal, weekBuckets } from "../../lib/earnings";
 
 export function EarningsScreen() {
   const { t, i18n } = useTranslation();
@@ -27,30 +28,26 @@ export function EarningsScreen() {
   const openTrip = (tripId: string) =>
     navigation.navigate("TripsTab", { screen: "TripDetails", params: { tripId } });
 
-  // Earnings per weekday for the current week (Mon-Sun), summed from completed
-  // trips. Drives the bar chart.
-  const week = useMemo(() => {
-    const buckets = [0, 0, 0, 0, 0, 0, 0];
-    if (!data) return buckets.map((amount, x) => ({ x, amount, label: WEEKDAYS[x] }));
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    const dow = (now.getDay() + 6) % 7; // Mon = 0
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - dow);
-    const nextMonday = new Date(monday);
-    nextMonday.setDate(monday.getDate() + 7);
-    for (const tr of data.trips) {
-      // Bucket on the pay-attribution instant — the delivery-confirm day the
-      // incentive is keyed on (server: payAttributionInstant), pickup only as
-      // the not-yet-delivered fallback. Bucketing on pickup made this chart
-      // disagree with the month total above it for any overnight trip.
-      const d = new Date(tr.delivered_at ?? tr.pickup_datetime);
-      if (d >= monday && d < nextMonday) {
-        buckets[(d.getDay() + 6) % 7] += Number(tr.incentive_earned ?? 0);
-      }
-    }
-    return buckets.map((amount, x) => ({ x, amount, label: WEEKDAYS[x] }));
-  }, [data, WEEKDAYS]);
+  // Earnings per weekday for the current week (Mon-Sun). PAID money only — a
+  // trip awaiting POD approval is excluded, which is what keeps this chart in
+  // agreement with the summary card above it (the server's `summary.total`
+  // already excludes pending). The arithmetic lives in lib/earnings so it can
+  // be unit-tested; it summed every trip — including unapproved ones — while
+  // the card showed the paid total, so one screen displayed two totals.
+  const week = useMemo(
+    () =>
+      weekBuckets(data?.trips ?? [], new Date()).map((amount, x) => ({
+        x,
+        amount,
+        label: WEEKDAYS[x],
+      })),
+    [data, WEEKDAYS]
+  );
+
+  // Money proposed but not yet approved. Shown as its own figure: never hidden
+  // from the driver, never counted as paid.
+  const awaiting = useMemo(() => pendingTotal(data?.trips ?? []), [data]);
+  const awaitingCount = useMemo(() => pendingCount(data?.trips ?? []), [data]);
 
   const weekMax = Math.max(...week.map((d) => d.amount), 0);
   const hasWeekData = weekMax > 0;
@@ -97,6 +94,21 @@ export function EarningsScreen() {
             <Text style={styles.summaryMeta}>
               {t("earnings.tripsCount", { count: data.summary.trip_count })}
             </Text>
+            {/* The headline figure is APPROVED money only (the server excludes
+                pending from summary.total). Money still awaiting approval is
+                surfaced here rather than folded in, so the driver can see what
+                is coming without it ever being presented as paid. */}
+            {awaitingCount > 0 ? (
+              <View style={styles.awaitingRow}>
+                <Ionicons name="hourglass-outline" size={12} color={colors.white} />
+                <Text style={styles.awaitingText}>
+                  {t("earnings.awaitingTotal", {
+                    amount: formatMoney(awaiting),
+                    count: awaitingCount,
+                  })}
+                </Text>
+              </View>
+            ) : null}
           </LinearGradient>
 
           {/* Weekly chart */}
@@ -173,8 +185,20 @@ export function EarningsScreen() {
                         </>
                       ) : null}
                     </View>
+                    {/* Money the admin has not approved yet is NOT paid. Without
+                        this badge an unapproved proposal was pixel-identical to
+                        approved pay. Grey, not orange: orange is reserved for
+                        offline/queued (7 Jul design ruling). */}
+                    {!isPaid(tr) ? (
+                      <View style={styles.pendingChip}>
+                        <Ionicons name="hourglass-outline" size={11} color={colors.textMuted} />
+                        <Text style={styles.pendingChipText}>{t("earnings.awaitingApproval")}</Text>
+                      </View>
+                    ) : null}
                   </View>
-                  <Text style={styles.rowRm}>{formatMoney(tr.incentive_earned)}</Text>
+                  <Text style={[styles.rowRm, !isPaid(tr) && styles.rowRmPending]}>
+                    {formatMoney(tr.incentive_earned)}
+                  </Text>
                   <Ionicons name="chevron-forward" size={16} color={colors.textFaint} style={{ marginLeft: 6 }} />
                 </TouchableOpacity>
               ))}
@@ -239,4 +263,22 @@ const styles = StyleSheet.create({
   rowMeta: { fontSize: 12, color: colors.textFaint },
   rowDot: { fontSize: 12, color: colors.textFaint, marginHorizontal: 1 },
   rowRm: { fontSize: 17, fontWeight: "800", color: colors.green },
+  // Unapproved money is muted, never the confident green of paid money.
+  rowRmPending: { color: colors.textMuted },
+  pendingChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    alignSelf: "flex-start",
+    marginTop: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pendingChipText: { fontSize: 11, fontWeight: "700", color: colors.textMuted },
+  awaitingRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 8 },
+  awaitingText: { fontSize: 12, fontWeight: "600", color: colors.white, opacity: 0.9 },
 });

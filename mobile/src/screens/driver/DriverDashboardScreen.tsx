@@ -15,6 +15,7 @@ import { TripCard } from "../../components/TripCard";
 import { LoadingState, ErrorState } from "../../components/States";
 import { formatMoney, formatDate, formatTime } from "../../lib/format";
 import { tripDestination, cargoSummary, estimateIncentive, ORIGIN_LABEL } from "../../lib/trip";
+import { DELIVERED_STATUSES } from "../../lib/tripStatus";
 import { Trip } from "../../types";
 
 type Nav = BottomTabNavigationProp<DriverTabParamList>;
@@ -42,8 +43,12 @@ export function DriverDashboardScreen() {
         (tr.status === "assigned" || tr.status === "in_progress") &&
         new Date(tr.pickup_datetime).toDateString() === todayStr
     ).length;
+    // DELIVERED_STATUSES, not `=== "completed"`: a trip awaiting POD approval is
+    // delivered. Filtering on `completed` alone meant the trip the driver had
+    // JUST finished vanished from his dashboard entirely — not active, not
+    // assigned, not recent — until an admin got around to approving it.
     const recentCompleted = list
-      .filter((tr) => tr.status === "completed")
+      .filter((tr) => DELIVERED_STATUSES.includes(tr.status))
       .sort((a, b) => +new Date(b.pickup_datetime) - +new Date(a.pickup_datetime))
       .slice(0, 3);
     return { active, assigned, recentCompleted, assignedToday };

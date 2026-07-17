@@ -179,7 +179,9 @@
     "tripsCompleted": "Trips Done",
     "avgPerTrip": "Avg / Trip",
     "km": "km",
-    "noChartData": "No earnings logged this week yet."
+    "noChartData": "No earnings logged this week yet.",
+    "awaitingApproval": "Awaiting approval",
+    "awaitingTotal": "{{amount}} awaiting approval ({{count}} trips)"
   },
   "myPerformance": {
     "title": "My Performance",
