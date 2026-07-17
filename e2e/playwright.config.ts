@@ -35,8 +35,12 @@ export default defineConfig({
     locale: "en-US",
     viewport: { width: 1440, height: 900 },
     // The driver ActiveTrip screen reads GPS; grant a fixed fix so the map/location
-    // hooks don't stall waiting on a permission prompt.
-    permissions: ["geolocation"],
+    // hooks don't stall waiting on a permission prompt. Camera is granted for the
+    // POD-photo capture: expo-image-picker's launchCameraAsync gates on
+    // requestCameraPermissionsAsync first, which headless Chromium denies by
+    // default, short-circuiting before the file input opens — a real device has
+    // a camera, so this models it rather than manufacturing a pass.
+    permissions: ["geolocation", "camera"],
     geolocation: { latitude: 5.34, longitude: 100.46 }, // Batu Kawan, Penang
   },
   projects: [
