@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { isPaid, pendingCount, pendingTotal, weekBuckets, weekStart } from "./earnings";
-import type { IncentiveTrip } from "../types";
+import { isPaid, pendingCount, pendingTotal, tripMoneyState, weekBuckets, weekStart } from "./earnings";
+import type { IncentiveTrip, TripStatus } from "../types";
 
 // Wednesday 2026-07-15, local time — mid-week so the fixtures land either side.
 const WEDNESDAY = new Date(2026, 6, 15, 12, 0, 0);
@@ -113,5 +113,43 @@ describe("weekStart", () => {
     expect(monday.getDate()).toBe(13);
     // Idempotent — Monday's own week starts on itself.
     expect(weekStart(monday).getTime()).toBe(monday.getTime());
+  });
+});
+
+describe("tripMoneyState — how a trip card shows money", () => {
+  it("REGRESSION: a pending_approval trip is 'awaiting', never 'final'", () => {
+    // The bug: TripCard treated `incentive_earned !== null` as finalized. A
+    // pending_approval trip HAS an amount (the engine writes the proposal at
+    // delivery), so it rendered in settled green with no chip — an unapproved
+    // proposal shown as paid. Classification is on status alone now, so a
+    // present amount cannot force it green.
+    expect(tripMoneyState({ status: "pending_approval" })).toBe("awaiting");
+    expect(tripMoneyState({ status: "pending_approval" })).not.toBe("final");
+  });
+
+  it("a completed trip is final (payable, green)", () => {
+    expect(tripMoneyState({ status: "completed" })).toBe("final");
+  });
+
+  it("an assigned/in-progress trip is an estimate", () => {
+    expect(tripMoneyState({ status: "assigned" })).toBe("estimate");
+    expect(tripMoneyState({ status: "in_progress" })).toBe("estimate");
+  });
+
+  it("cancelled/rejected show no money", () => {
+    expect(tripMoneyState({ status: "cancelled" })).toBe("none");
+    expect(tripMoneyState({ status: "rejected" })).toBe("none");
+  });
+
+  it("only 'final' is ever the confident green figure — green === paid, by construction", () => {
+    // The invariant a driver relies on. Because classification is status-only,
+    // this holds regardless of what incentive_earned contains — no stray amount
+    // on a non-completed status can turn it green.
+    const all: TripStatus[] = [
+      "pending", "approved", "rejected", "assigned",
+      "in_progress", "pending_approval", "completed", "cancelled",
+    ];
+    const green = all.filter((status) => tripMoneyState({ status }) === "final");
+    expect(green).toEqual(["completed"]);
   });
 });

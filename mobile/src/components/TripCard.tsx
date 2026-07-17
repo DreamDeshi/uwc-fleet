@@ -6,6 +6,7 @@ import { StatusBadge } from "./StatusBadge";
 import { useHolidaySet } from "../hooks/queries";
 import { dayMonth, formatMoney } from "../lib/format";
 import { tripDestination, estimateIncentive, ORIGIN_LABEL } from "../lib/trip";
+import { tripMoneyState } from "../lib/earnings";
 import { Trip } from "../types";
 
 // Shared compact trip row — date block + route + status badge + optional meta
@@ -32,13 +33,29 @@ export function TripCard({
   // in-progress trip must show the "Est." estimate (mirroring the dashboard's
   // AssignmentCard) — never a bare green "RM 0", which reads as "this run pays
   // nothing". Cancelled/rejected trips pay nothing and show no amount at all.
-  const finalized = trip.incentive_earned !== null && trip.incentive_earned !== undefined;
-  const estimate = finalized || dim ? null : estimateIncentive(trip, holidays);
-  const rmValue = finalized
-    ? formatMoney(trip.incentive_earned)
-    : estimate !== null
-      ? formatMoney(estimate)
-      : null;
+  //
+  // MONEY: `incentive_earned !== null` is NOT the same as "this is what you were
+  // paid". A pending_approval trip HAS an amount — the engine writes the
+  // proposal at delivery — but it is not payable until an admin approves the
+  // POD. Treating "has an amount" as finalized painted an unapproved proposal in
+  // the confident green of settled pay. It stayed hidden because such trips were
+  // absent from every driver list; surfacing them (so the driver can see the
+  // work he just finished) is what made this reachable, so the two land together.
+  // The decision itself lives in lib/earnings (pure, unit-tested) — this
+  // component cannot be imported by a test, and an untestable money rule is
+  // exactly how the bug survived.
+  const money = tripMoneyState(trip);
+  const awaiting = money === "awaiting";
+  const finalized = money === "final";
+  // No estimate for an awaiting trip: it already HAS a real proposed figure, and
+  // re-estimating would show a different number than the one under review.
+  const estimate = money === "estimate" ? estimateIncentive(trip, holidays) : null;
+  const rmValue =
+    finalized || awaiting
+      ? formatMoney(trip.incentive_earned)
+      : estimate !== null
+        ? formatMoney(estimate)
+        : null;
   return (
     <TouchableOpacity
       activeOpacity={0.85}
@@ -59,11 +76,16 @@ export function TripCard({
         {meta ? <Text style={styles.meta}>{meta}</Text> : null}
         {showIncentive && rmValue !== null ? (
           <View style={styles.rmWrap}>
-            {/* Estimated pay wears an amber chip so it can never be mistaken
-                for the finalized green figure (driver design goal). */}
+            {/* Any non-final figure wears a chip so it can never be mistaken for
+                the finalized green one (driver design goal). Amber "Est." = a
+                guess before delivery; GREY "Awaiting approval" = a real proposed
+                amount that an admin has not signed off. Grey, not orange —
+                orange is reserved for offline/queued (7 Jul design ruling). */}
             {!finalized ? (
-              <View style={styles.estChip}>
-                <Text style={styles.est}>{t("trip.est")}</Text>
+              <View style={[styles.estChip, awaiting && styles.awaitingChip]}>
+                <Text style={[styles.est, awaiting && styles.awaitingText]}>
+                  {awaiting ? t("trip.awaitingApproval") : t("trip.est")}
+                </Text>
               </View>
             ) : null}
             <Text
@@ -99,5 +121,8 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   est: { fontSize: 12, fontWeight: "800", color: "#A16207", textTransform: "uppercase", letterSpacing: 0.4 },
+  // Awaiting-approval money: grey, matching the Earnings breakdown chip.
+  awaitingChip: { backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border },
+  awaitingText: { color: colors.textMuted },
   rm: { fontSize: 17, fontWeight: "800", color: colors.green },
 });

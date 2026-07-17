@@ -16,7 +16,47 @@
 // carried was arithmetic, and it survived precisely because nothing could
 // assert on it.
 
-import type { IncentiveTrip } from "../types";
+import type { IncentiveTrip, TripStatus } from "../types";
+import { assertNever } from "./tripStatus";
+
+/**
+ * Which money figure a trip card/row should show, and how it must be dressed.
+ *
+ *  - "final"    → approved and payable: the confident green RM.
+ *  - "awaiting" → DELIVERED and proposed, but NOT approved: show the real amount,
+ *                 muted, with a chip. Never green.
+ *  - "estimate" → not delivered yet: an estimate, amber "Est." chip.
+ *  - "none"     → cancelled/rejected: no amount at all.
+ *
+ * Classification is on STATUS ALONE, deliberately NOT on whether an amount is
+ * present. The trap this closes: TripCard used `incentive_earned !== null` as
+ * "this is what you were paid". But the engine writes the PROPOSAL at delivery,
+ * so a pending_approval trip HAS an amount while the money is still held —
+ * "amount present" and "paid" are different things. Only a `completed` trip is
+ * payable, so "final" (green) is reachable ONLY from `completed`, by
+ * construction. A stray amount on any other status can no longer turn it green,
+ * and a 9th status fails the build here rather than defaulting into a pay state.
+ */
+export type TripMoneyState = "final" | "awaiting" | "estimate" | "none";
+
+export function tripMoneyState(trip: { status: TripStatus }): TripMoneyState {
+  switch (trip.status) {
+    case "cancelled":
+    case "rejected":
+      return "none";
+    case "pending_approval":
+      return "awaiting"; // delivered, proposed, not yet approved — never green
+    case "completed":
+      return "final"; // the ONLY payable state
+    case "pending":
+    case "approved":
+    case "assigned":
+    case "in_progress":
+      return "estimate"; // not delivered — an estimate, not a paid figure
+    default:
+      return assertNever(trip.status, "TripStatus");
+  }
+}
 
 /** Monday-first weekday index (Mon = 0 … Sun = 6). */
 export function mondayFirstIndex(d: Date): number {
