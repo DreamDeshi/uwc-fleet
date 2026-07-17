@@ -1,24 +1,20 @@
 import type { Trip } from "../types";
+import { palletFactor } from "../../lib/pallets";
 
 export const ORIGIN_LABEL = "UWC Batu Kawan";
 
 // 4×4-pallet-equivalent conversion (spec AUTO DISPATCH LOGIC — all capacity is
-// measured in 4×4 slots). Mirrors api/src/lib/pallets.ts; "×" is U+00D7 to match
-// the pallet sizes the booking form stores. Cartons/custom occupy no slot.
-const PALLET_FACTORS: Record<string, number> = {
-  "2×2": 0.25,
-  "3×4": 0.75,
-  "4×4": 1,
-  "4×8": 2,
-  "5×10": 3.125,
-};
-
-// Anything with no known footprint — carton/custom (Others), or an unrecognised
-// type on a legacy row — converts to 0 rather than a guessed slot. Mirrors
-// api/src/lib/pallets.ts: a guessed 1 under-counts any pallet bigger than 4×4.
-function palletFactor(palletType: string): number {
-  return PALLET_FACTORS[palletType] ?? 0;
-}
+// measured in 4×4 slots) comes from the shared mirror in ../../lib/pallets,
+// which tracks api/src/lib/pallets.ts.
+//
+// This module used to keep its OWN copy of the factor map — a third one, in the
+// same package as the mirror it duplicated. Item 2 (adding five footprints)
+// would have had to update all three in lockstep, and the failure mode of
+// missing this one is silent: an unknown type converts to 0, so admin capacity
+// figures would quietly under-count the new sizes while the booking form and
+// the server agreed. Importing removes the drift by construction.
+// Cartons/custom, and any unrecognised legacy type, still convert to 0 rather
+// than a guessed slot.
 
 export function firstStop(trip: Trip) {
   return [...trip.stops].sort((a, b) => a.sequence - b.sequence)[0];
@@ -36,9 +32,14 @@ export function tripConsigneeName(trip: Trip): string {
   return firstStop(trip)?.consignee.company_name ?? "—";
 }
 
+// NOTE this deliberately does NOT honour a carton/custom line's
+// `estimated_pallets` (unlike the server's palletEquivalents) — it is a display
+// figure for the admin cargo summary, counting only what has a real footprint.
+// 4 dp to match the shared rounding: the finest factor is 1/16 = 0.0625, which
+// 3 dp would corrupt to 0.063.
 export function totalPallets(trip: Trip): number {
   const total = trip.cargo_details.reduce((sum, c) => sum + palletFactor(c.pallet_type) * c.quantity, 0);
-  return Math.round(total * 1000) / 1000;
+  return Math.round(total * 10000) / 10000;
 }
 
 export function cargoSummary(trip: Trip): string {

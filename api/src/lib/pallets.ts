@@ -14,7 +14,18 @@
  * workbook prints these with an ASCII x, so anything hand-built from the spec
  * must convert. Sizes outside this list are not bookable (see CARGO_PALLET_TYPES).
  */
-export const PALLET_SIZES = ["2×2", "3×4", "4×4", "4×8", "5×10"] as const;
+export const PALLET_SIZES = [
+  "1×1",
+  "1×2",
+  "2×2",
+  "2×3",
+  "3×3",
+  "3×4",
+  "4×4",
+  "4×8",
+  "5×5",
+  "5×10",
+] as const;
 
 /** A bookable pallet footprint. Annotating a list with this makes a typo — an
  *  ASCII "4x4" for the U+00D7 "4×4" — a compile error rather than a silent
@@ -49,14 +60,34 @@ export function normalizePalletType(raw: string): string {
   return raw.replace(/\s+/g, "").replace(/[xX]/g, "×");
 }
 
-/** Slots per pallet, relative to a single 4×4 (= 1 slot). Keyed by PALLET_SIZES
- *  so adding a size without its factor is a compile error, not a silent 0. */
+/**
+ * Slots per pallet, relative to a single 4×4 (= 1 slot). Keyed by PALLET_SIZES
+ * so adding a size without its factor is a compile error, not a silent 0.
+ *
+ * THE RULE IS AREA ÷ 16 (a 4×4 pallet being 16 square units = 1 slot). Every
+ * factor that predates this comment fits it exactly — 2×2 = 4/16 = 0.25,
+ * 3×4 = 12/16 = 0.75, 4×4 = 16/16 = 1, 4×8 = 32/16 = 2, 5×10 = 50/16 = 3.125 —
+ * so the sizes added for item 2 (Mr. Teh, 17 Jul 2026) are derived, not guessed.
+ * A new footprint's factor is w × h / 16; write the arithmetic out below rather
+ * than computing it, so a wrong entry is visible on inspection.
+ */
 export const PALLET_FACTORS: Record<(typeof PALLET_SIZES)[number], number> = {
-  "2×2": 0.25,
-  "3×4": 0.75,
-  "4×4": 1,
-  "4×8": 2,
-  "5×10": 3.125,
+  // ⚠ 1×1 and 1×2 are UNCONFIRMED as pallet types (item 2, on the ask-him
+  // list). Area ÷ 16 gives 0.0625, which implies ~256 of them to a PLX 2406 —
+  // that is not a pallet-shaped number, and they may really be boxes or crates
+  // that belong under the "carton" cargo type with an estimated_pallets count
+  // instead. The factors below are the rule applied honestly; if Mr. Teh
+  // confirms they are cartons, these two entries come out rather than change.
+  "1×1": 0.0625, // 1 / 16
+  "1×2": 0.125, // 2 / 16
+  "2×2": 0.25, // 4 / 16
+  "2×3": 0.375, // 6 / 16
+  "3×3": 0.5625, // 9 / 16
+  "3×4": 0.75, // 12 / 16
+  "4×4": 1, // 16 / 16 — the reference slot
+  "4×8": 2, // 32 / 16
+  "5×5": 1.5625, // 25 / 16
+  "5×10": 3.125, // 50 / 16
 };
 
 const FACTORS: Record<string, number> = PALLET_FACTORS;
@@ -89,18 +120,24 @@ export interface CargoLine {
 }
 
 /**
- * Total 4×4-pallet-equivalent load for a set of cargo lines. Rounded to 3 dp to
- * keep the 3.125 factor exact while avoiding floating-point noise. For a
+ * Total 4×4-pallet-equivalent load for a set of cargo lines. For a
  * carton/custom line the requestor's estimate (if given) IS the line's
  * equivalent; without one the line contributes 0 (and the order counts as
  * unsized for dispatch — see isUnsizedForDispatch).
+ *
+ * Rounded to 4 dp, not 3. Every factor is area ÷ 16, so the finest is
+ * 1/16 = 0.0625 and every reachable total is some m/16 — which needs exactly
+ * four decimals. 3 dp was enough while the smallest factor was 2×2's 0.25 (and
+ * the longest 5×10's 3.125), but it would round item 2's new 1×1 to 0.063 and
+ * corrupt the value on the way out. 4 dp is exact for every m/16 while still
+ * flattening any float noise.
  */
 export function palletEquivalents(cargo: CargoLine[]): number {
   const total = cargo.reduce((sum, c) => {
     if (isUnsizedType(c.pallet_type)) return sum + (c.estimated_pallets ?? 0);
     return sum + palletFactor(c.pallet_type) * c.quantity;
   }, 0);
-  return Math.round(total * 1000) / 1000;
+  return Math.round(total * 10000) / 10000;
 }
 
 /**

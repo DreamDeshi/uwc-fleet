@@ -50,10 +50,24 @@ type Nav = BottomTabNavigationProp<RequestorTabParamList>;
 // Grab-style flow: 3 steps. Date/time/remarks (all defaulted) folded into the
 // final Confirm step so there's no near-empty "When" page.
 const STEPS = ["stepWhere", "stepWhat", "stepConfirm"] as const;
-// Display order (commonest first) — deliberately NOT the lib's order; palletQtys
-// is indexed by this. Typed as PalletSize so an ASCII "4x4" here fails to
-// compile rather than shipping a line the server's enum rejects.
-const PALLET_SIZES: PalletSize[] = ["4×4", "3×4", "4×8", "5×10", "2×2"];
+// Display order (commonest first, then largest → smallest) — deliberately NOT
+// the lib's order; palletQtys is indexed by this. Typed as PalletSize so an
+// ASCII "4x4" here fails to compile rather than shipping a line the server's
+// enum rejects, and so a size added to the lib but forgotten here is at least
+// not a wrong one.
+// The last five arrived with item 2 (Mr. Teh, 17 Jul 2026).
+const PALLET_SIZES: PalletSize[] = [
+  "4×4",
+  "3×4",
+  "4×8",
+  "5×10",
+  "5×5",
+  "3×3",
+  "2×3",
+  "2×2",
+  "1×2",
+  "1×1",
+];
 
 // Parse the optional "estimated pallets of space" field for carton/Others cargo:
 // a positive whole number, or undefined when blank (→ manual admin assignment).

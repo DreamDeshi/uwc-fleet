@@ -7,7 +7,18 @@
 // The bookable pallet footprints (workbook REQUESTOR INTERFACE). "×" is U+00D7,
 // NOT an ASCII "x" — the server enums on these exact strings, so the booking
 // form must emit them verbatim.
-export const PALLET_SIZES = ["2×2", "3×4", "4×4", "4×8", "5×10"] as const;
+export const PALLET_SIZES = [
+  "1×1",
+  "1×2",
+  "2×2",
+  "2×3",
+  "3×3",
+  "3×4",
+  "4×4",
+  "4×8",
+  "5×5",
+  "5×10",
+] as const;
 
 /** A bookable pallet footprint. Annotating a list with this makes a typo — an
  *  ASCII "4x4" for the U+00D7 "4×4" — a compile error rather than a silent
@@ -20,14 +31,23 @@ export const UNSIZED_CARGO_TYPES = ["carton", "custom"] as const;
 /** Every pallet_type the API accepts — mirrors api/src/lib/pallets.ts. */
 export const CARGO_PALLET_TYPES = [...PALLET_SIZES, ...UNSIZED_CARGO_TYPES] as const;
 
-/** Slots per pallet, relative to a single 4×4 (= 1 slot). Keyed by PALLET_SIZES
- *  so adding a size without its factor is a compile error, not a silent 0. */
+/**
+ * Slots per pallet, relative to a single 4×4 (= 1 slot). Keyed by PALLET_SIZES
+ * so adding a size without its factor is a compile error, not a silent 0.
+ * The rule is AREA ÷ 16 — see api/src/lib/pallets.ts, which this mirrors.
+ */
 export const PALLET_FACTORS: Record<(typeof PALLET_SIZES)[number], number> = {
-  "2×2": 0.25,
-  "3×4": 0.75,
-  "4×4": 1,
-  "4×8": 2,
-  "5×10": 3.125,
+  // ⚠ 1×1 / 1×2 unconfirmed as pallet types — see the server's note.
+  "1×1": 0.0625, // 1 / 16
+  "1×2": 0.125, // 2 / 16
+  "2×2": 0.25, // 4 / 16
+  "2×3": 0.375, // 6 / 16
+  "3×3": 0.5625, // 9 / 16
+  "3×4": 0.75, // 12 / 16
+  "4×4": 1, // 16 / 16 — the reference slot
+  "4×8": 2, // 32 / 16
+  "5×5": 1.5625, // 25 / 16
+  "5×10": 3.125, // 50 / 16
 };
 
 const FACTORS: Record<string, number> = PALLET_FACTORS;
@@ -52,15 +72,17 @@ export interface CargoLine {
 }
 
 /**
- * Total 4×4-pallet-equivalent load for a set of cargo lines. Rounded to 3 dp to
- * keep the 3.125 factor exact while avoiding floating-point noise. For a
- * carton/custom line the requestor's estimate (if given) IS the line's
- * equivalent; without one it contributes 0.
+ * Total 4×4-pallet-equivalent load for a set of cargo lines. Rounded to 4 dp —
+ * every factor is area ÷ 16, so the finest is 1/16 = 0.0625 and 3 dp would
+ * round it to 0.063. Must match the server's rounding exactly or the form's
+ * warning disagrees with the server's capacity verdict. For a carton/custom
+ * line the requestor's estimate (if given) IS the line's equivalent; without
+ * one it contributes 0.
  */
 export function palletEquivalents(cargo: CargoLine[]): number {
   const total = cargo.reduce((sum, c) => {
     if (isUnsizedType(c.pallet_type)) return sum + (c.estimated_pallets ?? 0);
     return sum + palletFactor(c.pallet_type) * c.quantity;
   }, 0);
-  return Math.round(total * 1000) / 1000;
+  return Math.round(total * 10000) / 10000;
 }

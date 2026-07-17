@@ -36,6 +36,22 @@ describe("palletFactor", () => {
     expect(palletFactor("4×4")).toBe(1);
     expect(palletFactor("4×8")).toBe(2);
     expect(palletFactor("5×10")).toBe(3.125);
+    // Added by item 2 (Mr. Teh, 17 Jul 2026).
+    expect(palletFactor("5×5")).toBe(1.5625);
+    expect(palletFactor("2×3")).toBe(0.375);
+    expect(palletFactor("3×3")).toBe(0.5625);
+    expect(palletFactor("1×1")).toBe(0.0625);
+    expect(palletFactor("1×2")).toBe(0.125);
+  });
+
+  it("derives EVERY factor from area ÷ 16 — the rule, not a per-size table", () => {
+    // This is the property that let item 2's five new sizes be derived rather
+    // than guessed: all five pre-existing factors already satisfied it exactly.
+    // A future size is only correct if it satisfies it too.
+    for (const size of PALLET_SIZES) {
+      const [w, h] = size.split("×").map(Number);
+      expect(palletFactor(size), `${size} = ${w}×${h}/16`).toBe((w * h) / 16);
+    }
   });
 
   it("treats cartons and custom/Others cargo as occupying no pallet slot", () => {
@@ -59,12 +75,71 @@ describe("palletFactor", () => {
 });
 
 describe("CARGO_PALLET_TYPES (the route's enum)", () => {
-  it("is exactly the workbook's closed vocabulary: 5 pallet sizes + carton/Others", () => {
-    expect([...CARGO_PALLET_TYPES]).toEqual(["2×2", "3×4", "4×4", "4×8", "5×10", "carton", "custom"]);
+  it("is exactly the closed vocabulary: 10 pallet sizes + carton/Others", () => {
+    expect([...CARGO_PALLET_TYPES]).toEqual([
+      "1×1",
+      "1×2",
+      "2×2",
+      "2×3",
+      "3×3",
+      "3×4",
+      "4×4",
+      "4×8",
+      "5×5",
+      "5×10",
+      "carton",
+      "custom",
+    ]);
+  });
+
+  it("round-trips every new size from the ASCII spelling a caller would send", () => {
+    // The workbook prints an ASCII x, so "5x5"/"1x2" are what arrives in
+    // practice; each must normalise onto its U+00D7 key and hit a real factor.
+    for (const [ascii, canonical] of [
+      ["5x5", "5×5"],
+      ["2x3", "2×3"],
+      ["3x3", "3×3"],
+      ["1x1", "1×1"],
+      ["1 X 2", "1×2"],
+    ] as const) {
+      expect(normalizePalletType(ascii)).toBe(canonical);
+      expect(palletFactor(normalizePalletType(ascii))).toBeGreaterThan(0);
+    }
   });
 
   it("gives every bookable pallet size a factor (no size can enter unpriced)", () => {
     for (const size of PALLET_SIZES) expect(palletFactor(size)).toBeGreaterThan(0);
+  });
+});
+
+describe("palletEquivalents — 4 dp, because every factor is a sixteenth", () => {
+  it("does NOT round the finest factor away (1×1 stays 0.0625, not 0.063)", () => {
+    // The rounding was 3 dp, chosen when 2×2's 0.25 was the smallest factor.
+    // Item 2's 1×1 is 1/16 = 0.0625, which 3 dp corrupts on the way out.
+    expect(palletEquivalents([{ pallet_type: "1×1", quantity: 1 }])).toBe(0.0625);
+    expect(palletEquivalents([{ pallet_type: "3×3", quantity: 1 }])).toBe(0.5625);
+    expect(palletEquivalents([{ pallet_type: "5×5", quantity: 1 }])).toBe(1.5625);
+  });
+
+  it("keeps a sum of the new sizes exact (every total is some m/16)", () => {
+    // 3×0.0625 + 1×0.375 + 1×0.5625 = 0.1875 + 0.375 + 0.5625 = 1.125
+    expect(
+      palletEquivalents([
+        { pallet_type: "1×1", quantity: 3 },
+        { pallet_type: "2×3", quantity: 1 },
+        { pallet_type: "3×3", quantity: 1 },
+      ])
+    ).toBe(1.125);
+  });
+
+  it("16× 5×5 = 25 slots — over a PLX 2406's 16, so a real load is caught", () => {
+    expect(palletEquivalents([{ pallet_type: "5×5", quantity: 16 }])).toBe(25);
+  });
+
+  it("256× 1×1 = exactly 16 slots (the ~256-per-truck figure that makes 1×1 doubtful)", () => {
+    // Pinned as arithmetic, not endorsement: 0.0625 implying 256 to a truck is
+    // why 1×1/1×2 are flagged unconfirmed as PALLET types (may be cartons).
+    expect(palletEquivalents([{ pallet_type: "1×1", quantity: 256 }])).toBe(16);
   });
 });
 

@@ -73,12 +73,18 @@
 
   "cargo": {
     "cargo_types": ["Pallet", "Carton", "Others"],
+    "pallet_factor_rule": "factor = width x height / 16 (a 4x4 pallet = 16 square units = 1 slot). The five original factors all satisfy this exactly, which is why the five added on 2026-07-17 (item 2) are derived from it rather than guessed. Totals round to 4 dp: every factor is a sixteenth, so the finest is 1/16 = 0.0625.",
     "pallet_sizes": [
       { "size": "4×4",  "factor": 1 },
       { "size": "3×4",  "factor": 0.75 },
       { "size": "4×8",  "factor": 2 },
       { "size": "5×10", "factor": 3.125 },
-      { "size": "2×2",  "factor": 0.25 }
+      { "size": "5×5",  "factor": 1.5625 },
+      { "size": "3×3",  "factor": 0.5625 },
+      { "size": "2×3",  "factor": 0.375 },
+      { "size": "2×2",  "factor": 0.25 },
+      { "size": "1×2",  "factor": 0.125,  "unconfirmed": true, "note": "Added item 2. UNCONFIRMED as a pallet type — pending Mr. Teh." },
+      { "size": "1×1",  "factor": 0.0625, "unconfirmed": true, "note": "Added item 2. UNCONFIRMED as a pallet type: 0.0625 implies ~256 to a PLX 2406, which is not a pallet-shaped number — may be boxes/crates belonging under 'carton' with an estimated_pallets count. Pending Mr. Teh." }
     ],
     "non_pallet": [
       { "type": "carton", "factor": 0, "note": "Counted as a quantity of cartons; does not occupy a 4x4 pallet slot." },

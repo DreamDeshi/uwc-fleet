@@ -7,12 +7,24 @@ import { CARGO_PALLET_TYPES, PALLET_FACTORS, palletEquivalents, palletFactor } f
 describe("pallet factors mirror the server", () => {
   it("matches the spec conversion table exactly", () => {
     expect(PALLET_FACTORS).toEqual({
+      "1×1": 0.0625,
+      "1×2": 0.125,
       "2×2": 0.25,
+      "2×3": 0.375,
+      "3×3": 0.5625,
       "3×4": 0.75,
       "4×4": 1,
       "4×8": 2,
+      "5×5": 1.5625,
       "5×10": 3.125,
     });
+  });
+
+  it("derives every factor from area ÷ 16, exactly as the server does", () => {
+    for (const [size, factor] of Object.entries(PALLET_FACTORS)) {
+      const [w, h] = size.split("×").map(Number);
+      expect(factor, `${size}`).toBe((w * h) / 16);
+    }
   });
 
   it("gives cartons/custom and any unrecognised footprint no slots", () => {
@@ -26,8 +38,28 @@ describe("pallet factors mirror the server", () => {
     expect(palletFactor("5x10")).toBe(0); // ASCII "x" — not the U+00D7 key
   });
 
-  it("offers exactly the workbook's bookable vocabulary", () => {
-    expect([...CARGO_PALLET_TYPES]).toEqual(["2×2", "3×4", "4×4", "4×8", "5×10", "carton", "custom"]);
+  it("offers exactly the bookable vocabulary", () => {
+    expect([...CARGO_PALLET_TYPES]).toEqual([
+      "1×1",
+      "1×2",
+      "2×2",
+      "2×3",
+      "3×3",
+      "3×4",
+      "4×4",
+      "4×8",
+      "5×5",
+      "5×10",
+      "carton",
+      "custom",
+    ]);
+  });
+
+  it("rounds to 4 dp like the server — a 3 dp mirror would disagree on 1×1", () => {
+    // If the two round differently the form's warning and the server's capacity
+    // verdict diverge on the new sixteenth-sized footprints.
+    expect(palletEquivalents([{ pallet_type: "1×1", quantity: 1 }])).toBe(0.0625);
+    expect(palletEquivalents([{ pallet_type: "5×5", quantity: 1 }])).toBe(1.5625);
   });
 });
 
