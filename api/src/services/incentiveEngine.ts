@@ -31,13 +31,23 @@ function hourFromEnv(name: string, fallback: number): number {
   return Number.isInteger(n) && n >= 0 && n <= 23 ? n : fallback;
 }
 
-// Off-peak cutoff = 18:00 (6pm). CONFIRMED by the authoritative spec workbook
-// (References/"TRUCK BOOKING SYSTEM (YS).xlsx", INTERNAL LORRY RATE sheet): the
-// weekday PEAK rate table is headed "Weekday 8am - 6pm"; the OFF-PEAK table is
-// headed "Public Holiday / Saturday - Sunday / Weekday after 6pm". So a weekday
-// delivery at/after 6pm earns the off-peak rate — this is spec, NOT a placeholder.
-// Env-tunable for flexibility only; do not re-flag it as an open question.
+// The weekday PEAK band is 08:00–17:59 — BOTH ends come from the authoritative
+// spec workbook ("TRUCK BOOKING SYSTEM (YS).xlsx", INTERNAL LORRY RATE sheet),
+// whose peak rate table is headed "Lorry / Type (Weekday 8am - 6pm)" and whose
+// off-peak table is headed "Public Holiday / Saturday - Sunday / Weekday after
+// 6pm". The two tables are the only rate tables and every weekday hour must be
+// priced by exactly one of them, so the peak table's own "8am" lower bound is
+// what makes 00:00–07:59 off-peak: those hours are simply not inside 8am–6pm.
+// This is spec, NOT a placeholder — env-tunable for flexibility only.
+//
+// PEAK_START_HOUR existed implicitly as 0 until 17 Jul 2026, which priced
+// weekday 00:00–07:59 at the PEAK rate — contradicting the peak table's header
+// and UNDERPAYING drivers (off-peak is the higher rate on most lorries, e.g.
+// PLX 2406 RM13 off-peak vs RM11 peak). It bites on the delivery-confirm
+// anchor: a driver closing a late-running evening run at 00:30 was paid peak.
+// Reachable rarely before the 02:00 pickup window (item 12), routine after it.
 export const OFFPEAK_CUTOFF_HOUR = hourFromEnv("OFFPEAK_CUTOFF_HOUR", 18);
+export const PEAK_START_HOUR = hourFromEnv("PEAK_START_HOUR", 8);
 
 // Incentive-day reset hour = midnight (00:00). CONFIRMED by Mr. Teh's written
 // answer Q1 (3 Jul 2026): "after 12am points refresh for next day". Env-tunable
@@ -71,9 +81,10 @@ export function mytDateKey(date: Date): string {
 }
 
 /**
- * Weekday rates apply Mon-Fri before the off-peak cutoff (Malaysia time).
- * Off-peak rates apply on Sat/Sun, on public holidays, or any day at/after
- * the cutoff hour — all evaluated against the trip's Malaysia-time wall clock.
+ * Weekday (peak) rates apply Mon-Fri inside [PEAK_START_HOUR, OFFPEAK_CUTOFF_HOUR)
+ * — 08:00–17:59 MYT. Off-peak rates apply on Sat/Sun, on public holidays, or on
+ * a weekday at/after the cutoff hour OR before the peak start hour; the two
+ * bands partition the day, so every instant is priced exactly once.
  *
  * `publicHolidays` is a set of MYT "YYYY-MM-DD" keys, supplied by the caller
  * (loaded from the admin-managed PublicHoliday table at the route layer).
@@ -84,7 +95,8 @@ export function isOffPeak(date: Date, publicHolidays: ReadonlySet<string>): bool
   const { weekday, hour } = mytParts(date);
   if (weekday === 0 || weekday === 6) return true; // Sat / Sun
   if (publicHolidays.has(mytDateKey(date))) return true; // public holiday
-  return hour >= OFFPEAK_CUTOFF_HOUR;
+  // Outside the workbook's "Weekday 8am - 6pm" peak band, either end.
+  return hour >= OFFPEAK_CUTOFF_HOUR || hour < PEAK_START_HOUR;
 }
 
 /**

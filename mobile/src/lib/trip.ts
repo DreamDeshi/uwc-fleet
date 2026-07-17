@@ -62,11 +62,17 @@ const ZONE_POINTS: Record<string, number> = {
 const MYT_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 // Off-peak = Saturday/Sunday (MYT), a Malaysian public holiday, or a weekday
-// at/after 18:00 MYT. Mirrors the server's incentiveEngine.isOffPeak.
+// OUTSIDE the workbook's "Weekday 8am - 6pm" peak band — i.e. at/after 18:00 or
+// before 08:00 MYT. Mirrors the server's incentiveEngine.isOffPeak, including
+// its PEAK_START_HOUR bound; these two must agree or the driver's "Estimated"
+// figure contradicts the pay they actually receive.
 // `publicHolidays` comes from GET /holidays (the admin-managed calendar) via
 // useHolidays() — there is deliberately NO baked-in holiday list on the client
 // anymore (the old hardcoded copy carried wrong dates and drifted from the
 // server). An empty set (calendar still loading) just means "no holidays".
+const PEAK_START_HOUR = 8;
+const OFFPEAK_CUTOFF_HOUR = 18;
+
 function isOffPeak(date: Date, publicHolidays: ReadonlySet<string>): boolean {
   const myt = new Date(date.getTime() + MYT_OFFSET_MS);
   const day = myt.getUTCDay(); // 0 = Sunday, 6 = Saturday
@@ -74,7 +80,8 @@ function isOffPeak(date: Date, publicHolidays: ReadonlySet<string>): boolean {
   const pad = (n: number) => String(n).padStart(2, "0");
   const key = `${myt.getUTCFullYear()}-${pad(myt.getUTCMonth() + 1)}-${pad(myt.getUTCDate())}`;
   if (publicHolidays.has(key)) return true;
-  return myt.getUTCHours() >= 18;
+  const hour = myt.getUTCHours();
+  return hour >= OFFPEAK_CUTOFF_HOUR || hour < PEAK_START_HOUR;
 }
 
 // Estimated incentive shown before a trip is completed: each stop scored with

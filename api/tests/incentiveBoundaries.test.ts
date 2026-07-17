@@ -3,6 +3,7 @@ import {
   isOffPeak,
   calculateDeliveryIncentive,
   OFFPEAK_CUTOFF_HOUR,
+  PEAK_START_HOUR,
 } from "../src/services/incentiveEngine";
 
 /**
@@ -61,6 +62,91 @@ describe("isOffPeak — the exact peak/off-peak cutoff edge (MYT)", () => {
   it("is OFF-PEAK all day on a weekend regardless of hour (2026-07-18 = Saturday)", () => {
     const satMidday = new Date(Date.UTC(2026, 6, 18, 12 - 8, 0));
     expect(isOffPeak(satMidday, NO_HOLIDAYS)).toBe(true);
+  });
+});
+
+/**
+ * The MORNING edge of the weekday peak band (regression, 17 Jul 2026).
+ *
+ * The workbook's peak table is headed "Weekday 8am - 6pm" and is one of only
+ * two rate tables, so a weekday hour outside 8am–6pm is priced by the other
+ * one (off-peak) — including 00:00–07:59, which the engine used to call PEAK
+ * because it only tested `hour >= 18`. That underpaid every early-morning
+ * delivery confirm (off-peak is the higher rate on most lorries), and the
+ * 02:00 pickup window (item 12) makes those hours routine rather than rare.
+ */
+describe("isOffPeak — the morning edge of the weekday peak band (MYT)", () => {
+  it("defaults the peak start to 08:00 (8am)", () => {
+    expect(PEAK_START_HOUR).toBe(8);
+  });
+
+  it("is OFF-PEAK in the last minute before the peak band opens (07:59 weekday)", () => {
+    expect(isOffPeak(mytWeekday(PEAK_START_HOUR - 1, 59), NO_HOLIDAYS)).toBe(true);
+  });
+
+  it("flips to PEAK exactly AT the peak start hour (08:00 weekday)", () => {
+    // The peak band is inclusive at its start: [08:00, 18:00).
+    expect(isOffPeak(mytWeekday(PEAK_START_HOUR, 0), NO_HOLIDAYS)).toBe(false);
+  });
+
+  it("stays PEAK just after the peak band opens (08:01 weekday)", () => {
+    expect(isOffPeak(mytWeekday(PEAK_START_HOUR, 1), NO_HOLIDAYS)).toBe(false);
+  });
+
+  it("is OFF-PEAK at 07:00 weekday — the hour the operating window opens", () => {
+    expect(isOffPeak(mytWeekday(7, 0), NO_HOLIDAYS)).toBe(true);
+  });
+
+  it("is OFF-PEAK at 02:00 weekday — the latest pickup the window now allows (item 12)", () => {
+    expect(isOffPeak(mytWeekday(2, 0), NO_HOLIDAYS)).toBe(true);
+  });
+
+  it("is OFF-PEAK at midnight exactly (00:00 weekday)", () => {
+    expect(isOffPeak(mytWeekday(0, 0), NO_HOLIDAYS)).toBe(true);
+  });
+
+  it("prices EVERY weekday hour exactly once: off-peak iff outside [08:00, 18:00)", () => {
+    // The two workbook tables must partition the day — no hour unpriced, none
+    // priced twice. This is the property the old `hour >= 18` check violated.
+    for (let hour = 0; hour < 24; hour++) {
+      const expectedOffPeak = hour < PEAK_START_HOUR || hour >= OFFPEAK_CUTOFF_HOUR;
+      expect(isOffPeak(mytWeekday(hour, 0), NO_HOLIDAYS), `hour ${hour}:00`).toBe(expectedOffPeak);
+      expect(isOffPeak(mytWeekday(hour, 59), NO_HOLIDAYS), `hour ${hour}:59`).toBe(expectedOffPeak);
+    }
+  });
+});
+
+describe("calculateDeliveryIncentive — the early-morning rate tier (money impact)", () => {
+  it("pays the OFF-PEAK rate for a 00:30 delivery confirm on a late-running weekday run", () => {
+    // The bug this pins: rateDateTime is the DELIVERY-confirm anchor, so a
+    // driver closing an evening run just after midnight used to be paid the
+    // PEAK RM11 instead of the off-peak RM13 — a real underpay, reachable
+    // before item 12 and routine after it.
+    const r = calculateDeliveryIncentive({
+      rateDateTime: mytWeekday(0, 30),
+      drops: [{ zoneCode: "K1", zonePoints: 3 }],
+      zonesDeliveredEarlierToday: [],
+      priorPointsToday: 0,
+      publicHolidays: NO_HOLIDAYS,
+      truck: PLX,
+    });
+    expect(r.isOffPeak).toBe(true);
+    expect(r.rateUsed).toBe(13); // off-peak, NOT the RM11 weekday rate
+    expect(r.incentiveThisTrip).toBe(13); // (3 − 2) × 13
+  });
+
+  it("still pays the PEAK rate for the same run confirmed at 08:00", () => {
+    const r = calculateDeliveryIncentive({
+      rateDateTime: mytWeekday(8, 0),
+      drops: [{ zoneCode: "K1", zonePoints: 3 }],
+      zonesDeliveredEarlierToday: [],
+      priorPointsToday: 0,
+      publicHolidays: NO_HOLIDAYS,
+      truck: PLX,
+    });
+    expect(r.isOffPeak).toBe(false);
+    expect(r.rateUsed).toBe(11);
+    expect(r.incentiveThisTrip).toBe(11); // (3 − 2) × 11
   });
 });
 

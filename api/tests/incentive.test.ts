@@ -8,6 +8,7 @@ import {
   getTripDayStart,
   getTripDayEnd,
   groupStopsByDeliveryDay,
+  mytDateKey,
 } from "../src/services/incentiveEngine";
 
 // The primary A1/A2 truck (PLX 2406): weekday RM11, off-peak RM13, deduction 2 pts.
@@ -70,12 +71,28 @@ describe("isOffPeak — the caller-supplied holiday calendar drives off-peak", (
 
   it("matches on the MYT calendar day, not the UTC day", () => {
     const holiday = new Set(["2026-06-24"]); // a Wednesday
-    // 2026-06-23 17:00 UTC = Wed 2026-06-24 01:00 MYT → holiday, even though
-    // the UTC date is still the 23rd.
-    expect(isOffPeak(new Date("2026-06-23T17:00:00Z"), holiday)).toBe(true);
-    // 2026-06-24 17:00 UTC = Thu 2026-06-25 01:00 MYT → NOT the holiday any
-    // more (a UTC-keyed check would wrongly say it is).
-    expect(isOffPeak(new Date("2026-06-24T17:00:00Z"), holiday)).toBe(false);
+    // Inside the 08:00–17:59 peak band the calendar is the ONLY thing that can
+    // flip the tier, so that band is where the holiday lookup is observable.
+    // 2026-06-24 01:00 UTC = Wed 2026-06-24 09:00 MYT → the holiday → off-peak.
+    expect(isOffPeak(new Date("2026-06-24T01:00:00Z"), holiday)).toBe(true);
+    // 2026-06-25 01:00 UTC = Thu 2026-06-25 09:00 MYT → not the holiday → peak.
+    expect(isOffPeak(new Date("2026-06-25T01:00:00Z"), holiday)).toBe(false);
+  });
+
+  it("keys the holiday calendar on the MYT calendar day, not the UTC day", () => {
+    // ⚠ This assertion used to live in the test above, on instants at 01:00 MYT
+    // (the only hours where the UTC and MYT dates diverge are 00:00–07:59 MYT,
+    // i.e. 16:00–23:59 UTC the day before). Since 2026-07-17 that whole band is
+    // off-peak BY HOUR, so isOffPeak() can no longer distinguish a MYT-keyed
+    // lookup from a UTC-keyed one there — it returns true either way. The
+    // MYT-day keying is still load-bearing (getTripDayStart and the ledger
+    // window depend on it), so it is pinned directly on mytDateKey instead of
+    // being silently dropped.
+    // 2026-06-23 17:00 UTC = Wed 2026-06-24 01:00 MYT — MYT date is the 24th…
+    expect(mytDateKey(new Date("2026-06-23T17:00:00Z"))).toBe("2026-06-24");
+    // …and 2026-06-24 17:00 UTC = Thu 2026-06-25 01:00 MYT — the 25th, not the
+    // 24th (a UTC-keyed implementation would wrongly say the 24th here).
+    expect(mytDateKey(new Date("2026-06-24T17:00:00Z"))).toBe("2026-06-25");
   });
 });
 
@@ -433,8 +450,15 @@ describe("calculateDeliveryIncentive — daily deduction folds into the DAY TOTA
 
   it("midnight straddle: each MYT day folds its OWN deduction at its OWN day total (low first drop included)", () => {
     // Group 1 (Monday off-peak): P2(1) + A2(6) → (7−2)×13 = RM65 — the low P2
-    // first drop does NOT lose the deduction. Group 2 (Tuesday weekday): fresh
-    // K1(3) with Tuesday's own deduction → (3−2)×11 = RM11.
+    // first drop does NOT lose the deduction. Group 2 (Tuesday 00:10): fresh
+    // K1(3) with Tuesday's own deduction → (3−2)×13 = RM13.
+    //
+    // ⚠ CORRECTED 2026-07-17: group 2 previously expected the PEAK RM11, on the
+    // comment "Tue 00:10 MYT — weekday". The workbook's peak table is headed
+    // "Weekday 8am - 6pm", so 00:10 is outside it and prices off-peak. The DAY
+    // (ledger + deduction) still resets at midnight per Mr. Teh's Q1 — that is
+    // a separate boundary from the rate tier, which is why g2 keeps its own
+    // fresh deduction while staying on the same off-peak rate as g1.
     const g1 = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
       rateDateTime: new Date("2026-06-22T15:50:00Z"), // Mon 23:50 MYT — off-peak
@@ -448,7 +472,7 @@ describe("calculateDeliveryIncentive — daily deduction folds into the DAY TOTA
     });
     const g2 = calculateDeliveryIncentive({
       publicHolidays: NO_HOLIDAYS,
-      rateDateTime: new Date("2026-06-22T16:10:00Z"), // Tue 00:10 MYT — weekday
+      rateDateTime: new Date("2026-06-22T16:10:00Z"), // Tue 00:10 MYT — before 8am ⇒ off-peak
       drops: [{ zoneCode: "K1", zonePoints: 3 }],
       zonesDeliveredEarlierToday: [], // ledger refreshed at midnight
       priorPointsToday: 0,
@@ -457,9 +481,9 @@ describe("calculateDeliveryIncentive — daily deduction folds into the DAY TOTA
     expect(g1.isOffPeak).toBe(true);
     expect(g1.incentiveThisTrip).toBe(65); // (1 + 6 − 2) × 13
     expect(g1.deductionApplied).toBe(2);
-    expect(g2.isOffPeak).toBe(false);
-    expect(g2.incentiveThisTrip).toBe(11); // (3 − 2) × 11
-    expect(g2.deductionApplied).toBe(2);
+    expect(g2.isOffPeak).toBe(true); // 00:10 is outside "Weekday 8am - 6pm"
+    expect(g2.incentiveThisTrip).toBe(13); // (3 − 2) × 13
+    expect(g2.deductionApplied).toBe(2); // …but the DEDUCTION day still reset at midnight
   });
 });
 
@@ -511,10 +535,16 @@ describe("delivery-day attribution — groupStopsByDeliveryDay", () => {
     expect(groups[0].dayStart.getTime()).toBe(getTripDayStart(deliveredAt).getTime());
     // …NOT the pickup day (Mon 2026-06-22 MYT).
     expect(groups[0].dayStart.getTime()).not.toBe(getTripDayStart(pickup).getTime());
-    // And the rate anchor is the delivery confirm, so this pays the WEEKDAY
-    // tier (Tue 00:30 MYT is before 18:00) even though the 23:30 pickup was
-    // off-peak — the strict confirm-time reading of the rate table.
-    expect(isOffPeak(groups[0].anchor, NO_HOLIDAYS)).toBe(false);
+    // And the rate anchor is the delivery confirm — Tue 00:30 MYT, which is
+    // OUTSIDE the workbook's "Weekday 8am - 6pm" peak table and so pays the
+    // OFF-PEAK tier, same as the 23:30 pickup that started the run.
+    //
+    // ⚠ CORRECTED 2026-07-17: this expected `false` (peak), justified as "Tue
+    // 00:30 MYT is before 18:00" — reasoning off the cutoff's evening end only
+    // and forgetting the peak table's own 8am start. It made a driver's pay
+    // JUMP from off-peak to peak by crossing midnight mid-run, which is what
+    // gave the bug away: the run never left the night.
+    expect(isOffPeak(groups[0].anchor, NO_HOLIDAYS)).toBe(true);
   });
 
   it("a multi-stop trip delivered within one MYT day stays one group, in delivered order", () => {
@@ -574,7 +604,14 @@ describe("delivery-day attribution — ledger and deduction follow the delivery 
       truck: PLX2406,
     });
 
-    expect(t1.incentiveThisTrip).toBe(11); // (3−2)×11 — day's first drop takes the deduction
+    // The two trips share a LEDGER day but not a RATE tier — 00:40 is outside
+    // the "Weekday 8am - 6pm" peak table (off-peak RM13), 10:00 is inside it
+    // (peak RM11). That is the point: the midnight ledger reset and the
+    // 08:00/18:00 rate band are independent boundaries, and this case is the
+    // one that shows both at once.
+    expect(t1.isOffPeak).toBe(true); // Mon 00:40 MYT — before 8am
+    expect(t1.incentiveThisTrip).toBe(13); // (3−2)×13 — day's first drop takes the deduction
+    expect(t2.isOffPeak).toBe(false); // Mon 10:00 MYT — inside the peak band
     expect(t2.dropPoints).toEqual([1]); // same-zone repeat ON THE DELIVERY DAY
     expect(t2.deductionApplied).toBe(0); // deduction once per day, already spent
     expect(t2.incentiveThisTrip).toBe(11); // 1×11
@@ -613,8 +650,10 @@ describe("delivery-day attribution — ledger and deduction follow the delivery 
     expect(g1.incentiveThisTrip).toBe(13); // (3−2)×13
     expect(g2.dropPoints).toEqual([3]); // NOT a 1pt repeat — points refreshed
     expect(g2.deductionApplied).toBe(2); // Tuesday's own deduction
-    expect(g2.isOffPeak).toBe(false); // Tue 00:10 MYT is weekday tier
-    expect(g2.incentiveThisTrip).toBe(11); // (3−2)×11
+    // The LEDGER crossed into Tuesday, but the RATE did not change: 00:10 is
+    // still outside "Weekday 8am - 6pm". One continuous night run, one rate.
+    expect(g2.isOffPeak).toBe(true); // Tue 00:10 MYT — before 8am
+    expect(g2.incentiveThisTrip).toBe(13); // (3−2)×13
   });
 
   it("RM44 ANCHOR unchanged: same-day pickup and delivery is unaffected by delivery-day keying", () => {
