@@ -28,6 +28,7 @@ import { UserManagementScreen } from "../screens/UserManagementScreen";
 import { PerformanceScreen } from "../screens/PerformanceScreen";
 import { IncentiveApprovalsScreen } from "../screens/IncentiveApprovalsScreen";
 import { AuditLogScreen } from "../screens/AuditLogScreen";
+import { AdminSearchScreen } from "../screens/AdminSearchScreen";
 import { AdminSettingsScreen } from "../screens/AdminSettingsScreen";
 
 // Same web-height fix as DriverTabs/RequestorTabs: RN-Web under-reserves
@@ -62,6 +63,7 @@ function MoreStack() {
       <Stack.Screen name="AdminConsignees" component={ConsigneesScreen} options={{ title: t("admin.titles.consignees") }} />
       <Stack.Screen name="AdminUsers" component={UserManagementScreen} options={{ title: t("admin.users.title") }} />
       <Stack.Screen name="AdminPerformance" component={PerformanceScreen} options={{ title: t("admin.titles.performance") }} />
+      <Stack.Screen name="AdminSearch" component={AdminSearchScreen} options={{ title: t("admin.search.title") }} />
       <Stack.Screen name="AdminAudit" component={AuditLogScreen} options={{ title: t("admin.audit.title") }} />
       <Stack.Screen name="AdminSettings" component={AdminSettingsScreen} options={{ title: t("admin.titles.settings") }} />
     </Stack.Navigator>

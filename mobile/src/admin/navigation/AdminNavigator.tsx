@@ -35,6 +35,7 @@ import { IncentiveApprovalsScreen } from "../screens/IncentiveApprovalsScreen";
 import { TripsScreen } from "../screens/TripsScreen";
 import { AdminSettingsScreen } from "../screens/AdminSettingsScreen";
 import { AuditLogScreen } from "../screens/AuditLogScreen";
+import { AdminSearchScreen } from "../screens/AdminSearchScreen";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -47,7 +48,13 @@ interface NavItem {
 // The full sidebar shape (mirrors the web admin's three groups). Items whose
 // screen isn't registered yet show disabled — they light up as phases land.
 const NAV_GROUPS: { headingKey: string; items: NavItem[] }[] = [
-  { headingKey: "admin.navGroups.overview", items: [{ route: "AdminDashboard", labelKey: "admin.nav.dashboard", icon: "grid-outline" }] },
+  {
+    headingKey: "admin.navGroups.overview",
+    items: [
+      { route: "AdminDashboard", labelKey: "admin.nav.dashboard", icon: "grid-outline" },
+      { route: "AdminSearch", labelKey: "admin.search.navLabel", icon: "search-outline" },
+    ],
+  },
   {
     headingKey: "admin.navGroups.operations",
     items: [
@@ -283,6 +290,7 @@ const SUBTITLE_KEYS: Record<string, string> = {
   AdminUsers: "admin.users.subtitle",
   AdminConsignees: "admin.subtitles.consignees",
   AdminReports: "admin.subtitles.reports",
+  AdminSearch: "admin.search.subtitle",
   AdminAudit: "admin.audit.subtitle",
   AdminSettings: "admin.subtitles.settings",
 };
@@ -504,6 +512,11 @@ function AdminDrawerWide() {
         name="AdminIncentiveApprovals"
         component={IncentiveApprovalsScreen}
         options={{ title: t("admin.titles.incentiveApprovals") }}
+      />
+      <Drawer.Screen
+        name="AdminSearch"
+        component={AdminSearchScreen}
+        options={{ title: t("admin.search.title") }}
       />
       <Drawer.Screen
         name="AdminAudit"

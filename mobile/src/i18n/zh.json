@@ -457,6 +457,17 @@
       "administration": "管理",
       "system": "系统"
     },
+    "search": {
+      "navLabel": "搜索",
+      "title": "搜索",
+      "subtitle": "查找工单、收货方或人员",
+      "placeholder": "搜索工单、收货方、人员…",
+      "hint": "请输入至少 2 个字符进行搜索。",
+      "empty": "没有匹配项。",
+      "trips": "工单",
+      "consignees": "收货方",
+      "people": "人员"
+    },
     "audit": {
       "navLabel": "审计日志",
       "title": "审计日志",

@@ -408,6 +408,12 @@ export interface FuelLog {
   driver: { name: string } | null;
 }
 
+export interface GlobalSearchResults {
+  trips: { id: string; ticket_number: string; status: string }[];
+  users: { id: string; name: string; role: Role; phone: string }[];
+  consignees: { id: string; company_name: string; zone_code: string; area: string | null }[];
+}
+
 export interface ConsolidationSavings {
   trips: number;
   drops: number;

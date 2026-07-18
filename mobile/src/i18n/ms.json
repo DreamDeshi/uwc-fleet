@@ -457,6 +457,17 @@
       "administration": "Pentadbiran",
       "system": "Sistem"
     },
+    "search": {
+      "navLabel": "Carian",
+      "title": "Carian",
+      "subtitle": "Cari tiket, penerima atau orang",
+      "placeholder": "Cari tiket, penerima, orang…",
+      "hint": "Taip sekurang-kurangnya 2 aksara untuk mencari.",
+      "empty": "Tiada padanan.",
+      "trips": "Tiket",
+      "consignees": "Penerima",
+      "people": "Orang"
+    },
     "audit": {
       "navLabel": "Log Audit",
       "title": "Log Audit",

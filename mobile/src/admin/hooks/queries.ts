@@ -13,6 +13,7 @@ import type {
   AuditPage,
   Consignee,
   ConsolidationSavings,
+  GlobalSearchResults,
   DashboardKpis,
   Department,
   DestinationRate,
@@ -159,6 +160,16 @@ export function useConsolidationSavings() {
     queryKey: ["reports", "consolidation"],
     queryFn: async () => (await api.get<ConsolidationSavings>("/reports/consolidation")).data,
     staleTime: 5 * 60_000,
+  });
+}
+
+// Global search across tickets, people and consignees (admin). Enabled at 2+ chars.
+export function useGlobalSearch(q: string) {
+  return useQuery({
+    queryKey: ["search", q],
+    queryFn: async () => (await api.get<GlobalSearchResults>("/search", { params: { q } })).data,
+    enabled: q.trim().length >= 2,
+    placeholderData: keepPreviousData,
   });
 }
 
