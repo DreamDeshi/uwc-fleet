@@ -60,6 +60,7 @@ import {
   tripProgress,
 } from "../lib/trip";
 import { useLayoutMode } from "../hooks/useLayoutMode";
+import { FilterPresets } from "../components/FilterPresets";
 import { OptionsModal } from "../../components/OptionsModal";
 import type { Trip, SchedulingConflictInfo } from "../types";
 
@@ -247,6 +248,20 @@ export function TripsScreen() {
     <ChipGrid options={statusOptions} value={status} onChange={setStatus} columns={3} />
   );
 
+  // Saved filter presets ("my views") — device-local, applies the whole combo.
+  const presetsRow = (
+    <FilterPresets
+      current={{ status, driverId, zone, dateFrom, dateTo }}
+      onApply={(p) => {
+        setStatus(p.status);
+        setDriverId(p.driverId);
+        setZone(p.zone);
+        setDateFrom(p.dateFrom);
+        setDateTo(p.dateTo);
+      }}
+    />
+  );
+
   // Driver/zone/date filters active behind the narrow disclosure.
   const secondaryCount = [driverId, zone, dateFrom, dateTo].filter(Boolean).length;
 
@@ -286,6 +301,7 @@ export function TripsScreen() {
             </View>
           </View>
           {statusSegments}
+          {presetsRow}
         </Card>
 
         {/* ── Board + detail ── */}
@@ -320,6 +336,7 @@ export function TripsScreen() {
           <Card pad={12} style={{ gap: 10 }}>
             <SearchInput value={q} onChange={setQ} placeholder={t("admin.trips.searchPlaceholder")} style={{ minWidth: 0, alignSelf: "stretch" }} />
             {statusSegments}
+            {presetsRow}
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               {attentionChip}
               <Pressable
