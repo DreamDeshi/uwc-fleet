@@ -2181,6 +2181,23 @@ router.patch(
         }
       );
 
+      // Notify the REQUESTOR their delivery is complete — the goods have arrived.
+      // (The admin POD approval that follows is an internal money step the
+      // requestor never sees, so "delivered" is the right moment to tell them.)
+      // Best-effort, like every other push; the requestor's token isn't in
+      // tripInclude, so fetch it the same way the assign path does.
+      if (updated) {
+        const requestorDevice = await prisma.user.findUnique({
+          where: { id: updated.requestor_id },
+          select: { expo_push_token: true },
+        });
+        await sendPushNotifications([requestorDevice?.expo_push_token], {
+          title: "Delivery complete",
+          body: `Your booking ${updated.ticket_number} has been delivered`,
+          data: { type: "trip_delivered", tripId: id },
+        });
+      }
+
       res.json(updated);
     } catch (err) {
       next(err);
