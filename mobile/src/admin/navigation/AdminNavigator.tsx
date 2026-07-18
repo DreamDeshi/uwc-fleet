@@ -34,6 +34,7 @@ import { IncentivesScreen } from "../screens/IncentivesScreen";
 import { IncentiveApprovalsScreen } from "../screens/IncentiveApprovalsScreen";
 import { TripsScreen } from "../screens/TripsScreen";
 import { AdminSettingsScreen } from "../screens/AdminSettingsScreen";
+import { AuditLogScreen } from "../screens/AuditLogScreen";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -68,7 +69,10 @@ const NAV_GROUPS: { headingKey: string; items: NavItem[] }[] = [
   },
   {
     headingKey: "admin.navGroups.system",
-    items: [{ route: "AdminSettings", labelKey: "admin.nav.settings", icon: "settings-outline" }],
+    items: [
+      { route: "AdminAudit", labelKey: "admin.audit.navLabel", icon: "receipt-outline" },
+      { route: "AdminSettings", labelKey: "admin.nav.settings", icon: "settings-outline" },
+    ],
   },
 ];
 
@@ -279,6 +283,7 @@ const SUBTITLE_KEYS: Record<string, string> = {
   AdminUsers: "admin.users.subtitle",
   AdminConsignees: "admin.subtitles.consignees",
   AdminReports: "admin.subtitles.reports",
+  AdminAudit: "admin.audit.subtitle",
   AdminSettings: "admin.subtitles.settings",
 };
 
@@ -499,6 +504,11 @@ function AdminDrawerWide() {
         name="AdminIncentiveApprovals"
         component={IncentiveApprovalsScreen}
         options={{ title: t("admin.titles.incentiveApprovals") }}
+      />
+      <Drawer.Screen
+        name="AdminAudit"
+        component={AuditLogScreen}
+        options={{ title: t("admin.audit.title") }}
       />
       <Drawer.Screen
         name="AdminSettings"

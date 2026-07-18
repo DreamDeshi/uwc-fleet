@@ -456,6 +456,17 @@
       "administration": "Administration",
       "system": "System"
     },
+    "audit": {
+      "navLabel": "Audit Log",
+      "title": "Audit Log",
+      "subtitle": "Who changed what, and when",
+      "allTables": "All",
+      "loadError": "Could not load the audit log.",
+      "empty": "No audit entries yet.",
+      "systemActor": "System",
+      "loadMore": "Load more",
+      "loadingMore": "Loading…"
+    },
     "settings": {
       "languageSection": "Language",
       "languageHint": "Applies across all screens; saved to your account."

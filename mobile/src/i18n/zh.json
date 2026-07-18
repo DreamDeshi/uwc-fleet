@@ -456,6 +456,17 @@
       "administration": "管理",
       "system": "系统"
     },
+    "audit": {
+      "navLabel": "审计日志",
+      "title": "审计日志",
+      "subtitle": "谁在何时更改了什么",
+      "allTables": "全部",
+      "loadError": "无法加载审计日志。",
+      "empty": "暂无审计记录。",
+      "systemActor": "系统",
+      "loadMore": "加载更多",
+      "loadingMore": "加载中…"
+    },
     "settings": {
       "languageSection": "语言",
       "languageHint": "应用于所有屏幕；保存到您的账户。"

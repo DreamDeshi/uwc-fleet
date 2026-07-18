@@ -9,6 +9,8 @@ import { api } from "../services/api";
 import type {
   AdminUser,
   AttentionReport,
+  AuditFilterOptions,
+  AuditPage,
   Consignee,
   DashboardKpis,
   Department,
@@ -127,6 +129,33 @@ export function useTrip(id: string | null) {
     queryKey: ["trips", "detail", id],
     queryFn: async () => (await api.get<Trip>(`/trips/${id}`)).data,
     enabled: !!id,
+  });
+}
+
+// Audit trail (admin, read-only). Keyset-paged newest-first; optional table /
+// action filters. Shares the tanstack infinite-query shape used by the board.
+export function useAuditLog(filters: { table?: string; action?: string } = {}) {
+  const base: Record<string, string> = { limit: "50" };
+  if (filters.table) base.table = filters.table;
+  if (filters.action) base.action = filters.action;
+  return useInfiniteQuery({
+    queryKey: ["audit", base],
+    queryFn: async ({ pageParam }) =>
+      (
+        await api.get<AuditPage>("/audit", {
+          params: pageParam ? { ...base, cursor: pageParam } : base,
+        })
+      ).data,
+    initialPageParam: "",
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+export function useAuditFilters() {
+  return useQuery({
+    queryKey: ["audit", "filters"],
+    queryFn: async () => (await api.get<AuditFilterOptions>("/audit/filters")).data,
+    staleTime: 5 * 60_000,
   });
 }
 

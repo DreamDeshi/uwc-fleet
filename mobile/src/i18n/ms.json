@@ -456,6 +456,17 @@
       "administration": "Pentadbiran",
       "system": "Sistem"
     },
+    "audit": {
+      "navLabel": "Log Audit",
+      "title": "Log Audit",
+      "subtitle": "Siapa ubah apa, dan bila",
+      "allTables": "Semua",
+      "loadError": "Tidak dapat memuatkan log audit.",
+      "empty": "Tiada entri audit lagi.",
+      "systemActor": "Sistem",
+      "loadMore": "Muat lagi",
+      "loadingMore": "Memuatkan…"
+    },
     "settings": {
       "languageSection": "Bahasa",
       "languageHint": "Digunakan di semua skrin; disimpan ke akaun anda."

@@ -408,6 +408,23 @@ export interface FuelLog {
   driver: { name: string } | null;
 }
 
+export interface AuditEntry {
+  id: string;
+  action: string;
+  table_name: string;
+  record_id: string;
+  timestamp: string;
+  user: { id: string; name: string; role: Role } | null;
+}
+export interface AuditPage {
+  rows: AuditEntry[];
+  nextCursor: string | null;
+}
+export interface AuditFilterOptions {
+  actions: string[];
+  tables: string[];
+}
+
 export interface FuelSummary {
   log_count: number;
   total_litres: number;

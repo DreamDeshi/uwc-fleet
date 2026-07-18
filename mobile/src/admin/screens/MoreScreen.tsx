@@ -33,6 +33,7 @@ export function MoreScreen() {
     { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline" },
     { route: "AdminUsers", labelKey: "admin.users.title", icon: "people-outline", count: pendingCount },
     { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },
+    { route: "AdminAudit", labelKey: "admin.audit.navLabel", icon: "receipt-outline" },
   ];
 
   return (
