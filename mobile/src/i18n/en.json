@@ -897,6 +897,12 @@
     },
     "reports": {
       "reportsError": "Could not load reports.",
+      "consolidationTitle": "Consolidation savings",
+      "consolidationSub": "Deliveries combined into shared trips",
+      "tripsSaved": "Fewer trips",
+      "co2Saved": "CO₂e avoided (est.)",
+      "kmSaved": "Distance avoided (est.)",
+      "consolidationEstNote": "Fewer-trips is exact; fuel and CO₂ are estimated from average trip distance.",
       "payrollError": "Could not load payroll.",
       "exportCsv": "⬇ Export CSV",
       "loadingPayroll": "Loading payroll…",

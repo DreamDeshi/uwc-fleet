@@ -885,6 +885,12 @@
     },
     "reports": {
       "reportsError": "Tidak dapat memuatkan laporan.",
+      "consolidationTitle": "Penjimatan penggabungan",
+      "consolidationSub": "Penghantaran digabung dalam trip yang dikongsi",
+      "tripsSaved": "Trip dikurangkan",
+      "co2Saved": "CO₂e dielakkan (angg.)",
+      "kmSaved": "Jarak dielakkan (angg.)",
+      "consolidationEstNote": "Trip dikurangkan adalah tepat; bahan api dan CO₂ dianggarkan daripada purata jarak trip.",
       "payrollError": "Tidak dapat memuatkan gaji.",
       "exportCsv": "⬇ Eksport CSV",
       "loadingPayroll": "Memuatkan gaji…",

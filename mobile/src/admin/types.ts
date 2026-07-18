@@ -408,6 +408,15 @@ export interface FuelLog {
   driver: { name: string } | null;
 }
 
+export interface ConsolidationSavings {
+  trips: number;
+  drops: number;
+  tripsSaved: number;
+  estKmSaved: number;
+  estLitresSaved: number;
+  estCo2eKgSaved: number;
+}
+
 export interface AuditEntry {
   id: string;
   action: string;

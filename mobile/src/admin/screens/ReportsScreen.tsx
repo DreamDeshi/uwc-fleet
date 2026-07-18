@@ -9,7 +9,7 @@ import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { LinearGradient } from "expo-linear-gradient";
-import { useMonthly, usePayroll, useTrips } from "../hooks/queries";
+import { useConsolidationSavings, useMonthly, usePayroll, useTrips } from "../hooks/queries";
 import { colors, font, gradients, radius } from "../theme";
 import { Button, Card, ErrorState, Loading, SectionTitle, TableCell, TableHeader, TableRow } from "../components/ui";
 import { formatDateTime, formatMoney, formatNumber } from "../lib/format";
@@ -33,6 +33,7 @@ export function ReportsScreen() {
   const [month, setMonth] = useState(monthOptions[0]);
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const payroll = usePayroll(month);
+  const consolidation = useConsolidationSavings();
 
   const routeSplit = useMemo(() => {
     const map = new Map<string, number>();
@@ -127,6 +128,20 @@ export function ReportsScreen() {
           </Card>
         </View>
       </View>
+
+      {/* Sustainability — consolidation ("empty-mile") savings. Fewer-trips is
+          exact; km/CO2 are estimates from average trip distance (labelled). */}
+      {consolidation.data && consolidation.data.tripsSaved > 0 && (
+        <Card>
+          <SectionTitle title={t("admin.reports.consolidationTitle")} subtitle={t("admin.reports.consolidationSub")} />
+          <View style={{ flexDirection: wide ? "row" : "column", gap: 16, marginTop: 8 }}>
+            <MiniKpi label={t("admin.reports.tripsSaved")} value={formatNumber(consolidation.data.tripsSaved)} bg={colors.greenTint} fg={colors.green} wide={wide} />
+            <MiniKpi label={t("admin.reports.co2Saved")} value={`${formatNumber(consolidation.data.estCo2eKgSaved)} kg`} bg={colors.greenTint} fg={colors.green} wide={wide} />
+            <MiniKpi label={t("admin.reports.kmSaved")} value={`${formatNumber(consolidation.data.estKmSaved)} km`} bg={colors.greenTint} fg={colors.green} wide={wide} />
+          </View>
+          <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 10 }}>{t("admin.reports.consolidationEstNote")}</Text>
+        </Card>
+      )}
 
       {/* Payroll table — the clerk's month-end sheet; a row expands to the
           per-trip lines its total is the sum of (dispute path). */}

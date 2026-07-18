@@ -16,6 +16,7 @@ import { ApiError } from "../lib/apiError";
 import { buildPayrollRows } from "../services/payroll";
 import { firstDeliveredAt, payAttributionInstant, payableIncentive } from "../services/tripCompletion";
 import { attentionConfig, hoursSince } from "../services/attention";
+import { consolidationSavings } from "../lib/consolidationSavings";
 
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
@@ -476,6 +477,21 @@ router.get("/payroll", async (req, res, next) => {
     );
 
     res.json({ month: monthKey, drivers: rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /reports/consolidation — sustainability KPI. Deliveries consolidated into
+// shared trips is EXACT (drops − trips); the fuel/CO2 figures are estimates from
+// tunable averages (see lib/consolidationSavings) and are labelled so in the UI.
+router.get("/consolidation", async (_req, res, next) => {
+  try {
+    const trips = await prisma.trip.findMany({
+      where: { status: "completed" },
+      select: { _count: { select: { stops: true } } },
+    });
+    res.json(consolidationSavings(trips.map((t) => t._count.stops)));
   } catch (err) {
     next(err);
   }

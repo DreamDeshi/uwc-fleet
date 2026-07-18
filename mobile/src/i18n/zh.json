@@ -885,6 +885,12 @@
     },
     "reports": {
       "reportsError": "无法加载报表。",
+      "consolidationTitle": "合并配送节省",
+      "consolidationSub": "多个配送合并到共享行程",
+      "tripsSaved": "减少的行程",
+      "co2Saved": "减少的 CO₂e（估算）",
+      "kmSaved": "减少的里程（估算）",
+      "consolidationEstNote": "减少的行程为精确值；燃油与 CO₂ 按平均行程距离估算。",
       "payrollError": "无法加载工资单。",
       "exportCsv": "⬇ 导出 CSV",
       "loadingPayroll": "加载工资单中…",

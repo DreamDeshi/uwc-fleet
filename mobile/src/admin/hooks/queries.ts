@@ -12,6 +12,7 @@ import type {
   AuditFilterOptions,
   AuditPage,
   Consignee,
+  ConsolidationSavings,
   DashboardKpis,
   Department,
   DestinationRate,
@@ -148,6 +149,16 @@ export function useAuditLog(filters: { table?: string; action?: string } = {}) {
       ).data,
     initialPageParam: "",
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+// Consolidation ("empty-mile") savings KPI — deliveries that shared a trip, plus
+// an estimated fuel/CO2 avoided. Cumulative over completed trips.
+export function useConsolidationSavings() {
+  return useQuery({
+    queryKey: ["reports", "consolidation"],
+    queryFn: async () => (await api.get<ConsolidationSavings>("/reports/consolidation")).data,
+    staleTime: 5 * 60_000,
   });
 }
 
