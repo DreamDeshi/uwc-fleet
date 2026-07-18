@@ -16,6 +16,8 @@
       "rate_tier_note": "Distinct from the window: the PEAK rate band is the workbook's 'Weekday 8am - 6pm' (INTERNAL LORRY RATE). Off-peak rates apply on public holidays, Saturday/Sunday, and weekdays at/after 18:00 OR before 08:00 - the two rate tables partition the day, so the early-morning hours the widened window opens up are off-peak."
     },
     "incentive_formula": "incentive_RM = (accumulated_daily_trip_incentive_points - daily_deduction) x rate_per_point. Worked examples in the workbook: PLX 2406 assigned to Kulim earns 11 x 3 = RM 33; a driver accumulating 20 points in a day nets 20 - 2 = 18 points.",
+    "source_precedence": "WORKBOOK > EMAIL > WhatsApp (NOT latest-wins). Set 2026-07-18 from Mr. Teh's working style: the spreadsheet is what he writes after checking with his clerk; email is considered; WhatsApp is off the top of his head. A WhatsApp-only answer is WORKBOOK-PENDING (weak evidence), not CONFIRMED. Where workbook and chat conflict, the workbook wins and the conflict is recorded. See the client_decisions[] section below for per-rule source tiers.",
+    "client_answers_log": "The verbatim single-source-of-truth for what Mr. Teh actually said is G:/My Drive/UWC BACKUP/CLIENT_ANSWERS.md (his exact wording, dated, source-grouped by channel). The client_decisions[] block below is the reconciliation of those answers into this spec; where a quote is load-bearing it is reproduced here, but CLIENT_ANSWERS.md is authoritative for wording.",
     "notes": [
       "Truck rate_per_point is the 'Entitled Claim per point' column; weekday vs off-peak differ for PPE 1804 (10 vs 12), PLX 2406 and PND 1888 (11 vs 13). Others are equal across both.",
       "destination_points are the first-trip-of-day point values per destination (the yellow 'trip incentive point' row).",
@@ -117,5 +119,169 @@
     { "name": "Driver 4", "employee_no": "D004", "department": "Marketing", "truck": "PQL 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
     { "name": "Driver 5", "employee_no": "D005", "department": "Marketing", "truck": "PPE 1804", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
     { "name": "Driver 6", "employee_no": "D006", "department": "Marketing", "truck": "PRH 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2", "A1", "A2"], "priority_zones_raw": "ALL",            "notes": "If A1 & A2 with less than 2 pallets of 4x4, give the priority." }
+  ],
+
+  "client_decisions": [
+    {
+      "topic": "incentive_scoring_per_drop",
+      "rule": "Incentive is scored per delivered DROP point. The first drop into a zone on a given operating day earns that zone's full points; every subsequent drop into the SAME zone the SAME day earns a flat 1 point.",
+      "status": "CONFIRMED (first-drop full points) + WORKBOOK-PENDING (the repeat = 1 point clause)",
+      "source_tier": "workbook (first-drop points) / whatsapp (repeat clause)",
+      "sources": [
+        { "channel": "workbook", "sheet": "INTERNAL LORRY RATE", "note": "The yellow 'trip incentive point' row gives each destination's full points, plus the worked example: 'IF A DRIVER OF PLX 2406 BEEN ASSIGNED TO KULIM, HE WILL ENTITLE THE INCENTIVE OF RM 11 X 3 = RM 33'. This establishes the full first-drop zone points. The sheet is SILENT on any repeat-drop discount." },
+        { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-06-30", "quote": "it will depend drop point... if he go to P1, the first destination will count as 3 point, then subsequent destination in same day, same zone will be 1 point" }
+      ],
+      "workbook_pending_note": "The repeat = 1 point clause rests on WhatsApp ALONE — workbook-consistent but not workbook-confirmed (the rate sheet lists only first-trip values). A written email/workbook answer would upgrade it; do not treat the repeat clause as locked spec.",
+      "implementation": "IMPLEMENTED-AS-STATED — api/src/services/incentiveEngine.ts scoreDropsDetailed: a per-day 'seen' zone set (pre-loaded with zones already hit earlier today) sets points = wasRepeat ? 1 : zonePoints, so the repeat rule fires across separate trips within the same day.",
+      "verified": "2026-07-18"
+    },
+    {
+      "topic": "daily_deduction_off_day_total",
+      "rule": "The truck's daily deduction is subtracted ONCE per driver-day off the day's ACCUMULATED point total (not per drop), floored at zero, then multiplied by the rate.",
+      "status": "CONFIRMED",
+      "source_tier": "workbook",
+      "sources": [
+        { "channel": "workbook", "sheet": "INTERNAL LORRY RATE", "note": "Worked example off the day TOTAL: 'IF DRIVER OF PLX 2406 HAVE ACCUMULATE TOTAL 20 TRIP INCENTIVE POINT PER DAY, EVENTUALLY IT WILL CALCULATE AS 18 POINT ONLY (MINUS 2 POINT AS SHOWN IN COLUMN M)'. The per-plate values live in the 'Daily Deduction POINT' column (see trucks[].daily_deduction)." },
+        { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-06-30", "quote": "yes... so the final calculation is 4 point x RM 11 = RM 44... this is the daily incentive driver get", "note": "The RM44 anchor (Ipoh 6 pts - 2 = 4 x RM11) only CORROBORATES the workbook; the workbook is the authoritative source here." }
+      ],
+      "implementation": "IMPLEMENTED-AS-STATED — api/src/services/incentiveEngine.ts calculateDeliveryIncentive: deduction is applied via a telescoping marginal on the running day total (max(prior+group-deduction,0) - max(prior-deduction,0)), spent exactly once per driver-day even across multiple trips.",
+      "verified": "2026-07-18"
+    },
+    {
+      "topic": "rate_change_takes_effect_next_day",
+      "rule": "A rate change never affects a trip that is already running/assigned: that trip keeps the OLD rate it was assigned at. A new rate applies only from the NEXT day for the next delivery. Admin is authorized to edit rates.",
+      "status": "WORKBOOK-PENDING (WhatsApp-only for the timing rule)",
+      "source_tier": "whatsapp (timing) / workbook (admin-may-edit)",
+      "sources": [
+        { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-07-03", "quote": "if already running use the old rate, the new rate should be cut in next day for next delivery.. but usually we wont simply change, maybe few years time review once only.. but at least u authorize to admin to change the rate, there will be cut off time if rate change" },
+        { "channel": "workbook", "sheet": "INTERNAL LORRY RATE", "quote": "PLEASE ASSIGN ADMIN TO ENABLE RATE TO BE MODIFIED ANYTIME", "note": "Workbook backs the admin-may-edit-rates capability; the next-day-cutoff TIMING is WhatsApp-only." }
+      ],
+      "workbook_pending_note": "The next-day-effective timing is WhatsApp-only; low money-risk and matches the built rate-lock, but not workbook-confirmed.",
+      "implementation": "IMPLEMENTED-AS-STATED — two mechanisms: (a) rate SNAPSHOT frozen onto the trip at approve/assign (api/src/routes/trips.ts truckRateSnapshot + snapshotStopZonePoints); finalization pays the snapshot. (b) next-day STAGING on PATCH /rates (api/src/routes/rates.ts writes pending_points + pending_points_effective = next MYT day; live reads ignore a not-yet-effective staged edit).",
+      "verified": "2026-07-18"
+    },
+    {
+      "topic": "admin_interrupt_reassign_mid_trip",
+      "rule": "Admin may interrupt and reassign the driver of a trip that is already RUNNING (in_progress), not only one still 'assigned'. Mr. Teh floated an admin notification as a 'maybe' — optional, NOT a requirement.",
+      "status": "WORKBOOK-PENDING (WhatsApp-only, mis-scoped once) + NOT BUILT for in_progress. TRACKED as the in-progress-reassign prerequisite of proposal #4 (post-launch) — NOT a separate open item; do NOT escalate or re-ask.",
+      "source_tier": "whatsapp",
+      "sources": [
+        { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-07-03", "quote": "then admin is allow to interrupt and change driver, maybe can create a notifitcation to admin change driver" }
+      ],
+      "workbook_pending_note": "WhatsApp only; workbook silent. Historically MIS-SCOPED — the verbatim 'interrupt' (= mid-trip) was once transcribed as 'assigned trip', which narrowed the build to assigned-only. The 'notifitcation to admin' is his 'maybe' → OPTIONAL, not a requirement; do NOT put it on any question/open-items list.",
+      "implementation": "PARTIAL / KEY PART NOT BUILT, and deliberately not fixed here — this is RECORDED, not a fresh escalation. api/src/routes/trips.ts unassign and reassign HARD-GUARD status 'assigned' only and refuse in_progress ('Only assigned (not yet started) trips can be reassigned'). The sole mid-trip lever is PATCH /trips/:id/abort → 'cancelled' with NO reassignment. In-progress reassign is filed POST-LAUNCH under proposal #4 (this record cross-references it). The abort-half's no-pay closes in Aug 2026 via the failed-delivery work. Reassign notifies the two DRIVERS (old + new), not the admin — matching his 'maybe' (optional).",
+      "verified": "2026-07-18"
+    },
+    {
+      "topic": "incentive_day_boundary",
+      "rule": "Points are attributed on DELIVERY-CONFIRMATION time; a trip is not expected to straddle midnight in practice, and points refresh after 12am (midnight daily reset).",
+      "status": "WORKBOOK-PENDING (WhatsApp-only)",
+      "source_tier": "whatsapp",
+      "sources": [
+        { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-07-03", "quote": "it wont happen the trip last for 24 hours... the point will be calculate based on dielievery confirm time, unless admin or system cancel the booking, and then after 12am the point will be refresh again for next day" }
+      ],
+      "workbook_pending_note": "WhatsApp-only; low money-risk and matches the implemented midnight reset.",
+      "implementation": "IMPLEMENTED-AS-STATED — DAILY_RESET_HOUR defaults to 0 (midnight MYT); attribution keys on delivered_at (groupStopsByDeliveryDay / payAttributionInstant). A trip whose confirms cross midnight is SPLIT into two day-groups, each scored against its own ledger, deduction, and rate tier — points do not leak across the boundary.",
+      "verified": "2026-07-18"
+    },
+    {
+      "topic": "johor_selangor_dropped",
+      "rule": "Johor and Selangor are not real destinations and will not be used; the placeholder zones are removed.",
+      "status": "CONFIRMED + DONE (deployed at 715935c / removed 2026-07-18)",
+      "source_tier": "whatsapp",
+      "sources": [
+        { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-07-16", "quote": "is ok you can ignore it, we wont arrange to Johor and Selangor using this apps" }
+      ],
+      "implementation": "DONE — the JH/SL placeholder zones were removed from this spec (see _meta.notes), the seed, and a data migration. Recorded here for the audit trail; no further action.",
+      "verified": "2026-07-18"
+    },
+    {
+      "topic": "failed_delivery_pay",
+      "rule": "If a driver REACHES a drop point but cannot deliver, the stop still earns incentive; if the lorry breaks down halfway, no incentive for stops not reached.",
+      "status": "WORKBOOK-PENDING (WhatsApp-only) + NOT IMPLEMENTED. Written proposal sent 2026-07-18 to upgrade to EMAIL tier.",
+      "source_tier": "whatsapp",
+      "sources": [
+        { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-07-16", "quote": "if driver reach the drop point but cannot deliver, still consider entitle for incentive, if the lorry breakdown halfway, no incentive" },
+        { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-07-16", "quote": "yes will fail if lorry breakdown, i will write down the flow to you", "note": "He is authoring the failed-delivery FLOW; the strongest source (workbook) is silent. This is a MONEY rule — highest priority to get in writing." }
+      ],
+      "workbook_pending_note": "WhatsApp-only; workbook SILENT (not a conflict — a silence). The per-stop reading ('reached-but-couldn't-deliver still paid', 'delivered-before-breakdown stays paid') is an interpretation of an off-the-cuff line; do not build finalization to it as if confirmed until his written flow/proposal reply lands.",
+      "implementation": "NOT IMPLEMENTED — pay is gated strictly on 'delivered' status (POD photo required). A stop reached but not delivered is never stamped delivered_at, so it earns 0 AND blocks trip finalization; a mid-trip breakdown ends via abort -> cancelled with no pay. The 'reached-but-undeliverable, still entitled' path does not exist yet.",
+      "verified": "2026-07-18"
+    },
+    {
+      "topic": "pod_approval_gate",
+      "rule": "After a driver completes delivery and uploads the POD (chopped/signed return DO), the trip + proposed incentive go to ADMIN for approval per trip. Admin may EDIT the final rate before approving; only on approval does the incentive confirm/pay.",
+      "status": "CONFIRMED (workbook + email). SUPERSEDES the 2026-07-03 WhatsApp 'automatic + random check' answer, which was explicitly WITHDRAWN — it is NOT retained as an available lighter option.",
+      "source_tier": "workbook + email",
+      "sources": [
+        { "channel": "workbook", "sheet": "TEST QUERY item 9", "date": "2026-07-16", "quote": "then together with the incentive rate, submit to admin for approval, admin also can edit the final rate prior approval" },
+        { "channel": "email", "who": "Mr. Teh", "date": "2026-07-16", "quote": "please ignore previous request just require admin to random check", "note": "The email covering the workbook. Note his 'random check' phrasing, but item 9 of the SAME workbook asks for the approval gate with rate editing — the workbook (approval gate) is authoritative and the earlier automatic-pay instruction is WITHDRAWN." },
+        { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-07-03", "quote": "automatic is okay, no need admin one by one go check, but must at least upload a photo, admin just random check", "note": "SUPERSEDED/WITHDRAWN by the 16-Jul workbook+email above. Kept for history only." }
+      ],
+      "implementation": "IMPLEMENTED-AS-STATED — two-step propose->approve: delivery flips in_progress -> pending_approval storing incentive_earned (frozen, NOT paid); PATCH /trips/:id/approve-incentive flips pending_approval -> completed and sets payable incentive_final (proposal or admin-edited amount; an edit requires a reason and preserves the original). Payroll counts only completed trips. This gate is CORRECT per the withdrawn-not-optional rule.",
+      "verified": "2026-07-18"
+    },
+    {
+      "topic": "gps_vendor_conditional_release",
+      "client_position": "CONDITIONAL RELEASE (his words, NOT a deferral to a date): IF the vendor will not share a GPS API, THEN drop that portion. He NEVER said 'post-deployment' or 'after launch'. He has raised GPS unprompted TWICE (26 Jun, 17 Jul) and remains interested — 'leave it / nvm' is contingent on the vendor, not a cancellation.",
+      "status": "WORKBOOK-PENDING (WhatsApp / chat-tier). OPEN — contingent on the vendor's API reply.",
+      "source_tier": "whatsapp",
+      "sources": [
+        { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-06-30", "quote": "if u cannot get the GPS API, just leave it / important is auto dispatch system / and their incentive calculation" },
+        { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-07-17", "quote": "gps vendor feedback you already? / if gps cannot share api then nvm / u leave that portion" }
+      ],
+      "our_interpretation": "⚠ NOT his instruction — a build/sequencing decision by Deshi, flagged as interpretation: ship phone tracking NOW and treat vendor-hardware integration as post-launch if/when the vendor shares an API. His words set a CONDITION (no API → drop it), not a SCHEDULE; the post-launch framing goes beyond what he said. Recorded separately from his quote on purpose — they are not the same claim.",
+      "implementation": "PARTIAL BY DESIGN — phone tracking is built. api/prisma/schema.prisma LocationLog.source (default 'phone') RESERVES 'vendor' and the fleet map prefers the freshest vendor fix over phone, so the door stays open. Vendor ingestion (POST /locations for hardware) is intentionally not built pending the vendor API.",
+      "verified": "2026-07-18"
+    },
+    {
+      "topic": "multi_pickup_points",
+      "rule": "One trip may pick up from MORE THAN ONE UWC plant before a single drop, e.g. '5 pallet of 4x4 pickup at UWC P7, another 5 x 5 pallet pickup at UWC P5 then deliver to 1 drop point customer Agilent'.",
+      "status": "STRUCTURE CONFIRMED (workbook) + pickup-point LIST RESOLVED (see pickup_points) + STILL OPEN on two load-bearing questions (see open_question) before any build.",
+      "source_tier": "workbook",
+      "sources": [
+        { "channel": "workbook", "sheet": "TEST QUERY item 3 + Sheet1", "date": "2026-07-16", "quote": "Can add pickup point when requestor book the shipment? Current only show destination point ... 5 pallet of 4x4 pickup at UWC P7, another 5 x 5 pallet pickup at UWC P5 then deliver to 1 drop point customer Agilent" }
+      ],
+      "pickup_points": "RESOLVED 2026-07-18 (authoritative — workbook 'CONSIGNEE and CONSIGNOR' sheet): the pickup points are UWC BERHAD (P1)..(P9) — nine UWC plants at PMT 744, Jalan Cassia Selatan 5/1, Batu Kawan (Simpang Ampat). They are ALREADY seeded as Consignee rows (seed.ts imports that sheet), so P1-P9 already exist in production; P5 and P7 (his founding example) are two of these nine. 'UWC P5' / 'UWC P7' in Sheet1 are the SAME identifiers, not a different set. All nine carry destination-zone P2 and an identical address, so they are likely building/logical labels within ONE compound rather than geographically distinct sites (routing = open).",
+      "namespace_collision_risk": "⚠ CRITICAL FOR THE NEXT READER: a pickup's identity must NEVER share the zone-code namespace, or a pickup can score as a DESTINATION. The '(Pn)' in 'UWC BERHAD (Pn)' is a PLANT label inside the company NAME; the destination ZONE is a SEPARATE column, and every one of the nine plants sits in zone P2 (= 1 point). So plant-'P7' and destination-zones 'P1/P2/P3' merely share the letter 'P'. Model a pickup as a FOREIGN KEY to Consignee.id (opaque cuid) — never as a 'Pn' string code. Extracting 'P5'/'P7' as a code would collide with zone codes: 'P7' is not even a zone, and the plant is in zone P2, so a code-keyed pickup would corrupt scoring. The planned design (CargoDetail.pickup_consignee_id -> Consignee(id)) does this correctly and is deliberately NOT a TripStop (a pickup-as-stop would pay 1pt for arriving at the driver's own factory, absorb the daily deduction, and set the delivery day/rate tier from pickup time).",
+      "open_question": "Pickup LIST is resolved; the BUILD is still gated on two LOAD-BEARING questions going to Mr. Teh (NOT UI polish): Q2 — does a pickup ever come AFTER a delivery (e.g. Customer/Supplier Return route types pick up at the customer)? If yes, capacity == whole-trip-sum-at-departure no longer holds, which is the whole reason multi-pickup does not touch the incentive engine — the plan's foundation would change. Q5 — Sheet1's real cargo is rack / crate / box / tray, but auto-dispatch only sizes Pallet / Carton; if those cannot be sized, a real Sheet1 run cannot dispatch at all. Owner will not build on an unconfirmed foundation.",
+      "implementation": "NOT BUILT — the trip model still has a single implicit origin (ORIGIN_LABEL = 'UWC Batu Kawan', a display string, ~4 places). Plan: ITEM3_MULTIPICKUP_PLAN.md (Drive) — one additive, nullable FK CargoDetail.pickup_consignee_id; the trip's pickup list is DERIVED as DISTINCT(cargo.pickup_consignee_id); NULL = today's single origin (zero backfill). Engine untouched — CONDITIONAL on Q2.",
+      "verified": "2026-07-18"
+    },
+    {
+      "topic": "driver_swap_lorries",
+      "rule": "Whether a driver can swap between different lorries — which would break the current 1:1 driver<->truck binding that also carries per-lorry rate snapshots.",
+      "status": "OPEN — this is a QUESTION Mr. Teh asked, not an answer he gave (a question in the workbook is not a confirmed answer).",
+      "source_tier": "workbook (posed as a question)",
+      "sources": [
+        { "channel": "workbook", "sheet": "TEST QUERY item 5", "date": "2026-07-16", "quote": "the driver can swap between different lorry?" }
+      ],
+      "implementation": "NOT BUILT — driver + truck are welded pairs and the money path snapshots rates per lorry. Money-adjacent; do not change without his answer.",
+      "verified": "2026-07-18"
+    },
+    {
+      "topic": "pallet_1x1_1x2_vs_boxes",
+      "rule": "Whether the '1x1' and '1x2' sizes added in item 2 are really PALLETS or are boxes/cartons. A 1x1 factor of 0.0625 implies ~256 to a PLX 2406, which is not a pallet-shaped number.",
+      "status": "OPEN — pending Mr. Teh; factors deliberately NOT guessed into the money path.",
+      "source_tier": "workbook (sizes only) / open (classification + factors)",
+      "sources": [
+        { "channel": "workbook", "sheet": "TEST QUERY item 2", "date": "2026-07-16", "quote": "Kindly Add pallet size / 5x5, 2x3, 3x3, 1x1, 1x2" }
+      ],
+      "open_question": "Are 1x1 / 1x2 pallets or boxes? If boxes, they belong under 'carton' with an estimated_pallets count, not as pallet factors.",
+      "implementation": "See cargo.pallet_sizes — 1x2 and 1x1 carry unconfirmed:true with a note; their factors are DERIVED from the width x height / 16 rule, NOT client-confirmed.",
+      "verified": "2026-07-18"
+    },
+    {
+      "topic": "operating_window_0200_leave_vs_back",
+      "rule": "The pickup window was widened to end at 02:00 (from 18:00), so an operating day now wraps midnight: 07:00 -> 02:00 the next calendar day. OPEN sub-question: is 02:00 the latest a truck may LEAVE, or the time it must be BACK?",
+      "status": "WINDOW EXTENSION CONFIRMED (workbook item 12) + OPEN (leave-vs-back interpretation — code assumes BACK-by-02:00)",
+      "source_tier": "workbook (the 02:00 extension) / open (the leave-vs-back reading)",
+      "sources": [
+        { "channel": "workbook", "sheet": "TEST QUERY item 12", "date": "2026-07-16", "quote": "can pickup time allow set until 2AM instead of 6pm", "note": "Confirms the end moves to 02:00. The workbook is SILENT on whether 02:00 bounds departure or return." }
+      ],
+      "open_question": "Is 02:00 the latest a truck may LEAVE, or when it must be BACK? The workbook does not say. If he means 'latest to leave', the completion bound must become its own separate setting.",
+      "implementation": "BUILT to the BACK-by-02:00 reading (one shift-shaped window). api/src/services/operatingWindow.ts bounds BOTH the pickup AND the estimated completion by the window; completionPastWindow flags a run whose estimated completion lands after the operating-day close (see the ⚠ OPEN QUESTION comment at operatingWindow.ts:22-25 and _meta.operating_window). Not a code contradiction — a documented assumption pending his answer.",
+      "verified": "2026-07-18"
+    }
   ]
 }
