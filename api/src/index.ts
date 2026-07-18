@@ -2,6 +2,7 @@ import { app } from "./app";
 import { startPendingTripAlerts } from "./services/pendingTripAlerts";
 import { startRateMaturation } from "./services/pendingRates";
 import { startStaleTicketSweep } from "./services/staleTicketSweep";
+import { startDocExpiryReminders } from "./services/docExpiryReminders";
 import { prisma } from "./lib/prisma";
 import { checkLocalDb, isDeployedRuntime } from "./lib/dbGuard";
 
@@ -30,4 +31,7 @@ app.listen(PORT, () => {
   // Background job (feedback item 8): every 03:00 MYT, auto-cancel undelivered
   // tickets from prior days so their drivers/trucks are freed for the new day.
   startStaleTicketSweep();
+  // Background job: once a day (09:00 MYT), push admins about trucks whose
+  // insurance/permit/road-tax expires within the reminder window.
+  startDocExpiryReminders();
 });
