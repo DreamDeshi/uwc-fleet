@@ -7,6 +7,7 @@ import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { activeBookingsForConsigneeWhere, updateConsignee } from "../services/consigneeUpdate";
+import { parseConsigneeCsv } from "../lib/consigneeCsv";
 
 const router = Router();
 router.use(requireAuth);
@@ -419,5 +420,36 @@ router.patch(
     }
   }
 );
+
+// POST /consignees/import — bulk-create consignees from pasted CSV text (admin).
+// Header-flexible (see lib/consigneeCsv); rows missing company/zone or naming an
+// unknown zone are reported in `skipped`, not created. Deliberately does NOT run
+// the interactive similar-name guard — bulk imports are cleaned up afterward via
+// the consignee-merge tool.
+const importConsigneesSchema = z.object({ csv: z.string().min(1) });
+router.post("/import", requireRole("admin"), validateBody(importConsigneesSchema), async (req, res, next) => {
+  try {
+    const { rows, errors } = parseConsigneeCsv(req.body.csv);
+    const validZones = new Set((await prisma.zone.findMany({ select: { code: true } })).map((z) => z.code));
+    const skipped = [...errors];
+    let created = 0;
+    for (const r of rows) {
+      if (!validZones.has(r.zone_code)) {
+        skipped.push({ line: 0, reason: `unknown zone "${r.zone_code}" for ${r.company_name}` });
+        continue;
+      }
+      await prisma.consignee.create({ data: { ...r, created_by: req.user!.id } });
+      created += 1;
+    }
+    if (created > 0) {
+      await prisma.auditLog.create({
+        data: { user_id: req.user!.id, action: `consignee.bulk_imported (${created})`, table_name: "Consignee", record_id: "import" },
+      });
+    }
+    res.json({ created, skipped });
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;

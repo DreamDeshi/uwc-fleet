@@ -173,6 +173,18 @@ export function useAuditFilters() {
 // Consignee directory management (admin). include_inactive lets the admin
 // find deactivated rows to reactivate; the API caps results at 10, so the
 // search box is the primary navigation.
+export interface ConsigneeImportResult {
+  created: number;
+  skipped: { line: number; reason: string }[];
+}
+export function useImportConsignees() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (csv: string) => (await api.post<ConsigneeImportResult>("/consignees/import", { csv })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["consignees"] }),
+  });
+}
+
 export function useConsignees(search: string, includeInactive: boolean) {
   return useQuery({
     queryKey: ["consignees", search, includeInactive],

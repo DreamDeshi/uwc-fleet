@@ -6,10 +6,10 @@
 // (useConsignees/useUpdateConsignee), same 409 force-save flow
 // (SIMILAR_EXISTS / CONSIGNEE_IN_USE → "Save anyway" re-submits force=true).
 import React, { useEffect, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, Switch, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, Switch, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
-import { useConsignees, useCreateConsignee, useUpdateConsignee } from "../hooks/queries";
+import { useConsignees, useCreateConsignee, useImportConsignees, useUpdateConsignee, type ConsigneeImportResult } from "../hooks/queries";
 import { colors, font, radius } from "../theme";
 import { Button, Card, EmptyState, ErrorState, Input, Loading, Modal, Pill, SearchInput } from "../components/ui";
 import { apiErrorCode, apiErrorMessage } from "../services/api";
@@ -26,6 +26,7 @@ export function ConsigneesScreen() {
   const [includeInactive, setIncludeInactive] = useState(false);
   const [editing, setEditing] = useState<Consignee | null>(null);
   const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedQ(q), 300);
@@ -62,6 +63,9 @@ export function ConsigneesScreen() {
           <Text style={{ fontSize: font.sm, color: colors.textFaint, flex: 1, textAlign: "right" }}>
             {t("admin.consignees.showing", { count: rows.length })}
           </Text>
+          <Button size="sm" variant="outline" onPress={() => setImporting(true)}>
+            {t("admin.consignees.importBtn")}
+          </Button>
           <Button size="sm" variant="primary" onPress={() => setAdding(true)}>
             {t("admin.consignees.add")}
           </Button>
@@ -116,6 +120,7 @@ export function ConsigneesScreen() {
 
       {editing && <EditConsigneeModal consignee={editing} onClose={() => setEditing(null)} />}
       {adding && <AddConsigneeModal onClose={() => setAdding(false)} />}
+      {importing && <ImportConsigneesModal onClose={() => setImporting(false)} />}
     </ScrollView>
   );
 }
@@ -216,6 +221,54 @@ function AddConsigneeModal({ onClose }: { onClose: () => void }) {
         onSelect={setZone}
         onClose={() => setZoneOpen(false)}
       />
+    </Modal>
+  );
+}
+
+function ImportConsigneesModal({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
+  const imp = useImportConsignees();
+  const [csv, setCsv] = useState("");
+  const [result, setResult] = useState<ConsigneeImportResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    setError(null);
+    try {
+      setResult(await imp.mutateAsync(csv));
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    }
+  };
+
+  return (
+    <Modal open title={t("admin.consignees.importTitle")} onClose={onClose}>
+      <Text style={{ fontSize: font.sm, color: colors.textMuted, marginBottom: 8 }}>{t("admin.consignees.importHint")}</Text>
+      <TextInput
+        value={csv}
+        onChangeText={setCsv}
+        multiline
+        placeholder={"Company,Zone,Area,Phone\nACME SDN BHD,P1,Bayan Lepas,04-000000"}
+        placeholderTextColor={colors.textFaint}
+        style={{ minHeight: 140, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 10, fontSize: font.sm, color: colors.text, textAlignVertical: "top" }}
+      />
+      {error ? <Text style={{ color: colors.red, fontSize: font.sm, marginTop: 8 }}>{error}</Text> : null}
+      {result ? (
+        <View style={{ marginTop: 10 }}>
+          <Text style={{ fontWeight: "700", color: colors.text }}>
+            {t("admin.consignees.importResult", { created: result.created, skipped: result.skipped.length })}
+          </Text>
+          {result.skipped.slice(0, 8).map((s, i) => (
+            <Text key={i} style={{ fontSize: font.sm, color: colors.textMuted }}>
+              • {s.reason}
+              {s.line ? ` (line ${s.line})` : ""}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      <Button onPress={run} disabled={!csv.trim() || imp.isPending} style={{ marginTop: 12 }}>
+        {imp.isPending ? t("admin.consignees.saving") : t("admin.consignees.importBtn")}
+      </Button>
     </Modal>
   );
 }
