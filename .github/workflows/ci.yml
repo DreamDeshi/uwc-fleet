@@ -1,0 +1,40 @@
+name: CI
+
+# Gate every push and PR to main on the API unit suite (677 tests, including the
+# money-path incentive/dispatch conformance suite). Pure-logic tests only — no
+# Docker, no database connection — so this stays fast and self-contained. The
+# integration + e2e tiers need the Docker test DB and are run separately.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api-tests:
+    name: API unit tests (incl. money-path conformance)
+    runs-on: ubuntu-latest
+    env:
+      # prisma generate needs the datasource env to resolve; it does NOT connect,
+      # and the unit tests never query, so a placeholder URL is enough.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/placeholder
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate --workspace api
+
+      - name: Run API unit suite
+        run: npm test --workspace api
