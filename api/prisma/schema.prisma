@@ -45,6 +45,26 @@ enum StopStatus {
   pending
   arrived
   delivered
+  // NEW (Aug 2026, failed-delivery): terminal. Either the driver REACHED the
+  // stop but could not deliver (site closed / goods rejected / no receiver) —
+  // those carry arrived_at + fail_evidence — OR the stop was VOIDED when a
+  // confirmed breakdown finalized the trip's reached portion (fail_reason_code
+  // = breakdown_void, no arrived_at). Pay eligibility is decided at
+  // FINALIZATION from (fail_reason_code, arrived_at), never from this status alone.
+  failed
+}
+
+// Fixed failure reasons offered to the driver — the set proposed to Mr. Teh so
+// he can COUNT them — sitting alongside the free-text TripStop.fail_reason for
+// detail. `breakdown_void` is NOT a driver choice: it is stamped by breakdown
+// finalization onto stops the driver never reached, making "voided by breakdown"
+// EXPLICIT rather than inferred from a null arrived_at.
+enum StopFailReason {
+  site_closed
+  goods_rejected
+  no_receiver
+  breakdown_void
+  other
 }
 
 // Immutable trip-lifecycle milestones. One row is appended per transition; rows
@@ -299,6 +319,27 @@ model Trip {
   // (claimPendingTrip), so it strictly means "this pending trip is here because
   // an admin pulled the driver, and must not be auto-re-dispatched."
   auto_dispatch_paused Boolean @default(false)
+  // Breakdown (Aug 2026, step 3): a trip-level event, NOT a stop action. The
+  // driver reports (breakdown_reported_at/by + reason); an admin confirms
+  // (breakdown_confirmed_at/by). Confirmation triggers finalization of the
+  // REACHED portion (delivered ∪ failed-with-arrived_at) under this ONE driver;
+  // unreached stops are stamped failed/breakdown_void. The remainder is RE-BOOKED
+  // by the admin as an ORDINARY NEW trip (NO ticket split — post-launch #4), and
+  // that new trip carries its own breakdown_* columns. All nullable/additive; a
+  // trip with breakdown_confirmed_at = null is a normal trip.
+  //
+  // ⚠ INTENTIONAL: these five columns model exactly ONE breakdown per trip. That
+  // is by design — a truck breaks down once per trip; the continuation is a fresh
+  // trip. A hypothetical SECOND breakdown on the SAME trip is NOT representable
+  // and would overwrite the first (silent data loss) — if that ever becomes real,
+  // this needs a child TripBreakdown table, not more columns. Noted so it is a
+  // decision, not an accident. (Distinct from PATCH /trips/:id/abort, which
+  // cancels with NO pay; breakdown PAYS the reached portion.)
+  breakdown_reported_at   DateTime?
+  breakdown_reported_by   String?  // driver User id
+  breakdown_reason        String?
+  breakdown_confirmed_at  DateTime?
+  breakdown_confirmed_by  String?  // admin User id
   created_at       DateTime   @default(now())
 
   stops               TripStop[]
@@ -355,6 +396,19 @@ model TripStop {
   // cleared with zone_points on unassign. NULL = assigned pre-snapshot →
   // finalization falls back to the consignee's live zone.
   zone_code      String?
+  // Failed-delivery (Aug 2026). Set only when status = failed. `fail_reason_code`
+  // is the fixed reason (countable); `fail_reason` is the driver's free-text
+  // detail. `fail_evidence`(+`_public_id`) is the attempt photo, uploaded through
+  // the SAME authenticated-Cloudinary pipeline as pod_photo (lib/podPhotos.ts
+  // signs the _public_id) — kept as its OWN column so isDocumentationComplete's
+  // pod_photo delivery-gate can never be satisfied by a failure photo. Whether a
+  // failed stop is PAID is computed at finalization from (fail_reason_code,
+  // arrived_at) — deliberately NOT encoded here, so a pay-rule correction is a
+  // finalization-only change. All nullable/additive.
+  fail_reason_code        StopFailReason?
+  fail_reason             String?
+  fail_evidence           String?
+  fail_evidence_public_id String?
 }
 
 // ── 8b. PublicHoliday ────────────────────────────────────────────────
