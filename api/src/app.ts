@@ -21,6 +21,7 @@ import dispatchRoutes from "./routes/dispatch";
 import holidaysRoutes from "./routes/holidays";
 import leavesRoutes from "./routes/leaves";
 import auditRoutes from "./routes/audit";
+import publicRoutes from "./routes/public";
 import { errorHandler } from "./middleware/errorHandler";
 
 // The Express app is constructed here and exported so it can be driven
@@ -79,6 +80,9 @@ app.use("/api/v1/consignees", consigneesRoutes);
 app.use("/api/v1/incentives", incentivesRoutes);
 app.use("/api/v1/trucks", trucksRoutes);
 app.use("/api/v1/audit", auditRoutes);
+// Public (unauthenticated) read-only delivery tracking page. Not under /api/v1
+// so the shareable link stays clean: <host>/track/<token>.
+app.use("/track", publicRoutes);
 app.use("/api/v1/rates", ratesRoutes);
 app.use("/api/v1/reports", reportsRoutes);
 app.use("/api/v1/analytics", analyticsRoutes);

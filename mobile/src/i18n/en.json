@@ -403,6 +403,7 @@
     "tlCancelled": "Cancelled",
     "tlRejected": "Rejected",
     "editRequest": "Edit Booking",
+    "shareTracking": "Share tracking",
     "cancelRequest": "Cancel Request",
     "cancelConfirmTitle": "Cancel this request?",
     "cancelConfirmBody": "This action cannot be undone.",

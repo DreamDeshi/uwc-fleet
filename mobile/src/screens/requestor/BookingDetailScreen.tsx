@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Image, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, Linking, Modal, RefreshControl, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
@@ -10,7 +10,7 @@ import { useTrip, useCancelTrip, useTripLatestLocation, useUploadTripDocument } 
 import { pickDocumentImage } from "../../lib/photo";
 import { TripDocument } from "../../types";
 import { useToast } from "../../components/Toast";
-import { apiErrorMessage } from "../../services/api";
+import { api, apiErrorMessage } from "../../services/api";
 import { colors, radius, shadow } from "../../theme";
 import { useWide } from "../../hooks/useWide";
 import { Card } from "../../components/Card";
@@ -53,6 +53,17 @@ export function BookingDetailScreen() {
   // Editing is narrower than cancelling: strictly pending (the server enforces
   // the same rule — once a driver is claimed the booking is immutable).
   const canEdit = trip.status === "pending";
+  const canShare = ["assigned", "in_progress", "pending_approval", "completed"].includes(trip.status);
+
+  async function shareTracking() {
+    if (!trip) return;
+    try {
+      const { url } = (await api.get<{ url: string }>(`/trips/${trip.id}/tracking-link`)).data;
+      await Share.share({ message: url, url });
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    }
+  }
 
   const onCancel = async () => {
     setError(null);
@@ -244,10 +255,19 @@ export function BookingDetailScreen() {
       </ScrollView>
 
       {/* Edit (pending only) + Cancel */}
-      {canCancel ? (
+      {canCancel || canShare ? (
         <View style={[styles.bottom, { paddingBottom: insets.bottom + 12 }]}>
           <View style={wide ? styles.bottomInner : undefined}>
             <View style={{ flexDirection: "row", gap: 10 }}>
+              {canShare ? (
+                <Button
+                  title={t("bookingDetail.shareTracking")}
+                  variant="outline"
+                  onPress={shareTracking}
+                  style={{ flex: 1 }}
+                  icon={<Ionicons name="share-social-outline" size={18} color={colors.blue} />}
+                />
+              ) : null}
               {canEdit ? (
                 <Button
                   title={t("bookingDetail.editRequest")}
@@ -256,13 +276,15 @@ export function BookingDetailScreen() {
                   icon={<Ionicons name="create-outline" size={18} color={colors.white} />}
                 />
               ) : null}
-              <Button
-                title={t("bookingDetail.cancelRequest")}
-                variant="outline"
-                onPress={() => setConfirm(true)}
-                style={{ flex: 1, borderColor: colors.red }}
-                icon={<Ionicons name="close-circle-outline" size={18} color={colors.blue} />}
-              />
+              {canCancel ? (
+                <Button
+                  title={t("bookingDetail.cancelRequest")}
+                  variant="outline"
+                  onPress={() => setConfirm(true)}
+                  style={{ flex: 1, borderColor: colors.red }}
+                  icon={<Ionicons name="close-circle-outline" size={18} color={colors.blue} />}
+                />
+              ) : null}
             </View>
           </View>
         </View>

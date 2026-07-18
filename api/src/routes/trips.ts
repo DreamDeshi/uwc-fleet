@@ -61,6 +61,7 @@ import { uploadBuffer } from "../lib/cloudinary";
 import { signTripResponse } from "../lib/podPhotos";
 import { resolveFleetFix } from "../lib/gpsPosition";
 import { sendPushNotifications } from "../lib/pushNotifications";
+import { signTrackingToken } from "../lib/trackingToken";
 import { getDispatchMode } from "../lib/settings";
 import { autoDispatchTrip } from "../services/dispatchEngine";
 import { palletEquivalents, CARGO_PALLET_TYPES, normalizePalletType } from "../lib/pallets";
@@ -743,6 +744,28 @@ router.get("/:id/route", async (req, res, next) => {
     const route = await getRoute(PLANT_ORIGIN, destination, waypoints);
 
     res.json(route);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /trips/:id/tracking-link — shareable public tracking URL (owner/admin) ──
+// The owner requestor (or an admin) gets a signed <host>/track/<token> link they
+// can forward to their own customer. Read-only, non-sensitive status only.
+router.get("/:id/tracking-link", async (req, res, next) => {
+  try {
+    const trip = await prisma.trip.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, requestor_id: true },
+    });
+    if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+    const isOwner = req.user!.role === "requestor" && trip.requestor_id === req.user!.id;
+    if (!isOwner && req.user!.role !== "admin") {
+      throw new ApiError(403, "FORBIDDEN", "You do not have permission to view this trip.");
+    }
+    const token = signTrackingToken(trip.id);
+    const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`;
+    res.json({ url: `${base}/track/${token}` });
   } catch (err) {
     next(err);
   }

@@ -403,6 +403,7 @@
     "tlCancelled": "已取消",
     "tlRejected": "已拒绝",
     "editRequest": "编辑预订",
+    "shareTracking": "分享追踪链接",
     "cancelRequest": "取消请求",
     "cancelConfirmTitle": "取消此请求？",
     "cancelConfirmBody": "此操作无法撤销。",
