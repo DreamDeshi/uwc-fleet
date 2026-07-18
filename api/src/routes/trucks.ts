@@ -10,6 +10,7 @@ import { mytDayBoundsForKey } from "../lib/myt";
 import { palletEquivalents } from "../lib/pallets";
 import { loadSpecTrucks } from "../lib/uwcSpec";
 import { planRateReset } from "../services/rateReset";
+import { summariseFuel } from "../lib/fuelSummary";
 import { effectiveTruckRates, nextMytDayKey } from "../services/pendingRates";
 import { currentMytMonthBounds } from "../lib/myt";
 
@@ -61,25 +62,9 @@ function serializeFuelLog(log: {
   };
 }
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
-
-// Roll a set of fuel logs up into the FR-CT5 summary figures. total_km_covered
-// is the odometer span (max − min) across logs that recorded an odometer; the
-// per-litre / per-km rates are null when their denominator is zero.
-function summariseFuel(logs: { liters: unknown; cost: unknown; odometer: number | null }[]) {
-  const total_litres = round2(logs.reduce((s, l) => s + Number(l.liters), 0));
-  const total_cost_rm = round2(logs.reduce((s, l) => s + Number(l.cost), 0));
-  const odos = logs.map((l) => l.odometer).filter((o): o is number => o != null);
-  const total_km_covered = odos.length >= 2 ? Math.max(...odos) - Math.min(...odos) : 0;
-  return {
-    log_count: logs.length,
-    total_litres,
-    total_cost_rm,
-    avg_cost_per_litre: total_litres > 0 ? round2(total_cost_rm / total_litres) : null,
-    total_km_covered,
-    cost_per_km: total_km_covered > 0 ? round2(total_cost_rm / total_km_covered) : null,
-  };
-}
+// Fuel rollup + carbon/efficiency metrics live in lib/fuelSummary (pure, tested).
+// summariseFuel now also returns litres_per_100km, co2e_kg and co2e_kg_per_km —
+// both fuel endpoints below (per-truck summary + all-logs) get them for free.
 
 // POST /trucks/:plate/fuel — log a fuel fill-up (admin, or the truck's driver).
 router.post(

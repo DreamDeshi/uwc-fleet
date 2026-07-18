@@ -28,6 +28,22 @@ export function FuelPanel() {
     [summary.data]
   );
 
+  // Fleet carbon + efficiency rollup (the dashboard headline): total CO2e this
+  // month, distance, and a DISTANCE-WEIGHTED fleet L/100km (fleet litres ÷ fleet
+  // km × 100 — not an average of per-truck rates, which would misweight).
+  const fleet = useMemo(() => {
+    const r = summary.data ?? [];
+    const litres = r.reduce((s, x) => s + x.total_litres, 0);
+    const km = r.reduce((s, x) => s + x.total_km_covered, 0);
+    const co2e = r.reduce((s, x) => s + x.co2e_kg, 0);
+    return {
+      co2e: Math.round(co2e * 10) / 10,
+      km,
+      lp100: km > 0 ? Math.round((litres / km) * 100 * 10) / 10 : null,
+      hasData: r.some((x) => x.log_count > 0),
+    };
+  }, [summary.data]);
+
   if (summary.isLoading) return <Loading />;
   if (summary.isError) return <ErrorState message={t("admin.trucks.fuelLoadError")} onRetry={() => summary.refetch()} />;
 
@@ -49,6 +65,26 @@ export function FuelPanel() {
           </Button>
         </View>
 
+        {fleet.hasData && (
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 14, paddingVertical: 12, paddingHorizontal: 16, backgroundColor: "#F0FDF4", borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1, minWidth: 150 }}>
+              <Ionicons name="leaf" size={18} color="#16A34A" />
+              <View>
+                <Text style={{ fontSize: 18, fontWeight: "800", color: colors.text }}>{`${formatNumber(fleet.co2e)} kg`}</Text>
+                <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trucks.co2eThisMonth")}</Text>
+              </View>
+            </View>
+            <View style={{ flex: 1, minWidth: 110 }}>
+              <Text style={{ fontSize: 18, fontWeight: "800", color: colors.text }}>{fleet.lp100 != null ? formatNumber(fleet.lp100) : "—"}</Text>
+              <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trucks.fleetEfficiency")}</Text>
+            </View>
+            <View style={{ flex: 1, minWidth: 100 }}>
+              <Text style={{ fontSize: 18, fontWeight: "800", color: colors.text }}>{fleet.km > 0 ? `${formatNumber(fleet.km)} km` : "—"}</Text>
+              <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trucks.distanceThisMonth")}</Text>
+            </View>
+          </View>
+        )}
+
         {rows.length === 0 ? (
           <EmptyState message={t("admin.trucks.noFuel")} />
         ) : wide ? (
@@ -59,6 +95,8 @@ export function FuelPanel() {
               <TableCell flex={0.9} header textStyle={{ textAlign: "right" }}>{t("admin.trucks.litres")}</TableCell>
               <TableCell flex={1} header textStyle={{ textAlign: "right" }}>{t("admin.trucks.costRm")}</TableCell>
               <TableCell flex={0.9} header textStyle={{ textAlign: "right" }}>{t("admin.trucks.colCostKm")}</TableCell>
+              <TableCell flex={0.9} header textStyle={{ textAlign: "right" }}>{t("admin.trucks.colLper100")}</TableCell>
+              <TableCell flex={0.9} header textStyle={{ textAlign: "right" }}>{t("admin.trucks.colCo2")}</TableCell>
               <TableCell flex={0.8} header textStyle={{ textAlign: "right" }}>{""}</TableCell>
             </TableHeader>
             {rows.map((r) => (
@@ -79,6 +117,10 @@ export function FuelPanel() {
                     <Text style={{ fontSize: font.sm, color: colors.textMuted }}>
                       {formatNumber(r.total_litres)} L · {formatMoney(r.total_cost_rm)}
                       {r.cost_per_km != null ? ` · ${formatMoney(r.cost_per_km)}/km` : ""}
+                    </Text>
+                    <Text style={{ fontSize: font.sm, color: "#16A34A", marginTop: 1 }}>
+                      {`${formatNumber(r.co2e_kg)} kg CO₂e`}
+                      {r.litres_per_100km != null ? ` · ${formatNumber(r.litres_per_100km)} L/100km` : ""}
                     </Text>
                   </View>
                   <Ionicons name={expanded === r.plate ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} />
@@ -112,6 +154,8 @@ function FuelRowWide({ row, expanded, onToggle }: { row: TruckFuelSummary; expan
           <TableCell flex={0.9} textStyle={right}>{`${formatNumber(row.total_litres)} L`}</TableCell>
           <TableCell flex={1} textStyle={right}>{formatMoney(row.total_cost_rm)}</TableCell>
           <TableCell flex={0.9} textStyle={right}>{row.cost_per_km != null ? formatMoney(row.cost_per_km) : "—"}</TableCell>
+          <TableCell flex={0.9} textStyle={right}>{row.litres_per_100km != null ? formatNumber(row.litres_per_100km) : "—"}</TableCell>
+          <TableCell flex={0.9} textStyle={right}>{formatNumber(row.co2e_kg)}</TableCell>
           <TableCell flex={0.8} textStyle={{ textAlign: "right", color: colors.textFaint, fontSize: font.sm }}>
             {t("admin.trucks.fills", { count: row.log_count })}
           </TableCell>

@@ -415,6 +415,10 @@ export interface FuelSummary {
   avg_cost_per_litre: number | null;
   total_km_covered: number;
   cost_per_km: number | null;
+  // Efficiency + carbon (fuel dashboard) — display only.
+  litres_per_100km: number | null;
+  co2e_kg: number;
+  co2e_kg_per_km: number | null;
 }
 
 // One row of GET /trucks/fuel/summary (this month, per truck).
