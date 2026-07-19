@@ -459,6 +459,7 @@
       "drivers": "Pengurusan Pemandu",
       "trucks": "Pengurusan Lori",
       "performance": "Prestasi",
+      "calendar": "Kalendar",
       "incentiveApprovals": "Kelulusan POD",
       "incentives": "Kadar Insentif",
       "approvals": "Kelulusan Pengguna",
@@ -482,6 +483,23 @@
       "trips": "Tiket",
       "consignees": "Penerima",
       "people": "Orang"
+    },
+    "alerts": {
+      "title": "Peringatan",
+      "empty": "Semua sudah selesai.",
+      "autoFailed": "{{count}} tempahan gagal auto-hantar",
+      "podApprovals": "{{count}} penghantaran menunggu kelulusan POD",
+      "pendingUsers": "{{count}} akaun menunggu kelulusan",
+      "truckDocs": "{{count}} dokumen lori akan tamat tempoh"
+    },
+    "calendar": {
+      "holidays": "Cuti Umum",
+      "leave": "Cuti Pemandu",
+      "manage": "Urus",
+      "legendHoliday": "Cuti umum",
+      "legendLeave": "Pemandu bercuti",
+      "onLeave": "{{name}} bercuti",
+      "nothingOnDay": "Tiada dijadualkan."
     },
     "audit": {
       "navLabel": "Log Audit",
@@ -611,6 +629,8 @@
       "intro": "Skor berwajaran = tepat masa 40 · penyiapan 30 · insentif 30.",
       "leaderboard": "Papan Pendahulu",
       "leaderboardHint": "Skor tertinggi dahulu.",
+      "topPerformers": "Pemandu Terbaik",
+      "tripsShort": "Trip",
       "driver": "Pemandu",
       "score": "Skor",
       "tier": "Tahap",
@@ -906,7 +926,8 @@
       "dashboard": "Gambaran armada langsung",
       "trips": "Hantar & pantau tempahan",
       "drivers": "Pemandu & prestasi",
-      "performance": "Kebolehpercayaan, produktiviti & beban kerja",
+      "performance": "Papan pendahulu pemandu",
+      "calendar": "Cuti umum & cuti pemandu",
       "trucks": "Armada & luput dokumen",
       "incentiveApprovals": "Semak POD & lepaskan insentif",
       "incentives": "Kadar tuntutan & mata destinasi",
@@ -963,6 +984,7 @@
       "trips": "Pengurusan Trip",
       "drivers": "Pengurusan Pemandu",
       "performance": "Prestasi Pemandu",
+      "calendar": "Kalendar",
       "trucks": "Pengurusan Lori",
       "incentiveApprovals": "Barisan Kelulusan POD",
       "incentives": "Pengurusan Kadar Insentif",

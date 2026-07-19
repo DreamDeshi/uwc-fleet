@@ -459,6 +459,7 @@
       "drivers": "Driver Management",
       "trucks": "Truck Management",
       "performance": "Performance",
+      "calendar": "Calendar",
       "incentiveApprovals": "POD Approvals",
       "incentives": "Incentive Rates",
       "approvals": "User Approvals",
@@ -482,6 +483,23 @@
       "trips": "Tickets",
       "consignees": "Consignees",
       "people": "People"
+    },
+    "alerts": {
+      "title": "Alerts",
+      "empty": "You're all caught up.",
+      "autoFailed": "{{count}} booking(s) failed auto-dispatch",
+      "podApprovals": "{{count}} delivery(ies) awaiting POD approval",
+      "pendingUsers": "{{count}} account(s) awaiting approval",
+      "truckDocs": "{{count}} truck document(s) expiring soon"
+    },
+    "calendar": {
+      "holidays": "Public Holidays",
+      "leave": "Driver Leave",
+      "manage": "Manage",
+      "legendHoliday": "Public holiday",
+      "legendLeave": "Driver on leave",
+      "onLeave": "{{name}} on leave",
+      "nothingOnDay": "Nothing scheduled."
     },
     "audit": {
       "navLabel": "Audit Log",
@@ -613,6 +631,8 @@
       "intro": "Weighted score = on-time 40 · completion 30 · incentive 30.",
       "leaderboard": "Ranked Leaderboard",
       "leaderboardHint": "Highest score first.",
+      "topPerformers": "Top Performers",
+      "tripsShort": "Trips",
       "driver": "Driver",
       "score": "Score",
       "tier": "Tier",
@@ -918,7 +938,8 @@
       "dashboard": "Live fleet overview",
       "trips": "Dispatch & monitor bookings",
       "drivers": "Drivers & performance",
-      "performance": "Reliability, productivity & workload",
+      "performance": "Ranked driver leaderboard",
+      "calendar": "Public holidays & driver leave",
       "trucks": "Fleet & document expiries",
       "incentiveApprovals": "Review PODs & release incentives",
       "incentives": "Claim rates & destination points",
@@ -975,6 +996,7 @@
       "trips": "Trip Management",
       "drivers": "Driver Management",
       "performance": "Driver Performance",
+      "calendar": "Calendar",
       "trucks": "Truck Management",
       "incentiveApprovals": "POD Approval Queue",
       "incentives": "Incentive Rate Management",

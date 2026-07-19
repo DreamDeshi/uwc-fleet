@@ -459,6 +459,7 @@
       "drivers": "司机管理",
       "trucks": "罗里管理",
       "performance": "绩效",
+      "calendar": "日历",
       "incentiveApprovals": "POD 审批",
       "incentives": "激励费率",
       "approvals": "用户审批",
@@ -482,6 +483,23 @@
       "trips": "工单",
       "consignees": "收货方",
       "people": "人员"
+    },
+    "alerts": {
+      "title": "提醒",
+      "empty": "已全部处理完毕。",
+      "autoFailed": "{{count}} 个预订自动派单失败",
+      "podApprovals": "{{count}} 个交付待 POD 审批",
+      "pendingUsers": "{{count}} 个账户待审批",
+      "truckDocs": "{{count}} 份罗里文件即将到期"
+    },
+    "calendar": {
+      "holidays": "公共假期",
+      "leave": "司机请假",
+      "manage": "管理",
+      "legendHoliday": "公共假期",
+      "legendLeave": "司机请假",
+      "onLeave": "{{name}} 请假",
+      "nothingOnDay": "当天无安排。"
     },
     "audit": {
       "navLabel": "审计日志",
@@ -611,6 +629,8 @@
       "intro": "加权得分 = 准时 40 · 完成 30 · 激励 30。",
       "leaderboard": "排行榜",
       "leaderboardHint": "得分最高者在前。",
+      "topPerformers": "顶尖司机",
+      "tripsShort": "趟数",
       "driver": "司机",
       "score": "得分",
       "tier": "等级",
@@ -906,7 +926,8 @@
       "dashboard": "实时车队概览",
       "trips": "调度与监控预订",
       "drivers": "司机与绩效",
-      "performance": "可靠性、生产力与工作量",
+      "performance": "司机排行榜",
+      "calendar": "公共假期与司机请假",
       "trucks": "车队与文件到期",
       "incentiveApprovals": "审核 POD 并发放激励",
       "incentives": "索赔费率与目的地积分",
@@ -963,6 +984,7 @@
       "trips": "行程管理",
       "drivers": "司机管理",
       "performance": "司机绩效",
+      "calendar": "日历",
       "trucks": "罗里管理",
       "incentiveApprovals": "POD 审批队列",
       "incentives": "激励费率管理",

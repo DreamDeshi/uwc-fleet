@@ -16,7 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../context/AuthContext";
-import { useDashboard, usePendingApprovals, usePendingUsers, useTruckAlerts } from "../hooks/queries";
+import { usePendingApprovals, usePendingUsers, useTruckAlerts } from "../hooks/queries";
 import { colors, font, gradients, radius } from "../theme";
 import { formatFullDate } from "../lib/format";
 import { Avatar } from "../components/ui";
@@ -36,7 +36,9 @@ import { TripsScreen } from "../screens/TripsScreen";
 import { AdminSettingsScreen } from "../screens/AdminSettingsScreen";
 import { AuditLogScreen } from "../screens/AuditLogScreen";
 import { AdminSearchScreen } from "../screens/AdminSearchScreen";
+import { CalendarScreen } from "../screens/CalendarScreen";
 import { AdminSearchButton } from "../components/AdminSearchButton";
+import { AdminAlertsBell } from "../components/AdminAlertsBell";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -64,6 +66,7 @@ const NAV_GROUPS: { headingKey: string; items: NavItem[] }[] = [
       { route: "AdminDrivers", labelKey: "admin.nav.drivers", icon: "person-outline" },
       { route: "AdminTrucks", labelKey: "admin.nav.trucks", icon: "bus-outline" },
       { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },
+      { route: "AdminCalendar", labelKey: "admin.nav.calendar", icon: "calendar-outline" },
     ],
   },
   {
@@ -292,6 +295,7 @@ const SUBTITLE_KEYS: Record<string, string> = {
   AdminConsignees: "admin.subtitles.consignees",
   AdminReports: "admin.subtitles.reports",
   AdminSearch: "admin.search.subtitle",
+  AdminCalendar: "admin.subtitles.calendar",
   AdminAudit: "admin.audit.subtitle",
   AdminSettings: "admin.subtitles.settings",
 };
@@ -305,11 +309,9 @@ function AdminHeader({ navigation, options, route }: DrawerHeaderProps) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const mode = useLayoutMode();
-  const dashboard = useDashboard();
 
   if (mode === "wide") {
     const subtitleKey = SUBTITLE_KEYS[route.name];
-    const alertCount = dashboard.data?.alerts ?? 0;
     return (
       <LinearGradient colors={gradients.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
         <View
@@ -351,40 +353,7 @@ function AdminHeader({ navigation, options, route }: DrawerHeaderProps) {
               </Text>
             </View>
             <AdminSearchButton />
-            <View>
-              <View
-                style={{
-                  backgroundColor: "rgba(255,255,255,0.12)",
-                  borderRadius: 10,
-                  width: 40,
-                  height: 40,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Ionicons name="notifications-outline" size={18} color="#fff" />
-              </View>
-              {alertCount > 0 && (
-                <View
-                  style={{
-                    position: "absolute",
-                    top: 4,
-                    right: 4,
-                    minWidth: 16,
-                    height: 16,
-                    paddingHorizontal: 4,
-                    backgroundColor: colors.red,
-                    borderRadius: 8,
-                    borderWidth: 1.5,
-                    borderColor: colors.blue,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Text style={{ color: "#fff", fontSize: 11, fontWeight: "800" }}>{alertCount}</Text>
-                </View>
-              )}
-            </View>
+            <AdminAlertsBell />
           </View>
         </View>
       </LinearGradient>
@@ -519,6 +488,11 @@ function AdminDrawerWide() {
         name="AdminSearch"
         component={AdminSearchScreen}
         options={{ title: t("admin.search.title") }}
+      />
+      <Drawer.Screen
+        name="AdminCalendar"
+        component={CalendarScreen}
+        options={{ title: t("admin.titles.calendar") }}
       />
       <Drawer.Screen
         name="AdminAudit"
