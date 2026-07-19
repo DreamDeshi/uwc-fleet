@@ -69,6 +69,7 @@
   "tabs": {
     "home": "Home",
     "trips": "Trips",
+    "myStats": "My Stats",
     "earnings": "Earnings",
     "performance": "My Score",
     "profile": "Profile",
@@ -167,6 +168,11 @@
     "outboxSynced": "Saved deliveries uploaded ({{count}})",
     "outboxDropped": "A saved delivery could not be uploaded ({{count}}) — check the trip.",
     "noTrips": "No trips yet."
+  },
+  "myStats": {
+    "title": "My Stats",
+    "earnings": "Earnings",
+    "score": "Score"
   },
   "earnings": {
     "title": "My Earnings",

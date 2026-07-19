@@ -69,6 +69,7 @@
   "tabs": {
     "home": "首页",
     "trips": "行程",
+    "myStats": "我的数据",
     "earnings": "收入",
     "performance": "我的评分",
     "profile": "我的",
@@ -167,6 +168,11 @@
     "outboxSynced": "已上传保存的送货记录（{{count}}）",
     "outboxDropped": "有保存的送货记录无法上传（{{count}}）——请检查该行程。",
     "noTrips": "暂无行程。"
+  },
+  "myStats": {
+    "title": "我的数据",
+    "earnings": "收入",
+    "score": "评分"
   },
   "earnings": {
     "title": "我的收入",

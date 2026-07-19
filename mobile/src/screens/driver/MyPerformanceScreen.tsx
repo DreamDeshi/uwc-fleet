@@ -19,13 +19,13 @@ const TIER_STYLE: Record<PerformanceTier, { gradient: [string, string]; icon: ke
 };
 const NEUTRAL_GRADIENT: [string, string] = ["#94A3B8", "#64748B"];
 
-export function MyPerformanceScreen() {
+export function MyPerformanceScreen({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useTranslation();
   const { data, isLoading, isError, refetch, isRefetching } = useMyPerformance();
 
   return (
     <View style={styles.fill}>
-      <Header title={t("myPerformance.title")} />
+      {!embedded && <Header title={t("myPerformance.title")} />}
       {isLoading ? (
         <LoadingState />
       ) : isError || !data ? (

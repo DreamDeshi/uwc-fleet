@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -13,6 +13,7 @@ import { Card } from "../../components/Card";
 import { StatusBadge } from "../../components/StatusBadge";
 import { TripCard } from "../../components/TripCard";
 import { LoadingState, ErrorState } from "../../components/States";
+import { LogFuelModal } from "../../components/LogFuelModal";
 import { formatMoney, formatDate, formatTime } from "../../lib/format";
 import { tripDestination, cargoSummary, estimateIncentive, ORIGIN_LABEL } from "../../lib/trip";
 import { DELIVERED_STATUSES } from "../../lib/tripStatus";
@@ -25,6 +26,7 @@ export function DriverDashboardScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
   const { user } = useAuth();
+  const [fuelOpen, setFuelOpen] = useState(false);
   const { data: trips, isLoading, isError, refetch, isRefetching } = useTrips();
 
   const { active, assigned, recentCompleted, assignedToday } = useMemo(() => {
@@ -63,6 +65,7 @@ export function DriverDashboardScreen() {
   if (isError) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
 
   return (
+    <>
     <ScrollView
       style={styles.fill}
       contentContainerStyle={{ paddingBottom: 24 }}
@@ -85,6 +88,23 @@ export function DriverDashboardScreen() {
           <Text style={styles.greeting}>{t("driver.greeting", { name: user?.name ?? "" })} 👋</Text>
           <Text style={styles.sub}>{t("driver.tripsToday", { count: assignedToday })}</Text>
         </View>
+      </View>
+
+      {/* Quick action: log a fuel fill-up (moved here from Settings so it's
+          one tap from the driver's home — logged often). */}
+      <View style={styles.section}>
+        <TouchableOpacity style={styles.fuelBtn} onPress={() => setFuelOpen(true)} activeOpacity={0.85}>
+          <View style={styles.fuelIcon}>
+            <MaterialCommunityIcons name="gas-station" size={20} color={colors.blue} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.fuelTitle}>{t("profile.logFuel")}</Text>
+            <Text style={styles.fuelSub} numberOfLines={1}>
+              {user?.assigned_truck ? user.assigned_truck.plate : t("fuel.noTruck")}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+        </TouchableOpacity>
       </View>
 
       {/* Active trip card */}
@@ -172,6 +192,13 @@ export function DriverDashboardScreen() {
         )}
       </View>
     </ScrollView>
+    <LogFuelModal
+      visible={fuelOpen}
+      onClose={() => setFuelOpen(false)}
+      truckPlate={user?.assigned_truck?.plate ?? null}
+      truckLabel={user?.assigned_truck ? `${user.assigned_truck.plate} · ${user.assigned_truck.type}` : null}
+    />
+    </>
   );
 }
 
@@ -313,4 +340,20 @@ const styles = StyleSheet.create({
 
   emptyRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   emptyText: { fontSize: 14, color: colors.textMuted },
+
+  fuelBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    ...shadow.card,
+  },
+  fuelIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
+  fuelTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
+  fuelSub: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
 });

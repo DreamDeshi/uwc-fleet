@@ -16,7 +16,7 @@ import { WebRefreshButton } from "../../components/WebRefreshButton";
 import { formatMoney, formatDate, formatDateTime, monthYear, weekdayShortNames } from "../../lib/format";
 import { isPaid, pendingCount, pendingTotal, weekBuckets } from "../../lib/earnings";
 
-export function EarningsScreen() {
+export function EarningsScreen({ embedded = false }: { embedded?: boolean } = {}) {
   const { t, i18n } = useTranslation();
   // Localised Mon-first axis labels (were a hardcoded English array — a Malay/
   // Chinese driver saw English on his own pay screen). i18n.language in the
@@ -63,7 +63,7 @@ export function EarningsScreen() {
 
   return (
     <View style={styles.fill}>
-      <Header title={t("earnings.title")} />
+      {!embedded && <Header title={t("earnings.title")} />}
       {isLoading ? (
         <LoadingState />
       ) : isError || !data ? (

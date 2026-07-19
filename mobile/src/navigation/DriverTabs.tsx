@@ -18,8 +18,7 @@ const TAB_BAR_STYLE = {
 import { usePodOutboxFlush } from "../hooks/usePodOutbox";
 import { DriverDashboardScreen } from "../screens/driver/DriverDashboardScreen";
 import { TripsStack } from "./TripsStack";
-import { EarningsScreen } from "../screens/driver/EarningsScreen";
-import { MyPerformanceScreen } from "../screens/driver/MyPerformanceScreen";
+import { MyStatsScreen } from "../screens/driver/MyStatsScreen";
 import { ProfileScreen } from "../screens/shared/ProfileScreen";
 
 const Tab = createBottomTabNavigator<DriverTabParamList>();
@@ -65,19 +64,11 @@ export function DriverTabs() {
         })}
       />
       <Tab.Screen
-        name="Earnings"
-        component={EarningsScreen}
+        name="MyStats"
+        component={MyStatsScreen}
         options={{
-          title: t("tabs.earnings"),
-          tabBarIcon: ({ color, size }) => <Ionicons name="cash-outline" size={size} color={color} />,
-        }}
-      />
-      <Tab.Screen
-        name="Performance"
-        component={MyPerformanceScreen}
-        options={{
-          title: t("tabs.performance"),
-          tabBarIcon: ({ color, size }) => <Ionicons name="trophy-outline" size={size} color={color} />,
+          title: t("tabs.myStats"),
+          tabBarIcon: ({ color, size }) => <Ionicons name="stats-chart" size={size} color={color} />,
         }}
       />
       <Tab.Screen

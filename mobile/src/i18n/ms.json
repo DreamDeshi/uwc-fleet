@@ -69,6 +69,7 @@
   "tabs": {
     "home": "Utama",
     "trips": "Perjalanan",
+    "myStats": "Statistik Saya",
     "earnings": "Pendapatan",
     "performance": "Skor Saya",
     "profile": "Profil",
@@ -167,6 +168,11 @@
     "outboxSynced": "Penghantaran tersimpan telah dimuat naik ({{count}})",
     "outboxDropped": "Penghantaran tersimpan gagal dimuat naik ({{count}}) — sila semak perjalanan itu.",
     "noTrips": "Belum ada perjalanan."
+  },
+  "myStats": {
+    "title": "Statistik Saya",
+    "earnings": "Pendapatan",
+    "score": "Skor"
   },
   "earnings": {
     "title": "Pendapatan Saya",
