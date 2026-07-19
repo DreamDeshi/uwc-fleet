@@ -84,14 +84,23 @@ export function TrucksScreen() {
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={trucks.isRefetching} onRefresh={() => trucks.refetch()} />}
     >
-      <SegmentedFilter<Tab>
-        value={tab}
-        onChange={setTab}
-        options={[
-          { value: "fleet", label: t("admin.trucks.tabFleet") },
-          { value: "fuel", label: t("admin.trucks.tabFuel") },
-        ]}
-      />
+      {/* Fleet / Fuel tabs, with "+ Add Truck" on the same line (right) so the
+          fleet content sits directly below — no empty band. */}
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <SegmentedFilter<Tab>
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: "fleet", label: t("admin.trucks.tabFleet") },
+            { value: "fuel", label: t("admin.trucks.tabFuel") },
+          ]}
+        />
+        {tab === "fleet" && !trucks.isLoading && !trucks.isError && (
+          <Button variant="primary" size="sm" onPress={() => setAdding(true)}>
+            {`+ ${t("admin.trucks.addTruck")}`}
+          </Button>
+        )}
+      </View>
 
       {tab === "fuel" ? (
         <FuelPanel />
@@ -102,13 +111,6 @@ export function TrucksScreen() {
       ) : (
         <>
           <AlertsPanel />
-
-          {/* Add a truck to the fleet. */}
-          <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
-            <Button variant="primary" size="sm" onPress={() => setAdding(true)}>
-              {`+ ${t("admin.trucks.addTruck")}`}
-            </Button>
-          </View>
 
           {/* Narrow: an even 2-col chip grid; wide keeps the inline segmented row. */}
           {(() => {

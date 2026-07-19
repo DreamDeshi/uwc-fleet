@@ -104,14 +104,8 @@ export function DriversScreen() {
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={drivers.isRefetching} onRefresh={() => drivers.refetch()} />}
     >
-      {/* Add a driver to the fleet (create account + optionally bind a truck). */}
-      <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
-        <Button variant="primary" size="sm" onPress={() => setAdding(true)}>
-          {`+ ${t("admin.drivers.addDriver")}`}
-        </Button>
-      </View>
-
-      {/* Narrow: an even 2-col chip grid; wide keeps the inline segmented row. */}
+      {/* Filters left, search + Add on the right — one row on wide. Add a
+          driver = create account + optionally bind a truck. */}
       {(() => {
         const filterOptions = [
           { value: "all" as Filter, label: t("admin.drivers.filterAll"), count: counts.all },
@@ -119,13 +113,22 @@ export function DriversScreen() {
           { value: "available" as Filter, label: t("admin.drivers.statusAvailable"), count: counts.available },
           { value: "off_duty" as Filter, label: t("admin.drivers.statusOffDuty"), count: counts.off_duty },
         ];
+        const addBtn = (
+          <Button variant="primary" size="sm" onPress={() => setAdding(true)}>
+            {`+ ${t("admin.drivers.addDriver")}`}
+          </Button>
+        );
         return wide ? (
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
             <SegmentedFilter<Filter> value={filter} onChange={setFilter} options={filterOptions} />
-            <SearchInput value={search} onChange={setSearch} placeholder={t("admin.drivers.searchPlaceholder")} />
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <SearchInput value={search} onChange={setSearch} placeholder={t("admin.drivers.searchPlaceholder")} />
+              {addBtn}
+            </View>
           </View>
         ) : (
           <View style={{ gap: 12 }}>
+            <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>{addBtn}</View>
             <ChipGrid<Filter> value={filter} onChange={setFilter} options={filterOptions} columns={2} />
             <SearchInput value={search} onChange={setSearch} placeholder={t("admin.drivers.searchPlaceholder")} style={{ minWidth: 0, alignSelf: "stretch" }} />
           </View>

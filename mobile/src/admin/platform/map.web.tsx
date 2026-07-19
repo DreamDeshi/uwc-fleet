@@ -3,8 +3,8 @@
 // code labels, the plant marker, and per-truck markers that sit on a real
 // GPS fix when the phone has pinged (solid border + live dot) or the zone
 // centroid otherwise (dashed border). Same data props as the web original.
-import React from "react";
-import { MapContainer, TileLayer, Circle, Marker, Tooltip } from "react-leaflet";
+import React, { useEffect } from "react";
+import { MapContainer, TileLayer, Circle, Marker, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./leaflet.css";
@@ -41,6 +41,32 @@ function truckIcon(plate: string, color: string, live: boolean) {
   });
 }
 
+// Leaflet computes its tile grid from the container size AT INIT. Inside a
+// ScrollView/flex parent the container often has its final height only AFTER
+// first layout, so the map initialises too small and paints tiles for just the
+// top slice — the rest stays blank white. invalidateSize() re-reads the real
+// size and fills the gap. Fire it right after mount, once more when layout has
+// settled, and whenever the container actually resizes.
+function InvalidateOnLayout() {
+  const map = useMap();
+  useEffect(() => {
+    const fix = () => map.invalidateSize();
+    const t0 = setTimeout(fix, 0);
+    const t1 = setTimeout(fix, 300);
+    const el = map.getContainer();
+    const ro = new ResizeObserver(fix);
+    ro.observe(el);
+    window.addEventListener("resize", fix);
+    return () => {
+      clearTimeout(t0);
+      clearTimeout(t1);
+      ro.disconnect();
+      window.removeEventListener("resize", fix);
+    };
+  }, [map]);
+  return null;
+}
+
 const plantIcon = L.divIcon({
   className: "uwc-truck-label",
   html: `
@@ -67,6 +93,7 @@ export function AdminFleetMap({
   return (
     <div style={{ height, width: "100%", borderRadius: 12, overflow: "hidden" }}>
       <MapContainer center={MAP_CENTER} zoom={MAP_ZOOM} scrollWheelZoom style={{ height: "100%", width: "100%" }}>
+        <InvalidateOnLayout />
         <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
         {/* Zone overlays — coloured catchment circles with code labels */}
