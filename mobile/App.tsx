@@ -10,8 +10,13 @@ import { queryClient } from "./src/lib/queryClient";
 import { AuthProvider } from "./src/context/AuthContext";
 import { ToastProvider } from "./src/components/Toast";
 import { RootNavigator } from "./src/navigation/RootNavigator";
+import { installWebFocusRing } from "./src/lib/webFocusRing";
 
 export default function App() {
+  // Keyboard-only (:focus-visible) navy focus ring on web; no-op on native.
+  React.useEffect(() => {
+    installWebFocusRing();
+  }, []);
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
