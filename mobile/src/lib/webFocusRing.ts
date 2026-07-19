@@ -10,6 +10,7 @@
 // a Tab/arrow keypress turns the ring on; any pointer interaction turns it off.
 // No-op on native (no document); mirrors installAdminWebFonts.
 const RING = "#1A1F5E"; // theme navy
+const FIELD_BG = "#f4f6fb"; // theme fieldBg — what autofilled inputs should show
 
 export function installWebFocusRing(): void {
   if (typeof document === "undefined") return;
@@ -40,6 +41,21 @@ export function installWebFocusRing(): void {
   style.textContent = `
     *:focus { outline: none !important; }
     html.uwc-kbd *:focus { outline: 2px solid ${RING} !important; outline-offset: 2px; }
+
+    /* Kill the browser autofill yellow: paint the field's own light background
+       over it via an inset box-shadow, keep the text navy, and freeze the
+       transition so it never flashes yellow. Applies app-wide. */
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus,
+    textarea:-webkit-autofill,
+    select:-webkit-autofill {
+      -webkit-box-shadow: 0 0 0 1000px ${FIELD_BG} inset !important;
+      box-shadow: 0 0 0 1000px ${FIELD_BG} inset !important;
+      -webkit-text-fill-color: ${RING} !important;
+      caret-color: ${RING};
+      transition: background-color 600000s 0s, color 600000s 0s;
+    }
   `;
   document.head.append(style);
 }
