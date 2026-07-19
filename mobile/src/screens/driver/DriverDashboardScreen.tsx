@@ -14,6 +14,7 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { TripCard } from "../../components/TripCard";
 import { LoadingState, ErrorState } from "../../components/States";
 import { LogFuelModal } from "../../components/LogFuelModal";
+import { BrandLogo } from "../../components/BrandLogo";
 import { formatMoney, formatDate, formatTime } from "../../lib/format";
 import { tripDestination, cargoSummary, estimateIncentive, ORIGIN_LABEL } from "../../lib/trip";
 import { DELIVERED_STATUSES } from "../../lib/tripStatus";
@@ -77,10 +78,8 @@ export function DriverDashboardScreen() {
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.centerCol}>
           <View style={styles.headerTop}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <View style={styles.logoBadge}>
-                <MaterialCommunityIcons name="truck" size={18} color={colors.blue} />
-              </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <BrandLogo white height={30} />
               <Text style={styles.brand}>UWC TRUCKING</Text>
             </View>
           </View>

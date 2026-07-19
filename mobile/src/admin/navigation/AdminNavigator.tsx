@@ -39,6 +39,7 @@ import { AdminSearchScreen } from "../screens/AdminSearchScreen";
 import { CalendarScreen } from "../screens/CalendarScreen";
 import { AdminSearchButton } from "../components/AdminSearchButton";
 import { AdminAlertsBell } from "../components/AdminAlertsBell";
+import { BrandLogo } from "../../components/BrandLogo";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -111,18 +112,7 @@ function AdminDrawerContent(props: DrawerContentComponentProps) {
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + 26, paddingBottom: insets.bottom + 16, flexGrow: 1 }}>
         {/* Brand mark (proper noun — not translated) */}
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingBottom: 20 }}>
-          <View
-            style={{
-              width: 42,
-              height: 42,
-              backgroundColor: colors.yellow,
-              borderRadius: 12,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Ionicons name="bus" size={22} color={colors.blue} />
-          </View>
+          <BrandLogo white height={42} />
           <View>
             <Text style={{ fontSize: 15, fontWeight: "800", color: "#fff", letterSpacing: 0.4 }}>UWC TRUCKING</Text>
             <Text style={{ fontSize: 10.5, color: colors.yellow, fontWeight: "700", letterSpacing: 1.8 }}>FLEET MANAGEMENT</Text>

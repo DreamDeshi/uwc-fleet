@@ -3,6 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../theme";
+import { BrandLogo } from "./BrandLogo";
 
 // Corporate-blue header bar with white text (UI brief). Respects the top
 // safe-area inset so it sits under the status bar / notch.
@@ -31,6 +32,8 @@ export function Header({
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
         {right}
+        {/* UWC mark, top-right corner — white variant reads on the blue bar. */}
+        <BrandLogo white height={26} style={{ marginLeft: 12 }} />
       </View>
     </View>
   );

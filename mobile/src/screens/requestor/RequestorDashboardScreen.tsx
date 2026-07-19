@@ -12,6 +12,7 @@ import { useTrips } from "../../hooks/queries";
 import { useWide } from "../../hooks/useWide";
 import { colors, layout, radius, shadow } from "../../theme";
 import { Card } from "../../components/Card";
+import { BrandLogo } from "../../components/BrandLogo";
 import { StatusBadge } from "../../components/StatusBadge";
 import { LoadingState, ErrorState } from "../../components/States";
 import { formatDate, formatTime } from "../../lib/format";
@@ -188,8 +189,11 @@ export function RequestorDashboardScreen() {
               </View>
             ) : null}
           </View>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials(user?.name ?? "")}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <BrandLogo white height={28} />
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initials(user?.name ?? "")}</Text>
+            </View>
           </View>
         </View>
       </View>
