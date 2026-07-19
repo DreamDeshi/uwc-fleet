@@ -13,16 +13,13 @@ import { Linking, Pressable, RefreshControl, ScrollView, Text, TextInput, View }
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import {
-  useAbortTrip,
   useApproveTrip,
   useAssignExternal,
-  useCancelTrip,
   useDrivers,
   useRejectTrip,
   useReassignTrip,
   useTrip,
   useTripBoard,
-  useUnassignTrip,
 } from "../hooks/queries";
 import { colors, font, radius } from "../theme";
 import {
@@ -61,6 +58,7 @@ import {
 } from "../lib/trip";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { FilterPresets } from "../components/FilterPresets";
+import { UndoBar, useUndoableAction, type UndoActionType, type UndoController } from "../components/UndoBar";
 import { OptionsModal } from "../../components/OptionsModal";
 import type { Trip, SchedulingConflictInfo } from "../types";
 
@@ -78,6 +76,48 @@ export function TripsScreen() {
   const { t } = useTranslation();
   const mode = useLayoutMode();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Undo grace window for cancel/unassign/abort — lives here (survives the
+  // detail panel closing) and floats a global Undo bar over the board.
+  const undo = useUndoableAction();
+
+  // Bulk select + reject (pending bookings only). Auto-dispatch places most
+  // trips, so this is for clearing out a batch of junk/duplicate requests.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmingBulk, setConfirmingBulk] = useState(false);
+  const [bulkReason, setBulkReason] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkNote, setBulkNote] = useState<string | null>(null);
+  const bulkReject = useRejectTrip();
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const exitSelect = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setBulkReason("");
+  };
+  async function doBulkReject() {
+    setBulkBusy(true);
+    setBulkNote(null);
+    let failed = 0;
+    for (const id of selectedIds) {
+      try {
+        await bulkReject.mutateAsync({ id, reason: bulkReason.trim() || undefined });
+      } catch {
+        failed++;
+      }
+    }
+    setBulkBusy(false);
+    setConfirmingBulk(false);
+    exitSelect();
+    if (failed > 0) setBulkNote(t("admin.trips.bulkRejectPartial", { count: failed }));
+  }
 
   // Filters. Free-text debounced 300ms; the rest apply immediately.
   const [q, setQ] = useState("");
@@ -163,11 +203,28 @@ export function TripsScreen() {
                 <Text style={{ color: GROUP_META[group].fg, fontSize: font.xs, fontWeight: "800" }}>{list.length}</Text>
               </View>
               <View style={{ flex: 1, height: 1, backgroundColor: colors.divider }} />
+              {group === "pending" && (
+                <Pressable onPress={() => (selectMode ? exitSelect() : setSelectMode(true))} hitSlop={8}>
+                  <Text style={{ fontSize: font.sm, fontWeight: "800", color: colors.blue }}>
+                    {selectMode ? t("common.cancel") : t("admin.trips.select")}
+                  </Text>
+                </Pressable>
+              )}
             </View>
             <View style={{ gap: 10 }}>
-              {list.map((tr) => (
-                <TripCard key={tr.id} trip={tr} selected={tr.id === selectedId} onPress={() => setSelectedId(tr.id)} />
-              ))}
+              {list.map((tr) => {
+                const selectable = group === "pending" && selectMode;
+                return (
+                  <TripCard
+                    key={tr.id}
+                    trip={tr}
+                    selected={tr.id === selectedId}
+                    selectMode={selectable}
+                    checked={selectedIds.has(tr.id)}
+                    onPress={() => (selectable ? toggleSelect(tr.id) : setSelectedId(tr.id))}
+                  />
+                );
+              })}
             </View>
           </View>
         );
@@ -311,7 +368,7 @@ export function TripsScreen() {
           </ScrollView>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
             {selected ? (
-              <TripDetail key={selected.id} trip={selected} onDone={() => setSelectedId(null)} />
+              <TripDetail key={selected.id} trip={selected} onDone={() => setSelectedId(null)} onSchedule={undo.schedule} />
             ) : (
               <Card style={{ minHeight: 300, alignItems: "center", justifyContent: "center" }}>
                 <EmptyState message={t("admin.trips.selectPrompt")} />
@@ -408,7 +465,7 @@ export function TripsScreen() {
             <Text style={{ color: "#fff", fontSize: font.lg, fontWeight: "800" }}>{selected.ticket_number}</Text>
           </View>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12, paddingBottom: 28 }}>
-            <TripDetail key={selected.id} trip={selected} onDone={() => setSelectedId(null)} />
+            <TripDetail key={selected.id} trip={selected} onDone={() => setSelectedId(null)} onSchedule={undo.schedule} />
           </ScrollView>
         </View>
       )}
@@ -429,6 +486,98 @@ export function TripsScreen() {
         onSelect={setZone}
         onClose={() => setZonePickerOpen(false)}
       />
+
+      {/* Bulk-select action bar (pending bookings). */}
+      {selectMode && (
+        <View
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: colors.card,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+            paddingVertical: 12,
+            paddingHorizontal: 16,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+            shadowColor: "#000",
+            shadowOpacity: 0.12,
+            shadowRadius: 12,
+            shadowOffset: { width: 0, height: -3 },
+            elevation: 8,
+          }}
+        >
+          <Text style={{ flex: 1, fontSize: font.md, fontWeight: "700", color: colors.text }}>
+            {t("admin.trips.selectedCount", { count: selectedIds.size })}
+          </Text>
+          <Button variant="ghost" size="sm" onPress={exitSelect}>
+            {t("admin.trips.clearSelection")}
+          </Button>
+          <Button variant="danger" size="sm" disabled={selectedIds.size === 0} onPress={() => setConfirmingBulk(true)}>
+            {t("admin.trips.bulkReject")}
+          </Button>
+        </View>
+      )}
+
+      {/* Bulk-reject confirm — one shared (optional) reason for all selected. */}
+      <Modal
+        open={confirmingBulk}
+        onClose={() => {
+          if (!bulkBusy) setConfirmingBulk(false);
+        }}
+        title={t("admin.trips.bulkRejectTitle", { count: selectedIds.size })}
+      >
+        <Text style={{ fontSize: font.md, color: colors.textMuted, marginBottom: 12 }}>
+          {t("admin.trips.bulkRejectBody", { count: selectedIds.size })}
+        </Text>
+        <Input
+          label={t("admin.trips.bulkRejectReason")}
+          value={bulkReason}
+          onChange={setBulkReason}
+          placeholder={t("admin.trips.rejectReasonLabel")}
+        />
+        <View style={{ flexDirection: "row", gap: 8, marginTop: 14, justifyContent: "flex-end" }}>
+          <Button variant="ghost" size="sm" disabled={bulkBusy} onPress={() => setConfirmingBulk(false)}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant="danger" size="sm" disabled={bulkBusy} onPress={doBulkReject}>
+            {bulkBusy ? t("admin.trips.bulkRejecting") : t("admin.trips.bulkRejectConfirm", { count: selectedIds.size })}
+          </Button>
+        </View>
+      </Modal>
+
+      {/* Partial-failure note after a bulk reject (e.g. a trip raced to assigned). */}
+      {bulkNote && (
+        <View
+          style={{
+            position: "absolute",
+            left: 16,
+            right: 16,
+            bottom: 20,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+            borderWidth: 1,
+            borderColor: colors.red,
+            backgroundColor: colors.redTint,
+            borderRadius: radius.md,
+            paddingVertical: 12,
+            paddingHorizontal: 14,
+          }}
+        >
+          <Ionicons name="alert-circle" size={18} color={colors.red} />
+          <Text style={{ flex: 1, fontSize: font.sm, fontWeight: "600", color: colors.red }}>{bulkNote}</Text>
+          <Pressable onPress={() => setBulkNote(null)} hitSlop={8}>
+            <Text style={{ fontSize: font.sm, fontWeight: "800", color: colors.red }}>{t("common.dismiss")}</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* Floating undo bar for a just-confirmed cancel/unassign/abort. */}
+      <UndoBar controller={undo} />
     </View>
   );
 }
@@ -486,7 +635,19 @@ function DateInputInline({ value, onChange, style }: { value: string; onChange: 
 }
 
 // ── Trip card (left list) ─────────────────────────────────────────────
-function TripCard({ trip, selected, onPress }: { trip: Trip; selected: boolean; onPress: () => void }) {
+function TripCard({
+  trip,
+  selected,
+  onPress,
+  selectMode = false,
+  checked = false,
+}: {
+  trip: Trip;
+  selected: boolean;
+  onPress: () => void;
+  selectMode?: boolean;
+  checked?: boolean;
+}) {
   const { t } = useTranslation();
   const group = tripGroup(trip.status);
   const needsAttention = trip.status === "pending" && trip.auto_dispatch_failed;
@@ -497,15 +658,27 @@ function TripCard({ trip, selected, onPress }: { trip: Trip; selected: boolean; 
     <Pressable
       onPress={onPress}
       style={{
-        backgroundColor: colors.card,
+        backgroundColor: selectMode && checked ? colors.blueTint : colors.card,
         borderWidth: 1.5,
-        borderColor: selected ? accent : colors.border,
+        borderColor: selectMode && checked ? colors.blue : selected ? accent : colors.border,
         borderLeftWidth: 5,
         borderLeftColor: accent,
         borderRadius: radius.md,
         padding: 14,
       }}
     >
+      {selectMode && (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <Ionicons
+            name={checked ? "checkbox" : "square-outline"}
+            size={20}
+            color={checked ? colors.blue : colors.textMuted}
+          />
+          <Text style={{ fontSize: font.sm, fontWeight: "700", color: checked ? colors.blue : colors.textMuted }}>
+            {checked ? t("admin.trips.selected") : t("admin.trips.tapToSelect")}
+          </Text>
+        </View>
+      )}
       {needsAttention && (
         <View style={{ marginBottom: 7 }}>
           <Text style={{ color: colors.red, fontSize: font.xs, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.4 }}>
@@ -540,7 +713,7 @@ function TripCard({ trip, selected, onPress }: { trip: Trip; selected: boolean; 
 }
 
 // ── Trip detail / dispatch panel ──────────────────────────────────────
-function TripDetail({ trip, onDone }: { trip: Trip; onDone: () => void }) {
+function TripDetail({ trip, onDone, onSchedule }: { trip: Trip; onDone: () => void; onSchedule: UndoController["schedule"] }) {
   const { t } = useTranslation();
   const mode = useLayoutMode();
   const detail = useTrip(trip.id);
@@ -626,7 +799,7 @@ function TripDetail({ trip, onDone }: { trip: Trip; onDone: () => void }) {
       {/* Status-specific body */}
       {trip.status === "pending" && <DispatchPanel trip={trip} onDone={onDone} />}
       {(trip.status === "assigned" || trip.status === "in_progress" || trip.status === "approved") && (
-        <MonitorPanel trip={trip} onDone={onDone} />
+        <MonitorPanel trip={trip} onDone={onDone} onSchedule={onSchedule} />
       )}
       {trip.status === "completed" && <CompletedPanel trip={trip} />}
       {(trip.status === "cancelled" || trip.status === "rejected") && (
@@ -1053,12 +1226,8 @@ function ExternalForm({ trip, onDone }: { trip: Trip; onDone: () => void }) {
 }
 
 // ── Monitor (active) ──────────────────────────────────────────────────
-function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
+function MonitorPanel({ trip, onDone, onSchedule }: { trip: Trip; onDone: () => void; onSchedule: UndoController["schedule"] }) {
   const { t } = useTranslation();
-  const cancel = useCancelTrip();
-  const unassign = useUnassignTrip();
-  const abort = useAbortTrip();
-  const [error, setError] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [confirmingUnassign, setConfirmingUnassign] = useState(false);
   const [confirmingAbort, setConfirmingAbort] = useState(false);
@@ -1069,41 +1238,15 @@ function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
   // (frees the truck + lets the driver be disabled; no pay finalized).
   const canAbort = trip.status === "in_progress";
 
-  async function doAbort() {
-    setError(null);
-    try {
-      await abort.mutateAsync({ id: trip.id });
-      onDone();
-    } catch (e) {
-      setError(apiErrorMessage(e, t("admin.trips.abortFailed")));
-    } finally {
-      setConfirmingAbort(false);
-    }
-  }
-
-  async function doCancel() {
-    setError(null);
-    try {
-      await cancel.mutateAsync(trip.id);
-      onDone();
-    } catch (e) {
-      setError(apiErrorMessage(e, t("admin.trips.cancelFailed")));
-    } finally {
-      setConfirmingCancel(false);
-    }
-  }
-
-  async function doUnassign() {
-    setError(null);
-    try {
-      await unassign.mutateAsync({ id: trip.id });
-      onDone();
-    } catch (e) {
-      setError(apiErrorMessage(e, t("admin.trips.unassignFailed")));
-    } finally {
-      setConfirmingUnassign(false);
-    }
-  }
+  // The three destructive actions don't fire here — they're handed to the
+  // screen-level undo controller, which defers the real mutation behind a grace
+  // window. Closing the detail (onDone) is what makes the undo bar the single
+  // place the action lives, and why the timer can't live in this (now unmounted)
+  // panel. Reassign stays immediate (it's a swap, not a teardown).
+  const scheduleAndClose = (type: UndoActionType) => {
+    onSchedule({ type, tripId: trip.id, ticket: trip.ticket_number });
+    onDone();
+  };
 
   return (
     <View>
@@ -1128,28 +1271,26 @@ function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
         </View>
         {canReassign && (
           <View style={{ flexDirection: "row", gap: 8 }}>
-            <Button variant="outline" size="sm" disabled={unassign.isPending} onPress={() => setReassigning(true)}>
+            <Button variant="outline" size="sm" onPress={() => setReassigning(true)}>
               {t("admin.trips.changeDriver")}
             </Button>
-            <Button variant="ghost" size="sm" disabled={unassign.isPending} onPress={() => setConfirmingUnassign(true)}>
+            <Button variant="ghost" size="sm" onPress={() => setConfirmingUnassign(true)}>
               {t("admin.trips.unassign")}
             </Button>
           </View>
         )}
       </View>
 
-      {error && <Text style={{ color: colors.red, fontSize: font.sm, marginTop: 12 }}>{error}</Text>}
-
       {canCancel && (
         <View style={{ marginTop: 14 }}>
-          <Button variant="outline" size="sm" disabled={cancel.isPending} onPress={() => setConfirmingCancel(true)}>
+          <Button variant="outline" size="sm" onPress={() => setConfirmingCancel(true)}>
             {t("admin.trips.cancelBooking")}
           </Button>
         </View>
       )}
       {canAbort && (
         <View style={{ marginTop: 14 }}>
-          <Button variant="danger" size="sm" disabled={abort.isPending} onPress={() => setConfirmingAbort(true)}>
+          <Button variant="danger" size="sm" onPress={() => setConfirmingAbort(true)}>
             {t("admin.trips.abort")}
           </Button>
         </View>
@@ -1159,9 +1300,12 @@ function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
           title={t("admin.trips.abortTitle")}
           body={t("admin.trips.abortBody", { ticket: trip.ticket_number })}
           confirmLabel={t("admin.trips.abort")}
-          pending={abort.isPending}
+          pending={false}
           onClose={() => setConfirmingAbort(false)}
-          onConfirm={doAbort}
+          onConfirm={() => {
+            setConfirmingAbort(false);
+            scheduleAndClose("abort");
+          }}
         />
       )}
       {confirmingCancel && (
@@ -1169,9 +1313,12 @@ function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
           title={t("admin.trips.cancelTitle")}
           body={t("admin.trips.cancelBody", { ticket: trip.ticket_number })}
           confirmLabel={t("admin.trips.cancelBooking")}
-          pending={cancel.isPending}
+          pending={false}
           onClose={() => setConfirmingCancel(false)}
-          onConfirm={doCancel}
+          onConfirm={() => {
+            setConfirmingCancel(false);
+            scheduleAndClose("cancel");
+          }}
         />
       )}
       {confirmingUnassign && (
@@ -1179,9 +1326,12 @@ function MonitorPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
           title={t("admin.trips.unassignTitle")}
           body={t("admin.trips.unassignBody", { name: trip.driver?.name ?? "—", ticket: trip.ticket_number })}
           confirmLabel={t("admin.trips.unassign")}
-          pending={unassign.isPending}
+          pending={false}
           onClose={() => setConfirmingUnassign(false)}
-          onConfirm={doUnassign}
+          onConfirm={() => {
+            setConfirmingUnassign(false);
+            scheduleAndClose("unassign");
+          }}
         />
       )}
       {reassigning && <ReassignDialog trip={trip} onClose={() => setReassigning(false)} onDone={onDone} />}
