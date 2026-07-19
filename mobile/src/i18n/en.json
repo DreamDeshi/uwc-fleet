@@ -855,6 +855,7 @@
       "retireBody": "Retire {{plate}}? It leaves the dispatch pool and its driver (if any) is freed for reassignment. Trip and fuel history is kept — reactivate anytime.",
       "retiredNotice": "Truck retired.",
       "reactivatedNotice": "Truck reactivated.",
+      "retiredCardNote": "RETIRED — out of service",
       "retireFailed": "Could not update the truck.",
       "activeTripBlock": "This truck is on an active trip. Complete or reassign it first.",
       "fuelTitle": "Fuel — This Month",

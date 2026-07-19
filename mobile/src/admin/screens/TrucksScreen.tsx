@@ -20,6 +20,7 @@ import { Avatar, Button, Card, ChipGrid, ConfirmDialog, EmptyState, ErrorState, 
 import { LoadCapacityBar } from "../components/LoadCapacityBar";
 import { FuelPanel } from "../components/FuelPanel";
 import { DateField } from "../platform/datePicker";
+import { useToast } from "../../components/Toast";
 import { apiErrorMessage } from "../services/api";
 import { formatDate, formatMoney, formatTime, mytDateKey } from "../lib/format";
 import { useLayoutMode } from "../hooks/useLayoutMode";
@@ -366,19 +367,61 @@ function AlertDocRow({ label, doc }: { label: string; doc: DocExpiry }) {
 
 function TruckCard({ truck: tr, onManage }: { truck: Truck; onManage: () => void }) {
   const { t } = useTranslation();
+  const toast = useToast();
+  const retire = useRetireTruck();
   const meta = STATUS_META[tr.status] ?? STATUS_META.idle;
+  const retired = !!tr.retired_at;
   // Retired trucks are out of service — don't flag their doc expiries.
-  const hasAlert = !tr.retired_at && tr.alerts.length > 0;
+  const hasAlert = !retired && tr.alerts.length > 0;
   // Expired insurance/road tax hard-blocks dispatch (permit warns) — this
   // modal is the renewal path that un-bricks the truck.
   const [editingDocs, setEditingDocs] = useState(false);
+
+  // One-tap reverse right on the card, in case a retire was a misclick — no
+  // need to reopen Manage to un-retire.
+  const reactivate = () =>
+    retire.mutate(
+      { plate: tr.plate, retired: false },
+      {
+        onSuccess: () => toast(t("admin.trucks.reactivatedNotice"), "success"),
+        onError: (e) => toast(apiErrorMessage(e, t("admin.trucks.retireFailed")), "error"),
+      }
+    );
+
   return (
     <Card
       style={[
-        { borderLeftWidth: 5, borderLeftColor: hasAlert ? colors.orange : meta.dot },
+        { borderLeftWidth: 5, borderLeftColor: retired ? "#9CA3AF" : hasAlert ? colors.orange : meta.dot },
         hasAlert && { borderColor: "#FFB74D" },
+        retired && { backgroundColor: "#fafafb", borderColor: "#e5e7eb" },
       ]}
     >
+      {/* Unmistakable retired state: a grey "out of service" strip with a
+          direct Reactivate, so a retire is both obvious and reversible. */}
+      {retired && (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            backgroundColor: "#f3f4f6",
+            borderWidth: 1,
+            borderColor: "#e5e7eb",
+            borderRadius: radius.md,
+            paddingVertical: 8,
+            paddingHorizontal: 12,
+            marginBottom: 14,
+          }}
+        >
+          <Ionicons name="ban-outline" size={16} color="#6b7280" />
+          <Text style={{ flex: 1, fontSize: font.sm, fontWeight: "800", color: "#4b5563", letterSpacing: 0.4 }}>
+            {t("admin.trucks.retiredCardNote")}
+          </Text>
+          <Button variant="success" size="sm" disabled={retire.isPending} onPress={reactivate}>
+            {t("admin.trucks.reactivate")}
+          </Button>
+        </View>
+      )}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <Avatar size={46} glyph={<Ionicons name="bus" size={22} color={colors.yellow} />} />
         <View style={{ flex: 1, minWidth: 0 }}>
@@ -616,6 +659,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
 
 function ManageTruckModal({ truck, onClose }: { truck: Truck; onClose: () => void }) {
   const { t } = useTranslation();
+  const toast = useToast();
   const update = useUpdateTruck();
   const retire = useRetireTruck();
   const [type, setType] = useState(truck.type);
@@ -658,13 +702,18 @@ function ManageTruckModal({ truck, onClose }: { truck: Truck; onClose: () => voi
     retire.mutate(
       { plate: truck.plate, retired: next },
       {
+        // Success feedback is a toast (visible regardless of modal scroll — the
+        // old inline banner rendered at the top of a long modal, above the
+        // Retire button, so it read as "nothing happened") + close the modal so
+        // the admin lands back on the list where the card now shows Retired.
         onSuccess: () => {
-          setNotice(next ? t("admin.trucks.retiredNotice") : t("admin.trucks.reactivatedNotice"));
           setConfirmRetire(false);
+          toast(next ? t("admin.trucks.retiredNotice") : t("admin.trucks.reactivatedNotice"), "success");
+          onClose();
         },
         onError: (e) => {
-          setError(apiErrorMessage(e, t("admin.trucks.retireFailed")));
           setConfirmRetire(false);
+          toast(apiErrorMessage(e, t("admin.trucks.retireFailed")), "error");
         },
       }
     );

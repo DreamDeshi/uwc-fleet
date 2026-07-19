@@ -849,6 +849,7 @@
       "retireBody": "退役 {{plate}}？它将离开调度池，其司机（如有）将被释放以便重新分配。行程和燃油历史将保留——可随时重新启用。",
       "retiredNotice": "罗里已退役。",
       "reactivatedNotice": "罗里已重新启用。",
+      "retiredCardNote": "已退役 — 停止服务",
       "retireFailed": "无法更新罗里。",
       "activeTripBlock": "该罗里有进行中的行程。请先完成或重新分配。",
       "fuelTitle": "燃油 — 本月",

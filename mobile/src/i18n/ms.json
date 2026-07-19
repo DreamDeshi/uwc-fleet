@@ -849,6 +849,7 @@
       "retireBody": "Bersarakan {{plate}}? Ia keluar dari kolam penghantaran dan pemandunya (jika ada) dibebaskan untuk ditetapkan semula. Sejarah trip dan minyak dikekalkan — aktifkan semula bila-bila masa.",
       "retiredNotice": "Lori telah bersara.",
       "reactivatedNotice": "Lori diaktifkan semula.",
+      "retiredCardNote": "BERSARA — tidak beroperasi",
       "retireFailed": "Tidak dapat mengemas kini lori.",
       "activeTripBlock": "Lori ini dalam trip aktif. Selesaikan atau tetapkan semula dahulu.",
       "fuelTitle": "Minyak — Bulan Ini",
