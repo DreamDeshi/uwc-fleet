@@ -21,11 +21,14 @@ export function MonthCalendar({
   leaves,
   monthLabels,
   weekdayLabels,
+  onPickDate,
 }: {
   holidays: PublicHoliday[];
   leaves: DriverLeaveEntry[];
   monthLabels: string[]; // 12 localised month names
   weekdayLabels: string[]; // 7 short labels, Mon-first
+  // Tapping a day also seeds the "Add Holiday" date below (quick-add).
+  onPickDate?: (dateKey: string) => void;
 }) {
   const { t } = useTranslation();
   const narrow = useLayoutMode() === "narrow";
@@ -119,7 +122,11 @@ export function MonthCalendar({
               return (
                 <Pressable
                   key={c.key}
-                  onPress={() => setSelected(isSel ? null : c.key)}
+                  onPress={() => {
+                    const next = isSel ? null : c.key;
+                    setSelected(next);
+                    if (next) onPickDate?.(next);
+                  }}
                   style={{
                     flex: 1,
                     height: cellH,

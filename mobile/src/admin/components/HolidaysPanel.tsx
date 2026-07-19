@@ -2,7 +2,7 @@
 // weekday/off-peak rate decision. Extracted from IncentivesScreen (2026-07-19)
 // when holidays + driver leave were gathered onto a single Calendar screen.
 // The data/hooks/logic are unchanged — only the location moved.
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { useAddHoliday, useDeleteHoliday, useHolidays } from "../hooks/queries";
@@ -24,7 +24,7 @@ import { apiErrorMessage } from "../services/api";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import type { PublicHoliday } from "../types";
 
-export function HolidaysPanel() {
+export function HolidaysPanel({ prefillDate }: { prefillDate?: string } = {}) {
   const { t } = useTranslation();
   const narrow = useLayoutMode() === "narrow";
   const holidays = useHolidays();
@@ -47,7 +47,7 @@ export function HolidaysPanel() {
           <Text style={{ fontSize: font.sm, color: colors.amber, fontWeight: "500" }}>{t("admin.incentives.holidayBanner")}</Text>
         </View>
       )}
-      <AddHolidayForm />
+      <AddHolidayForm prefillDate={prefillDate} />
       <Card pad={0}>
         <View style={{ padding: narrow ? 14 : 18, borderBottomWidth: 1, borderBottomColor: colors.border }}>
           <SectionTitle title={t("admin.incentives.holidayCalTitle")} subtitle={t("admin.incentives.holidayCalSub", { count: rows.length })} />
@@ -110,7 +110,7 @@ export function HolidaysPanel() {
   );
 }
 
-function AddHolidayForm() {
+function AddHolidayForm({ prefillDate }: { prefillDate?: string }) {
   const { t } = useTranslation();
   const mode = useLayoutMode();
   const [date, setDate] = useState("");
@@ -118,6 +118,11 @@ function AddHolidayForm() {
   const [error, setError] = useState<string | null>(null);
   const add = useAddHoliday();
   const wide = mode === "wide";
+
+  // Seed the date when a day is tapped in the calendar grid above.
+  useEffect(() => {
+    if (prefillDate) setDate(prefillDate);
+  }, [prefillDate]);
 
   async function submit() {
     setError(null);

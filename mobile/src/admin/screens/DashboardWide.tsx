@@ -114,6 +114,7 @@ export function DashboardWide() {
             accent="rgba(255,255,255,0.18)"
             shadowStyle={kpiShadow.blue}
             icon={<Ionicons name="bus-outline" size={18} color="#fff" />}
+            onPress={() => navigation.navigate("AdminTrucks")}
           />
         </View>
         <View style={{ flex: 1 }}>
@@ -126,6 +127,7 @@ export function DashboardWide() {
             accent="rgba(0,48,135,0.12)"
             shadowStyle={kpiShadow.yellow}
             icon={<Ionicons name="location-outline" size={18} color={colors.navy} />}
+            onPress={openTrips}
           />
         </View>
         <View style={{ flex: 1 }}>
@@ -138,6 +140,7 @@ export function DashboardWide() {
             accent="rgba(255,255,255,0.18)"
             shadowStyle={kpiShadow.green}
             icon={<Ionicons name="checkmark-circle-outline" size={18} color="#fff" />}
+            onPress={() => navigation.navigate("AdminPerformance")}
           />
         </View>
         <View style={{ flex: 1 }}>
@@ -150,6 +153,7 @@ export function DashboardWide() {
             accent="rgba(255,255,255,0.18)"
             shadowStyle={kpiShadow.red}
             icon={<Ionicons name="warning-outline" size={18} color="#fff" />}
+            onPress={() => navigation.navigate("AdminTrucks")}
           />
         </View>
       </View>

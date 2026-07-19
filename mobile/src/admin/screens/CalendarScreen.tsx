@@ -22,6 +22,8 @@ export function CalendarScreen() {
   const { t, i18n } = useTranslation();
   const wide = useLayoutMode() === "wide";
   const [section, setSection] = useState<Section>("holidays");
+  // Tapping a day in the grid seeds the Add-Holiday date + jumps to Holidays.
+  const [pickedDate, setPickedDate] = useState("");
   const drivers = useDrivers();
   const holidays = useHolidays();
   const leaves = useLeaves();
@@ -57,6 +59,10 @@ export function CalendarScreen() {
         leaves={leaves.data ?? []}
         monthLabels={monthLabels}
         weekdayLabels={weekdayLabels}
+        onPickDate={(k) => {
+          setPickedDate(k);
+          setSection("holidays");
+        }}
       />
 
       {/* Manage — add / remove, behind the segmented toggle. */}
@@ -73,7 +79,7 @@ export function CalendarScreen() {
           );
         })}
       </View>
-      {section === "holidays" ? <HolidaysPanel /> : <LeavePanel drivers={drivers.data ?? []} />}
+      {section === "holidays" ? <HolidaysPanel prefillDate={pickedDate} /> : <LeavePanel drivers={drivers.data ?? []} />}
     </ScrollView>
   );
 }
