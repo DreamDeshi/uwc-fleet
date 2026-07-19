@@ -7,7 +7,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { DriverTabParamList } from "../../navigation/types";
 import { useAuth } from "../../context/AuthContext";
-import { useTrips, useHolidaySet } from "../../hooks/queries";
+import { useTrips, useHolidaySet, useMyTruckFuel } from "../../hooks/queries";
 import { colors, layout, radius, shadow } from "../../theme";
 import { Card } from "../../components/Card";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -27,6 +27,8 @@ export function DriverDashboardScreen() {
   const navigation = useNavigation<Nav>();
   const { user } = useAuth();
   const [fuelOpen, setFuelOpen] = useState(false);
+  const fuel = useMyTruckFuel(user?.assigned_truck?.plate);
+  const lastFill = fuel.data?.logs?.[0];
   const { data: trips, isLoading, isError, refetch, isRefetching } = useTrips();
 
   const { active, assigned, recentCompleted, assignedToday } = useMemo(() => {
@@ -100,7 +102,11 @@ export function DriverDashboardScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.fuelTitle}>{t("profile.logFuel")}</Text>
             <Text style={styles.fuelSub} numberOfLines={1}>
-              {user?.assigned_truck ? user.assigned_truck.plate : t("fuel.noTruck")}
+              {user?.assigned_truck
+                ? lastFill
+                  ? `${user.assigned_truck.plate} · ${t("fuel.lastFillShort", { when: formatDate(lastFill.logged_at), litres: lastFill.liters })}`
+                  : user.assigned_truck.plate
+                : t("fuel.noTruck")}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />

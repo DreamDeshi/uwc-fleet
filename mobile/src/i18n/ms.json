@@ -252,7 +252,11 @@
     "noTruck": "Anda tiada lori yang ditetapkan. Minta admin menetapkannya sebelum merekod minyak.",
     "invalid": "Masukkan nombor positif untuk liter, kos dan odometer.",
     "saved": "Rekod minyak disimpan.",
-    "error": "Rekod minyak tidak dapat disimpan."
+    "error": "Rekod minyak tidak dapat disimpan.",
+    "recentTitle": "Isian terkini",
+    "efficiency": "{{l}} L / 100 km",
+    "litresShort": "{{n}} L",
+    "lastFillShort": "Terakhir: {{when}} · {{litres}} L"
   },
   "requestor": {
     "greeting": "Hai, {{name}}",

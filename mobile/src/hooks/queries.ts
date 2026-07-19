@@ -407,9 +407,47 @@ export interface LogFuelInput {
 }
 
 export function useLogFuel() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ plate, ...body }: LogFuelInput) =>
       (await api.post(`/trucks/${encodeURIComponent(plate)}/fuel`, body)).data,
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["fuel", vars.plate] });
+    },
+  });
+}
+
+// One recorded fill-up (serializer field names mirror the API's FuelLog).
+export interface DriverFuelLog {
+  id: string;
+  liters: number;
+  cost: number;
+  odometer: number | null;
+  logged_at: string;
+}
+// Spend + efficiency rollup — DISPLAY ONLY (never read by pay/dispatch).
+export interface DriverFuelSummary {
+  log_count: number;
+  total_litres: number;
+  total_cost_rm: number;
+  avg_cost_per_litre: number | null;
+  total_km_covered: number;
+  cost_per_km: number | null;
+  litres_per_100km: number | null;
+}
+export interface DriverFuelHistory {
+  logs: DriverFuelLog[];
+  summary: DriverFuelSummary;
+}
+
+// The driver's own truck fuel history + efficiency. Enabled only when a truck
+// is assigned; the API restricts a driver to their assigned truck.
+export function useMyTruckFuel(plate: string | null | undefined) {
+  return useQuery({
+    queryKey: ["fuel", plate],
+    enabled: !!plate,
+    queryFn: async () =>
+      (await api.get<DriverFuelHistory>(`/trucks/${encodeURIComponent(plate!)}/fuel/history`)).data,
   });
 }
 

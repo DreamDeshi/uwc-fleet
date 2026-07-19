@@ -110,6 +110,46 @@ router.post(
   }
 );
 
+// GET /trucks/:plate/fuel/history — fuel logs (newest first) + spend/efficiency
+// summary for one truck. Admin, OR the truck's assigned driver (their own truck
+// only). READ-ONLY display metrics — never read by the incentive or dispatch
+// paths. Declared before the admin guard so a driver can see their own history.
+router.get("/:plate/fuel/history", requireRole("admin", "driver"), async (req, res, next) => {
+  try {
+    const { plate } = req.params;
+    const truck = await prisma.truck.findUnique({ where: { plate }, select: { plate: true } });
+    if (!truck) {
+      throw new ApiError(404, "TRUCK_NOT_FOUND", "Truck not found.");
+    }
+    // A driver may only view fuel for the truck assigned to them.
+    if (req.user!.role === "driver") {
+      const me = await prisma.user.findUnique({
+        where: { id: req.user!.id },
+        select: { assigned_truck_plate: true },
+      });
+      if (me?.assigned_truck_plate !== plate) {
+        throw new ApiError(403, "FORBIDDEN", "You can only view fuel for your assigned truck.");
+      }
+    }
+    const logs = await prisma.fuelLog.findMany({
+      where: { truck_plate: plate },
+      orderBy: { logged_at: "desc" },
+      select: {
+        id: true,
+        truck_plate: true,
+        liters: true,
+        cost: true,
+        odometer: true,
+        logged_at: true,
+        driver: { select: { name: true } },
+      },
+    });
+    res.json({ logs: logs.map(serializeFuelLog), summary: summariseFuel(logs) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Everything below is admin-only.
 router.use(requireRole("admin"));
 

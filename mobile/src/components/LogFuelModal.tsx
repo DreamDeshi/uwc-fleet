@@ -11,8 +11,9 @@ import { colors, radius } from "../theme";
 import { Button } from "./Button";
 import { TextField } from "./Field";
 import { useToast } from "./Toast";
-import { useLogFuel } from "../hooks/queries";
+import { useLogFuel, useMyTruckFuel } from "../hooks/queries";
 import { apiErrorMessage } from "../services/api";
+import { formatDate, formatMoney } from "../lib/format";
 
 export function LogFuelModal({
   visible,
@@ -28,6 +29,11 @@ export function LogFuelModal({
   const { t } = useTranslation();
   const toast = useToast();
   const logFuel = useLogFuel();
+  // Recent fills + efficiency for this truck (display only). Fetched while the
+  // modal is open so a just-logged fill shows immediately (mutation invalidates).
+  const fuel = useMyTruckFuel(visible ? truckPlate : null);
+  const recent = (fuel.data?.logs ?? []).slice(0, 3);
+  const eff = fuel.data?.summary;
   const [litres, setLitres] = useState("");
   const [cost, setCost] = useState("");
   const [odometer, setOdometer] = useState("");
@@ -107,6 +113,27 @@ export function LogFuelModal({
               style={{ flex: 1 }}
             />
           </View>
+
+          {/* Recent fills + efficiency (display only — never touches pay). */}
+          {recent.length > 0 && (
+            <View style={styles.history}>
+              <View style={styles.historyHead}>
+                <Text style={styles.historyTitle}>{t("fuel.recentTitle")}</Text>
+                {eff?.litres_per_100km != null ? (
+                  <Text style={styles.effText}>{t("fuel.efficiency", { l: eff.litres_per_100km.toFixed(1) })}</Text>
+                ) : null}
+              </View>
+              {recent.map((l) => (
+                <View key={l.id} style={styles.histRow}>
+                  <Text style={styles.histDate}>{formatDate(l.logged_at)}</Text>
+                  <Text style={styles.histMeta} numberOfLines={1}>
+                    {t("fuel.litresShort", { n: l.liters })} · {formatMoney(l.cost)}
+                    {l.odometer != null ? ` · ${l.odometer} km` : ""}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       </View>
     </Modal>
@@ -119,4 +146,12 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 17, fontWeight: "800", color: colors.navy, textAlign: "center" },
   truckBox: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 16, backgroundColor: colors.tintBlue, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12 },
   truckBoxText: { color: colors.blue, fontSize: 14, fontWeight: "700" },
+
+  history: { marginTop: 18, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 14 },
+  historyHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  historyTitle: { fontSize: 13, fontWeight: "800", color: colors.navy, textTransform: "uppercase", letterSpacing: 0.4 },
+  effText: { fontSize: 12, fontWeight: "700", color: colors.blue },
+  histRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 5, gap: 10 },
+  histDate: { fontSize: 13, color: colors.textMuted },
+  histMeta: { fontSize: 13, fontWeight: "600", color: colors.navy, flexShrink: 1 },
 });

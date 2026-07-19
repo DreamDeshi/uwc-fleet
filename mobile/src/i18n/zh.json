@@ -252,7 +252,11 @@
     "noTruck": "您没有分配的罗里。请先让管理员分配后再记录加油。",
     "invalid": "升数、费用和里程表请输入正数。",
     "saved": "加油记录已保存。",
-    "error": "无法保存加油记录。"
+    "error": "无法保存加油记录。",
+    "recentTitle": "最近加油",
+    "efficiency": "{{l}} L / 100 km",
+    "litresShort": "{{n}} L",
+    "lastFillShort": "最近：{{when}} · {{litres}} L"
   },
   "requestor": {
     "greeting": "你好，{{name}}",
