@@ -41,13 +41,13 @@ export function AdminMobileHeader({ title, onBack }: { title: string; onBack?: (
             <Ionicons name="arrow-back" size={20} color="#fff" />
           </Pressable>
         )}
+        <BrandLogo white height={24} style={{ marginRight: 10 }} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text numberOfLines={1} style={{ fontSize: 17, fontWeight: "800", color: "#fff", letterSpacing: -0.2 }}>
             {title}
           </Text>
         </View>
         <AdminSearchButton />
-        <BrandLogo white height={24} style={{ marginLeft: 10 }} />
       </View>
     </View>
   );

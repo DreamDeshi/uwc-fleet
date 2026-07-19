@@ -19,7 +19,6 @@ import { useAuth } from "../../context/AuthContext";
 import { usePendingApprovals, usePendingUsers, useTruckAlerts } from "../hooks/queries";
 import { colors, font, gradients, radius } from "../theme";
 import { formatFullDate } from "../lib/format";
-import { Avatar } from "../components/ui";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { installAdminWebFonts, adminFontScope } from "../platform/webFonts";
 import { AdminTabs } from "./AdminTabs";
@@ -92,7 +91,7 @@ const Drawer = createDrawerNavigator();
 
 function AdminDrawerContent(props: DrawerContentComponentProps) {
   const { t } = useTranslation();
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
   const insets = useSafeAreaInsets();
   const mode = useLayoutMode();
   // Nav badges (old-admin parity): pending-approvals count on User
@@ -242,30 +241,6 @@ function AdminDrawerContent(props: DrawerContentComponentProps) {
             <Ionicons name="log-out-outline" size={18} color="rgba(255,255,255,0.6)" />
             <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: font.md, fontWeight: "600" }}>{t("admin.signOut")}</Text>
           </Pressable>
-        </View>
-
-        {/* Signed-in admin card */}
-        <View
-          style={{
-            marginHorizontal: 12,
-            marginTop: 8,
-            padding: 12,
-            backgroundColor: "rgba(255,255,255,0.07)",
-            borderWidth: 1,
-            borderColor: "rgba(255,255,255,0.09)",
-            borderRadius: 12,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 10,
-          }}
-        >
-          <Avatar name={user?.name} size={36} />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={1} style={{ fontSize: font.md, fontWeight: "600", color: "#fff" }}>
-              {user?.name ?? "—"}
-            </Text>
-            <Text style={{ fontSize: font.xs, color: "rgba(255,255,255,0.45)" }}>{t("admin.roleLabel")}</Text>
-          </View>
         </View>
       </ScrollView>
     </LinearGradient>

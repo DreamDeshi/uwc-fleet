@@ -19,7 +19,7 @@ import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
 import { useAttention, useDashboard, useFleetLive, usePendingUsers, useTrucks } from "../hooks/queries";
 import { colors, font, radius, shadow } from "../theme";
-import { initials } from "../lib/format";
+import { BrandLogo } from "../../components/BrandLogo";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { AttentionPanel, attentionHasRows } from "../components/AttentionPanel";
 import { AdminSearchButton } from "../components/AdminSearchButton";
@@ -69,6 +69,7 @@ export function AdminHomeScreen() {
       {/* Greeting header — the requestor/driver home header, admin-flavoured. */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.headerTop}>
+          <BrandLogo white height={30} style={{ marginRight: 12 }} />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.greetingTime}>{greeting} 👋</Text>
             <Text numberOfLines={1} style={styles.hi}>{user?.name ?? ""}</Text>
@@ -77,12 +78,7 @@ export function AdminHomeScreen() {
               <Text style={styles.role}>{t("admin.roleLabel")}</Text>
             </View>
           </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <AdminSearchButton />
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initials(user?.name ?? "")}</Text>
-            </View>
-          </View>
+          <AdminSearchButton />
         </View>
       </View>
 

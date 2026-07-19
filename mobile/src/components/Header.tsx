@@ -27,13 +27,13 @@ export function Header({
             <Ionicons name="chevron-back" size={24} color={colors.white} />
           </TouchableOpacity>
         ) : null}
+        {/* UWC mark first (left) — logo, then the page title. */}
+        <BrandLogo white height={26} style={{ marginRight: 12 }} />
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>{title}</Text>
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
         {right}
-        {/* UWC mark, top-right corner — white variant reads on the blue bar. */}
-        <BrandLogo white height={26} style={{ marginLeft: 12 }} />
       </View>
     </View>
   );

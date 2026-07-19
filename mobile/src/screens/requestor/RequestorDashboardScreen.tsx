@@ -179,6 +179,9 @@ export function RequestorDashboardScreen() {
     <View style={[styles.header, { paddingTop: insets.top + 12, paddingBottom: wide ? 24 : 44 }, wide && styles.headerWide]}>
       <View style={wide ? styles.fillCol : styles.centerCol}>
         <View style={styles.headerTop}>
+          {/* On desktop the permanent sidebar already carries the logo, so the
+              greeting header only shows it on phones (avoids a double logo). */}
+          {!wide && <BrandLogo white height={30} style={{ marginRight: 12 }} />}
           <View style={{ flex: 1 }}>
             <Text style={styles.greetingTime}>{greeting} 👋</Text>
             <Text style={styles.hi}>{user?.name ?? ""}</Text>
@@ -188,12 +191,6 @@ export function RequestorDashboardScreen() {
                 <Text style={styles.dept}>{user.department.name}</Text>
               </View>
             ) : null}
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <BrandLogo white height={28} />
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initials(user?.name ?? "")}</Text>
-            </View>
           </View>
         </View>
       </View>

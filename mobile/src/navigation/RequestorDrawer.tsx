@@ -17,7 +17,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "../context/AuthContext";
 import { useWide } from "../hooks/useWide";
 import { colors, radius, type } from "../theme";
-import { initials } from "../lib/format";
+import { BrandLogo } from "../components/BrandLogo";
 import { RequestorTabs } from "./RequestorTabs";
 import { RequestorDashboardScreen } from "../screens/requestor/RequestorDashboardScreen";
 import { BookingFormScreen } from "../screens/requestor/BookingFormScreen";
@@ -46,7 +46,7 @@ const Drawer = createDrawerNavigator();
 
 function RequestorSidebar(props: DrawerContentComponentProps) {
   const { t } = useTranslation();
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
   const insets = useSafeAreaInsets();
   const current = props.state.routeNames[props.state.index];
   // A booking detail is opened from the Bookings list, so keep that nav item lit
@@ -58,9 +58,7 @@ function RequestorSidebar(props: DrawerContentComponentProps) {
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + 26, paddingBottom: insets.bottom + 16, flexGrow: 1 }}>
         {/* Brand mark (proper noun — not translated) */}
         <View style={styles.brand}>
-          <View style={styles.brandMark}>
-            <Ionicons name="cube" size={22} color={colors.blue} />
-          </View>
+          <BrandLogo white height={42} />
           <View>
             <Text style={styles.brandName}>UWC TRUCKING</Text>
             <Text style={styles.brandSub}>FLEET MANAGEMENT</Text>
@@ -93,17 +91,6 @@ function RequestorSidebar(props: DrawerContentComponentProps) {
             <Ionicons name="log-out-outline" size={18} color="rgba(255,255,255,0.6)" />
             <Text style={styles.signOutText}>{t("profile.logout")}</Text>
           </Pressable>
-        </View>
-
-        {/* Signed-in user card */}
-        <View style={styles.userCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials(user?.name ?? "")}</Text>
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={1} style={styles.userName}>{user?.name ?? "—"}</Text>
-            <Text style={styles.userRole}>{user?.department?.name ?? t("register.roleRequestor")}</Text>
-          </View>
         </View>
       </ScrollView>
     </LinearGradient>
