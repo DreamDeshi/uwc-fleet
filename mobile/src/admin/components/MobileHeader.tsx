@@ -8,6 +8,7 @@ import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../theme";
+import { AdminSearchButton } from "./AdminSearchButton";
 
 export function AdminMobileHeader({ title, onBack }: { title: string; onBack?: () => void }) {
   const insets = useSafeAreaInsets();
@@ -44,6 +45,7 @@ export function AdminMobileHeader({ title, onBack }: { title: string; onBack?: (
             {title}
           </Text>
         </View>
+        <AdminSearchButton />
       </View>
     </View>
   );

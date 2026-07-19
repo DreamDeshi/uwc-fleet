@@ -36,6 +36,7 @@ import { TripsScreen } from "../screens/TripsScreen";
 import { AdminSettingsScreen } from "../screens/AdminSettingsScreen";
 import { AuditLogScreen } from "../screens/AuditLogScreen";
 import { AdminSearchScreen } from "../screens/AdminSearchScreen";
+import { AdminSearchButton } from "../components/AdminSearchButton";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -349,6 +350,7 @@ function AdminHeader({ navigation, options, route }: DrawerHeaderProps) {
                 {formatFullDate(new Date())}
               </Text>
             </View>
+            <AdminSearchButton />
             <View>
               <View
                 style={{
