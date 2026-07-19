@@ -36,6 +36,15 @@ import { useToast } from "../../components/Toast";
 import { pickDocumentImage, PickedPhoto } from "../../lib/photo";
 import { palletEquivalents, type PalletSize } from "../../lib/pallets";
 import {
+  loadTemplates,
+  persistTemplates,
+  palletsMap,
+  palletQtysFor,
+  upsertTemplate,
+  removeTemplate,
+  type BookingTemplate,
+} from "../../lib/bookingTemplates";
+import {
   pickupToSlot,
   tripRemarks,
   PICKUP_HOURS,
@@ -184,6 +193,15 @@ export function BookingFormScreen() {
   const [docs, setDocs] = useState<PickedPhoto[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
+  // Saved booking templates (device-local "save function"). Loaded once; the
+  // name dialog is driven from here so it can be reached from the Confirm step.
+  const [templates, setTemplates] = useState<BookingTemplate[]>([]);
+  const [templateSaveOpen, setTemplateSaveOpen] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  useEffect(() => {
+    loadTemplates().then(setTemplates);
+  }, []);
+
   const pickupDate = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -228,6 +246,10 @@ export function BookingFormScreen() {
   // always-visible summary rail. `cargoIsSet` gates the rail's placeholder.
   const cargoIsSet =
     cargoType === "pallet" ? totalPallets > 0 : cargoType === "carton" ? cartonQty > 0 : othersText.trim().length > 0;
+  // A template is only worth saving once it's a complete, submittable booking —
+  // this guarantees a loaded template never drops the requestor onto Confirm
+  // with empty cargo the server would reject.
+  const canSaveTemplate = Boolean(routeTypeId) && stops.length > 0 && cargoIsSet;
   const cargoSummaryText =
     cargoType === "pallet"
       ? `${totalPallets} ${t("booking.pallet")}`
@@ -288,6 +310,50 @@ export function BookingFormScreen() {
       setPalletQtys(PALLET_SIZES.map((size) => lines.find((l) => l.pallet_type === size)?.quantity ?? 0));
     }
     setStep(STEPS.length - 1); // jump to Confirm
+  };
+
+  // Load a saved template into the form and jump to Confirm (same fast path as
+  // rebook). Pallets are rebuilt from the size→qty map, so a template still maps
+  // to the right rows even if PALLET_SIZES is reordered later.
+  const applyTemplate = (tpl: BookingTemplate) => {
+    setError(null);
+    if (tpl.routeTypeId) setRouteTypeId(tpl.routeTypeId);
+    setStops(tpl.stops ?? []);
+    setCargoType(tpl.cargoType);
+    setPalletQtys(palletQtysFor(tpl, PALLET_SIZES));
+    setCartonQty(tpl.cartonQty ?? 0);
+    setOthersText(tpl.othersText ?? "");
+    setSizeEstimate(tpl.sizeEstimate ?? "");
+    setRemarks(tpl.remarks ?? "");
+    setStep(STEPS.length - 1); // jump to Confirm — review before submit
+  };
+
+  const saveCurrentTemplate = async () => {
+    const clean = templateName.trim();
+    if (!clean) return;
+    const tpl: BookingTemplate = {
+      name: clean,
+      routeTypeId,
+      stops,
+      cargoType,
+      pallets: palletsMap(PALLET_SIZES, palletQtys),
+      cartonQty,
+      othersText,
+      sizeEstimate,
+      remarks,
+    };
+    const next = upsertTemplate(templates, tpl);
+    setTemplates(next);
+    await persistTemplates(next);
+    setTemplateName("");
+    setTemplateSaveOpen(false);
+    toast(t("booking.templateSaved"), "success");
+  };
+
+  const deleteTemplate = async (name: string) => {
+    const next = removeTemplate(templates, name);
+    setTemplates(next);
+    await persistTemplates(next);
   };
 
   // EDIT mode: seed the wizard from the booking once it loads (cache-first —
@@ -446,6 +512,9 @@ export function BookingFormScreen() {
           recent={recentConsignees}
           canRebook={Boolean(lastTrip) && !isEdit}
           onRebook={() => lastTrip && prefillFromTrip(lastTrip)}
+          templates={isEdit ? [] : templates}
+          onApplyTemplate={applyTemplate}
+          onDeleteTemplate={deleteTemplate}
         />
       )}
       {step === 1 && (
@@ -479,6 +548,8 @@ export function BookingFormScreen() {
           onAddDoc={onAddDoc}
           onRemoveDoc={onRemoveDoc}
           uploadingDoc={uploadDoc.isPending}
+          canSaveTemplate={canSaveTemplate && !isEdit}
+          onSaveTemplate={() => setTemplateSaveOpen(true)}
         />
       )}
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -599,6 +670,43 @@ export function BookingFormScreen() {
         onClose={() => setTimeOpen(false)}
       />
 
+      {/* Save-as-template name dialog */}
+      <Modal visible={templateSaveOpen} transparent animationType="fade" onRequestClose={() => setTemplateSaveOpen(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { alignItems: "stretch" }]}>
+            <Text style={[styles.modalTitle, { textAlign: "center" }]}>{t("booking.saveTemplateTitle")}</Text>
+            <Text style={[styles.docHint, { textAlign: "center", marginBottom: 14 }]}>{t("booking.saveTemplateHint")}</Text>
+            <FieldLabel>{t("booking.templateName")}</FieldLabel>
+            <TextInput
+              value={templateName}
+              onChangeText={setTemplateName}
+              placeholder={t("booking.templateNamePlaceholder")}
+              placeholderTextColor={colors.textFaint}
+              autoFocus
+              style={styles.estimateInput}
+              onSubmitEditing={saveCurrentTemplate}
+            />
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+              <Button
+                title={t("common.cancel")}
+                variant="outline"
+                onPress={() => {
+                  setTemplateName("");
+                  setTemplateSaveOpen(false);
+                }}
+                style={{ flex: 1 }}
+              />
+              <Button
+                title={t("booking.saveTemplate")}
+                onPress={saveCurrentTemplate}
+                disabled={!templateName.trim()}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Success modal */}
       <Modal visible={ticket !== null} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
@@ -639,6 +747,9 @@ function StepWhere({
   recent,
   canRebook,
   onRebook,
+  templates,
+  onApplyTemplate,
+  onDeleteTemplate,
 }: {
   wide: boolean;
   routeTypes: { id: string; name: string }[];
@@ -649,6 +760,9 @@ function StepWhere({
   recent: Consignee[];
   canRebook: boolean;
   onRebook: () => void;
+  templates: BookingTemplate[];
+  onApplyTemplate: (tpl: BookingTemplate) => void;
+  onDeleteTemplate: (name: string) => void;
 }) {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
@@ -671,6 +785,32 @@ function StepWhere({
           <Ionicons name="repeat" size={18} color={colors.white} />
           <Text style={styles.rebookText}>{t("booking.rebookLast")}</Text>
         </TouchableOpacity>
+      ) : null}
+
+      {/* Saved booking templates — 1-tap reload of a named recurring order. */}
+      {templates.length > 0 ? (
+        <View style={styles.templateWrap}>
+          <Text style={styles.recentLabel}>{t("booking.savedTemplates")}</Text>
+          <View style={styles.recentChips}>
+            {templates.map((tpl) => (
+              <View key={tpl.name} style={styles.templateChip}>
+                <TouchableOpacity
+                  style={styles.templateChipMain}
+                  onPress={() => onApplyTemplate(tpl)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="bookmark" size={13} color={colors.blue} />
+                  <Text style={styles.templateChipText} numberOfLines={1}>
+                    {truncateName(tpl.name)}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => onDeleteTemplate(tpl.name)} hitSlop={8} style={styles.templateChipX}>
+                  <Ionicons name="close" size={13} color={colors.textFaint} />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        </View>
       ) : null}
 
       <FieldLabel>{t("booking.routeType")}</FieldLabel>
@@ -945,6 +1085,8 @@ function StepConfirm({
   onAddDoc,
   onRemoveDoc,
   uploadingDoc,
+  canSaveTemplate,
+  onSaveTemplate,
 }: {
   routeTypeName?: string;
   stops: Consignee[];
@@ -959,6 +1101,8 @@ function StepConfirm({
   onAddDoc: () => void;
   onRemoveDoc: (index: number) => void;
   uploadingDoc: boolean;
+  canSaveTemplate: boolean;
+  onSaveTemplate: () => void;
 }) {
   const { t } = useTranslation();
   const Section = ({ title, editStep, children }: { title: string; editStep: number; children: React.ReactNode }) => (
@@ -1055,6 +1199,15 @@ function StepConfirm({
           <Text style={styles.addNewText}>{t("booking.attachDocument")}</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Save this booking as a reusable template (device-local). Only offered
+          once the booking is complete, so a reloaded template is submittable. */}
+      {canSaveTemplate ? (
+        <TouchableOpacity style={styles.saveTemplateBtn} onPress={onSaveTemplate} activeOpacity={0.85}>
+          <Ionicons name="bookmark-outline" size={18} color={colors.blue} />
+          <Text style={styles.saveTemplateText}>{t("booking.saveAsTemplate")}</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -1136,6 +1289,32 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   recentChipText: { fontSize: 14, fontWeight: "700", color: colors.blue, flexShrink: 1 },
+
+  templateWrap: { marginBottom: 16 },
+  templateChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    maxWidth: "100%",
+    backgroundColor: colors.tintBlue,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  templateChipMain: { flexDirection: "row", alignItems: "center", gap: 5, paddingLeft: 12, paddingRight: 6, paddingVertical: 8, flexShrink: 1 },
+  templateChipText: { fontSize: 14, fontWeight: "700", color: colors.blue, flexShrink: 1 },
+  templateChipX: { paddingRight: 10, paddingLeft: 2, paddingVertical: 8 },
+  saveTemplateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: colors.blue,
+    borderRadius: radius.md,
+    paddingVertical: 13,
+    marginBottom: 12,
+  },
+  saveTemplateText: { fontSize: 14, fontWeight: "700", color: colors.blue },
 
   routeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 },
   routeCard: { width: "48%", borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md, padding: 14, backgroundColor: colors.white },

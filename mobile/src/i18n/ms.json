@@ -364,7 +364,15 @@
     "summary": "Ringkasan Tempahan",
     "noStopsYet": "Belum ada hentian ditambah.",
     "summaryDocs_one": "{{count}} dokumen dilampirkan",
-    "summaryDocs_other": "{{count}} dokumen dilampirkan"
+    "summaryDocs_other": "{{count}} dokumen dilampirkan",
+    "savedTemplates": "Templat disimpan",
+    "saveAsTemplate": "Simpan sebagai templat",
+    "saveTemplate": "Simpan templat",
+    "saveTemplateTitle": "Simpan templat tempahan",
+    "saveTemplateHint": "Guna semula laluan, hentian dan kargo ini pada tempahan akan datang dengan satu ketikan.",
+    "templateName": "Nama templat",
+    "templateNamePlaceholder": "cth. Larian mingguan Jabil",
+    "templateSaved": "Templat disimpan."
   },
   "bookingDetail": {
     "title": "Butiran Tempahan",

@@ -364,7 +364,15 @@
     "summary": "预订摘要",
     "noStopsYet": "尚未添加卸货点。",
     "summaryDocs_one": "已附上 {{count}} 份文件",
-    "summaryDocs_other": "已附上 {{count}} 份文件"
+    "summaryDocs_other": "已附上 {{count}} 份文件",
+    "savedTemplates": "已保存的模板",
+    "saveAsTemplate": "另存为模板",
+    "saveTemplate": "保存模板",
+    "saveTemplateTitle": "保存预订模板",
+    "saveTemplateHint": "一键即可在下次预订中重用此路线、停靠点和货物。",
+    "templateName": "模板名称",
+    "templateNamePlaceholder": "例如：Jabil 每周班次",
+    "templateSaved": "模板已保存。"
   },
   "bookingDetail": {
     "title": "预订详情",

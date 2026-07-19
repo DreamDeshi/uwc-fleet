@@ -364,7 +364,15 @@
     "summary": "Booking Summary",
     "noStopsYet": "No stops added yet.",
     "summaryDocs_one": "{{count}} document attached",
-    "summaryDocs_other": "{{count}} documents attached"
+    "summaryDocs_other": "{{count}} documents attached",
+    "savedTemplates": "Saved templates",
+    "saveAsTemplate": "Save as template",
+    "saveTemplate": "Save template",
+    "saveTemplateTitle": "Save booking template",
+    "saveTemplateHint": "Reuse this route, stops and cargo on a future booking with one tap.",
+    "templateName": "Template name",
+    "templateNamePlaceholder": "e.g. Weekly Jabil run",
+    "templateSaved": "Template saved."
   },
   "bookingDetail": {
     "title": "Booking Details",
