@@ -180,7 +180,7 @@ export function DashboardWide() {
             </View>
           </View>
           <View style={{ flex: 1, padding: 12 }}>
-            <AdminFleetMap trucks={truckList} live={live.data ?? []} height={380} />
+            <AdminFleetMap trucks={truckList} live={live.data ?? []} fill />
           </View>
         </Card>
 

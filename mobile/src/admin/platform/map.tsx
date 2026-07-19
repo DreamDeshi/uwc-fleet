@@ -33,16 +33,20 @@ export function AdminFleetMap({
   trucks,
   live = [],
   height = 400,
+  fill = false,
 }: {
   trucks: Truck[];
   live?: LivePosition[];
   height?: number;
+  // fill: take the parent's full height (flex:1) instead of a fixed px height —
+  // used where the map sits in a stretched card beside a taller rail.
+  fill?: boolean;
 }) {
   const { t } = useTranslation();
   const liveByPlate = new Map(live.map((p) => [p.plate, p]));
 
   return (
-    <View style={{ height, borderRadius: 12, overflow: "hidden" }}>
+    <View style={fill ? { flex: 1, borderRadius: 12, overflow: "hidden" } : { height, borderRadius: 12, overflow: "hidden" }}>
       <MapView style={StyleSheet.absoluteFill} initialRegion={REGION}>
         {/* Zone overlays */}
         {ZONES.map((z) => (

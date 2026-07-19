@@ -82,16 +82,27 @@ export function AdminFleetMap({
   trucks,
   live = [],
   height = 400,
+  fill = false,
 }: {
   trucks: Truck[];
   live?: LivePosition[];
   height?: number;
+  // fill: take the parent's full height (flex:1) instead of a fixed px height —
+  // used where the map sits in a stretched card beside a taller rail, so it
+  // fills the card rather than leaving white space below a fixed-height map.
+  fill?: boolean;
 }) {
   const { t } = useTranslation();
   const liveByPlate = new Map(live.map((p) => [p.plate, p]));
 
   return (
-    <div style={{ height, width: "100%", borderRadius: 12, overflow: "hidden" }}>
+    <div
+      style={
+        fill
+          ? { flex: 1, minHeight: 0, width: "100%", borderRadius: 12, overflow: "hidden" }
+          : { height, width: "100%", borderRadius: 12, overflow: "hidden" }
+      }
+    >
       <MapContainer center={MAP_CENTER} zoom={MAP_ZOOM} scrollWheelZoom style={{ height: "100%", width: "100%" }}>
         <InvalidateOnLayout />
         <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
