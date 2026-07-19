@@ -33,8 +33,8 @@ export function MoreScreen() {
     { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline" },
     { route: "AdminUsers", labelKey: "admin.users.title", icon: "people-outline", count: pendingCount },
     { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },
-    { route: "AdminSearch", labelKey: "admin.search.navLabel", icon: "search-outline" },
-    { route: "AdminAudit", labelKey: "admin.audit.navLabel", icon: "receipt-outline" },
+    // Search moved onto the dashboard; Audit log moved into Settings (below) —
+    // neither is a top-level MORE row now.
   ];
 
   return (

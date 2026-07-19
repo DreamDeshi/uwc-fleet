@@ -33,6 +33,7 @@ import {
   TripStatusBadge,
 } from "../components/ui";
 import { DispatchToggle } from "../components/DispatchToggle";
+import { AdminSearchBar } from "../components/AdminSearchBar";
 import { LoadCapacityBar } from "../components/LoadCapacityBar";
 import { AttentionPanel } from "../components/AttentionPanel";
 import { AdminFleetMap } from "../platform/map";
@@ -72,6 +73,8 @@ export function DashboardWide() {
       <Card pad={14} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
         <DispatchToggle />
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {/* Global search — relocated here from its own nav tab. */}
+          <AdminSearchBar style={{ width: 260 }} />
           {/* Auto-dispatch failures keep their OWN, distinct signal. The chip
               becomes the trip-board deep link when Trips lands (Phase 4). */}
           {k.auto_dispatch_failed > 0 && (

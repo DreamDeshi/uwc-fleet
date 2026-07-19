@@ -51,8 +51,8 @@ const NAV_GROUPS: { headingKey: string; items: NavItem[] }[] = [
   {
     headingKey: "admin.navGroups.overview",
     items: [
+      // Search moved onto the dashboard (owner ask) — no longer its own item.
       { route: "AdminDashboard", labelKey: "admin.nav.dashboard", icon: "grid-outline" },
-      { route: "AdminSearch", labelKey: "admin.search.navLabel", icon: "search-outline" },
     ],
   },
   {
@@ -77,7 +77,7 @@ const NAV_GROUPS: { headingKey: string; items: NavItem[] }[] = [
   {
     headingKey: "admin.navGroups.system",
     items: [
-      { route: "AdminAudit", labelKey: "admin.audit.navLabel", icon: "receipt-outline" },
+      // Audit log now lives inside Settings (owner ask) — not a top-level item.
       { route: "AdminSettings", labelKey: "admin.nav.settings", icon: "settings-outline" },
     ],
   },

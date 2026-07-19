@@ -11,6 +11,8 @@ import React, { useState } from "react";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
+import { useNavigation } from "@react-navigation/native";
+import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
 import { colors, font, radius } from "../theme";
 import { Card, SectionTitle } from "../components/ui";
@@ -31,6 +33,7 @@ export function AdminSettingsScreen() {
   const { t, i18n } = useTranslation();
   const { setLanguage } = useAuth();
   const mode = useLayoutMode();
+  const navigation = useNavigation<NavigationProp<ParamListBase>>();
   const [editOpen, setEditOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
 
@@ -122,6 +125,24 @@ export function AdminSettingsScreen() {
                 </TouchableOpacity>
               );
             })}
+          </View>
+        </Card>
+
+        {/* System — audit log lives here now (moved out of the top-level nav). */}
+        <Card>
+          <SectionTitle title={t("admin.navGroups.system")} />
+          <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, overflow: "hidden", marginTop: 4 }}>
+            <TouchableOpacity
+              onPress={() => navigation.navigate("AdminAudit")}
+              style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 15, paddingHorizontal: 16, backgroundColor: colors.card }}
+            >
+              <Ionicons name="receipt-outline" size={20} color={colors.blue} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: font.md, fontWeight: "600", color: colors.text }}>{t("admin.audit.navLabel")}</Text>
+                <Text style={{ fontSize: font.xs, color: colors.textMuted, marginTop: 2 }}>{t("admin.audit.subtitle")}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+            </TouchableOpacity>
           </View>
         </Card>
       </View>

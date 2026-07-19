@@ -22,6 +22,7 @@ import { colors, font, radius, shadow } from "../theme";
 import { initials } from "../lib/format";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { AttentionPanel, attentionHasRows } from "../components/AttentionPanel";
+import { AdminSearchBar } from "../components/AdminSearchBar";
 import { AdminFleetMap } from "../platform/map";
 import { DashboardWide } from "./DashboardWide";
 
@@ -83,6 +84,9 @@ export function AdminHomeScreen() {
       </View>
 
       <View style={styles.content}>
+        {/* Global search — moved off its own nav tab to sit on the dashboard. */}
+        <AdminSearchBar style={{ marginBottom: 14 }} />
+
         {/* Floating hero — the dispatcher's live snapshot; taps to the board.
             (Approvals moved down to a normal row — it's not the main job.) */}
         <View style={styles.ctaWrap}>
