@@ -17,7 +17,7 @@ import { AuthStackParamList } from "../../navigation/types";
 import { useAuth } from "../../context/AuthContext";
 import { apiErrorMessage } from "../../services/api";
 import { colors, layout, radius, shadow } from "../../theme";
-import { Logo } from "../../components/Logo";
+import { BrandLogo } from "../../components/BrandLogo";
 import { Button } from "../../components/Button";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
@@ -64,8 +64,7 @@ export function LoginScreen({ navigation }: Props) {
         <View style={[styles.header, { paddingTop: insets.top + 28 }]}>
           <View style={styles.discBig} pointerEvents="none" />
           <View style={styles.discSmall} pointerEvents="none" />
-          <Logo />
-          <View style={{ marginTop: 26 }}>
+          <View>
             <Text style={styles.welcome}>{t("login.welcome")}</Text>
             <Text style={styles.subtitle}>{t("login.subtitle")}</Text>
           </View>
@@ -73,6 +72,11 @@ export function LoginScreen({ navigation }: Props) {
 
         {/* Form panel rises into the header with rounded shoulders. */}
         <View style={styles.form}>
+          {/* Company logo — on the white card, where the blue+yellow mark reads
+              cleanly (it disappears on the blue header). Largest instance. */}
+          <View style={{ alignItems: "center", marginBottom: 24 }}>
+            <BrandLogo height={92} />
+          </View>
           <Text style={styles.label}>{t("login.phone")}</Text>
           <View style={[styles.phoneRow, focused === "phone" && styles.fieldFocused]}>
             <View style={styles.prefix}>

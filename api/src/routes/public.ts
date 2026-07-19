@@ -8,6 +8,7 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { verifyTrackingToken } from "../lib/trackingToken";
+import { UWC_LOGO_PNG } from "../lib/uwcLogo";
 
 const router = Router();
 
@@ -38,8 +39,17 @@ function html(inner: string): string {
     .row{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid #f1f5f9;font-size:15px}
     .row:last-child{border-bottom:0}.muted{color:#64748b}
     .foot{margin-top:16px;font-size:12px;color:#94a3b8}
-  </style></head><body><div class="card">${inner}</div></body></html>`;
+    .logo{height:52px;width:auto;display:block;margin:0 auto 16px}
+  </style></head><body><div class="card"><img class="logo" src="/track/logo.png" alt="UWC Berhad">${inner}</div></body></html>`;
 }
+
+// The tracking-page logo — served same-origin (helmet img-src 'self') and
+// cached hard since it never changes. Declared before "/:token" so the literal
+// "logo.png" isn't captured as a token.
+router.get("/logo.png", (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=604800, immutable");
+  res.type("png").send(UWC_LOGO_PNG);
+});
 
 router.get("/:token", async (req, res) => {
   const tripId = verifyTrackingToken(req.params.token);
