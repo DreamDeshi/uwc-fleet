@@ -1,7 +1,11 @@
-// Approximate zone centroids for the fleet map. There is no live GPS yet
-// (Development Brief Section 12) — consignees are stored by zone, not lat/long.
-// Truck markers are placed at their primary zone's centroid with a small
-// deterministic offset so multiple trucks in one zone don't perfectly overlap.
+// Approximate zone centroids for the fleet map — HAND-PICKED points, NOT real
+// zone boundaries (consignees are stored by zone_code, with no lat/long, so no
+// true catchment can be derived). They exist to label the map and to place a
+// truck that has no GPS fix: `truckPosition` puts it on its primary zone's
+// centroid with a small deterministic offset so trucks in one zone don't
+// perfectly overlap. Those placeholder markers are GHOSTED on the map (grey,
+// faded, "~" prefix) so they can't be mistaken for a real position — real fixes
+// come from GET /fleet/live (driver-phone GPS, active trips only).
 import { colors } from "../theme";
 
 export interface ZoneInfo {

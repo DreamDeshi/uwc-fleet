@@ -1,13 +1,15 @@
 // Admin fleet map — NATIVE build (react-native-maps; the web build resolves
-// map.web.tsx with Leaflet instead). Same visual language as the web admin's
-// FleetMap: zone catchment circles with code labels, the plant marker, and
-// per-truck markers on a real GPS fix (solid pill + live dot) or the zone
-// centroid (dashed pill). Same props on both platforms.
+// map.web.tsx with Leaflet instead). Zone code labels, the plant marker, and
+// per-truck markers on a real GPS fix (coloured pill, + live dot when fresh) or
+// GHOSTED on the zone centroid when there is no fix at all. Same props and same
+// treatment on both platforms — keep the two files in step.
+// Zone catchment circles removed 2026-07-20 (never real boundaries, one
+// hardcoded 9km radius for every zone) — see map.web.tsx header for the detail.
 // NOTE: the Android Google-Maps key is a known-open item — until it's set,
 // Android renders a blank map (same as the driver/requestor maps).
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
-import MapView, { Callout, Circle, Marker } from "react-native-maps";
+import MapView, { Callout, Marker } from "react-native-maps";
 import { useTranslation } from "react-i18next";
 import { MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES, truckPosition } from "../lib/zones";
 import { formatTime } from "../lib/format";
@@ -48,20 +50,16 @@ export function AdminFleetMap({
   return (
     <View style={fill ? { flex: 1, borderRadius: 12, overflow: "hidden" } : { height, borderRadius: 12, overflow: "hidden" }}>
       <MapView style={StyleSheet.absoluteFill} initialRegion={REGION}>
-        {/* Zone overlays */}
+        {/* Zone code labels only — no catchment circles */}
         {ZONES.map((z) => (
-          <React.Fragment key={z.code}>
-            <Circle
-              center={{ latitude: z.lat, longitude: z.lng }}
-              radius={9000}
-              strokeColor={z.color}
-              strokeWidth={1.5}
-              fillColor={`${z.color}1F`}
-            />
-            <Marker coordinate={{ latitude: z.lat, longitude: z.lng }} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
-              <Text style={{ color: z.color, fontWeight: "800", fontSize: font.md }}>{z.code}</Text>
-            </Marker>
-          </React.Fragment>
+          <Marker
+            key={z.code}
+            coordinate={{ latitude: z.lat, longitude: z.lng }}
+            anchor={{ x: 0.5, y: 0.5 }}
+            tracksViewChanges={false}
+          >
+            <Text style={{ color: z.color, fontWeight: "800", fontSize: font.sm, opacity: 0.75 }}>{z.code}</Text>
+          </Marker>
         ))}
 
         {/* Plant origin */}
@@ -78,13 +76,24 @@ export function AdminFleetMap({
         {trucks.map((tr) => {
           const fix = liveByPlate.get(tr.plate);
           const isLive = Boolean(fix) && !fix!.stale;
+          // No fix at all → drawn on the zone centroid, i.e. a placeholder, not
+          // a location. Ghost it (grey + faded + "~") so only solid coloured
+          // markers read as real GPS. A stale fix keeps its colour — it is a
+          // genuine last-known point, it just loses the live dot.
+          const approx = !fix;
           const [lat, lng] = fix
             ? [fix.latitude, fix.longitude]
             : truckPosition(tr.plate, tr.priority_zones);
-          const color = truckColor[tr.status] ?? colors.blue;
+          const color = approx ? colors.textMuted : truckColor[tr.status] ?? colors.blue;
 
           return (
-            <Marker key={tr.plate} coordinate={{ latitude: lat, longitude: lng }} tracksViewChanges={false}>
+            <Marker
+              key={tr.plate}
+              coordinate={{ latitude: lat, longitude: lng }}
+              tracksViewChanges={false}
+              opacity={approx ? 0.45 : 1}
+              zIndex={approx ? 0 : 2}
+            >
               <View style={{ alignItems: "center" }}>
                 <View
                   style={{
@@ -101,7 +110,9 @@ export function AdminFleetMap({
                   }}
                 >
                   {isLive && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.green, marginRight: 4 }} />}
-                  <Text style={{ color: colors.navy, fontSize: 10, fontWeight: "700" }}>{tr.plate}</Text>
+                  <Text style={{ color: approx ? colors.textMuted : colors.navy, fontSize: 10, fontWeight: "700" }}>
+                    {approx ? `~${tr.plate}` : tr.plate}
+                  </Text>
                 </View>
                 <View
                   style={{

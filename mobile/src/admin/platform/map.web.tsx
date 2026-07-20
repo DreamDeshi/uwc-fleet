@@ -1,10 +1,15 @@
-// Admin fleet map — WEB build. A faithful port of the old web admin's
-// FleetMap (Leaflet + OpenStreetMap, keyless): zone catchment circles with
-// code labels, the plant marker, and per-truck markers that sit on a real
-// GPS fix when the phone has pinged (solid border + live dot) or the zone
-// centroid otherwise (dashed border). Same data props as the web original.
+// Admin fleet map — WEB build (Leaflet + OpenStreetMap, keyless): zone code
+// labels, the plant marker, and per-truck markers that sit on a real GPS fix
+// when the phone has pinged or the zone centroid otherwise.
+//
+// The zone CATCHMENT CIRCLES were removed 2026-07-20 (owner). They were never
+// real boundaries — ZONES is a hand-written centroid list and every circle used
+// the SAME hardcoded 9km radius, so P1/P2/P3/K1 (centroids ~10-25km apart)
+// overlapped into a blob at zoom 8 and their permanent labels collided with the
+// truck pills. Nothing in the data can draw a true catchment: Consignee stores
+// zone_code only, no coordinates. Only the code label remains.
 import React, { useEffect } from "react";
-import { MapContainer, TileLayer, Circle, Marker, Tooltip, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./leaflet.css";
@@ -20,24 +25,44 @@ const truckColor: Record<string, string> = {
   maintenance: colors.orange,
 };
 
-function truckIcon(plate: string, color: string, live: boolean) {
-  const border = live ? `1.5px solid ${color}` : `1.5px dashed ${color}`;
+// `approx` = the truck has NO GPS fix at all, so it is drawn on its zone
+// centroid (a placeholder, not a location). Those are GHOSTED — grey, faded,
+// and prefixed "~" — so a solid coloured marker always means a real fix and
+// nobody reads a placeholder as a lorry's actual position. A stale fix keeps
+// its colour (it IS a real last-known point) and just loses the live dot.
+function truckIcon(plate: string, color: string, live: boolean, approx: boolean) {
+  const markerColor = approx ? colors.textMuted : color;
+  const border = live ? `1.5px solid ${markerColor}` : `1.5px dashed ${markerColor}`;
   const liveDot = live
     ? `<span style="width:6px;height:6px;border-radius:50%;background:${colors.green};display:inline-block;margin-right:4px"></span>`
     : "";
+  // "~" reads as approximate in every locale — no new translation string.
+  const label = approx ? `~${plate}` : plate;
   return L.divIcon({
     className: "uwc-truck-label",
     html: `
-      <div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-6px)">
-        <div style="display:flex;align-items:center;background:#fff;border:${border};color:${colors.navy};font:700 10px Inter,sans-serif;
-             padding:1px 6px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.2);margin-bottom:3px">${liveDot}${plate}</div>
-        <div style="width:22px;height:22px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;
-             box-shadow:0 0 0 4px ${color}33;border:2px solid #fff">
+      <div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-6px);opacity:${approx ? 0.45 : 1}">
+        <div style="display:flex;align-items:center;background:#fff;border:${border};color:${approx ? colors.textMuted : colors.navy};font:700 10px Inter,sans-serif;
+             padding:1px 6px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.2);margin-bottom:3px">${liveDot}${label}</div>
+        <div style="width:22px;height:22px;border-radius:50%;background:${markerColor};display:flex;align-items:center;justify-content:center;
+             box-shadow:${approx ? "none" : `0 0 0 4px ${markerColor}33`};border:2px solid #fff">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="1" y="7" width="13" height="9" rx="1.5" fill="#fff"/><path d="M14 10h4l3 3v3h-7z" fill="#fff"/></svg>
         </div>
       </div>`,
     iconSize: [22, 40],
     iconAnchor: [11, 34],
+  });
+}
+
+// Zone code label — a standalone, non-interactive marker at the centroid. It
+// used to be a permanent Tooltip on the (now removed) catchment circle.
+function zoneLabelIcon(code: string, color: string) {
+  return L.divIcon({
+    className: "uwc-zone-label",
+    html: `<span style="color:${color};font:800 13px Inter,sans-serif;opacity:0.75;white-space:nowrap;
+           text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff">${code}</span>`,
+    iconSize: [30, 16],
+    iconAnchor: [15, 8],
   });
 }
 
@@ -107,18 +132,15 @@ export function AdminFleetMap({
         <InvalidateOnLayout />
         <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-        {/* Zone overlays — coloured catchment circles with code labels */}
+        {/* Zone code labels only — no catchment circles (see file header) */}
         {ZONES.map((z) => (
-          <Circle
+          <Marker
             key={z.code}
-            center={[z.lat, z.lng]}
-            radius={9000}
-            pathOptions={{ color: z.color, fillColor: z.color, fillOpacity: 0.12, weight: 1.5 }}
-          >
-            <Tooltip permanent direction="center" className="uwc-zone-label">
-              <span style={{ color: z.color, fontWeight: 800, fontSize: 14 }}>{z.code}</span>
-            </Tooltip>
-          </Circle>
+            position={[z.lat, z.lng]}
+            icon={zoneLabelIcon(z.code, z.color)}
+            interactive={false}
+            keyboard={false}
+          />
         ))}
 
         {/* Plant origin */}
@@ -128,12 +150,19 @@ export function AdminFleetMap({
         {trucks.map((tr) => {
           const fix = liveByPlate.get(tr.plate);
           const isLive = Boolean(fix) && !fix!.stale;
+          const approx = !fix; // no fix at all → zone centroid placeholder
           const position: [number, number] = fix
             ? [fix.latitude, fix.longitude]
             : truckPosition(tr.plate, tr.priority_zones);
 
           return (
-            <Marker key={tr.plate} position={position} icon={truckIcon(tr.plate, truckColor[tr.status] ?? colors.blue, isLive)}>
+            <Marker
+              key={tr.plate}
+              position={position}
+              icon={truckIcon(tr.plate, truckColor[tr.status] ?? colors.blue, isLive, approx)}
+              // keep ghosts behind real fixes where they overlap
+              zIndexOffset={approx ? 0 : 500}
+            >
               <Tooltip direction="top" offset={[0, -30]}>
                 <div style={{ fontSize: 13 }}>
                   <strong>{tr.plate}</strong> · {tr.type}
