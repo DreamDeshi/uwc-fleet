@@ -13,6 +13,7 @@
     "migrate:deploy": "prisma migrate deploy",
     "seed": "tsx prisma/seed.ts",
     "seed:test": "tsx prisma/seed-test.ts",
+    "seed:map-fixture": "tsx prisma/seed-map-fixture.ts",
     "test": "vitest run",
     "test:integration": "vitest run -c vitest.integration.config.ts",
     "conformance": "vitest run tests/conformance",
