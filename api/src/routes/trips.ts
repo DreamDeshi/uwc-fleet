@@ -54,7 +54,7 @@ import { leaveDateFilter } from "../services/driverLeave";
 import { priorDeliveredDropsWhere } from "../services/dayLedger";
 import { effectiveTruckRates, effectiveZonePoints } from "../services/pendingRates";
 import { truckExpiryIssues } from "../services/truckEligibility";
-import { PLANT_ORIGIN, zoneCoord, getRoute, type LatLng } from "../lib/geo";
+import { getRoute } from "../services/routeLegs";
 import { loadHolidaySet } from "../lib/holidays";
 import { upload } from "../lib/upload";
 import { uploadBuffer } from "../lib/cloudinary";
@@ -701,11 +701,12 @@ router.get("/:id", async (req, res, next) => {
   }
 });
 
-// ── GET /trips/:id/route — real road polyline (Google Directions, server-side) ──
+// ── GET /trips/:id/route — real road polyline, from PRE-COMPUTED legs ─────────
 //
-// Keeps GOOGLE_MAPS_API_KEY on the server (never shipped to the app). Routes
-// UWC plant → each stop's zone centroid in sequence. Falls back to a straight
-// line when Google isn't configured, so the map always renders something.
+// No routing provider is called at request time: the geometry was generated
+// offline by a local OpenRouteService and ships as data (services/routeLegs.ts).
+// Routes UWC plant → each stop's zone centroid in sequence, falling back to a
+// straight line if a leg is missing or stale, so the map always renders.
 router.get("/:id/route", async (req, res, next) => {
   try {
     const trip = await prisma.trip.findUnique({
@@ -728,20 +729,10 @@ router.get("/:id/route", async (req, res, next) => {
       throw new ApiError(403, "FORBIDDEN", "You do not have permission to view this trip.");
     }
 
-    // Each stop's zone centroid, in order, dropping consecutive duplicates so a
-    // multi-stop trip within one zone doesn't send a pointless waypoint.
-    const stopCoords: LatLng[] = [];
-    for (const stop of trip.stops) {
-      const c = zoneCoord(stop.consignee.zone_code);
-      const prev = stopCoords[stopCoords.length - 1];
-      if (!prev || prev.latitude !== c.latitude || prev.longitude !== c.longitude) {
-        stopCoords.push(c);
-      }
-    }
-
-    const destination = stopCoords[stopCoords.length - 1] ?? zoneCoord(null);
-    const waypoints = stopCoords.slice(0, -1);
-    const route = await getRoute(PLANT_ORIGIN, destination, waypoints);
+    // The stops' ZONE CODES in order — the service keys the pre-computed legs
+    // off these and collapses consecutive duplicates itself (several stops in
+    // one zone are one destination).
+    const route = await getRoute(trip.stops.map((s) => s.consignee.zone_code));
 
     res.json(route);
   } catch (err) {

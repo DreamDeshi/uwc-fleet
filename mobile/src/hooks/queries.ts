@@ -97,7 +97,10 @@ export interface TripRoute {
   polyline: { latitude: number; longitude: number }[];
   distance_m: number | null;
   duration_s: number | null;
-  source: "google" | "straight";
+  // "precomputed" = real road geometry from the API's pre-computed RouteLeg
+  // table (generated offline by a local OpenRouteService — no runtime provider).
+  // "straight" = fallback line when a leg is missing or stale.
+  source: "precomputed" | "straight";
 }
 
 export function useTripRoute(tripId: string, enabled = true) {

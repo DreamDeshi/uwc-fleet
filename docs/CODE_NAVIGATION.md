@@ -224,7 +224,8 @@ Row-level security on ingest: each posted point's trip must belong to the authen
 |---|---|---|
 | **Cloudinary** (POD photos, trip documents) | `api/src/lib/cloudinary.ts` (config + buffer upload → secure URL), `api/src/lib/upload.ts` (multer, in-memory), consumed in `trips.ts` POD/document routes; mobile capture via `mobile/src/lib/photo.ts` (compress ≤500KB) | Entirely behind 3 env vars (`CLOUDINARY_*`); `isCloudinaryConfigured()` fails loudly if unset |
 | **Expo Push** (notifications) | `api/src/lib/pushNotifications.ts` (direct HTTP to `exp.host`, 100-message chunks, best-effort); token registration `mobile/src/hooks/usePushNotifications.ts` + `mobile/src/lib/notifications.ts`, stored via `PATCH /users/push-token` | Calls Expo's public API with global `fetch` — the ESM-only SDK was deliberately dropped (API compiles to CommonJS) |
-| **Google Maps** | `mobile/src/lib/maps.ts` + platform-split `*.web.tsx` map components; `GOOGLE_MAPS_API_KEY` env | Web build uses a keyless fallback so UWC can test without a paid key |
+| **Maps (display)** | `mobile/src/lib/maps.ts` + platform-split `*.web.tsx` map components; admin fleet map = Leaflet + OpenStreetMap (keyless) | Web is keyless. Android needs `mobile/app.json` → `android.config.googleMaps.apiKey` (currently `""`); `mapsEnabled` renders `MapPlaceholder` instead of crashing |
+| **Routing (road geometry)** | `api/src/services/routeLegs.ts` + `RouteLeg` table; generated offline by `api/scripts/gen-route-legs.ts` against a local OpenRouteService (Docker) | **No runtime provider, no API key, no quota.** Works only while destinations are zone centroids — geocoding consignee addresses invalidates it (see the `RouteLeg` model comment) |
 
 ---
 

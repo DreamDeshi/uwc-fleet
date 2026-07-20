@@ -85,29 +85,29 @@ enum DispatchMode {
 // pending_approval until an admin approves). Drivers are pinned 1:1 to their
 // truck via assigned_truck_plate, mirroring UWC's real fixed driver-truck pairs.
 model User {
-  id                  String     @id @default(cuid())
-  phone               String     @unique // login ID
-  password_hash       String
-  refresh_token_hash  String? // current rotated refresh token, hashed
-  name                String
-  employee_number     String?
-  role                Role
-  status              UserStatus @default(pending_approval)
-  language_pref       String     @default("en") // en | ms | zh
-  expo_push_token     String? // Expo push token for this user's current device
-  department_id       String?
-  department          Department? @relation(fields: [department_id], references: [id])
-  assigned_truck_plate String?    @unique // drivers only — 1 driver : 1 truck
-  assigned_truck      Truck?      @relation(fields: [assigned_truck_plate], references: [plate])
-  created_at          DateTime   @default(now())
+  id                   String      @id @default(cuid())
+  phone                String      @unique // login ID
+  password_hash        String
+  refresh_token_hash   String? // current rotated refresh token, hashed
+  name                 String
+  employee_number      String?
+  role                 Role
+  status               UserStatus  @default(pending_approval)
+  language_pref        String      @default("en") // en | ms | zh
+  expo_push_token      String? // Expo push token for this user's current device
+  department_id        String?
+  department           Department? @relation(fields: [department_id], references: [id])
+  assigned_truck_plate String?     @unique // drivers only — 1 driver : 1 truck
+  assigned_truck       Truck?      @relation(fields: [assigned_truck_plate], references: [plate])
+  created_at           DateTime    @default(now())
 
-  trips_requested  Trip[]          @relation("RequestorTrips")
-  trips_driven     Trip[]          @relation("DriverTrips")
+  trips_requested  Trip[]        @relation("RequestorTrips")
+  trips_driven     Trip[]        @relation("DriverTrips")
   location_logs    LocationLog[]
   audit_logs       AuditLog[]
   fuel_logs        FuelLog[]
-  consignees_added Consignee[]     @relation("ConsigneeCreatedBy")
-  leaves           DriverLeave[]   @relation("DriverLeaves")
+  consignees_added Consignee[]   @relation("ConsigneeCreatedBy")
+  leaves           DriverLeave[] @relation("DriverLeaves")
 }
 
 // Per-driver leave calendar — feeds DISPATCH availability, not pay. A driver
@@ -142,12 +142,12 @@ model Department {
 // off-peak), the daily deduction, the driver's coverage zones, per-truck
 // operating hours, and the road-legal document expiries that gate dispatch.
 model Truck {
-  plate                  String    @id
-  type                   String // e.g. "10t-30ft"
-  max_pallets            Int
-  entitled_claim_weekday Decimal   @db.Decimal(10, 2)
-  entitled_claim_offpeak Decimal   @db.Decimal(10, 2)
-  daily_deduction_points Int
+  plate                    String    @id
+  type                     String // e.g. "10t-30ft"
+  max_pallets              Int
+  entitled_claim_weekday   Decimal   @db.Decimal(10, 2)
+  entitled_claim_offpeak   Decimal   @db.Decimal(10, 2)
+  daily_deduction_points   Int
   // Next-day rate cutoff (client rule, Mr. Teh 3 Jul 2026): a rate edit is
   // staged in these pending_* columns and takes effect from
   // pending_rates_effective (MYT "YYYY-MM-DD", same key format as
@@ -155,31 +155,31 @@ model Truck {
   // snapshots read the rate effective at assignment time
   // (services/pendingRates.ts); a sweep folds matured values into the base
   // columns above and clears these.
-  pending_claim_weekday    Decimal? @db.Decimal(10, 2)
-  pending_claim_offpeak    Decimal? @db.Decimal(10, 2)
+  pending_claim_weekday    Decimal?  @db.Decimal(10, 2)
+  pending_claim_offpeak    Decimal?  @db.Decimal(10, 2)
   pending_deduction_points Int?
   pending_rates_effective  String?
-  priority_zones         String[]
-  operating_hours_start  String    @default("07:00")
+  priority_zones           String[]
+  operating_hours_start    String    @default("07:00")
   // 02:00 (not 18:00) since item 12 — the operating day WRAPS midnight, running
   // 07:00 → 02:00 the next calendar day. A truck may still be given a
   // conventional same-day window (end > start); operatingWindow.ts handles both.
-  operating_hours_end    String    @default("02:00")
-  insurance_expiry       DateTime?
-  permit_expiry          DateTime?
-  road_tax_expiry        DateTime?
-  is_available           Boolean   @default(true)
+  operating_hours_end      String    @default("02:00")
+  insurance_expiry         DateTime?
+  permit_expiry            DateTime?
+  road_tax_expiry          DateTime?
+  is_available             Boolean   @default(true)
   // Soft-retire for a departed truck (additive, 2026-07-15). null = active;
   // set = permanently retired. Distinct from is_available (temporary/dispatch
   // gate): retiring sets BOTH retired_at=now AND is_available=false, so the
   // UNCHANGED dispatch candidate query (which filters is_available) excludes it
   // with no engine change. History (trips, fuel) is preserved — never deleted.
-  retired_at             DateTime?
+  retired_at               DateTime?
 
-  driver       User?
-  trips        Trip[]
-  maintenance  VehicleMaintenance[]
-  fuel_logs    FuelLog[]
+  driver      User?
+  trips       Trip[]
+  maintenance VehicleMaintenance[]
+  fuel_logs   FuelLog[]
 }
 
 // ── 4. Zone ──────────────────────────────────────────────────────────
@@ -190,19 +190,19 @@ model Zone {
 
   // Implicit many-to-many self-relation for adjacency (e.g. P2 <-> K1).
   // Prisma creates the join table automatically — not a 17th model.
-  adjacentTo Zone[] @relation("ZoneAdjacency")
+  adjacentTo   Zone[] @relation("ZoneAdjacency")
   adjacentFrom Zone[] @relation("ZoneAdjacency")
 
-  consignees         Consignee[]
-  destination_rates  DestinationRate[]
+  consignees        Consignee[]
+  destination_rates DestinationRate[]
 }
 
 // ── 5. RouteType ─────────────────────────────────────────────────────
 // The 6 booking categories (Customer/Supplier/Inter-Plant × Delivery/Return).
 model RouteType {
-  id   String @id @default(cuid())
-  name String @unique // Customer Delivery, Supplier Delivery, Inter-Plant Delivery,
-                       // Customer Return, Supplier Return, Inter-Plant Return
+  id    String @id @default(cuid())
+  name  String @unique // Customer Delivery, Supplier Delivery, Inter-Plant Delivery,
+  // Customer Return, Supplier Return, Inter-Plant Return
   trips Trip[]
 }
 
@@ -211,11 +211,11 @@ model RouteType {
 // full). Two rows may legitimately share a zone — K2 is both Sungai Petani and
 // Kuala Ketil — so the rates editor updates all rows of a zone together.
 model DestinationRate {
-  id            String  @id @default(cuid())
-  zone_code     String?
-  zone          Zone?   @relation(fields: [zone_code], references: [code])
-  location_name String // e.g. "Ipoh", "Kuala Lumpur"
-  points        Int // first-trip-of-day points for this destination
+  id                       String  @id @default(cuid())
+  zone_code                String?
+  zone                     Zone?   @relation(fields: [zone_code], references: [code])
+  location_name            String // e.g. "Ipoh", "Kuala Lumpur"
+  points                   Int // first-trip-of-day points for this destination
   // Next-day cutoff (extends client Q4, 3 Jul 2026; migration
   // 20260703130000): a points edit stages here, effective from
   // pending_points_effective (MYT "YYYY-MM-DD" = tomorrow) — same pattern as
@@ -232,28 +232,28 @@ model DestinationRate {
 // gives the day total), and the three nullable rate columns are the
 // assignment-time snapshot (rate lock) that finalization pays at.
 model Trip {
-  id               String     @id @default(cuid())
-  ticket_number    String     @unique // TKT-YYYYMMDD-NNN
-  requestor_id     String
-  requestor        User       @relation("RequestorTrips", fields: [requestor_id], references: [id])
-  driver_id        String?
-  driver           User?      @relation("DriverTrips", fields: [driver_id], references: [id])
-  truck_plate      String?
-  truck            Truck?     @relation(fields: [truck_plate], references: [plate])
-  route_type_id    String
-  route_type       RouteType  @relation(fields: [route_type_id], references: [id])
-  status           TripStatus @default(pending)
-  pickup_datetime  DateTime
-  incentive_earned Decimal?   @db.Decimal(10, 2)
+  id                        String     @id @default(cuid())
+  ticket_number             String     @unique // TKT-YYYYMMDD-NNN
+  requestor_id              String
+  requestor                 User       @relation("RequestorTrips", fields: [requestor_id], references: [id])
+  driver_id                 String?
+  driver                    User?      @relation("DriverTrips", fields: [driver_id], references: [id])
+  truck_plate               String?
+  truck                     Truck?     @relation(fields: [truck_plate], references: [plate])
+  route_type_id             String
+  route_type                RouteType  @relation(fields: [route_type_id], references: [id])
+  status                    TripStatus @default(pending)
+  pickup_datetime           DateTime
+  incentive_earned          Decimal?   @db.Decimal(10, 2)
   // Finalize-time pay EVIDENCE (written once, atomically with
   // incentive_earned; the engine's own outputs — display/verification only,
   // never read by any calculation). NULL on trips completed before this
   // feature ("breakdown not recorded"). rate_used/off_peak are also NULL on
   // the rare midnight-straddling trip whose delivery-day groups used
   // different tiers — the per-stop rows stay exact; deduction_applied sums.
-  rate_used         Decimal?  @db.Decimal(10, 2) // RM/point actually paid
-  off_peak          Boolean? // which tier picked rate_used
-  deduction_applied Int? // deduction points actually subtracted (may be < the truck's figure when floored at 0)
+  rate_used                 Decimal?   @db.Decimal(10, 2) // RM/point actually paid
+  off_peak                  Boolean? // which tier picked rate_used
+  deduction_applied         Int? // deduction points actually subtracted (may be < the truck's figure when floored at 0)
   // POD-approval gate (Mr. Teh 16 Jul 2026): `incentive_earned` above is the
   // engine's PROPOSAL, computed and frozen when the last stop is delivered (the
   // trip then sits `pending_approval`). At admin approval `incentive_final` is
@@ -262,51 +262,51 @@ model Trip {
   // forever). Payroll pays COALESCE(incentive_final, incentive_earned) for
   // `completed` trips: trips completed BEFORE this feature keep incentive_final
   // NULL and are paid at their engine amount (grandfathered, no data migration).
-  incentive_final          Decimal?  @db.Decimal(10, 2) // admin-confirmed pay (may differ from the proposal)
+  incentive_final           Decimal?   @db.Decimal(10, 2) // admin-confirmed pay (may differ from the proposal)
   incentive_override_reason String? // required iff incentive_final != incentive_earned
-  incentive_approved_at    DateTime?
-  incentive_approved_by    String? // admin User id
+  incentive_approved_at     DateTime?
+  incentive_approved_by     String? // admin User id
   // Rate-lock snapshot, written at ASSIGNMENT time (manual approve and
   // auto-dispatch both claim through it): a trip finalizes at the rates it was
   // dispatched under — a later admin rate edit affects future assignments only.
   // Null on trips assigned before the rate-lock migration; the finalization
   // path falls back to the live truck values for those.
-  entitled_claim_weekday Decimal? @db.Decimal(10, 2)
-  entitled_claim_offpeak Decimal? @db.Decimal(10, 2)
-  daily_deduction_points Int?
-  is_external      Boolean    @default(false)
+  entitled_claim_weekday    Decimal?   @db.Decimal(10, 2)
+  entitled_claim_offpeak    Decimal?   @db.Decimal(10, 2)
+  daily_deduction_points    Int?
+  is_external               Boolean    @default(false)
   // Admin's reason when a booking is rejected — shown to the requestor.
-  rejection_reason String?
+  rejection_reason          String?
   // Set once admins have been pinged about a 15-min-old pending order, so the
   // background alert job notifies them exactly once per trip.
-  pending_alert_sent Boolean  @default(false)
+  pending_alert_sent        Boolean    @default(false)
   // Set true when an auto-dispatch attempt (create-time OR the 60s sweep) finds
   // no eligible driver/truck for this booking (or, per Phase 3, the route would
   // finish past the operating window). Self-clearing: reset to false the moment
   // the trip leaves pending (assigned by a later sweep/adjacency or manually, or
   // cancelled/rejected), so the admin "needs attention" signal is never sticky.
   // Displayed state = (status == pending AND auto_dispatch_failed == true).
-  auto_dispatch_failed Boolean @default(false)
+  auto_dispatch_failed      Boolean    @default(false)
   // WHY auto-dispatch couldn't place it (operating window / no capacity /
   // missing zone rate) — written and cleared in exactly the same places as
   // auto_dispatch_failed so it inherits the self-clearing lifecycle.
   // Display-only: no dispatch or incentive logic ever reads it.
-  auto_dispatch_note   String?
+  auto_dispatch_note        String?
   // Set true when an admin MANUALLY unassigns an assigned trip (feedback item 15,
   // 16 Jul 2026: "no more auto after unassign"). While true, the pending sweep
   // will NOT auto-dispatch this booking — it stays pinned to manual handling
   // (admin reject or manual re-assign). Cleared on any pending → assigned claim
   // (claimPendingTrip), so it strictly means "this pending trip is here because
   // an admin pulled the driver, and must not be auto-re-dispatched."
-  auto_dispatch_paused Boolean @default(false)
-  created_at       DateTime   @default(now())
+  auto_dispatch_paused      Boolean    @default(false)
+  created_at                DateTime   @default(now())
 
-  stops               TripStop[]
-  cargo_details       CargoDetail[]
-  documents           TripDocument[]
-  location_logs       LocationLog[]
-  external_forwarder  ExternalForwarder?
-  status_history      TripStatusHistory[]
+  stops              TripStop[]
+  cargo_details      CargoDetail[]
+  documents          TripDocument[]
+  location_logs      LocationLog[]
+  external_forwarder ExternalForwarder?
+  status_history     TripStatusHistory[]
 
   // Keyset scan for the paged trip list (lib/tripCursor): the list orders by
   // (created_at DESC, id DESC) — same-direction columns, so this one ASC
@@ -320,27 +320,27 @@ model Trip {
 // This is where the proof-of-delivery lives (pod_photo) and where the driver's
 // per-stop Arrived/Delivered taps land.
 model TripStop {
-  id           String     @id @default(cuid())
-  trip_id      String
-  trip         Trip       @relation(fields: [trip_id], references: [id])
-  sequence     Int
-  consignee_id String
-  consignee    Consignee  @relation(fields: [consignee_id], references: [id])
-  status       StopStatus @default(pending)
-  arrived_at   DateTime?
-  delivered_at DateTime?
-  pod_photo    String? // Cloudinary delivery URL (legacy rows: public; new rows: the private/authenticated URL, not directly accessible)
+  id             String     @id @default(cuid())
+  trip_id        String
+  trip           Trip       @relation(fields: [trip_id], references: [id])
+  sequence       Int
+  consignee_id   String
+  consignee      Consignee  @relation(fields: [consignee_id], references: [id])
+  status         StopStatus @default(pending)
+  arrived_at     DateTime?
+  delivered_at   DateTime?
+  pod_photo      String? // Cloudinary delivery URL (legacy rows: public; new rows: the private/authenticated URL, not directly accessible)
   // Cloudinary public_id of the AUTHENTICATED (private-delivery) POD asset.
   // Set → the API serves a freshly-signed, unguessable URL each read
   // (lib/podPhotos.ts); NULL → legacy public pod_photo, until the backfill
   // (prisma/secure-existing-pods.ts) flips + records it. Additive, nullable.
-  pod_public_id String?
-  do_uploaded  Boolean    @default(false)
-  k2_form_ack  Boolean    @default(false) // required only when destination zone is K2
+  pod_public_id  String?
+  do_uploaded    Boolean    @default(false)
+  k2_form_ack    Boolean    @default(false) // required only when destination zone is K2
   // This stop's destination-zone points, snapshotted at assignment (rate lock —
   // same rationale as the Trip claim-rate snapshot). Null = pre-migration stop;
   // finalization falls back to the live DestinationRate points.
-  zone_points  Int?
+  zone_points    Int?
   // Finalize-time scoring EVIDENCE (the engine's own outputs, written once
   // with the trip's incentive): the points this drop actually earned
   // (pre-deduction), and whether it scored as a same-zone repeat (flat 1 —
@@ -376,7 +376,7 @@ model PublicHoliday {
 // delivery address into the dispatch + incentive zone model. Requestors can
 // self-add a missing company; created_by records who.
 model Consignee {
-  id              String   @id @default(cuid())
+  id              String  @id @default(cuid())
   company_name    String
   vendor_code     String?
   contact_person  String?
@@ -387,10 +387,10 @@ model Consignee {
   state           String?
   postal_code     String?
   zone_code       String
-  zone            Zone     @relation(fields: [zone_code], references: [code])
-  is_active       Boolean  @default(true)
+  zone            Zone    @relation(fields: [zone_code], references: [code])
+  is_active       Boolean @default(true)
   created_by      String? // requestor can self-add
-  created_by_user User?    @relation("ConsigneeCreatedBy", fields: [created_by], references: [id])
+  created_by_user User?   @relation("ConsigneeCreatedBy", fields: [created_by], references: [id])
 
   stops TripStop[]
 }
@@ -401,13 +401,13 @@ model Consignee {
 // per-TRIP, not per-stop — which is why truck capacity frees only when the
 // whole trip completes (a known, documented spec trade-off).
 model CargoDetail {
-  id              String  @id @default(cuid())
-  trip_id         String
-  trip            Trip    @relation(fields: [trip_id], references: [id])
-  pallet_type     String // e.g. "4x4"
-  quantity        Int
-  cartons         Int?
-  custom_size     String?
+  id                String  @id @default(cuid())
+  trip_id           String
+  trip              Trip    @relation(fields: [trip_id], references: [id])
+  pallet_type       String // e.g. "4x4"
+  quantity          Int
+  cartons           Int?
+  custom_size       String?
   // Requestor's OPTIONAL estimated 4×4-pallet-equivalent for a "carton"/"custom"
   // (Others) line — those types carry no pallet footprint by conversion (factor
   // 0), so without an estimate auto-dispatch can't size them. When given, the
@@ -415,25 +415,25 @@ model CargoDetail {
   // assignment (needs-attention) instead of silently taking the smallest truck.
   // Lives on the cargo line so it stays correct if cargo later becomes per-stop.
   estimated_pallets Int?
-  remark          String?
+  remark            String?
 }
 
 // ── 11. TripDocument ─────────────────────────────────────────────────
 // Requestor-uploaded paperwork (DO / invoice / other) as Cloudinary URLs.
 // The driver's POD photo is NOT here — it lives on TripStop.pod_photo, per stop.
 model TripDocument {
-  id          String       @id @default(cuid())
-  trip_id     String
-  trip        Trip         @relation(fields: [trip_id], references: [id])
-  type        DocumentType
-  file_url    String // legacy rows: public URL; new rows: the private/authenticated URL
+  id            String       @id @default(cuid())
+  trip_id       String
+  trip          Trip         @relation(fields: [trip_id], references: [id])
+  type          DocumentType
+  file_url      String // legacy rows: public URL; new rows: the private/authenticated URL
   // Cloudinary handle for the AUTHENTICATED (private-delivery) asset. Set → the
   // API serves a freshly-signed URL (lib/podPhotos.ts); NULL → legacy public
   // file_url, until the backfill (prisma/secure-existing-documents.ts). Additive.
   public_id     String?
   resource_type String? // "image" | "raw" — sign the right delivery URL
   format        String? // original extension (jpg/png/pdf…) so the signed URL keeps it
-  uploaded_at DateTime     @default(now())
+  uploaded_at   DateTime     @default(now())
 }
 
 // ── 12. LocationLog ───────────────────────────────────────────────────
@@ -542,4 +542,51 @@ model TripStatusHistory {
   created_at DateTime  @default(now())
 
   @@index([trip_id, created_at])
+}
+
+// ── 19. RouteLeg ─────────────────────────────────────────────────────
+//
+// PRE-COMPUTED road geometry, generated ONCE against a locally-run
+// OpenRouteService (Docker, driving-hgv profile, OSM Malaysia extract) — see
+// api/scripts/gen-route-legs.mjs. It replaces the live Google Directions call:
+// no API key, no quota, no per-request latency, no third-party terms.
+//
+// ⚠ WHY THIS IS SOUND TODAY, AND WHEN IT STOPS BEING SOUND ⚠
+// Trips have no real destination coordinates: `Consignee` stores `zone_code`
+// only, so routes/trips.ts routes plant → each stop's ZONE CENTROID. That makes
+// the set of possible paths finite and tiny — one leg per (origin, destination)
+// pair over {PLANT} ∪ {8 zone centroids} — so every route the system can ever
+// ask for is a concatenation of the legs stored here.
+//
+// The moment consignee ADDRESSES are geocoded (the long-standing "TODO: geocode
+// consignee addresses" in lib/geo.ts), destinations become per-consignee, this
+// table can no longer cover them, and the pre-computed approach must be
+// replaced by a live routing call again. Treat that migration as a prerequisite
+// of geocoding, not an afterthought.
+//
+// Staleness is DETECTABLE, not assumed: each row stores the exact coordinates
+// it was generated for. services/routeLegs.ts compares them against the live
+// PLANT_ORIGIN / ZONE_COORDS and falls back to the straight line if they have
+// drifted (e.g. the 2026-07-20 plant-coordinate correction would have invalidated
+// every leg). Regenerate with the script and ship a new migration.
+model RouteLeg {
+  // "PLANT" for the depot, otherwise a Zone.code (P1, P2, K1, …).
+  from_key     String
+  to_key       String
+  // Google-encoded polyline, precision 5 — decoded by lib/geo.decodePolyline
+  // (ORS emits the same encoding, so the existing decoder is reused as-is).
+  polyline     String
+  distance_m   Int
+  duration_s   Int
+  // Provenance, so a stale/oddly-routed leg can be traced to how it was made.
+  profile      String // ORS routing profile, e.g. "driving-hgv"
+  generator    String // tool + version, e.g. "openrouteservice 9.9.0 (docker)"
+  generated_at DateTime
+  // The coordinates this leg was ACTUALLY routed between — the staleness guard.
+  from_lat     Decimal  @db.Decimal(10, 7)
+  from_lng     Decimal  @db.Decimal(10, 7)
+  to_lat       Decimal  @db.Decimal(10, 7)
+  to_lng       Decimal  @db.Decimal(10, 7)
+
+  @@id([from_key, to_key])
 }

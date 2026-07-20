@@ -12,7 +12,7 @@ export interface LatLng {
 /**
  * THE UWC plant — origin of every trip, and the ONLY plant coordinate in the
  * API. Feeds estimateTripDistanceKm() (driver Earnings km, admin Performance
- * "km this month") and the Google Directions origin in routes/trips.ts.
+ * "km this month") and the "PLANT" end of every pre-computed RouteLeg.
  *
  * Geocoded from the documented address:
  *   PMT 744, Jalan Cassia Selatan 5/1, Batu Kawan (Simpang Ampat)
@@ -50,7 +50,8 @@ export function zoneCoord(zoneCode?: string | null): LatLng {
 }
 
 // Great-circle distance in km. Used to estimate trip distance from zone
-// centroids when we don't have a Google road distance (no API key / fallback).
+// centroids for the earnings/performance figures — deliberately NOT the road
+// distance in RouteLeg, which covers only plant→zone legs, not round trips.
 export function haversineKm(a: LatLng, b: LatLng): number {
   const R = 6371;
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -74,7 +75,20 @@ export interface RouteResult {
   polyline: LatLng[];
   distance_m: number | null;
   duration_s: number | null;
-  source: "google" | "straight"; // "straight" = fallback when Google is unavailable
+  // "precomputed" = real road geometry from the RouteLeg table (generated
+  // offline by a local OpenRouteService — see services/routeLegs.ts).
+  // "straight"    = the fallback line, used when a leg is missing or stale.
+  source: "precomputed" | "straight";
+}
+
+/**
+ * The fallback: a plain line through the given points. Used whenever real
+ * geometry isn't available, so the map ALWAYS renders something. Distance and
+ * duration are null rather than a straight-line guess — a wrong number is worse
+ * than an absent one, and the UI already treats null as "not known".
+ */
+export function straightRoute(points: LatLng[]): RouteResult {
+  return { polyline: points, distance_m: null, duration_s: null, source: "straight" };
 }
 
 // Decode Google's "encoded polyline" string into a list of lat/lng points.
@@ -108,58 +122,4 @@ export function decodePolyline(encoded: string): LatLng[] {
     points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
   }
   return points;
-}
-
-// Ask Google Directions for the real road path origin → (waypoints) → destination.
-// Falls back to a straight line if there's no API key or the request fails, so
-// the app keeps working without Google configured (e.g. local dev).
-export async function getRoute(
-  origin: LatLng,
-  destination: LatLng,
-  waypoints: LatLng[] = []
-): Promise<RouteResult> {
-  const key = process.env.GOOGLE_MAPS_API_KEY;
-  const straight: RouteResult = {
-    polyline: [origin, ...waypoints, destination],
-    distance_m: null,
-    duration_s: null,
-    source: "straight",
-  };
-  if (!key) return straight;
-
-  const fmt = (p: LatLng) => `${p.latitude},${p.longitude}`;
-  const params = new URLSearchParams({
-    origin: fmt(origin),
-    destination: fmt(destination),
-    mode: "driving",
-    key,
-  });
-  if (waypoints.length > 0) {
-    params.set("waypoints", waypoints.map(fmt).join("|"));
-  }
-
-  try {
-    const res = await fetch(`https://maps.googleapis.com/maps/api/directions/json?${params}`);
-    const data = (await res.json()) as {
-      status: string;
-      routes: {
-        overview_polyline: { points: string };
-        legs: { distance: { value: number }; duration: { value: number } }[];
-      }[];
-    };
-
-    const route = data.routes?.[0];
-    if (data.status !== "OK" || !route) return straight;
-
-    const distance_m = route.legs.reduce((sum, l) => sum + l.distance.value, 0);
-    const duration_s = route.legs.reduce((sum, l) => sum + l.duration.value, 0);
-    return {
-      polyline: decodePolyline(route.overview_polyline.points),
-      distance_m,
-      duration_s,
-      source: "google",
-    };
-  } catch {
-    return straight; // network/quota error — degrade gracefully
-  }
 }
