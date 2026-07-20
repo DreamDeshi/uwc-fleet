@@ -8,11 +8,10 @@
 // overlapped into a blob at zoom 8 and their permanent labels collided with the
 // truck pills. Nothing in the data can draw a true catchment: Consignee stores
 // zone_code only, no coordinates. Only the code label remains.
-import React, { useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Tooltip, useMap } from "react-leaflet";
+import React from "react";
+import { MapContainer, TileLayer, Marker, Tooltip } from "react-leaflet";
 import L from "leaflet";
-import "leaflet/dist/leaflet.css";
-import "./leaflet.css";
+import { InvalidateOnLayout } from "../../components/leafletCommon";
 import { useTranslation } from "react-i18next";
 import { MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES, ghostPositions } from "../lib/zones";
 import { formatTime } from "../lib/format";
@@ -64,32 +63,6 @@ function zoneLabelIcon(code: string, color: string) {
     iconSize: [30, 16],
     iconAnchor: [15, 8],
   });
-}
-
-// Leaflet computes its tile grid from the container size AT INIT. Inside a
-// ScrollView/flex parent the container often has its final height only AFTER
-// first layout, so the map initialises too small and paints tiles for just the
-// top slice — the rest stays blank white. invalidateSize() re-reads the real
-// size and fills the gap. Fire it right after mount, once more when layout has
-// settled, and whenever the container actually resizes.
-function InvalidateOnLayout() {
-  const map = useMap();
-  useEffect(() => {
-    const fix = () => map.invalidateSize();
-    const t0 = setTimeout(fix, 0);
-    const t1 = setTimeout(fix, 300);
-    const el = map.getContainer();
-    const ro = new ResizeObserver(fix);
-    ro.observe(el);
-    window.addEventListener("resize", fix);
-    return () => {
-      clearTimeout(t0);
-      clearTimeout(t1);
-      ro.disconnect();
-      window.removeEventListener("resize", fix);
-    };
-  }, [map]);
-  return null;
 }
 
 const plantIcon = L.divIcon({

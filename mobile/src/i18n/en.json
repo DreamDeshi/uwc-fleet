@@ -401,6 +401,7 @@
     "locLive": "Live",
     "locStale": "Signal lost",
     "locWaiting": "Waiting for driver location…",
+    "mapDestApprox": "Destination (approx. — zone centre)",
     "tripDetails": "Trip Details",
     "dateTime": "Date & Time",
     "cargo": "Cargo",

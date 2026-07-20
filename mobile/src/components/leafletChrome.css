@@ -1,0 +1,18 @@
+/* Shared Leaflet chrome for the WEB build. Imported once by leafletCommon.web.tsx
+   and inherited by EVERY Leaflet map in the app (admin fleet map, trip tracking
+   map) — one source on purpose, so the classes cannot drift per-map.
+
+   Leaflet gives divIcon and Tooltip containers a white box, border and shadow by
+   default; our icons draw their own chrome, so those defaults are stripped. */
+.uwc-zone-label {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+.uwc-zone-label::before {
+  display: none;
+}
+.uwc-truck-label {
+  background: transparent;
+  border: none;
+}

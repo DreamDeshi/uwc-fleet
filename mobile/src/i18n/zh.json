@@ -401,6 +401,7 @@
     "locLive": "实时",
     "locStale": "信号丢失",
     "locWaiting": "正在等待司机位置…",
+    "mapDestApprox": "目的地（大致 — 区域中心）",
     "tripDetails": "行程详情",
     "dateTime": "日期与时间",
     "cargo": "货物",
