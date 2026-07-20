@@ -391,6 +391,27 @@ model Consignee {
   is_active       Boolean @default(true)
   created_by      String? // requestor can self-add
   created_by_user User?   @relation("ConsigneeCreatedBy", fields: [created_by], references: [id])
+  // ── Geocoded position (scripts/geocode-consignees.ts, Geoapify) ──────
+  // All THREE are nullable and additive: a consignee with no geocode must behave
+  // exactly as before (destination = its zone centroid). Populated offline, never
+  // at request time — there is no runtime geocoding provider.
+  //
+  // `geocode_match_type` is Geoapify's own match_type and is the GATE, not a
+  // decoration. Only `full_match` and `match_by_street` are real positions;
+  // `match_by_postcode` means the street was NOT found and the point is a postcode
+  // centroid — callers must treat that as NO geocode and fall back to the zone,
+  // exactly like a ghosted fleet-map marker or a stale RouteLeg.
+  //
+  // ⚠ Geoapify's `confidence` is deliberately NOT stored. It lies: FRONTKEN came
+  // back conf=1.00 on what is plainly a postcode centroid. match_type is the
+  // honest field; storing confidence would invite someone to gate on it.
+  //
+  // Float (not Decimal like LocationLog) is intentional and sufficient: a double
+  // holds ~1cm of precision at these latitudes, and these are static building
+  // positions, not a GPS audit trail.
+  latitude           Float?
+  longitude          Float?
+  geocode_match_type String?
 
   stops TripStop[]
 }
