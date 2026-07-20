@@ -8,8 +8,27 @@ export interface LatLng {
   longitude: number;
 }
 
-// UWC Industrial, Batu Kawan, Penang (origin of most trips).
-export const PLANT_ORIGIN: LatLng = { latitude: 5.466, longitude: 100.43 };
+/**
+ * THE UWC plant — origin of every trip, and the ONLY plant coordinate in the
+ * mobile app. `admin/lib/zones.ts` imports this one; do not add another.
+ *
+ * Geocoded from the documented address:
+ *   PMT 744, Jalan Cassia Selatan 5/1, Batu Kawan (Simpang Ampat)
+ * which comes from the YS workbook's "CONSIGNEE and CONSIGNOR" sheet — the same
+ * sheet that seeds the UWC BERHAD (P1)..(P9) pickup rows. It is a REAL surveyed
+ * value, not an eyeballed pin.
+ *
+ * ⚠ Do NOT "correct" this to a rounder-looking number. It replaced two
+ * conflicting guesses (2026-07-20): 5.2837/100.4577 here in the admin map and
+ * 5.466/100.43 in geo.ts — 20.5 km apart, and the second one sat NORTH of Juru
+ * (P2, 5.35), i.e. nowhere near Batu Kawan, which skewed every estimated trip
+ * distance shown to drivers and on the Performance board.
+ *
+ * ⚠ The API keeps its own copy of this literal in `api/src/lib/geo.ts` — the
+ * two packages deploy from separate Railway root directories and cannot import
+ * across the boundary. THEY MUST STAY EQUAL: change one, change the other.
+ */
+export const PLANT_ORIGIN: LatLng = { latitude: 5.216238509805299, longitude: 100.4445982584094 };
 
 export const ZONE_COORDS: Record<string, LatLng> = {
   P1: { latitude: 5.4145, longitude: 100.3292 }, // Penang Island

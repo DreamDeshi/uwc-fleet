@@ -7,6 +7,7 @@
 // faded, "~" prefix) so they can't be mistaken for a real position — real fixes
 // come from GET /fleet/live (driver-phone GPS, active trips only).
 import { colors } from "../theme";
+import { PLANT_ORIGIN as PLANT } from "../../lib/geo";
 
 export interface ZoneInfo {
   code: string;
@@ -16,7 +17,14 @@ export interface ZoneInfo {
   color: string;
 }
 
-export const PLANT_ORIGIN = { lat: 5.2837, lng: 100.4577, label: "UWC Batu Kawan" };
+// The fleet map's plant marker. NOT its own coordinate — a {lat,lng}-shaped
+// view of the single PLANT_ORIGIN in lib/geo.ts (see the citation there). The
+// map components want .lat/.lng; the rest of the app uses .latitude/.longitude.
+export const PLANT_ORIGIN = {
+  lat: PLANT.latitude,
+  lng: PLANT.longitude,
+  label: "UWC Batu Kawan",
+};
 
 export const ZONES: ZoneInfo[] = [
   { code: "P1", name: "Penang Island", lat: 5.4145, lng: 100.3294, color: colors.blue },
