@@ -11,7 +11,7 @@ import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import MapView, { Callout, Marker } from "react-native-maps";
 import { useTranslation } from "react-i18next";
-import { MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES, truckPosition } from "../lib/zones";
+import { MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES, ghostPositions } from "../lib/zones";
 import { formatTime } from "../lib/format";
 import { colors, font } from "../theme";
 import type { LivePosition, Truck } from "../types";
@@ -46,6 +46,9 @@ export function AdminFleetMap({
 }) {
   const { t } = useTranslation();
   const liveByPlate = new Map(live.map((p) => [p.plate, p]));
+  // Ghost placement is computed across the WHOLE fix-less set at once, so
+  // co-zone placeholders fan out evenly instead of stacking (see zones.ts).
+  const ghosts = ghostPositions(trucks.filter((t) => !liveByPlate.has(t.plate)));
 
   return (
     <View style={fill ? { flex: 1, borderRadius: 12, overflow: "hidden" } : { height, borderRadius: 12, overflow: "hidden" }}>
@@ -81,9 +84,7 @@ export function AdminFleetMap({
           // markers read as real GPS. A stale fix keeps its colour — it is a
           // genuine last-known point, it just loses the live dot.
           const approx = !fix;
-          const [lat, lng] = fix
-            ? [fix.latitude, fix.longitude]
-            : truckPosition(tr.plate, tr.priority_zones);
+          const [lat, lng] = fix ? [fix.latitude, fix.longitude] : ghosts[tr.plate];
           const color = approx ? colors.textMuted : truckColor[tr.status] ?? colors.blue;
 
           return (

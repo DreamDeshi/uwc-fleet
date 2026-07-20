@@ -49,18 +49,53 @@ export const ZONE_BY_CODE: Record<string, ZoneInfo> = Object.fromEntries(
 export const MAP_CENTER: [number, number] = [5.1, 100.55];
 export const MAP_ZOOM = 8;
 
-// Deterministic small offset so trucks in the same zone fan out slightly.
-function jitter(seed: string): { dlat: number; dlng: number } {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 997;
-  const angle = (h / 997) * Math.PI * 2;
-  const r = 0.035;
-  return { dlat: Math.sin(angle) * r, dlng: Math.cos(angle) * r };
+/** The zone a fix-less truck is drawn in: its first RECOGNISED priority zone. */
+export function primaryZone(zones: string[]): string {
+  return zones.find((z) => ZONE_BY_CODE[z]) ?? "P2";
 }
 
-export function truckPosition(plate: string, zones: string[]): [number, number] {
-  const primary = zones.find((z) => ZONE_BY_CODE[z]) ?? "P2";
-  const z = ZONE_BY_CODE[primary];
-  const { dlat, dlng } = jitter(plate);
-  return [z.lat + dlat, z.lng + dlng];
+// Radius (degrees, ~5km) of the ring co-zone ghosts are spread around. Big
+// enough that their labels clear each other at the zooms the fleet map is
+// actually read at; small enough that a ghost still reads as "in this zone".
+const GHOST_RING = 0.045;
+
+/**
+ * Where to draw every truck that has NO GPS fix.
+ *
+ * These are placeholders on a zone centroid, so several trucks in one zone
+ * would otherwise stack on the exact same point. The old approach offset each
+ * plate by a HASH of its own characters — independent of the other trucks, so
+ * two plates whose hashes landed near each other still overlapped. Three of the
+ * seeded trucks share P1 and did exactly that, piling up unreadably over George
+ * Town.
+ *
+ * Instead, spread them EVENLY: group by zone, then place each truck at its own
+ * angle on a ring around the centroid, so N trucks are always 360/N apart and
+ * can never collide. Sorted by plate so the layout is stable between renders
+ * (a truck must not jump when an unrelated truck gains or loses a fix).
+ * A truck alone in its zone sits exactly on the centroid, no offset.
+ */
+export function ghostPositions(
+  trucks: { plate: string; priority_zones: string[] }[]
+): Record<string, [number, number]> {
+  const byZone: Record<string, string[]> = {};
+  for (const t of trucks) {
+    const zone = primaryZone(t.priority_zones);
+    (byZone[zone] ??= []).push(t.plate);
+  }
+
+  const out: Record<string, [number, number]> = {};
+  for (const [zone, plates] of Object.entries(byZone)) {
+    const z = ZONE_BY_CODE[zone];
+    plates.sort();
+    for (let i = 0; i < plates.length; i++) {
+      if (plates.length === 1) {
+        out[plates[i]] = [z.lat, z.lng];
+        continue;
+      }
+      const angle = (i / plates.length) * Math.PI * 2;
+      out[plates[i]] = [z.lat + Math.sin(angle) * GHOST_RING, z.lng + Math.cos(angle) * GHOST_RING];
+    }
+  }
+  return out;
 }
