@@ -111,7 +111,7 @@ export function AdminHomeScreen() {
           >
             <View style={styles.heroHead}>
               <View style={styles.ctaIcon}>
-                <Ionicons name="flash" size={20} color={colors.blue} />
+                <Ionicons name="flash" size={16} color={colors.blue} />
               </View>
               <Text style={styles.ctaTitle}>{t("admin.home.dispatchTitle")}</Text>
               <Ionicons name="chevron-forward" size={20} color={colors.blue} />
@@ -246,16 +246,16 @@ const styles = StyleSheet.create({
   cta: {
     backgroundColor: "#fff",
     borderRadius: radius.lg,
-    padding: 14,
-    gap: 12,
+    padding: 11,
+    gap: 8,
     ...shadow.floating,
   },
-  heroHead: { flexDirection: "row", alignItems: "center", gap: 12 },
+  heroHead: { flexDirection: "row", alignItems: "center", gap: 10 },
   heroStats: { flexDirection: "row", alignItems: "center" },
   heroDivider: { width: 1, alignSelf: "stretch", backgroundColor: colors.divider },
-  heroFooter: { borderTopWidth: 1, borderTopColor: colors.divider, marginTop: 12, paddingTop: 10, alignItems: "center" },
+  heroFooter: { borderTopWidth: 1, borderTopColor: colors.divider, marginTop: 8, paddingTop: 8, alignItems: "center" },
   heroFooterText: { fontSize: font.sm, color: colors.textMuted, fontWeight: "600" },
-  ctaIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: colors.yellow, alignItems: "center", justifyContent: "center" },
+  ctaIcon: { width: 30, height: 30, borderRadius: 9, backgroundColor: colors.yellow, alignItems: "center", justifyContent: "center" },
   ctaTitle: { flex: 1, fontSize: font.lg, fontWeight: "700", color: colors.navy },
   countPill: { backgroundColor: colors.red, borderRadius: radius.pill, minWidth: 22, height: 22, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
   countPillText: { color: "#fff", fontSize: font.xs, fontWeight: "800" },
