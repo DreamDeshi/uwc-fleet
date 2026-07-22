@@ -177,10 +177,11 @@ export function DashboardWide() {
             <View style={{ minWidth: 220 }}>
               <Text style={{ fontSize: 15, fontWeight: "700", color: colors.text }}>{t("admin.dashboard.fleetMap")}</Text>
             </View>
+            {/* Only active trucks (with a real fix) are markers now; idle /
+                maintenance moved into the map's Idle side list, so their dots
+                would point at markers that no longer exist. */}
             <View style={{ flexDirection: "row", gap: 12 }}>
               <LegendDot color={colors.green} label={t("admin.trucks.statusActive")} />
-              <LegendDot color={colors.blue} label={t("admin.trucks.statusIdle")} />
-              <LegendDot color={colors.orange} label={t("admin.trucks.statusMaintenance")} />
             </View>
           </View>
           <View style={{ flex: 1, padding: 12 }}>

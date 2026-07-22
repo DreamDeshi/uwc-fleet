@@ -138,10 +138,10 @@ export function AdminHomeScreen() {
           <Text style={styles.sectionTitle}>{t("admin.dashboard.fleetMap")}</Text>
           <View style={styles.mapCard}>
             <View style={styles.mapHead}>
+              {/* Only active trucks (with a real fix) are markers now; idle /
+                  maintenance moved into the map's Idle side list. */}
               <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
                 <LegendDot color={colors.green} label={t("admin.trucks.statusActive")} />
-                <LegendDot color={colors.blue} label={t("admin.trucks.statusIdle")} />
-                <LegendDot color={colors.orange} label={t("admin.trucks.statusMaintenance")} />
               </View>
             </View>
             <View style={{ padding: 10 }}>

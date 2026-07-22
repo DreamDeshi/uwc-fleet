@@ -13,7 +13,8 @@ import { MapContainer, TileLayer, Marker, Tooltip } from "react-leaflet";
 import L from "leaflet";
 import { InvalidateOnLayout } from "../../components/leafletCommon";
 import { useTranslation } from "react-i18next";
-import { MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES, ghostPositions } from "../lib/zones";
+import { useWide } from "../../hooks/useWide";
+import { MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES } from "../lib/zones";
 import { formatTime } from "../lib/format";
 import { colors } from "../theme";
 import type { LivePosition, Truck } from "../types";
@@ -24,33 +25,44 @@ const truckColor: Record<string, string> = {
   maintenance: colors.orange,
 };
 
-// `approx` = the truck has NO GPS fix at all, so it is drawn on its zone
-// centroid (a placeholder, not a location). Those are GHOSTED — grey, faded,
-// and prefixed "~" — so a solid coloured marker always means a real fix and
-// nobody reads a placeholder as a lorry's actual position. A stale fix keeps
-// its colour (it IS a real last-known point) and just loses the live dot.
-function truckIcon(plate: string, color: string, live: boolean, approx: boolean) {
-  const markerColor = approx ? colors.textMuted : color;
-  const border = live ? `1.5px solid ${markerColor}` : `1.5px dashed ${markerColor}`;
+// Every mapped truck has a REAL fix now (idle/no-fix trucks live in the side
+// list, never on a fake coordinate). A LIVE fix gets a solid border + green dot;
+// a STALE one keeps its colour (it IS a real last-known point) with a dashed
+// border and no dot.
+function truckIcon(plate: string, color: string, live: boolean) {
+  const border = live ? `1.5px solid ${color}` : `1.5px dashed ${color}`;
   const liveDot = live
     ? `<span style="width:6px;height:6px;border-radius:50%;background:${colors.green};display:inline-block;margin-right:4px"></span>`
     : "";
-  // "~" reads as approximate in every locale — no new translation string.
-  const label = approx ? `~${plate}` : plate;
   return L.divIcon({
     className: "uwc-truck-label",
     html: `
-      <div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-6px);opacity:${approx ? 0.45 : 1}">
-        <div style="display:flex;align-items:center;background:#fff;border:${border};color:${approx ? colors.textMuted : colors.navy};font:700 10px Inter,sans-serif;
-             padding:1px 6px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.2);margin-bottom:3px">${liveDot}${label}</div>
-        <div style="width:22px;height:22px;border-radius:50%;background:${markerColor};display:flex;align-items:center;justify-content:center;
-             box-shadow:${approx ? "none" : `0 0 0 4px ${markerColor}33`};border:2px solid #fff">
+      <div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-6px)">
+        <div style="display:flex;align-items:center;background:#fff;border:${border};color:${colors.navy};font:700 10px Inter,sans-serif;
+             padding:1px 6px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.2);margin-bottom:3px">${liveDot}${plate}</div>
+        <div style="width:22px;height:22px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;
+             box-shadow:0 0 0 4px ${color}33;border:2px solid #fff">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="1" y="7" width="13" height="9" rx="1.5" fill="#fff"/><path d="M14 10h4l3 3v3h-7z" fill="#fff"/></svg>
         </div>
       </div>`,
     iconSize: [22, 40],
     iconAnchor: [11, 34],
   });
+}
+
+// Status tag shown on each Idle-list row. Reuses the existing admin.trucks.*
+// status strings + theme tints — no new palette, no new copy.
+function statusTag(status: string): { bg: string; fg: string; labelKey: string } {
+  switch (status) {
+    case "active":
+      return { bg: colors.greenTint, fg: colors.green, labelKey: "admin.trucks.statusActive" };
+    case "maintenance":
+      return { bg: colors.orangeTint, fg: colors.orange, labelKey: "admin.trucks.statusMaintenance" };
+    case "retired":
+      return { bg: colors.bg, fg: colors.textMuted, labelKey: "admin.trucks.statusRetired" };
+    default: // "idle"
+      return { bg: colors.blueTint, fg: colors.blue, labelKey: "admin.trucks.statusIdle" };
+  }
 }
 
 // Zone code label — a standalone, non-interactive marker at the centroid. It
@@ -91,75 +103,131 @@ export function AdminFleetMap({
   fill?: boolean;
 }) {
   const { t } = useTranslation();
+  const isWide = useWide();
   const liveByPlate = new Map(live.map((p) => [p.plate, p]));
-  // Ghost placement is computed across the WHOLE fix-less set at once, so
-  // co-zone placeholders fan out evenly instead of stacking (see zones.ts).
-  const ghosts = ghostPositions(trucks.filter((t) => !liveByPlate.has(t.plate)));
+  // A truck gets a map marker ONLY when it has a real fix — i.e. it is on an
+  // in-progress trip that has pinged (live OR stale/last-known). Everything else
+  // has no live position and must never be drawn at a fake coordinate: it goes
+  // to the Idle list beside the map instead.
+  const active = trucks.filter((tr) => liveByPlate.has(tr.plate));
+  const idle = trucks.filter((tr) => !liveByPlate.has(tr.plate));
+
+  const mapCard = (
+    <MapContainer center={MAP_CENTER} zoom={MAP_ZOOM} scrollWheelZoom style={{ height: "100%", width: "100%" }}>
+      <InvalidateOnLayout />
+      <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+
+      {/* Zone code labels only — no catchment circles (see file header) */}
+      {ZONES.map((z) => (
+        <Marker
+          key={z.code}
+          position={[z.lat, z.lng]}
+          icon={zoneLabelIcon(z.code, z.color)}
+          interactive={false}
+          keyboard={false}
+        />
+      ))}
+
+      {/* Plant origin */}
+      <Marker position={[PLANT_ORIGIN.lat, PLANT_ORIGIN.lng]} icon={plantIcon} />
+
+      {/* Active trucks — every one sits on a real GPS fix (live or stale) */}
+      {active.map((tr) => {
+        const fix = liveByPlate.get(tr.plate)!;
+        const isLive = !fix.stale;
+        return (
+          <Marker
+            key={tr.plate}
+            position={[fix.latitude, fix.longitude]}
+            icon={truckIcon(tr.plate, truckColor[tr.status] ?? colors.blue, isLive)}
+            zIndexOffset={500}
+          >
+            <Tooltip direction="top" offset={[0, -30]}>
+              <div style={{ fontSize: 13 }}>
+                <strong>{tr.plate}</strong> · {tr.type}
+                <br />
+                {tr.driver?.name ?? t("admin.dashboard.mapNoDriver")}
+                <br />
+                {t("admin.dashboard.loadPallets", { load: tr.current_load, capacity: tr.max_pallets })}
+                <br />
+                <span style={{ color: isLive ? colors.green : colors.textMuted, fontWeight: 700 }}>
+                  {isLive
+                    ? `● ${t("admin.dashboard.mapLive", { time: formatTime(fix.recorded_at) })}`
+                    : t("admin.dashboard.mapStale")}
+                </span>
+              </div>
+            </Tooltip>
+          </Marker>
+        );
+      })}
+    </MapContainer>
+  );
+
+  // Idle trucks: no live position, so NOT on the map. A compact side list
+  // (narrow column on wide, stacked below on phone). Hidden entirely when the
+  // whole fleet is active, so the map takes the full width.
+  const idlePanel = idle.length > 0 && (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        background: colors.card,
+        border: `1px solid ${colors.border}`,
+        borderRadius: 12,
+        overflow: "hidden",
+        flexShrink: 0,
+        width: isWide ? 190 : "100%",
+        maxHeight: isWide ? undefined : 190,
+      }}
+    >
+      <div style={{ padding: "8px 12px", borderBottom: `1px solid ${colors.border}`, fontWeight: 700, fontSize: 12, color: colors.text }}>
+        {t("admin.trucks.statusIdle")} · {idle.length}
+      </div>
+      <div style={{ overflowY: "auto" }}>
+        {idle.map((tr) => {
+          const tag = statusTag(tr.status);
+          return (
+            <div
+              key={tr.plate}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "7px 12px", borderBottom: `1px solid ${colors.divider}` }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: colors.navy, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tr.plate}</div>
+                <div style={{ fontSize: 11, color: colors.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {tr.type}
+                  {tr.driver ? ` · ${tr.driver.name}` : ""}
+                </div>
+              </div>
+              <span style={{ flexShrink: 0, background: tag.bg, color: tag.fg, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, whiteSpace: "nowrap" }}>
+                {t(tag.labelKey)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   return (
     <div
-      style={
-        fill
-          ? { flex: 1, minHeight: 0, width: "100%", borderRadius: 12, overflow: "hidden" }
-          : { height, width: "100%", borderRadius: 12, overflow: "hidden" }
-      }
+      style={{
+        display: "flex",
+        flexDirection: isWide ? "row" : "column",
+        gap: 12,
+        width: "100%",
+        ...(fill ? { flex: 1, minHeight: 0 } : isWide ? { height } : {}),
+      }}
     >
-      <MapContainer center={MAP_CENTER} zoom={MAP_ZOOM} scrollWheelZoom style={{ height: "100%", width: "100%" }}>
-        <InvalidateOnLayout />
-        <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-
-        {/* Zone code labels only — no catchment circles (see file header) */}
-        {ZONES.map((z) => (
-          <Marker
-            key={z.code}
-            position={[z.lat, z.lng]}
-            icon={zoneLabelIcon(z.code, z.color)}
-            interactive={false}
-            keyboard={false}
-          />
-        ))}
-
-        {/* Plant origin */}
-        <Marker position={[PLANT_ORIGIN.lat, PLANT_ORIGIN.lng]} icon={plantIcon} />
-
-        {/* Trucks — real GPS position when the phone has pinged, else zone centroid */}
-        {trucks.map((tr) => {
-          const fix = liveByPlate.get(tr.plate);
-          const isLive = Boolean(fix) && !fix!.stale;
-          const approx = !fix; // no fix at all → zone centroid placeholder
-          const position: [number, number] = fix
-            ? [fix.latitude, fix.longitude]
-            : ghosts[tr.plate];
-
-          return (
-            <Marker
-              key={tr.plate}
-              position={position}
-              icon={truckIcon(tr.plate, truckColor[tr.status] ?? colors.blue, isLive, approx)}
-              // keep ghosts behind real fixes where they overlap
-              zIndexOffset={approx ? 0 : 500}
-            >
-              <Tooltip direction="top" offset={[0, -30]}>
-                <div style={{ fontSize: 13 }}>
-                  <strong>{tr.plate}</strong> · {tr.type}
-                  <br />
-                  {tr.driver?.name ?? t("admin.dashboard.mapNoDriver")}
-                  <br />
-                  {t("admin.dashboard.loadPallets", { load: tr.current_load, capacity: tr.max_pallets })}
-                  <br />
-                  <span style={{ color: isLive ? colors.green : colors.textMuted, fontWeight: 700 }}>
-                    {isLive
-                      ? `● ${t("admin.dashboard.mapLive", { time: formatTime(fix!.recorded_at) })}`
-                      : fix
-                        ? t("admin.dashboard.mapStale")
-                        : t("admin.dashboard.mapApprox")}
-                  </span>
-                </div>
-              </Tooltip>
-            </Marker>
-          );
-        })}
-      </MapContainer>
+      <div
+        style={
+          isWide
+            ? { flex: 1, minHeight: 0, borderRadius: 12, overflow: "hidden" }
+            : { height, width: "100%", borderRadius: 12, overflow: "hidden" }
+        }
+      >
+        {mapCard}
+      </div>
+      {idlePanel}
     </div>
   );
 }
