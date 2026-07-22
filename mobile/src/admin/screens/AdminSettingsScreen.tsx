@@ -15,7 +15,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
 import { colors, font, radius } from "../theme";
-import { Card, SectionTitle } from "../components/ui";
+import { Avatar, Card, ConfirmDialog, SectionTitle } from "../components/ui";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { AppLanguage } from "../../types";
 import { EditProfileModal, ChangePasswordModal } from "../../components/AccountModals";
@@ -31,11 +31,13 @@ const LANGUAGES: { code: AppLanguage; labelKey: string }[] = [
 
 export function AdminSettingsScreen() {
   const { t, i18n } = useTranslation();
-  const { setLanguage } = useAuth();
+  const { user, logout, setLanguage } = useAuth();
   const mode = useLayoutMode();
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
   const [editOpen, setEditOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
+  const [confirmOut, setConfirmOut] = useState(false);
+  const narrow = mode !== "wide";
 
   const current: AppLanguage = (["en", "ms", "zh"] as const).includes(i18n.language as AppLanguage)
     ? (i18n.language as AppLanguage)
@@ -59,6 +61,17 @@ export function AdminSettingsScreen() {
       {/* Centre the settings column on wide so cards don't stretch across a
           1440px monitor; full-bleed on phones. */}
       <View style={mode === "wide" ? { maxWidth: 680, width: "100%", alignSelf: "center", gap: 16 } : { gap: 16 }}>
+        {/* Identity — mobile "Profile" tab only; on wide the sidebar carries it. */}
+        {narrow ? (
+          <Card style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <Avatar name={user?.name} size={44} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text numberOfLines={1} style={{ fontSize: font.lg, fontWeight: "700", color: colors.text }}>{user?.name ?? "—"}</Text>
+              <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 1 }}>{t("admin.roleLabel")}</Text>
+            </View>
+          </Card>
+        ) : null}
+
         {/* Account — self-service profile + password (any role, incl. admin) */}
         <Card>
           <SectionTitle title={t("account.section")} />
@@ -145,11 +158,32 @@ export function AdminSettingsScreen() {
             </TouchableOpacity>
           </View>
         </Card>
+
+        {/* Sign out — mobile "Profile" tab only (matches driver/requestor). */}
+        {narrow ? (
+          <Card>
+            <TouchableOpacity onPress={() => setConfirmOut(true)} style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 2 }}>
+              <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: colors.redTint, alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="log-out-outline" size={18} color={colors.red} />
+              </View>
+              <Text style={{ flex: 1, fontSize: font.md, fontWeight: "600", color: colors.red }}>{t("admin.signOut")}</Text>
+            </TouchableOpacity>
+          </Card>
+        ) : null}
       </View>
     </ScrollView>
 
     <EditProfileModal visible={editOpen} onClose={() => setEditOpen(false)} />
     <ChangePasswordModal visible={pwOpen} onClose={() => setPwOpen(false)} />
+    {confirmOut ? (
+      <ConfirmDialog
+        title={t("admin.signOut")}
+        body={t("profile.logoutConfirm")}
+        confirmLabel={t("admin.signOut")}
+        onClose={() => setConfirmOut(false)}
+        onConfirm={logout}
+      />
+    ) : null}
     </>
   );
 }

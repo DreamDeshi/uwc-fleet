@@ -34,7 +34,7 @@ import {
   Modal,
   Pill,
   ProgressBar,
-  ChipGrid,
+  FilterDropdown,
   SearchInput,
   SegmentedFilter,
   TripStatusBadge,
@@ -298,11 +298,12 @@ export function TripsScreen() {
     { value: "completed", label: t("admin.status.completed") },
     { value: "cancelled", label: t("admin.status.cancelled") },
   ];
-  // Narrow: an even 3-col grid (2 tidy rows) instead of a 3/2/1 ragged wrap.
+  // Narrow: the same compact "Showing: … ▾" dropdown the Fleet screens use, in
+  // place of the multi-row status button grid. Wide keeps the segmented row.
   const statusSegments = wide ? (
     <SegmentedFilter options={statusOptions} value={status} onChange={setStatus} />
   ) : (
-    <ChipGrid options={statusOptions} value={status} onChange={setStatus} columns={3} />
+    <FilterDropdown value={status} onChange={setStatus} options={statusOptions} prefix={t("admin.fleet.showing")} />
   );
 
   // Saved filter presets ("my views") — device-local, applies the whole combo.

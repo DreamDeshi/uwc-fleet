@@ -14,13 +14,12 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator, type NativeStackHeaderProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
-import { usePendingApprovals, usePendingUsers, useTruckAlerts } from "../hooks/queries";
+import { useTruckAlerts } from "../hooks/queries";
 import { colors } from "../theme";
 import { AdminMobileHeader } from "../components/MobileHeader";
 import { AdminHomeScreen } from "../screens/AdminHomeScreen";
 import { TripsScreen } from "../screens/TripsScreen";
 import { FleetScreen } from "../screens/FleetScreen";
-import { MoreScreen } from "../screens/MoreScreen";
 import { IncentivesScreen } from "../screens/IncentivesScreen";
 import { ReportsScreen } from "../screens/ReportsScreen";
 import { ConsigneesScreen } from "../screens/ConsigneesScreen";
@@ -57,7 +56,7 @@ function MoreStack() {
   );
   return (
     <Stack.Navigator screenOptions={{ header }}>
-      <Stack.Screen name="MoreHome" component={MoreScreen} options={{ title: t("admin.titles.more") }} />
+      <Stack.Screen name="MoreHome" component={AdminSettingsScreen} options={{ title: t("profile.title") }} />
       <Stack.Screen name="AdminIncentiveApprovals" component={IncentiveApprovalsScreen} options={{ title: t("admin.titles.incentiveApprovals") }} />
       <Stack.Screen name="AdminIncentives" component={IncentivesScreen} options={{ title: t("admin.titles.incentives") }} />
       <Stack.Screen name="AdminReports" component={ReportsScreen} options={{ title: t("admin.titles.reports") }} />
@@ -74,13 +73,9 @@ function MoreStack() {
 
 export function AdminTabs() {
   const { t } = useTranslation();
-  // The drawer's nav badges, relocated to the tab bar.
-  const pending = usePendingUsers();
-  const pendingApprovals = usePendingApprovals();
+  // FLEET tab badge — truck document-expiry alerts. (The old MORE-tab approval
+  // badges moved onto the home grid's POD Approvals / Users tiles.)
   const truckAlerts = useTruckAlerts();
-  // MORE badge sums the two queues living behind it: user approvals + POD
-  // incentive approvals (money awaiting sign-off).
-  const pendingCount = (pending.data?.length ?? 0) + (pendingApprovals.data?.length ?? 0);
   const truckAlertCount = truckAlerts.data?.length ?? 0;
 
   return (
@@ -127,12 +122,8 @@ export function AdminTabs() {
         name="AdminMore"
         component={MoreStack}
         options={{
-          title: t("admin.tabs.more"),
-          tabBarIcon: ({ color, size }) => <Ionicons name="ellipsis-horizontal" size={size} color={color} />,
-          tabBarBadge: pendingCount > 0 ? pendingCount : undefined,
-          // Approvals wear the corporate yellow/navy (drawer parity); truck
-          // alerts on FLEET keep the default red.
-          tabBarBadgeStyle: { backgroundColor: colors.yellow, color: colors.navy, fontWeight: "800" },
+          title: t("tabs.profile"),
+          tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" size={size} color={color} />,
         }}
       />
     </Tab.Navigator>

@@ -384,8 +384,9 @@ export function SegmentedFilter<T extends string>({
 // the PC keeps SegmentedFilter's inline wrap.
 // Compact filter dropdown — replaces a chip/segment row with a single line:
 // "<prefix> <current> ▾" that opens a small sheet of options (with counts).
-// Same selection state as the chips it replaces.
-export function FilterSelect<F extends string>({
+// Same selection state as the chips it replaces. Used on the Fleet screens
+// (via FilterHeader) and the Trips status filter.
+export function FilterDropdown<F extends string>({
   value,
   onChange,
   options,
@@ -464,7 +465,7 @@ export function FilterHeader<F extends string>({
     <View style={{ gap: 10 }}>
       <Button variant="primary" full onPress={onAdd}>{`+ ${addLabel}`}</Button>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <FilterSelect<F> value={filter} onChange={onFilterChange} options={filterOptions} prefix={filterPrefix} />
+        <FilterDropdown<F> value={filter} onChange={onFilterChange} options={filterOptions} prefix={filterPrefix} />
         {countsText ? (
           <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: font.xs, color: colors.textMuted, textAlign: "right" }}>
             {countsText}
