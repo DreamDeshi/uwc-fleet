@@ -462,8 +462,11 @@ export function BookingFormScreen() {
   const onBack = () => {
     setError(null);
     if (step === 0) {
-      // Edit mode is a pushed screen — back returns to the booking's detail.
-      if (isEdit) navigation.goBack();
+      // Both create and edit are pushed over the shell now (New Booking is no
+      // longer a tab), so back returns to wherever we came from — the Home hero
+      // CTA, the Bookings "+", or the booking's detail on edit. goBack pops that;
+      // navigate("Home") only covers a rare no-history case (e.g. a deep link).
+      if (navigation.canGoBack()) navigation.goBack();
       else navigation.navigate("Home");
     } else setStep(step - 1);
   };
@@ -725,7 +728,10 @@ export function BookingFormScreen() {
               onPress={() => {
                 setTicket(null);
                 resetForm();
-                navigation.navigate("Home");
+                // Pushed screen now — pop back to the opener (Home or Bookings);
+                // navigate("Home") only if there's no back stack.
+                if (navigation.canGoBack()) navigation.goBack();
+                else navigation.navigate("Home");
               }}
               style={{ alignSelf: "stretch", marginTop: 16 }}
             />
