@@ -14,7 +14,7 @@ import { mytMonthBoundsForKey } from "../src/lib/myt";
 
 const JULY = mytMonthBoundsForKey("2026-07")!;
 
-const trip = (over: Partial<{ id: string; ticket_number: string; pickup_datetime: Date; delivered_at: Date | null; incentive_earned: unknown }>) => ({
+const trip = (over: Partial<{ id: string; ticket_number: string; pickup_datetime: Date; delivered_at: Date | null; incentive_earned: unknown; incentive_final: unknown }>) => ({
   id: "t1",
   ticket_number: "TKT-20260710-001",
   pickup_datetime: new Date("2026-07-10T01:00:00Z"),
@@ -64,6 +64,50 @@ describe("buildPayrollRows — the month-end payroll sheet", () => {
     expect(rows[0].total).toBe(57.5);
     expect(rows[0].employee_number).toBe("H593");
     expect(rows[0].trips.map((t) => t.id)).toEqual(["a", "b"]);
+  });
+
+  // POD-approval gate (16 Jul 2026): the payable is the admin-approved
+  // incentive_final, which may be edited DOWN from the engine's frozen proposal
+  // (incentive_earned). Payroll must pay the FINAL — not the proposal — while
+  // pre-gate trips with a null final still pay their proposal (grandfathered).
+  it("pays the admin-edited incentive_final, not the frozen proposal", () => {
+    const rows = buildPayrollRows(
+      [
+        {
+          id: "d1",
+          name: "Azmi",
+          employee_number: null,
+          trips: [
+            // Approved, but the admin edited the payable down (e.g. a disputed
+            // drop): proposal 44, final 30 → payroll pays 30.
+            trip({ id: "edited", incentive_earned: 44, incentive_final: 30 }),
+            // Approved with no edit: proposal 12, final 12 → pays 12.
+            trip({
+              id: "approved-unchanged",
+              pickup_datetime: new Date("2026-07-11T01:00:00Z"),
+              delivered_at: new Date("2026-07-11T05:00:00Z"),
+              incentive_earned: 12,
+              incentive_final: 12,
+            }),
+            // Grandfathered pre-gate trip: final is null → pays the proposal 50.
+            trip({
+              id: "grandfathered",
+              pickup_datetime: new Date("2026-07-12T01:00:00Z"),
+              delivered_at: new Date("2026-07-12T05:00:00Z"),
+              incentive_earned: 50,
+              incentive_final: null,
+            }),
+          ],
+        },
+      ],
+      JULY
+    );
+    const paid = Object.fromEntries(rows[0].trips.map((t) => [t.id, t.incentive_earned]));
+    expect(paid.edited).toBe(30); // the FINAL, NOT the 44 proposal
+    expect(paid["approved-unchanged"]).toBe(12);
+    expect(paid.grandfathered).toBe(50); // proposal, since no final
+    // 30 + 12 + 50 = 92 — must NOT be 106 (the sum of the frozen proposals).
+    expect(rows[0].total).toBe(92);
   });
 
   it("buckets a month-crossing trip by its DELIVERY day — the day pay was written", () => {
