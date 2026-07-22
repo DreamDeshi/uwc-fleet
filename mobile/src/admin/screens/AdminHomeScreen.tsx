@@ -17,7 +17,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigation } from "@react-navigation/native";
 import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
-import { useAttention, useDashboard, useFleetLive, usePendingUsers, useTrucks } from "../hooks/queries";
+import { useAttention, useDashboard, useFleetLive, usePendingApprovals, usePendingUsers, useTrucks } from "../hooks/queries";
 import { colors, font, radius, shadow } from "../theme";
 import { BrandLogo } from "../../components/BrandLogo";
 import { useLayoutMode } from "../hooks/useLayoutMode";
@@ -25,6 +25,8 @@ import { AttentionPanel, attentionHasRows } from "../components/AttentionPanel";
 import { AdminSearchButton } from "../components/AdminSearchButton";
 import { AdminFleetMap } from "../platform/map";
 import { DashboardWide } from "./DashboardWide";
+
+type IoniconName = keyof typeof Ionicons.glyphMap;
 
 function greetingKey(hour: number): "goodMorning" | "goodAfternoon" | "goodEvening" {
   if (hour < 12) return "goodMorning";
@@ -40,18 +42,21 @@ export function AdminHomeScreen() {
   const mode = useLayoutMode();
   const dashboard = useDashboard();
   const pending = usePendingUsers();
+  const pendingApprovals = usePendingApprovals();
   const attention = useAttention();
   const trucks = useTrucks();
   const live = useFleetLive();
 
   const greeting = t(`admin.home.${greetingKey(new Date().getHours())}`);
   const pendingCount = pending.data?.length ?? 0;
+  const approvalCount = pendingApprovals.data?.length ?? 0;
   const k = dashboard.data;
   const liveCount = (live.data ?? []).filter((p) => !p.stale).length;
   const refreshing = dashboard.isRefetching || pending.isRefetching || attention.isRefetching;
   const refetchAll = () => {
     dashboard.refetch();
     pending.refetch();
+    pendingApprovals.refetch();
     attention.refetch();
     trucks.refetch();
     live.refetch();
@@ -59,6 +64,19 @@ export function AdminHomeScreen() {
 
   // PC gets the real dashboard; the merged home below is mobile-only.
   if (mode === "wide") return <DashboardWide />;
+
+  // Promoted MORE functions as a 4-across tap grid — same destinations, new
+  // entry points. Users carries the pending-users badge, subsuming the old
+  // approvals row that used to sit below the map.
+  const quickTiles: { route: string; labelKey: string; icon: IoniconName; count?: number }[] = [
+    { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline", count: approvalCount },
+    { route: "AdminIncentives", labelKey: "admin.nav.incentives", icon: "cash-outline" },
+    { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline" },
+    { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline" },
+    { route: "AdminUsers", labelKey: "admin.users.title", icon: "people-outline", count: pendingCount },
+    { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },
+    { route: "AdminCalendar", labelKey: "admin.nav.calendar", icon: "calendar-outline" },
+  ];
 
   return (
     <ScrollView
@@ -125,6 +143,31 @@ export function AdminHomeScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Quick actions — the important admin functions promoted out of MORE
+            as a 4-across tap grid. Same destinations, new entry points. */}
+        <View style={styles.section}>
+          <View style={styles.gridCard}>
+            {quickTiles.map((tile) => (
+              <TouchableOpacity
+                key={tile.route}
+                style={styles.tile}
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate("AdminMore", { screen: tile.route, initial: false })}
+              >
+                <View style={styles.tileIcon}>
+                  <Ionicons name={tile.icon} size={22} color={colors.blue} />
+                  {tile.count ? (
+                    <View style={styles.tileBadge}>
+                      <Text style={styles.tileBadgeText}>{tile.count > 99 ? "99+" : tile.count}</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text numberOfLines={2} style={styles.tileLabel}>{t(tile.labelKey)}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
         {/* Needs attention — same panel as the PC dashboard; hidden when the
             fleet is healthy. "Open trip board" jumps to the Trips tab. */}
         {attentionHasRows(attention.data) && (
@@ -150,31 +193,6 @@ export function AdminHomeScreen() {
           </View>
         </View>
 
-        {/* Approvals — a normal row, not the hero (admin housekeeping). */}
-        <View style={styles.section}>
-          <View style={styles.rowCard}>
-            <TouchableOpacity
-              style={styles.row}
-              onPress={() => navigation.navigate("AdminMore", { screen: "AdminUsers", initial: false })}
-            >
-              <View style={styles.rowIcon}>
-                <Ionicons name="person-add-outline" size={18} color={colors.blue} />
-              </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.rowLabel}>{t("admin.home.approvalQueue")}</Text>
-                <Text style={styles.rowSub}>
-                  {pendingCount > 0 ? t("admin.home.pendingSub", { count: pendingCount }) : t("admin.home.allClear")}
-                </Text>
-              </View>
-              {pendingCount > 0 && (
-                <View style={styles.countPill}>
-                  <Text style={styles.countPillText}>{pendingCount}</Text>
-                </View>
-              )}
-              <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
-            </TouchableOpacity>
-          </View>
-        </View>
       </View>
     </ScrollView>
   );
@@ -270,4 +288,36 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   mapSub: { fontSize: font.sm, color: colors.textMuted, flexShrink: 1 },
+
+  // Quick-action grid — Shopee/TNG-style tap tiles, 4 across (last row of 3
+  // left-aligns). Each tile is 25% wide so 4 fit per row exactly.
+  gridCard: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 8,
+    marginTop: 4,
+    ...shadow.card,
+  },
+  tile: { width: "25%", alignItems: "center", paddingVertical: 10, paddingHorizontal: 4 },
+  tileIcon: { width: 52, height: 52, borderRadius: 16, backgroundColor: colors.blueTint, alignItems: "center", justifyContent: "center" },
+  tileBadge: {
+    position: "absolute",
+    top: -5,
+    right: -5,
+    backgroundColor: colors.red,
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.card,
+  },
+  tileBadgeText: { color: "#fff", fontSize: 10, fontWeight: "800" },
+  tileLabel: { fontSize: 11, fontWeight: "600", color: colors.text, textAlign: "center", marginTop: 6, lineHeight: 14 },
 });
