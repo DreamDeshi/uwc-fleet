@@ -9,6 +9,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { verifyTrackingToken } from "../lib/trackingToken";
 import { UWC_LOGO_PNG } from "../lib/uwcLogo";
+import { UWC_FAVICON_PNG } from "../lib/uwcFavicon";
 
 const router = Router();
 
@@ -28,7 +29,7 @@ function esc(s: string): string {
 }
 
 function html(inner: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Track delivery</title><style>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/png" href="/track/favicon.png"><title>Track delivery</title><style>
     :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
     body{margin:0;background:#f1f5f9;color:#0f172a;display:flex;justify-content:center;padding:24px}
     .card{background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.1);max-width:440px;width:100%;padding:24px}
@@ -49,6 +50,13 @@ function html(inner: string): string {
 router.get("/logo.png", (_req, res) => {
   res.setHeader("Cache-Control", "public, max-age=604800, immutable");
   res.type("png").send(UWC_LOGO_PNG);
+});
+
+// Browser-tab favicon (the emblem alone). Declared before "/:token" so the
+// literal "favicon.png" isn't captured as a tracking token.
+router.get("/favicon.png", (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=604800, immutable");
+  res.type("png").send(UWC_FAVICON_PNG);
 });
 
 router.get("/:token", async (req, res) => {
