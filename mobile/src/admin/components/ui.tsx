@@ -382,6 +382,41 @@ export function SegmentedFilter<T extends string>({
 // chip in a row is the same width, and a short final row is padded with
 // invisible spacers so columns stay aligned. Narrow-only by convention —
 // the PC keeps SegmentedFilter's inline wrap.
+// Narrow (mobile) list header: a full-width primary action on its OWN line,
+// then the filter chips, an optional slot (e.g. a date picker), then search.
+// Shared by the Drivers and Trucks screens so "+ Add Driver/Truck" spans the
+// screen like a proper mobile button instead of hanging off to one side.
+export function FilterHeader<F extends string>({
+  onAdd,
+  addLabel,
+  filter,
+  onFilterChange,
+  filterOptions,
+  search,
+  onSearchChange,
+  searchPlaceholder,
+  extra,
+}: {
+  onAdd: () => void;
+  addLabel: string;
+  filter: F;
+  onFilterChange: (v: F) => void;
+  filterOptions: { value: F; label: string; count?: number }[];
+  search: string;
+  onSearchChange: (v: string) => void;
+  searchPlaceholder: string;
+  extra?: React.ReactNode;
+}) {
+  return (
+    <View style={{ gap: 12 }}>
+      <Button variant="primary" full onPress={onAdd}>{`+ ${addLabel}`}</Button>
+      <ChipGrid<F> value={filter} onChange={onFilterChange} options={filterOptions} columns={2} />
+      {extra}
+      <SearchInput value={search} onChange={onSearchChange} placeholder={searchPlaceholder} style={{ minWidth: 0, alignSelf: "stretch" }} />
+    </View>
+  );
+}
+
 export function ChipGrid<T extends string>({
   options,
   value,

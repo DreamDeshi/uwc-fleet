@@ -16,7 +16,7 @@ import {
   useUpdateTruckDocuments,
 } from "../hooks/queries";
 import { colors, font, radius } from "../theme";
-import { Avatar, Button, Card, ChipGrid, ConfirmDialog, EmptyState, ErrorState, Input, Loading, Modal, Pill, SearchInput, SegmentedFilter } from "../components/ui";
+import { Avatar, Button, Card, ConfirmDialog, EmptyState, ErrorState, FilterHeader, Input, Loading, Modal, Pill, SearchInput, SegmentedFilter } from "../components/ui";
 import { LoadCapacityBar } from "../components/LoadCapacityBar";
 import { FuelPanel } from "../components/FuelPanel";
 import { DateField } from "../platform/datePicker";
@@ -84,8 +84,8 @@ export function TrucksScreen() {
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={trucks.isRefetching} onRefresh={() => trucks.refetch()} />}
     >
-      {/* Fleet / Fuel tabs, with "+ Add Truck" on the same line (right) so the
-          fleet content sits directly below — no empty band. */}
+      {/* Fleet / Fuel tabs. On WIDE, "+ Add Truck" sits inline on the right;
+          on narrow it moves into the full-width FilterHeader below the tabs. */}
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <SegmentedFilter<Tab>
           value={tab}
@@ -95,7 +95,7 @@ export function TrucksScreen() {
             { value: "fuel", label: t("admin.trucks.tabFuel") },
           ]}
         />
-        {tab === "fleet" && !trucks.isLoading && !trucks.isError && (
+        {wide && tab === "fleet" && !trucks.isLoading && !trucks.isError && (
           <Button variant="primary" size="sm" onPress={() => setAdding(true)}>
             {`+ ${t("admin.trucks.addTruck")}`}
           </Button>
@@ -129,11 +129,17 @@ export function TrucksScreen() {
                 </View>
               </View>
             ) : (
-              <View style={{ gap: 12 }}>
-                <ChipGrid<Filter> value={filter} onChange={setFilter} options={filterOptions} columns={2} />
-                <CapacityDatePicker date={date} onChange={setDate} />
-                <SearchInput value={search} onChange={setSearch} placeholder={t("admin.trucks.searchPlaceholder")} style={{ minWidth: 0, alignSelf: "stretch" }} />
-              </View>
+              <FilterHeader<Filter>
+                onAdd={() => setAdding(true)}
+                addLabel={t("admin.trucks.addTruck")}
+                filter={filter}
+                onFilterChange={setFilter}
+                filterOptions={filterOptions}
+                search={search}
+                onSearchChange={setSearch}
+                searchPlaceholder={t("admin.trucks.searchPlaceholder")}
+                extra={<CapacityDatePicker date={date} onChange={setDate} />}
+              />
             );
           })()}
 

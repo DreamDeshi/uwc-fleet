@@ -23,10 +23,10 @@ import {
   Avatar,
   Button,
   Card,
-  ChipGrid,
   ConfirmDialog,
   EmptyState,
   ErrorState,
+  FilterHeader,
   Input,
   Loading,
   Modal,
@@ -127,11 +127,16 @@ export function DriversScreen() {
             </View>
           </View>
         ) : (
-          <View style={{ gap: 12 }}>
-            <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>{addBtn}</View>
-            <ChipGrid<Filter> value={filter} onChange={setFilter} options={filterOptions} columns={2} />
-            <SearchInput value={search} onChange={setSearch} placeholder={t("admin.drivers.searchPlaceholder")} style={{ minWidth: 0, alignSelf: "stretch" }} />
-          </View>
+          <FilterHeader<Filter>
+            onAdd={() => setAdding(true)}
+            addLabel={t("admin.drivers.addDriver")}
+            filter={filter}
+            onFilterChange={setFilter}
+            filterOptions={filterOptions}
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder={t("admin.drivers.searchPlaceholder")}
+          />
         );
       })()}
 
