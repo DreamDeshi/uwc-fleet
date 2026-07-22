@@ -61,9 +61,13 @@ describe("buildQuery", () => {
 
 describe("isUsable — the match_type gate", () => {
   it("accepts only real positions", () => {
-    expect(ACCEPTED_MATCH_TYPES).toEqual(["full_match", "match_by_street"]);
+    expect(ACCEPTED_MATCH_TYPES).toEqual(["full_match", "match_by_building", "match_by_street"]);
     expect(isUsable("full_match")).toBe(true);
     expect(isUsable("match_by_street")).toBe(true);
+    // Added 2026-07-21: a building match is STRICTLY more precise than a street
+    // match. The first list omitted it only because the 20-row bake-off never
+    // returned one; rejecting it discarded 115 real positions (7.4%).
+    expect(isUsable("match_by_building")).toBe(true);
   });
 
   it("REJECTS match_by_postcode — a postcode centroid is not a geocode", () => {
@@ -71,6 +75,9 @@ describe("isUsable — the match_type gate", () => {
     // as positions would put drivers kilometres from the building.
     expect(isUsable("match_by_postcode")).toBe(false);
     expect(isUsable("match_by_city_or_disrict")).toBe(false);
+    // inner_part matches something INSIDE the area, not the address — in the
+    // bake-off it returned "Ambank Paya Terubong", ~1.5 km off target.
+    expect(isUsable("inner_part")).toBe(false);
     expect(isUsable("unknown")).toBe(false);
     expect(isUsable(null)).toBe(false);
     expect(isUsable(undefined)).toBe(false);

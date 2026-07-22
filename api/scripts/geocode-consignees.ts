@@ -45,6 +45,20 @@ import { dbHostOf, isLocalDbHost, isProdDbHost } from "../src/lib/dbGuard";
 
 const KEY = process.env.GEOAPIFY_KEY ?? "";
 const DRY_RUN = process.argv.includes("--dry-run");
+/**
+ * --cascade sends only the STREET COMPONENT of address_1 (plus area/postcode/
+ * state), falling back to postcode+area if that misses — the construction the
+ * original 4-provider bake-off used. The default sends the whole address_1.
+ * The two are NOT equivalent: ADCORD was a full_match under the cascade and a
+ * fallback under the whole string, so this is worth measuring, not assuming.
+ */
+const CASCADE = process.argv.includes("--cascade");
+/** --out <file>: dump every row's result as JSON (needed to audit duplicates). */
+const OUT = (() => { const i = process.argv.indexOf("--out"); return i > -1 ? process.argv[i + 1] : ""; })();
+/** --sample N: geocode a deterministic every-Nth subset — cheap quota-safe runs. */
+const SAMPLE = (() => { const i = process.argv.indexOf("--sample"); return i > -1 ? Number(process.argv[i + 1]) : 0; })();
+/** --only <file>: restrict to the company names listed one-per-line in <file>. */
+const ONLY = (() => { const i = process.argv.indexOf("--only"); return i > -1 ? process.argv[i + 1] : ""; })();
 // Geoapify free tier is 3,000/day; 1,561 rows fit in one run. ~4 req/s is
 // comfortably inside their limits and polite.
 const GAP_MS = Number(process.env.GEOCODE_GAP_MS ?? 250);
@@ -70,8 +84,45 @@ export function buildQuery(c: {
   return parts.filter(Boolean).join(", ");
 }
 
-/** Match types that represent a REAL position. Anything else is not a geocode. */
-export const ACCEPTED_MATCH_TYPES = ["full_match", "match_by_street"];
+/** The --cascade variant: street component instead of the whole address_1. */
+export function buildCascadeQuery(c: {
+  address_1: string | null; address_2: string | null;
+  area: string | null; state: string | null; postal_code: string | null;
+}): string {
+  // A C/O row's address_1 is a company, so its street still lives in address_2.
+  const source = isCareOf(c.address_1) && nz(c.address_2) ? c.address_2 : c.address_1;
+  return [streetOf(source), nz(c.area), nz(c.postal_code), nz(c.state), "Malaysia"].filter(Boolean).join(", ");
+}
+
+/**
+ * The street component of address_1, for --cascade. These strings run their
+ * parts together ("...5/1,TAMAN PERINDUSTRIAN BATU KAWAN"), so re-space on
+ * commas and take the component that actually names a road.
+ */
+const STREET_WORD = /\b(JALAN|JLN|LORONG|LRG|LEBUH|PERSIARAN|SOLOK|LALUAN|MEDAN|LINTANG|TINGKAT|PLOT|LOT|PMT|KAWASAN|TAMAN)\b/i;
+export function streetOf(address1: string | null | undefined): string {
+  const parts = nz(address1).replace(/,(?=\S)/g, ", ").split(",").map((s) => s.trim()).filter(Boolean);
+  const st = parts.find((p) => STREET_WORD.test(p) && !/^(NO\.?|LOT|PLOT|PMT)?\s*[\d\-/A-Z]{1,8}$/i.test(p));
+  return st ?? parts[parts.length - 1] ?? "";
+}
+
+/**
+ * Match types that represent a REAL position. Anything else is not a geocode.
+ *
+ * `match_by_building` was ADDED 2026-07-21 after the first full dry-run. The
+ * original list came from a 20-row bake-off that never returned that type — it
+ * was never a decision to exclude building matches, they simply had not been
+ * seen, and a building match is STRICTLY MORE PRECISE than a street match.
+ * Rejecting it discarded 115 rows (7.4%) in favour of a zone centroid.
+ *
+ * Still rejected on purpose:
+ *   match_by_postcode         - a postcode centroid, not an address
+ *   match_by_city_or_disrict  - coarser still (Geoapify's own spelling)
+ *   inner_part                - matches something INSIDE the area rather than
+ *                               the address; in the bake-off this returned
+ *                               "Ambank Paya Terubong", ~1.5 km off target.
+ */
+export const ACCEPTED_MATCH_TYPES = ["full_match", "match_by_building", "match_by_street"];
 export function isUsable(matchType: string | null | undefined): boolean {
   return ACCEPTED_MATCH_TYPES.includes(nz(matchType));
 }
@@ -110,12 +161,29 @@ async function main() {
   console.log(`DB host      : ${host}${remoteOk ? "  (ALLOW_REMOTE_DB=1)" : "  (local)"}`);
   console.log(`Mode         : ${DRY_RUN ? "DRY RUN — nothing will be written" : "WRITE"}`);
 
-  const rows = await prisma.consignee.findMany({
+  let rows = await prisma.consignee.findMany({
     select: { id: true, company_name: true, zone_code: true, address_1: true, address_2: true,
               area: true, state: true, postal_code: true },
     orderBy: { company_name: "asc" },
   });
+
+  if (ONLY) {
+    const wanted = new Set(
+      (await import("fs")).readFileSync(ONLY, "utf8").split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+    );
+    rows = rows.filter((r) => wanted.has(r.company_name));
+    console.log(`Filter       : --only ${ONLY} → ${rows.length} of ${wanted.size} names matched`);
+  }
+  if (SAMPLE > 0 && SAMPLE < rows.length) {
+    // Every Nth row — deterministic and spread across the alphabet/zones, so the
+    // sample is comparable between runs rather than a fresh random draw.
+    const step = rows.length / SAMPLE;
+    rows = Array.from({ length: SAMPLE }, (_, i) => rows[Math.floor(i * step)]);
+    console.log(`Sample       : every ${step.toFixed(1)}th row → ${rows.length} rows`);
+  }
+
   const careOf = rows.filter((r) => isCareOf(r.address_1)).length;
+  console.log(`Query mode   : ${CASCADE ? "CASCADE (street component of address_1)" : "FULL address_1"}`);
   console.log(`Consignees   : ${rows.length}  (${careOf} C/O rows will append address_2)\n`);
 
   const tally: Record<string, number> = {};
@@ -123,9 +191,11 @@ async function main() {
   const failures: { name: string; reason: string }[] = [];
   let written = 0;
 
+  const perRow: any[] = [];
+
   for (let i = 0; i < rows.length; i++) {
     const c = rows[i];
-    const q = buildQuery(c);
+    const q = CASCADE ? buildCascadeQuery(c) : buildQuery(c);
     let g: GeoResult | null = null;
     try {
       g = await geoapify(q);
@@ -136,6 +206,12 @@ async function main() {
       failures.push({ name: c.company_name, reason: msg });
     }
     await new Promise((r) => setTimeout(r, GAP_MS));
+
+    perRow.push({
+      name: c.company_name, zone: c.zone_code, address_1: c.address_1, query: q,
+      lat: g?.lat ?? null, lng: g?.lng ?? null, match_type: g?.matchType ?? "no_result",
+      label: g?.label ?? "", usable: isUsable(g?.matchType),
+    });
 
     if (!g) {
       tally["no_result"] = (tally["no_result"] ?? 0) + 1;
@@ -179,6 +255,43 @@ async function main() {
   if (failures.length) {
     console.log(`\n=== NO RESULT / ERRORS (${failures.length}) ===`);
     for (const f of failures) console.log(`  ${f.name} — ${f.reason}`);
+  }
+
+  // ── Duplicate-coordinate audit ─────────────────────────────────────────────
+  // A coordinate shared by consignees with DIFFERENT addresses is a lie the
+  // match_type gate cannot see: ADCORD and both AWAN PACKAGING rows collapsed
+  // onto one point measured 1,377 m from the true building, every one of them
+  // wearing a confident match_type. Distinct sites must not share a pin.
+  const byCoord = new Map<string, typeof perRow>();
+  for (const r of perRow) {
+    if (r.lat == null) continue;
+    const k = `${r.lat.toFixed(5)},${r.lng.toFixed(5)}`; // ~1 m
+    (byCoord.get(k) ?? byCoord.set(k, []).get(k)!).push(r);
+  }
+  const norm = (s: string) => nz(s).toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const clusters = [...byCoord.entries()]
+    .map(([coord, members]) => ({ coord, members, distinctAddresses: new Set(members.map((m) => norm(m.address_1))).size }))
+    .filter((c) => c.members.length > 1 && c.distinctAddresses > 1)
+    .sort((a, b) => b.members.length - a.members.length);
+
+  const inClusters = clusters.reduce((s, c) => s + c.members.length, 0);
+  console.log(`\n=== DUPLICATE-COORDINATE CLUSTERS ===`);
+  console.log(`  clusters (same point, DIFFERENT addresses): ${clusters.length}`);
+  console.log(`  rows involved                             : ${inClusters}  (${((inClusters / Math.max(perRow.length, 1)) * 100).toFixed(1)}%)`);
+  const usableInClusters = clusters.reduce((s, c) => s + c.members.filter((m) => m.usable).length, 0);
+  console.log(`  of those, currently GATED AS USABLE       : ${usableInClusters}  <-- these pass the gate while being wrong`);
+  for (const c of clusters) {
+    console.log(`\n  ${c.coord}  (${c.members.length} consignees, ${c.distinctAddresses} distinct addresses)`);
+    console.log(`     https://www.google.com/maps/search/?api=1&query=${c.coord}`);
+    for (const m of c.members) {
+      console.log(`     ${m.usable ? "USABLE " : "rejected"} [${m.match_type}] ${m.name.slice(0, 44)}`);
+      console.log(`              a1: ${nz(m.address_1).slice(0, 88)}`);
+    }
+  }
+
+  if (OUT) {
+    (await import("fs")).writeFileSync(OUT, JSON.stringify(perRow, null, 1), "utf8");
+    console.log(`\nper-row results written to ${OUT}`);
   }
 }
 
