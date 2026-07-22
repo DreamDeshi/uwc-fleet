@@ -59,6 +59,13 @@ const OUT = (() => { const i = process.argv.indexOf("--out"); return i > -1 ? pr
 const SAMPLE = (() => { const i = process.argv.indexOf("--sample"); return i > -1 ? Number(process.argv[i + 1]) : 0; })();
 /** --only <file>: restrict to the company names listed one-per-line in <file>. */
 const ONLY = (() => { const i = process.argv.indexOf("--only"); return i > -1 ? process.argv[i + 1] : ""; })();
+/**
+ * --from <file>: load a prior --out JSON instead of calling Geoapify, then run the
+ * SAME gate + duplicate demotion and write. The real write becomes a pure function
+ * of the reviewed dry-run — re-runnable and, crucially, spending ZERO fresh quota
+ * (a dry-run followed by a re-geocoded write would double the API cost).
+ */
+const FROM = (() => { const i = process.argv.indexOf("--from"); return i > -1 ? process.argv[i + 1] : ""; })();
 // Geoapify free tier is 3,000/day; 1,561 rows fit in one run. ~4 req/s is
 // comfortably inside their limits and polite.
 const GAP_MS = Number(process.env.GEOCODE_GAP_MS ?? 250);
@@ -149,8 +156,6 @@ async function geoapify(q: string): Promise<GeoResult | null> {
 }
 
 async function main() {
-  if (!KEY) throw new Error("GEOAPIFY_KEY is not set. Export it before running (never hardcode it).");
-
   // Safety: this WRITES, so it must not point at production by accident.
   const host = dbHostOf(process.env.DATABASE_URL);
   if (!host) throw new Error("DATABASE_URL is not set or unparseable.");
@@ -161,100 +166,101 @@ async function main() {
   console.log(`DB host      : ${host}${remoteOk ? "  (ALLOW_REMOTE_DB=1)" : "  (local)"}`);
   console.log(`Mode         : ${DRY_RUN ? "DRY RUN — nothing will be written" : "WRITE"}`);
 
-  let rows = await prisma.consignee.findMany({
-    select: { id: true, company_name: true, zone_code: true, address_1: true, address_2: true,
-              area: true, state: true, postal_code: true },
-    orderBy: { company_name: "asc" },
-  });
-
-  if (ONLY) {
-    const wanted = new Set(
-      (await import("fs")).readFileSync(ONLY, "utf8").split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
-    );
-    rows = rows.filter((r) => wanted.has(r.company_name));
-    console.log(`Filter       : --only ${ONLY} → ${rows.length} of ${wanted.size} names matched`);
-  }
-  if (SAMPLE > 0 && SAMPLE < rows.length) {
-    // Every Nth row — deterministic and spread across the alphabet/zones, so the
-    // sample is comparable between runs rather than a fresh random draw.
-    const step = rows.length / SAMPLE;
-    rows = Array.from({ length: SAMPLE }, (_, i) => rows[Math.floor(i * step)]);
-    console.log(`Sample       : every ${step.toFixed(1)}th row → ${rows.length} rows`);
-  }
-
-  const careOf = rows.filter((r) => isCareOf(r.address_1)).length;
-  console.log(`Query mode   : ${CASCADE ? "CASCADE (street component of address_1)" : "FULL address_1"}`);
-  console.log(`Consignees   : ${rows.length}  (${careOf} C/O rows will append address_2)\n`);
-
-  const tally: Record<string, number> = {};
-  const fallbacks: { name: string; zone: string; query: string; label: string }[] = [];
-  const failures: { name: string; reason: string }[] = [];
-  let written = 0;
-
+  // Every row's geocode result. Populated either by calling Geoapify (default) or
+  // by loading a prior --out dump (--from). Each element carries the consignee id,
+  // so the write below can target rows without re-querying.
   const perRow: any[] = [];
 
-  for (let i = 0; i < rows.length; i++) {
-    const c = rows[i];
-    const q = CASCADE ? buildCascadeQuery(c) : buildQuery(c);
-    let g: GeoResult | null = null;
-    try {
-      g = await geoapify(q);
-    } catch (err) {
-      // A key/quota error is fatal — stop rather than burn through the list.
-      const msg = String((err as Error).message);
-      if (/key|quota|rate limit/i.test(msg)) throw err;
-      failures.push({ name: c.company_name, reason: msg });
-    }
-    await new Promise((r) => setTimeout(r, GAP_MS));
+  if (FROM) {
+    perRow.push(...JSON.parse((await import("fs")).readFileSync(FROM, "utf8")));
+    console.log(`Source       : --from ${FROM} → ${perRow.length} rows (no geocoding, no quota spent)\n`);
+  } else {
+    if (!KEY) throw new Error("GEOAPIFY_KEY is not set. Export it before running (never hardcode it).");
 
-    perRow.push({
-      name: c.company_name, zone: c.zone_code, address_1: c.address_1, query: q,
-      lat: g?.lat ?? null, lng: g?.lng ?? null, match_type: g?.matchType ?? "no_result",
-      label: g?.label ?? "", usable: isUsable(g?.matchType),
+    let rows = await prisma.consignee.findMany({
+      select: { id: true, company_name: true, zone_code: true, address_1: true, address_2: true,
+                area: true, state: true, postal_code: true },
+      orderBy: { company_name: "asc" },
     });
 
-    if (!g) {
-      tally["no_result"] = (tally["no_result"] ?? 0) + 1;
-      failures.push({ name: c.company_name, reason: "no result" });
-    } else {
-      tally[g.matchType] = (tally[g.matchType] ?? 0) + 1;
-      if (!isUsable(g.matchType)) {
-        fallbacks.push({ name: c.company_name, zone: c.zone_code, query: q, label: g.label });
+    if (ONLY) {
+      const wanted = new Set(
+        (await import("fs")).readFileSync(ONLY, "utf8").split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+      );
+      rows = rows.filter((r) => wanted.has(r.company_name));
+      console.log(`Filter       : --only ${ONLY} → ${rows.length} of ${wanted.size} names matched`);
+    }
+    if (SAMPLE > 0 && SAMPLE < rows.length) {
+      // Every Nth row — deterministic and spread across the alphabet/zones, so the
+      // sample is comparable between runs rather than a fresh random draw.
+      const step = rows.length / SAMPLE;
+      rows = Array.from({ length: SAMPLE }, (_, i) => rows[Math.floor(i * step)]);
+      console.log(`Sample       : every ${step.toFixed(1)}th row → ${rows.length} rows`);
+    }
+
+    const careOf = rows.filter((r) => isCareOf(r.address_1)).length;
+    console.log(`Query mode   : ${CASCADE ? "CASCADE (street component of address_1)" : "FULL address_1"}`);
+    console.log(`Consignees   : ${rows.length}  (${careOf} C/O rows will append address_2)\n`);
+
+    for (let i = 0; i < rows.length; i++) {
+      const c = rows[i];
+      const q = CASCADE ? buildCascadeQuery(c) : buildQuery(c);
+      let g: GeoResult | null = null;
+      try {
+        g = await geoapify(q);
+      } catch (err) {
+        // A key/quota error is fatal — stop rather than burn through the list.
+        const msg = String((err as Error).message);
+        if (/key|quota|rate limit/i.test(msg)) throw err;
+        // Non-fatal error → this row is recorded as no_result via the null g below.
       }
-      if (!DRY_RUN) {
-        await prisma.consignee.update({
-          where: { id: c.id },
-          data: { latitude: g.lat, longitude: g.lng, geocode_match_type: g.matchType },
-        });
-        written++;
+      await new Promise((r) => setTimeout(r, GAP_MS));
+
+      perRow.push({
+        id: c.id,
+        name: c.company_name, zone: c.zone_code, address_1: c.address_1, query: q,
+        lat: g?.lat ?? null, lng: g?.lng ?? null, match_type: g?.matchType ?? "no_result",
+        label: g?.label ?? "", usable: isUsable(g?.matchType),
+      });
+
+      if ((i + 1) % 100 === 0 || i === rows.length - 1) {
+        console.log(`  ${String(i + 1).padStart(4)}/${rows.length} processed`);
       }
     }
 
-    if ((i + 1) % 100 === 0 || i === rows.length - 1) {
-      console.log(`  ${String(i + 1).padStart(4)}/${rows.length} processed`);
+    if (OUT) {
+      (await import("fs")).writeFileSync(OUT, JSON.stringify(perRow, null, 1), "utf8");
+      console.log(`\nper-row results written to ${OUT}`);
     }
   }
 
+  const N = perRow.length;
+
   // ── Summary ────────────────────────────────────────────────────────────────
+  // Derived from perRow so it works identically for a live geocode and a --from load.
+  const tally: Record<string, number> = {};
+  for (const r of perRow) tally[r.match_type] = (tally[r.match_type] ?? 0) + 1;
+
   console.log(`\n=== MATCH TYPE SUMMARY ===`);
   const order = ["full_match", "match_by_street", "match_by_building", "match_by_postcode", "match_by_city_or_disrict", "unknown", "no_result"];
   const keys = [...new Set([...order.filter((k) => k in tally), ...Object.keys(tally)])];
   for (const k of keys) {
     const n = tally[k] ?? 0;
     if (!n) continue;
-    const pct = ((n / rows.length) * 100).toFixed(1);
+    const pct = ((n / N) * 100).toFixed(1);
     console.log(`  ${k.padEnd(26)} ${String(n).padStart(5)}  ${pct.padStart(5)}%  ${isUsable(k) ? "USABLE" : "-> zone fallback"}`);
   }
   const usable = keys.filter(isUsable).reduce((s, k) => s + (tally[k] ?? 0), 0);
-  console.log(`  ${"USABLE TOTAL".padEnd(26)} ${String(usable).padStart(5)}  ${((usable / rows.length) * 100).toFixed(1)}%`);
-  if (!DRY_RUN) console.log(`  rows written: ${written}`);
+  console.log(`  ${"USABLE TOTAL".padEnd(26)} ${String(usable).padStart(5)}  ${((usable / N) * 100).toFixed(1)}%`);
 
+  const fallbacks = perRow.filter((r) => !isUsable(r.match_type) && r.match_type !== "no_result");
   console.log(`\n=== POSTCODE-CENTROID FALLBACKS (${fallbacks.length}) — NOT usable, these keep zone behaviour ===`);
-  for (const f of fallbacks) console.log(`  [${f.zone}] ${f.name}\n        q: ${f.query.slice(0, 110)}\n        -> ${f.label.slice(0, 90)}`);
+  for (const f of fallbacks) console.log(`  [${f.zone}] ${f.name}\n        q: ${(f.query ?? "").slice(0, 110)}\n        -> ${(f.label ?? "").slice(0, 90)}`);
 
+  const failures = perRow.filter((r) => r.match_type === "no_result");
   if (failures.length) {
     console.log(`\n=== NO RESULT / ERRORS (${failures.length}) ===`);
-    for (const f of failures) console.log(`  ${f.name} — ${f.reason}`);
+    for (const f of failures) console.log(`  ${f.name} — no result`);
   }
 
   // ── Duplicate-coordinate audit ─────────────────────────────────────────────
@@ -278,20 +284,48 @@ async function main() {
   console.log(`\n=== DUPLICATE-COORDINATE CLUSTERS ===`);
   console.log(`  clusters (same point, DIFFERENT addresses): ${clusters.length}`);
   console.log(`  rows involved                             : ${inClusters}  (${((inClusters / Math.max(perRow.length, 1)) * 100).toFixed(1)}%)`);
-  const usableInClusters = clusters.reduce((s, c) => s + c.members.filter((m) => m.usable).length, 0);
-  console.log(`  of those, currently GATED AS USABLE       : ${usableInClusters}  <-- these pass the gate while being wrong`);
+  // Demotion set: every USABLE row that sits in one of these clusters. Its geocode
+  // passed the match_type gate but shares a pin with a DIFFERENT address, so the
+  // coordinate is untrustworthy (a street-snap, not the building) — worse than the
+  // zone centroid it would otherwise fall back to. Its coordinates are nulled on write.
+  const demotedIds = new Set<string>();
+  for (const c of clusters) for (const m of c.members) if (isUsable(m.match_type)) demotedIds.add(m.id);
+
+  console.log(`  of those, GATED AS USABLE                 : ${demotedIds.size}  <-- demoted to zone fallback (null coords)`);
   for (const c of clusters) {
     console.log(`\n  ${c.coord}  (${c.members.length} consignees, ${c.distinctAddresses} distinct addresses)`);
     console.log(`     https://www.google.com/maps/search/?api=1&query=${c.coord}`);
     for (const m of c.members) {
-      console.log(`     ${m.usable ? "USABLE " : "rejected"} [${m.match_type}] ${m.name.slice(0, 44)}`);
+      console.log(`     ${isUsable(m.match_type) ? "DEMOTED " : "rejected"} [${m.match_type}] ${m.name.slice(0, 44)}`);
       console.log(`              a1: ${nz(m.address_1).slice(0, 88)}`);
     }
   }
 
-  if (OUT) {
-    (await import("fs")).writeFileSync(OUT, JSON.stringify(perRow, null, 1), "utf8");
-    console.log(`\nper-row results written to ${OUT}`);
+  // ── Write ────────────────────────────────────────────────────────────────
+  // Coordinates are written ONLY for rows that are usable AND not demoted; every
+  // other row (coarse fallback or demoted duplicate) gets NULL lat/lng so the app
+  // falls back to zone behaviour. geocode_match_type always records what Geoapify
+  // returned, so a usable match_type paired with NULL coordinates is self-describing:
+  // it is a demoted duplicate, distinct from a fallback (non-usable match_type).
+  if (!DRY_RUN) {
+    let updated = 0, withCoords = 0, nulled = 0;
+    for (const r of perRow) {
+      const keep = isUsable(r.match_type) && r.lat != null && !demotedIds.has(r.id);
+      await prisma.consignee.update({
+        where: { id: r.id },
+        data: {
+          latitude: keep ? r.lat : null,
+          longitude: keep ? r.lng : null,
+          geocode_match_type: r.match_type,
+        },
+      });
+      updated++;
+      keep ? withCoords++ : nulled++;
+    }
+    console.log(`\n=== WRITE ===`);
+    console.log(`  consignees updated                  : ${updated}`);
+    console.log(`  with real coordinates               : ${withCoords}`);
+    console.log(`  null coords (fallback + demoted dup) : ${nulled}`);
   }
 }
 
