@@ -14,7 +14,19 @@ import { BrandLogo } from "../../components/BrandLogo";
 // showLogo defaults OFF: individual admin screens (Trip/Truck Management, the
 // More stack, …) show just the title — only the primary dashboard keeps the
 // brand mark. Pass showLogo to bring the logo back on any given screen.
-export function AdminMobileHeader({ title, onBack, showLogo = false }: { title: string; onBack?: () => void; showLogo?: boolean }) {
+export function AdminMobileHeader({
+  title,
+  onBack,
+  showLogo = false,
+  right,
+}: {
+  title: string;
+  onBack?: () => void;
+  showLogo?: boolean;
+  // Optional control rendered on the right of the title, before the search
+  // button — e.g. the Fleet/Fuel sub-toggle lifted up from the content.
+  right?: React.ReactNode;
+}) {
   const insets = useSafeAreaInsets();
   return (
     <View style={{ backgroundColor: colors.blue }}>
@@ -50,6 +62,7 @@ export function AdminMobileHeader({ title, onBack, showLogo = false }: { title: 
             {title}
           </Text>
         </View>
+        {right}
         <AdminSearchButton />
       </View>
     </View>

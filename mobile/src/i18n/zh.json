@@ -925,7 +925,8 @@
     },
     "fleet": {
       "drivers": "司机",
-      "trucks": "罗里"
+      "trucks": "罗里",
+      "showing": "显示"
     },
     "subtitles": {
       "dashboard": "实时车队概览",

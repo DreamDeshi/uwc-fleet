@@ -4,7 +4,7 @@
 // alerts, the truck card grid (load visualiser, stats, claim-rate pills,
 // document rows) and the renewal modal that un-blocks a truck for dispatch.
 import React, { useMemo, useState } from "react";
-import { RefreshControl, ScrollView, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import {
@@ -34,7 +34,7 @@ const STATUS_META: Record<string, { labelKey: string; bg: string; fg: string; do
 };
 
 type Filter = "all" | "active" | "idle" | "maintenance" | "retired";
-type Tab = "fleet" | "fuel";
+export type TruckTab = "fleet" | "fuel";
 
 /** Shift a "YYYY-MM-DD" MYT key by whole days, staying in MYT. */
 function shiftDateKey(key: string, days: number): string {
@@ -42,7 +42,10 @@ function shiftDateKey(key: string, days: number): string {
   return mytDateKey(new Date(Date.UTC(y, m - 1, d + days, 12))); // noon: never trips a boundary
 }
 
-export function TrucksScreen() {
+export function TrucksScreen({
+  tab: tabProp,
+  onTabChange,
+}: { tab?: TruckTab; onTabChange?: (v: TruckTab) => void } = {}) {
   const { t } = useTranslation();
   const mode = useLayoutMode();
   // Which MYT day's capacity is on screen (item 7b). Opens on TODAY — same
@@ -50,7 +53,12 @@ export function TrucksScreen() {
   // everyday we sign in".
   const [date, setDate] = useState(() => mytDateKey(new Date()));
   const trucks = useTrucks(date);
-  const [tab, setTab] = useState<Tab>("fleet");
+  // Fleet/Fuel tab is CONTROLLED when FleetScreen owns it (narrow — the toggle
+  // sits in the blue header) and uncontrolled when standalone (wide sidebar).
+  const [tabState, setTabState] = useState<TruckTab>("fleet");
+  const tab = tabProp ?? tabState;
+  const setTab = onTabChange ?? setTabState;
+  const controlled = tabProp !== undefined;
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
@@ -84,23 +92,27 @@ export function TrucksScreen() {
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={trucks.isRefetching} onRefresh={() => trucks.refetch()} />}
     >
-      {/* Fleet / Fuel tabs. On WIDE, "+ Add Truck" sits inline on the right;
-          on narrow it moves into the full-width FilterHeader below the tabs. */}
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-        <SegmentedFilter<Tab>
-          value={tab}
-          onChange={setTab}
-          options={[
-            { value: "fleet", label: t("admin.trucks.tabFleet") },
-            { value: "fuel", label: t("admin.trucks.tabFuel") },
-          ]}
-        />
-        {wide && tab === "fleet" && !trucks.isLoading && !trucks.isError && (
-          <Button variant="primary" size="sm" onPress={() => setAdding(true)}>
-            {`+ ${t("admin.trucks.addTruck")}`}
-          </Button>
-        )}
-      </View>
+      {/* Fleet / Fuel tabs — rendered in-content ONLY when this screen owns the
+          tab (wide/standalone via the sidebar). On narrow FleetScreen lifts the
+          toggle into the blue header, so it's hidden here. On WIDE "+ Add Truck"
+          sits inline on the right. */}
+      {!controlled && (
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <SegmentedFilter<TruckTab>
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: "fleet", label: t("admin.trucks.tabFleet") },
+              { value: "fuel", label: t("admin.trucks.tabFuel") },
+            ]}
+          />
+          {wide && tab === "fleet" && !trucks.isLoading && !trucks.isError && (
+            <Button variant="primary" size="sm" onPress={() => setAdding(true)}>
+              {`+ ${t("admin.trucks.addTruck")}`}
+            </Button>
+          )}
+        </View>
+      )}
 
       {tab === "fuel" ? (
         <FuelPanel />
@@ -110,9 +122,8 @@ export function TrucksScreen() {
         <ErrorState message={t("admin.trucks.loadError")} onRetry={() => trucks.refetch()} />
       ) : (
         <>
-          <AlertsPanel />
-
-          {/* Narrow: an even 2-col chip grid; wide keeps the inline segmented row. */}
+          {/* Narrow: condensed FilterHeader (filter dropdown + plain-text status
+              counts + inline compact date); wide keeps the inline segmented row. */}
           {(() => {
             const filterOptions = [
               { value: "all" as Filter, label: t("admin.trucks.filterAll"), count: counts.all },
@@ -135,13 +146,16 @@ export function TrucksScreen() {
                 filter={filter}
                 onFilterChange={setFilter}
                 filterOptions={filterOptions}
+                filterPrefix={t("admin.fleet.showing")}
                 search={search}
                 onSearchChange={setSearch}
                 searchPlaceholder={t("admin.trucks.searchPlaceholder")}
-                extra={<CapacityDatePicker date={date} onChange={setDate} />}
+                dateControl={<CapacityDatePicker date={date} onChange={setDate} compact />}
               />
             );
           })()}
+
+          <AlertsPanel />
 
           {filtered.length === 0 ? (
             <Card>
@@ -173,18 +187,45 @@ export function TrucksScreen() {
  * "which day has room for this load", which means walking forward a day at a
  * time, not typing dates. Today is one tap back from anywhere.
  */
+const DP_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 function CapacityDatePicker({
   date,
   onChange,
   wide = false,
+  compact = false,
 }: {
   date: string;
   onChange: (v: string) => void;
   wide?: boolean;
+  compact?: boolean;
 }) {
   const { t } = useTranslation();
   const today = mytDateKey(new Date());
   const isToday = date === today;
+
+  // Inline compact form (the narrow search row): calendar icon + the selected
+  // date kept visible, ‹ › steppers, and tap the date to jump back to today.
+  // Same onChange contract as the full picker.
+  if (compact) {
+    const [y, m, d] = date.split("-").map(Number);
+    const shortDate = `${d} ${DP_MONTHS[m - 1] ?? ""}`;
+    void y;
+    return (
+      <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md }}>
+        <Pressable onPress={() => onChange(shiftDateKey(date, -1))} accessibilityLabel={t("admin.trucks.capacityDate")} style={{ paddingVertical: 9, paddingHorizontal: 8 }}>
+          <Ionicons name="chevron-back" size={16} color={colors.text} />
+        </Pressable>
+        <Pressable onPress={() => onChange(today)} disabled={isToday} style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 2 }}>
+          <Ionicons name="calendar-outline" size={14} color={isToday ? colors.textMuted : colors.blue} />
+          <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.text }}>{shortDate}</Text>
+        </Pressable>
+        <Pressable onPress={() => onChange(shiftDateKey(date, 1))} style={{ paddingVertical: 9, paddingHorizontal: 8 }}>
+          <Ionicons name="chevron-forward" size={16} color={colors.text} />
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <View style={{ gap: 6, alignSelf: wide ? "auto" : "stretch" }}>

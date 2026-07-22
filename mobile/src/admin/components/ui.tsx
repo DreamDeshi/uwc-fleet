@@ -382,37 +382,101 @@ export function SegmentedFilter<T extends string>({
 // chip in a row is the same width, and a short final row is padded with
 // invisible spacers so columns stay aligned. Narrow-only by convention —
 // the PC keeps SegmentedFilter's inline wrap.
-// Narrow (mobile) list header: a full-width primary action on its OWN line,
-// then the filter chips, an optional slot (e.g. a date picker), then search.
-// Shared by the Drivers and Trucks screens so "+ Add Driver/Truck" spans the
-// screen like a proper mobile button instead of hanging off to one side.
+// Compact filter dropdown — replaces a chip/segment row with a single line:
+// "<prefix> <current> ▾" that opens a small sheet of options (with counts).
+// Same selection state as the chips it replaces.
+export function FilterSelect<F extends string>({
+  value,
+  onChange,
+  options,
+  prefix,
+}: {
+  value: F;
+  onChange: (v: F) => void;
+  options: { value: F; label: string; count?: number }[];
+  prefix?: string;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const current = options.find((o) => o.value === value);
+  return (
+    <>
+      <Pressable
+        onPress={() => setOpen(true)}
+        style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingVertical: 8, paddingHorizontal: 12 }}
+      >
+        {prefix ? <Text style={{ fontSize: font.sm, color: colors.textMuted, fontWeight: "600" }}>{prefix}</Text> : null}
+        <Text style={{ fontSize: font.md, color: colors.text, fontWeight: "700" }}>{current?.label ?? ""}</Text>
+        <Ionicons name="chevron-down" size={14} color={colors.textMuted} />
+      </Pressable>
+      <RNModal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.35)", justifyContent: "center", paddingHorizontal: 32 }} onPress={() => setOpen(false)}>
+          <Pressable style={{ backgroundColor: colors.card, borderRadius: radius.lg, overflow: "hidden", ...shadow.floating }} onPress={() => {}}>
+            {options.map((o, i) => {
+              const active = o.value === value;
+              return (
+                <Pressable
+                  key={o.value}
+                  onPress={() => { onChange(o.value); setOpen(false); }}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 14, paddingHorizontal: 16, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.divider, backgroundColor: active ? colors.blueTint : "transparent" }}
+                >
+                  <Text style={{ flex: 1, fontSize: font.md, fontWeight: active ? "700" : "500", color: active ? colors.blue : colors.text }}>{o.label}</Text>
+                  {o.count !== undefined ? <Text style={{ fontSize: font.sm, color: colors.textMuted, fontWeight: "700" }}>{o.count}</Text> : null}
+                  {active ? <Ionicons name="checkmark" size={18} color={colors.blue} /> : null}
+                </Pressable>
+              );
+            })}
+          </Pressable>
+        </Pressable>
+      </RNModal>
+    </>
+  );
+}
+
+// Narrow (mobile) list header, condensed: a full-width "+ Add" button, then a
+// one-line filter dropdown + plain-text status counts, then an optional inline
+// date control beside the search box. Shared by the Drivers and Trucks screens.
 export function FilterHeader<F extends string>({
   onAdd,
   addLabel,
   filter,
   onFilterChange,
   filterOptions,
+  filterPrefix,
   search,
   onSearchChange,
   searchPlaceholder,
-  extra,
+  dateControl,
 }: {
   onAdd: () => void;
   addLabel: string;
   filter: F;
   onFilterChange: (v: F) => void;
   filterOptions: { value: F; label: string; count?: number }[];
+  filterPrefix?: string;
   search: string;
   onSearchChange: (v: string) => void;
   searchPlaceholder: string;
-  extra?: React.ReactNode;
+  dateControl?: React.ReactNode;
 }) {
+  // Plain-text status counts from every non-"all" option (the first is "all").
+  const countsText = filterOptions.slice(1).map((o) => `${o.count ?? 0} ${o.label}`).join("   ·   ");
   return (
-    <View style={{ gap: 12 }}>
+    <View style={{ gap: 10 }}>
       <Button variant="primary" full onPress={onAdd}>{`+ ${addLabel}`}</Button>
-      <ChipGrid<F> value={filter} onChange={onFilterChange} options={filterOptions} columns={2} />
-      {extra}
-      <SearchInput value={search} onChange={onSearchChange} placeholder={searchPlaceholder} style={{ minWidth: 0, alignSelf: "stretch" }} />
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <FilterSelect<F> value={filter} onChange={onFilterChange} options={filterOptions} prefix={filterPrefix} />
+        {countsText ? (
+          <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: font.xs, color: colors.textMuted, textAlign: "right" }}>
+            {countsText}
+          </Text>
+        ) : null}
+      </View>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        {dateControl}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <SearchInput value={search} onChange={onSearchChange} placeholder={searchPlaceholder} style={{ minWidth: 0, alignSelf: "stretch" }} />
+        </View>
+      </View>
     </View>
   );
 }

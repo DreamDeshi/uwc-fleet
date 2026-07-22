@@ -133,6 +133,7 @@ export function DriversScreen() {
             filter={filter}
             onFilterChange={setFilter}
             filterOptions={filterOptions}
+            filterPrefix={t("admin.fleet.showing")}
             search={search}
             onSearchChange={setSearch}
             searchPlaceholder={t("admin.drivers.searchPlaceholder")}

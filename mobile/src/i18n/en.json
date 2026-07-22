@@ -937,7 +937,8 @@
     },
     "fleet": {
       "drivers": "Drivers",
-      "trucks": "Trucks"
+      "trucks": "Trucks",
+      "showing": "Showing"
     },
     "subtitles": {
       "dashboard": "Live fleet overview",

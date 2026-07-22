@@ -925,7 +925,8 @@
     },
     "fleet": {
       "drivers": "Pemandu",
-      "trucks": "Lori"
+      "trucks": "Lori",
+      "showing": "Papar"
     },
     "subtitles": {
       "dashboard": "Gambaran armada langsung",
