@@ -11,7 +11,10 @@ import { colors } from "../theme";
 import { AdminSearchButton } from "./AdminSearchButton";
 import { BrandLogo } from "../../components/BrandLogo";
 
-export function AdminMobileHeader({ title, onBack }: { title: string; onBack?: () => void }) {
+// showLogo defaults OFF: individual admin screens (Trip/Truck Management, the
+// More stack, …) show just the title — only the primary dashboard keeps the
+// brand mark. Pass showLogo to bring the logo back on any given screen.
+export function AdminMobileHeader({ title, onBack, showLogo = false }: { title: string; onBack?: () => void; showLogo?: boolean }) {
   const insets = useSafeAreaInsets();
   return (
     <View style={{ backgroundColor: colors.blue }}>
@@ -41,7 +44,7 @@ export function AdminMobileHeader({ title, onBack }: { title: string; onBack?: (
             <Ionicons name="arrow-back" size={20} color="#fff" />
           </Pressable>
         )}
-        <BrandLogo white height={24} style={{ marginRight: 10 }} />
+        {showLogo && <BrandLogo white height={24} style={{ marginRight: 10 }} />}
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text numberOfLines={1} style={{ fontSize: 17, fontWeight: "800", color: "#fff", letterSpacing: -0.2 }}>
             {title}
