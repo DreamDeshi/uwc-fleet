@@ -14,7 +14,6 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { TripCard } from "../../components/TripCard";
 import { LoadingState, ErrorState } from "../../components/States";
 import { LogFuelModal } from "../../components/LogFuelModal";
-import { BrandLogo } from "../../components/BrandLogo";
 import { formatMoney, formatDate, formatTime } from "../../lib/format";
 import { tripDestination, cargoSummary, estimateIncentive, ORIGIN_LABEL } from "../../lib/trip";
 import { DELIVERED_STATUSES } from "../../lib/tripStatus";
@@ -78,10 +77,7 @@ export function DriverDashboardScreen() {
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.centerCol}>
           <View style={styles.headerTop}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <BrandLogo white height={30} />
-              <Text style={styles.brand}>UWC TRUCKING</Text>
-            </View>
+            <Text style={styles.brand}>UWC TRUCKING</Text>
           </View>
           <Text style={styles.date}>{formatDate(new Date())}</Text>
           {/* Full name, not the first word — Mr. Teh 16 Jul: "Need show the

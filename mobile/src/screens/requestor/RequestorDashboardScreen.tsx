@@ -12,7 +12,6 @@ import { useTrips } from "../../hooks/queries";
 import { useWide } from "../../hooks/useWide";
 import { colors, layout, radius, shadow } from "../../theme";
 import { Card } from "../../components/Card";
-import { BrandLogo } from "../../components/BrandLogo";
 import { StatusBadge } from "../../components/StatusBadge";
 import { LoadingState, ErrorState } from "../../components/States";
 import { formatDate, formatTime } from "../../lib/format";
@@ -179,9 +178,6 @@ export function RequestorDashboardScreen() {
     <View style={[styles.header, { paddingTop: insets.top + 12, paddingBottom: wide ? 24 : 44 }, wide && styles.headerWide]}>
       <View style={wide ? styles.fillCol : styles.centerCol}>
         <View style={styles.headerTop}>
-          {/* On desktop the permanent sidebar already carries the logo, so the
-              greeting header only shows it on phones (avoids a double logo). */}
-          {!wide && <BrandLogo white height={30} style={{ marginRight: 12 }} />}
           <View style={{ flex: 1 }}>
             <Text style={styles.greetingTime}>{greeting} 👋</Text>
             <Text style={styles.hi}>{user?.name ?? ""}</Text>
