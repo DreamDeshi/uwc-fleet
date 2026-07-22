@@ -39,6 +39,7 @@
     "expo-location": "~19.0.8",
     "expo-notifications": "~0.32.17",
     "expo-status-bar": "~3.0.9",
+    "expo-task-manager": "~14.0.9",
     "i18next": "^24.2.0",
     "leaflet": "^1.9.4",
     "react": "19.1.0",

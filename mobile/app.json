@@ -29,6 +29,9 @@
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
         "android.permission.RECORD_AUDIO"
       ],
       "config": {
@@ -42,7 +45,11 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "UWC Trucking uses your location to show the live position of your truck to dispatch while you are on an active delivery."
+          "locationWhenInUsePermission": "UWC Trucking uses your location to show the live position of your truck to dispatch while you are on an active delivery.",
+          "locationAlwaysAndWhenInUsePermission": "UWC Trucking keeps sharing your truck's location with dispatch for the whole delivery — even when the app is closed or your screen is locked — and stops the moment the trip ends.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true,
+          "isIosBackgroundLocationEnabled": true
         }
       ],
       [

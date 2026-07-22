@@ -7,6 +7,7 @@ import { ApiError } from "../lib/apiError";
 import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
+import { inactiveTripIds } from "../lib/locationSelfHeal";
 
 const router = Router();
 
@@ -97,9 +98,15 @@ router.post(
     const tripIds = [...new Set(points.map((p) => p.trip_id))];
     const trips = await prisma.trip.findMany({
       where: { id: { in: tripIds } },
-      select: { id: true, driver_id: true },
+      select: { id: true, driver_id: true, status: true },
     });
     const ownByDriver = new Map(trips.map((t) => [t.id, t.driver_id === driverId]));
+    // Trips no longer in_progress — the phone's background task uses this to
+    // self-stop a trip that ended while the app was closed (e.g. an admin
+    // cancelled it). We still ACCEPT the points below (an offline backlog for a
+    // just-completed trip must not be lost); this only tells the client to stop
+    // capturing NEW fixes for these trips.
+    const inactive = inactiveTripIds(trips);
 
     for (const id of tripIds) {
       if (!ownByDriver.has(id)) {
@@ -125,7 +132,7 @@ router.post(
       })),
     });
 
-    res.status(201).json({ accepted: points.length });
+    res.status(201).json({ accepted: points.length, inactive_trip_ids: inactive });
   } catch (err) {
     next(err);
   }

@@ -5,4 +5,8 @@
 import { registerRootComponent } from "expo";
 import App from "./App";
 
+// Register the background-location task at startup, BEFORE the OS can fire it in
+// a headless (app-closed) launch. Importing the module runs its defineTask().
+import "./src/lib/backgroundLocation";
+
 registerRootComponent(App);

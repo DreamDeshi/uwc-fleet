@@ -2,14 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import * as Location from "expo-location";
 import NetInfo from "@react-native-community/netinfo";
-import { api } from "../services/api";
-import {
-  enqueueLocation,
-  getQueuedLocations,
-  getQueuedCount,
-  removeLocations,
-  QueuedPoint,
-} from "../lib/locationQueue";
+import { enqueueLocation, getQueuedCount, QueuedPoint } from "../lib/locationQueue";
+import { flushQueuedLocations } from "../lib/locationFlush";
 import { LatLng } from "../lib/geo";
 import { trackingGate } from "../lib/gpsTracking";
 
@@ -28,62 +22,64 @@ export interface TripLocationState {
 // Drives GPS tracking for one active trip. Only ever captures when the trip is
 // active (`enabled`) AND the driver has consented (`consented`) — the privacy
 // rule (see lib/gpsTracking). While active it:
-//   1. captures the phone's position every 30s (foreground only — a JS timer),
+//   1. captures the phone's position every 30s (a JS timer — foreground only),
 //   2. appends it to the durable offline queue,
 //   3. flushes the queue to POST /locations whenever the network allows.
 // On reconnect (NetInfo) or when the app returns to foreground, it flushes
 // immediately so a backlog built up with no signal goes out right away.
+//
+// `backgroundOwnsCapture` — when the OS-driven background task (useBackground-
+// Tracking) is running, IT owns capture (foreground AND background). This hook
+// then stands down its own enqueue so the same fix isn't posted twice; it still
+// refreshes the "you are here" dot and the queued/online badge from the shared
+// queue, so the on-screen UI stays live.
+//
 // `retryNonce` — bump it (from the badge's "tap to enable") to re-request a
 // permission that was previously denied without changing consent.
 export function useTripLocation(
   tripId: string,
   enabled: boolean,
   consented: boolean,
-  retryNonce = 0
+  retryNonce = 0,
+  backgroundOwnsCapture = false
 ): TripLocationState {
   const [status, setStatus] = useState<TrackingStatus>("idle");
   const [current, setCurrent] = useState<LatLng | null>(null);
   const [queued, setQueued] = useState(0);
   const [online, setOnline] = useState(true);
 
-  // A lock so a slow flush triggered by the 30s tick can't overlap with one
-  // triggered by a reconnect event (which would double-send the same points).
-  const flushing = useRef(false);
+  // Live mirror of backgroundOwnsCapture for the tick closures (which are
+  // created once via useRef but must react to it changing).
+  const bgOwns = useRef(backgroundOwnsCapture);
+  bgOwns.current = backgroundOwnsCapture;
 
   // Send every queued point to the server, then drop exactly what was accepted.
-  // On any network error we keep the queue and try again on the next trigger.
+  // Shared with the background task so the offline/batching behaviour is identical.
   const flush = useRef(async () => {
-    if (flushing.current) return;
-    flushing.current = true;
-    try {
-      const points = await getQueuedLocations();
-      if (points.length > 0) {
-        await api.post("/locations", { points });
-        await removeLocations(points);
-      }
-      setQueued(await getQueuedCount());
-    } catch {
-      // offline or server error — leave the queue intact for the next attempt
-      setQueued(await getQueuedCount());
-    } finally {
-      flushing.current = false;
-    }
+    const res = await flushQueuedLocations();
+    setOnline(true);
+    setQueued(res.count);
   });
 
-  // Capture one GPS reading, queue it, then attempt a flush.
+  // Capture one GPS reading, queue it (unless the background task already is),
+  // then attempt a flush.
   const tick = useRef(async () => {
     try {
       const pos = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
-      const point: QueuedPoint = {
-        trip_id: tripId,
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude,
-        recorded_at: new Date(pos.timestamp).toISOString(),
-      };
-      setCurrent({ latitude: point.latitude, longitude: point.longitude });
-      await enqueueLocation(point);
+      setCurrent({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+      // When the background task owns capture, DON'T enqueue here — it already
+      // did, and a second point would double-post. We still update the dot above.
+      if (!bgOwns.current) {
+        const point: QueuedPoint = {
+          trip_id: tripId,
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          recorded_at: new Date(pos.timestamp).toISOString(),
+        };
+        await enqueueLocation(point);
+      }
       setQueued(await getQueuedCount());
     } catch {
       // a single failed GPS read is fine — we just try again next interval
@@ -139,7 +135,7 @@ export function useTripLocation(
       netSub();
       appSub.remove();
     };
-  }, [enabled, tripId, consented, retryNonce]);
+  }, [enabled, tripId, consented, retryNonce, backgroundOwnsCapture]);
 
   return { status, current, queued, online };
 }

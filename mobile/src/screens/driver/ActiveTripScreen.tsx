@@ -17,6 +17,8 @@ import {
 } from "../../hooks/queries";
 import { capturePodPhoto, toDurablePhotoUri } from "../../lib/photo";
 import { useTripLocation, TripLocationState } from "../../hooks/useTripLocation";
+import { useBackgroundTracking } from "../../hooks/useBackgroundTracking";
+import { stopBackgroundTracking } from "../../lib/backgroundLocation";
 import { getGpsConsent, setGpsConsent, type GpsConsent } from "../../lib/gpsConsent";
 import { useToast } from "../../components/Toast";
 import { apiErrorCode, apiErrorMessage, isNetworkError } from "../../services/api";
@@ -97,14 +99,27 @@ export function ActiveTripScreen() {
     setShowGpsConsent(false);
   };
 
-  // Phase 5: track this phone's GPS while the trip is active AND consented, and
-  // fetch the real road path. Both hooks run unconditionally (before the early
-  // returns below) to keep hook order stable across renders.
-  const tracking = useTripLocation(
+  // Track this phone's GPS while the trip is active AND consented, and fetch the
+  // real road path. All hooks run unconditionally (before the early returns
+  // below) to keep hook order stable across renders.
+  //
+  // Background tracking (OS-driven, survives the app being closed/locked) owns
+  // capture whenever "Allow all the time" is granted; the foreground hook then
+  // stands down its own capture (bg.backgroundActive) and just drives the UI.
+  // If background is denied, backgroundActive stays false and the foreground
+  // path runs exactly as before — the fallback.
+  const bg = useBackgroundTracking(
     params.tripId,
     trip?.status === "in_progress",
     gpsConsented,
     gpsRetry
+  );
+  const tracking = useTripLocation(
+    params.tripId,
+    trip?.status === "in_progress",
+    gpsConsented,
+    gpsRetry,
+    bg.backgroundActive
   );
   const { data: route } = useTripRoute(params.tripId, Boolean(trip));
 
@@ -324,6 +339,10 @@ export function ActiveTripScreen() {
         // gate, 16 Jul 2026): its incentive is PROPOSED, shown to the driver as
         // "awaiting approval", and only paid once an admin approves the POD.
         if (updated.status === "pending_approval") {
+          // Trip finished — stop background tracking immediately (the reactive
+          // hook also stops once the trip refetches, but this makes it prompt so
+          // we never keep the GPS service alive past the last delivery).
+          void stopBackgroundTracking();
           setEarned(updated.incentive_earned);
         } else {
           toast(t("trip.toastDelivered"), "success");
@@ -481,15 +500,19 @@ export function ActiveTripScreen() {
             <Text style={styles.modalTitle}>{t("trip.gpsConsentTitle")}</Text>
             <Text style={styles.gpsConsentBody}>{t("trip.gpsConsentBody")}</Text>
             <View style={styles.gpsPoints}>
-              {[t("trip.gpsPointActive"), t("trip.gpsPointForeground"), t("trip.gpsPointDispatch")].map(
-                (line) => (
-                  <View key={line} style={styles.gpsPointRow}>
-                    <Ionicons name="checkmark-circle" size={17} color={colors.green} />
-                    <Text style={styles.gpsPointText}>{line}</Text>
-                  </View>
-                )
-              )}
+              {[
+                t("trip.gpsPointActive"),
+                t("trip.gpsPointForeground"),
+                t("trip.gpsPointNotification"),
+                t("trip.gpsPointDispatch"),
+              ].map((line) => (
+                <View key={line} style={styles.gpsPointRow}>
+                  <Ionicons name="checkmark-circle" size={17} color={colors.green} />
+                  <Text style={styles.gpsPointText}>{line}</Text>
+                </View>
+              ))}
             </View>
+            <Text style={styles.gpsBatteryHint}>{t("trip.gpsBatteryHint")}</Text>
             <Button
               title={t("trip.gpsEnable")}
               size="xl"
@@ -800,6 +823,7 @@ const styles = StyleSheet.create({
   gpsPoints: { alignSelf: "stretch", gap: 10, marginTop: 16 },
   gpsPointRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   gpsPointText: { flex: 1, fontSize: 14, fontWeight: "600", color: colors.navy },
+  gpsBatteryHint: { alignSelf: "stretch", fontSize: 12, color: colors.textFaint, lineHeight: 17, marginTop: 14 },
   gpsNotNow: { fontSize: 15, fontWeight: "700", color: colors.textMuted },
 
   sheetContent: { paddingHorizontal: 16, paddingBottom: 40 },
