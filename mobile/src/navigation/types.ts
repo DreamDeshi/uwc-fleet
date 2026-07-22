@@ -37,7 +37,10 @@ export type RequestorTabParamList = {
 export type RequestorStackParamList = {
   Tabs: NavigatorScreenParams<RequestorTabParamList>;
   BookingDetail: { tripId: string };
-  // The booking form (same component as the NewBooking tab) pushed in EDIT
-  // mode over a still-pending booking's detail screen.
+  // Create a booking — pushed over the tabs now that New Booking is no longer
+  // its own bottom-nav tab (opened from the Home CTA and the Bookings "+").
+  NewBooking: undefined;
+  // The booking form (same component) pushed in EDIT mode over a still-pending
+  // booking's detail screen.
   EditBooking: { tripId: string };
 };

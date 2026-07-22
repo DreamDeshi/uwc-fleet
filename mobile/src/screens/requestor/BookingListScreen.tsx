@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { useNavigation, useRoute, type RouteProp, type CompositeNavigationProp } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
@@ -55,8 +56,20 @@ export function BookingListScreen() {
       <Header
         title={t("tabs.bookings")}
         right={
-          <View style={styles.countPill}>
-            <Text style={styles.countText}>{t("history.tripsCount", { count: trips?.length ?? 0 })}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <View style={styles.countPill}>
+              <Text style={styles.countText}>{t("history.tripsCount", { count: trips?.length ?? 0 })}</Text>
+            </View>
+            {/* New Booking moved off the tab bar — this "+" and the Home hero CTA
+                are the two entry points into the booking form. */}
+            <TouchableOpacity
+              onPress={() => navigation.navigate("NewBooking")}
+              accessibilityLabel={t("tabs.newBooking")}
+              hitSlop={8}
+              style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" }}
+            >
+              <Ionicons name="add" size={24} color={colors.white} />
+            </TouchableOpacity>
           </View>
         }
       />

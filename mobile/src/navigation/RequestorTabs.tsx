@@ -15,7 +15,6 @@ const TAB_BAR_STYLE = {
   paddingBottom: Platform.OS === "web" ? 16 : 8,
 } as const;
 import { RequestorDashboardScreen } from "../screens/requestor/RequestorDashboardScreen";
-import { BookingFormScreen } from "../screens/requestor/BookingFormScreen";
 import { BookingListScreen } from "../screens/requestor/BookingListScreen";
 import { AnalyticsScreen } from "../screens/requestor/AnalyticsScreen";
 import { ProfileScreen } from "../screens/shared/ProfileScreen";
@@ -40,16 +39,6 @@ export function RequestorTabs() {
         options={{
           title: t("tabs.home"),
           tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
-        }}
-      />
-      <Tab.Screen
-        name="NewBooking"
-        component={BookingFormScreen}
-        options={{
-          title: t("tabs.newBooking"),
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="add-circle" size={size + 4} color={color} />
-          ),
         }}
       />
       <Tab.Screen

@@ -16,9 +16,12 @@ export function RequestorStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Tabs" component={RequestorShell} />
       <Stack.Screen name="BookingDetail" component={BookingDetailScreen} />
-      {/* Same component as the NewBooking tab; the tripId param flips it into
-          edit mode (pending bookings only — the detail screen gates the button,
-          the server enforces it). */}
+      {/* New Booking — no longer a bottom-nav tab; pushed over the tabs from the
+          Home hero CTA and the Bookings "+". Same form component as EditBooking. */}
+      <Stack.Screen name="NewBooking" component={BookingFormScreen} />
+      {/* Same component as NewBooking; the tripId param flips it into edit mode
+          (pending bookings only — the detail screen gates the button, the server
+          enforces it). */}
       <Stack.Screen name="EditBooking" component={BookingFormScreen} />
     </Stack.Navigator>
   );
