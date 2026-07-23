@@ -7,6 +7,9 @@
     "api",
     "mobile"
   ],
+  "overrides": {
+    "expo-font": "~14.0.12"
+  },
   "scripts": {
     "dev:api": "npm run dev --workspace=api",
     "seed": "npm run seed --workspace=api",
