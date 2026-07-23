@@ -111,7 +111,7 @@ function AdminDrawerContent(props: DrawerContentComponentProps) {
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + 26, paddingBottom: insets.bottom + 16, flexGrow: 1 }}>
         {/* Brand mark (proper noun — not translated) */}
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingBottom: 20 }}>
-          <BrandLogo white height={42} />
+          <BrandLogo white mark height={42} />
           <View>
             <Text style={{ fontSize: 15, fontWeight: "800", color: "#fff", letterSpacing: 0.4 }}>UWC TRUCKING</Text>
             <Text style={{ fontSize: 10.5, color: colors.yellow, fontWeight: "700", letterSpacing: 1.8 }}>FLEET MANAGEMENT</Text>

@@ -87,7 +87,7 @@ export function AdminHomeScreen() {
       {/* Greeting header — the requestor/driver home header, admin-flavoured. */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.headerTop}>
-          <BrandLogo white height={30} style={{ marginRight: 12 }} />
+          <BrandLogo white mark height={30} style={{ marginRight: 12 }} />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.greetingTime}>{greeting} 👋</Text>
             <Text numberOfLines={1} style={styles.hi}>{user?.name ?? ""}</Text>

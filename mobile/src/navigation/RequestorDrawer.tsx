@@ -58,7 +58,7 @@ function RequestorSidebar(props: DrawerContentComponentProps) {
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + 26, paddingBottom: insets.bottom + 16, flexGrow: 1 }}>
         {/* Brand mark (proper noun — not translated) */}
         <View style={styles.brand}>
-          <BrandLogo white height={42} />
+          <BrandLogo white mark height={42} />
           <View>
             <Text style={styles.brandName}>UWC TRUCKING</Text>
             <Text style={styles.brandSub}>FLEET MANAGEMENT</Text>

@@ -56,7 +56,7 @@ export function AdminMobileHeader({
             <Ionicons name="arrow-back" size={20} color="#fff" />
           </Pressable>
         )}
-        {showLogo && <BrandLogo white height={24} style={{ marginRight: 10 }} />}
+        {showLogo && <BrandLogo white mark height={24} style={{ marginRight: 10 }} />}
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text numberOfLines={1} style={{ fontSize: 17, fontWeight: "800", color: "#fff", letterSpacing: -0.2 }}>
             {title}
