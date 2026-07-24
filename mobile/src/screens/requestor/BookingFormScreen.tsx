@@ -34,7 +34,7 @@ import { NewConsigneeModal } from "../../components/NewConsigneeModal";
 import { LoadingState } from "../../components/States";
 import { useToast } from "../../components/Toast";
 import { pickDocumentImage, PickedPhoto } from "../../lib/photo";
-import { palletEquivalents, type BookablePalletSize } from "../../lib/pallets";
+import { palletEquivalents, partitionEditableCargo, type BookablePalletSize } from "../../lib/pallets";
 import {
   loadTemplates,
   persistTemplates,
@@ -169,6 +169,11 @@ export function BookingFormScreen() {
   // their +/− did nothing (updateQty's .map can't grow an array), and
   // buildCargo dropped them silently because `undefined > 0` is false.
   const [palletQtys, setPalletQtys] = useState<number[]>(() => PALLET_SIZES.map(() => 0));
+  // Deprecated (1×1/1×2) lines carried in from a historical booking on edit. They
+  // are NOT selectable/editable via the steppers — kept read-only and re-appended
+  // verbatim on save so an unrelated edit can never silently drop them. Removal is
+  // possible only via a deliberate per-row action (see the legacy list render).
+  const [legacyCargo, setLegacyCargo] = useState<{ pallet_type: string; quantity: number }[]>([]);
   const [cartonQty, setCartonQty] = useState(0);
   const [othersText, setOthersText] = useState("");
   // Optional 4×4-pallet estimate for carton/Others cargo (blank → manual dispatch).
@@ -230,12 +235,16 @@ export function BookingFormScreen() {
     []
   );
 
-  const totalPallets = palletQtys.reduce((a, b) => a + b, 0);
+  const legacyPallets = legacyCargo.reduce((a, c) => a + c.quantity, 0);
+  // totalPallets counts the preserved legacy lines too, so a legacy-only edit is
+  // "set" and the Confirm summary/count include them.
+  const totalPallets = palletQtys.reduce((a, b) => a + b, 0) + legacyPallets;
   // Capacity is judged in 4×4-equivalents (mirrors the server): 6× 5×10 is
   // 18.75 slots (warn!), 16× 2×2 only 4 (don't).
-  const totalEquivalents = palletEquivalents(
-    PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] }))
-  );
+  const totalEquivalents = palletEquivalents([
+    ...PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] })),
+    ...legacyCargo, // legacy lines still occupy real slots on the server
+  ]);
 
   const isLastStep = step === STEPS.length - 1;
 
@@ -260,6 +269,7 @@ export function BookingFormScreen() {
     setStops([]);
     setCargoType("pallet");
     setPalletQtys(PALLET_SIZES.map(() => 0));
+    setLegacyCargo([]);
     setCartonQty(0);
     setOthersText("");
     setSizeEstimate("");
@@ -296,6 +306,10 @@ export function BookingFormScreen() {
     const carton = lines.find((l) => l.pallet_type === "carton");
     const estLine = custom ?? carton;
     setSizeEstimate(estLine?.estimated_pallets != null ? String(estLine.estimated_pallets) : "");
+    // Preserve any deprecated (1×1/1×2) lines read-only; only bookable sizes map
+    // onto the steppers, so without this they would be dropped on the next save.
+    const { legacy } = partitionEditableCargo(lines);
+    setLegacyCargo(legacy.map((l) => ({ pallet_type: l.pallet_type, quantity: l.quantity })));
     if (custom) {
       setCargoType("others");
       setOthersText(custom.custom_size ?? "");
@@ -318,6 +332,7 @@ export function BookingFormScreen() {
     setStops(tpl.stops ?? []);
     setCargoType(tpl.cargoType);
     setPalletQtys(palletQtysFor(tpl, PALLET_SIZES));
+    setLegacyCargo([]); // templates only carry current bookable sizes
     setCartonQty(tpl.cartonQty ?? 0);
     setOthersText(tpl.othersText ?? "");
     setSizeEstimate(tpl.sizeEstimate ?? "");
@@ -392,9 +407,12 @@ export function BookingFormScreen() {
     if (cargoType === "others") {
       return [{ pallet_type: "custom", quantity: 1, custom_size: othersText.trim(), estimated_pallets: estimate, remark: remarks || undefined }];
     }
-    return PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] }))
-      .filter((c) => c.quantity > 0)
-      .map((c, idx) => (idx === 0 && remarks ? { ...c, remark: remarks } : c));
+    const built = PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] })).filter(
+      (c) => c.quantity > 0
+    );
+    // Re-append the preserved legacy (1×1/1×2) lines verbatim so an edit never
+    // drops them. Remark rides the first line of the combined list.
+    return [...built, ...legacyCargo].map((c, idx) => (idx === 0 && remarks ? { ...c, remark: remarks } : c));
   };
 
   const onNext = async () => {
@@ -529,6 +547,8 @@ export function BookingFormScreen() {
           setOthersText={setOthersText}
           sizeEstimate={sizeEstimate}
           setSizeEstimate={setSizeEstimate}
+          legacyCargo={legacyCargo}
+          setLegacyCargo={setLegacyCargo}
           totalPallets={totalPallets}
           totalEquivalents={totalEquivalents}
         />
@@ -927,6 +947,8 @@ function StepWhat({
   setOthersText,
   sizeEstimate,
   setSizeEstimate,
+  legacyCargo,
+  setLegacyCargo,
   totalPallets,
   totalEquivalents,
 }: {
@@ -940,6 +962,8 @@ function StepWhat({
   setOthersText: (v: string) => void;
   sizeEstimate: string;
   setSizeEstimate: (v: string) => void;
+  legacyCargo: { pallet_type: string; quantity: number }[];
+  setLegacyCargo: React.Dispatch<React.SetStateAction<{ pallet_type: string; quantity: number }[]>>;
   totalPallets: number;
   totalEquivalents: number;
 }) {
@@ -1001,6 +1025,30 @@ function StepWhat({
               </View>
             ))}
           </View>
+
+          {/* Preserved legacy cargo (deprecated 1×1/1×2 from a historical booking).
+              Read-only — no steppers, so quantities cannot be changed and cannot be
+              dropped accidentally; removal is a deliberate per-row action. */}
+          {legacyCargo.length > 0 && (
+            <>
+              <Text style={styles.legacyLabel}>{t("booking.legacyCargoLabel")}</Text>
+              <View style={styles.palletList}>
+                {legacyCargo.map((line, i) => (
+                  <View key={`${line.pallet_type}-${i}`} style={[styles.palletRow, i < legacyCargo.length - 1 && styles.palletDivider]}>
+                    <Text style={styles.palletSize}>{t("booking.legacyCargoRow", { size: line.pallet_type, qty: line.quantity })}</Text>
+                    <TouchableOpacity
+                      style={styles.legacyRemoveBtn}
+                      accessibilityLabel={t("booking.legacyCargoRemove", { size: line.pallet_type })}
+                      onPress={() => oncePerTap(() => setLegacyCargo((prev) => prev.filter((_, idx) => idx !== i)))}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#b91c1c" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+
           <View style={styles.totalPill}>
             <Ionicons name="cube" size={16} color={colors.blue} />
             <Text style={styles.totalPillText}>{t("booking.totalPallets", { count: totalPallets })}</Text>
@@ -1349,6 +1397,8 @@ const styles = StyleSheet.create({
   cargoTabActive: { borderColor: colors.yellow, backgroundColor: colors.yellow },
   cargoTabText: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
   cargoSizeHint: { fontSize: 13, color: colors.textMuted, lineHeight: 17, marginBottom: 8 },
+  legacyLabel: { fontSize: 12, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 14, marginBottom: 6 },
+  legacyRemoveBtn: { padding: 8, borderRadius: radius.sm },
   palletList: { backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, overflow: "hidden" },
   palletRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14 },
   palletDivider: { borderBottomWidth: 1, borderBottomColor: colors.bg },

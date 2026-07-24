@@ -38,9 +38,34 @@ export const CARGO_PALLET_TYPES = [...PALLET_SIZES, ...UNSIZED_CARGO_TYPES] as c
  *  ONLY so existing historical records display/convert unchanged. */
 export const DEPRECATED_PALLET_SIZES = ["1×1", "1×2"] as const;
 
-/** True for a footprint no longer offered on new bookings (kept for legacy display). */
+/** Canonicalise a pallet_type's SPELLING (ASCII "1x1"/"1 X 1" → "1×1") — mirrors
+ *  api/src/lib/pallets.ts normalizePalletType. Separator only, not a remap. */
+export function normalizePalletType(raw: string): string {
+  return raw.replace(/\s+/g, "").replace(/[xX]/g, "×");
+}
+
+/** True for a footprint no longer offered on new bookings (kept for legacy
+ *  display). Normalises the separator first so "1x1" and "1×1" agree. */
 export function isDeprecatedPalletSize(size: string): boolean {
-  return (DEPRECATED_PALLET_SIZES as readonly string[]).includes(size);
+  return (DEPRECATED_PALLET_SIZES as readonly string[]).includes(normalizePalletType(size));
+}
+
+/**
+ * Split a booking's loaded cargo lines into the CURRENTLY-BOOKABLE lines (fed to
+ * the size steppers) and the DEPRECATED "legacy" lines (1×1/1×2) that the edit
+ * form must preserve read-only. Keeping them separate is what stops an edit from
+ * silently dropping a legacy line: the form rebuilds bookable lines from the
+ * steppers and re-appends `legacy` verbatim on save. Generic over the line shape
+ * so it works with the API's cargo_details rows directly. */
+export function partitionEditableCargo<T extends { pallet_type: string }>(
+  lines: readonly T[]
+): { bookable: T[]; legacy: T[] } {
+  const bookable: T[] = [];
+  const legacy: T[] = [];
+  for (const line of lines) {
+    (isDeprecatedPalletSize(line.pallet_type) ? legacy : bookable).push(line);
+  }
+  return { bookable, legacy };
 }
 
 /** The footprints a NEW booking may select — PALLET_SIZES minus the deprecated

@@ -64,7 +64,13 @@ import { sendPushNotifications } from "../lib/pushNotifications";
 import { signTrackingToken } from "../lib/trackingToken";
 import { getDispatchMode } from "../lib/settings";
 import { autoDispatchTrip } from "../services/dispatchEngine";
-import { palletEquivalents, BOOKABLE_CARGO_TYPES, normalizePalletType } from "../lib/pallets";
+import {
+  palletEquivalents,
+  BOOKABLE_CARGO_TYPES,
+  CARGO_PALLET_TYPES,
+  DEPRECATED_PALLET_SIZES,
+  normalizePalletType,
+} from "../lib/pallets";
 import { recordTripEvent } from "../lib/tripHistory";
 import { buildTripTimeline } from "../lib/tripTimeline";
 import {
@@ -175,6 +181,34 @@ export const bookableConsigneesWhere = (ids: string[]) => ({
 });
 
 // Exported for unit tests (tests/tripValidation.test.ts).
+/**
+ * One cargo line, parameterised by the accepted pallet_type VOCABULARY. Normalise
+ * the SPELLING first (ASCII "5x10"/"5 x 10" → "5×10", the workbook's own
+ * notation), THEN enum — so the spec's spelling round-trips and stores canonical.
+ *
+ * NEW bookings pass BOOKABLE_CARGO_TYPES (Q1, R1 2026-07-24: 1×1/1×2 removed —
+ * they are boxes, not pallets). EDITS of historical bookings pass the full
+ * CARGO_PALLET_TYPES so an existing 1×1/1×2 line still PARSES; a separate runtime
+ * guard (deprecatedCargoViolations) then blocks introducing or increasing a
+ * deprecated size on an edit. Either way the factor/capacity math is unchanged.
+ */
+export function cargoLineSchema(types: readonly [string, ...string[]]) {
+  return z.object({
+    pallet_type: z.preprocess(
+      (v) => (typeof v === "string" ? normalizePalletType(v) : v),
+      z.enum(types)
+    ),
+    quantity: z.number().int().min(1),
+    cartons: z.number().int().min(0).optional(),
+    custom_size: z.string().optional(),
+    // Optional requestor estimate of 4×4-pallet space for carton/"Others" cargo
+    // (which has no footprint by conversion). Given → auto-dispatch sizes on it;
+    // blank → the booking routes to manual assignment.
+    estimated_pallets: z.number().int().min(1).optional(),
+    remark: z.string().optional(),
+  });
+}
+
 export const createTripSchema = z.object({
   route_type_id: z.string().min(1),
   pickup_datetime: z.coerce
@@ -191,32 +225,7 @@ export const createTripSchema = z.object({
       })
     )
     .min(1, "At least one stop is required."),
-  cargo_details: z
-    .array(
-      z.object({
-        // BOOKABLE vocabulary (Q1, R1 2026-07-24): the pallet footprints a new
-        // booking may select — 1×1/1×2 removed (they are boxes, not pallets) —
-        // plus carton/"Others". Normalise the SPELLING first (ASCII "5x10"/"5 x
-        // 10" → "5×10", the workbook's own notation), THEN enum the VOCABULARY —
-        // so the spec's spelling round-trips and stores canonical, while a
-        // now-deprecated ("1×1") or unknown ("6x6") footprint 400s instead of
-        // silently under-counting a pallet into an overloaded truck. Historical
-        // rows keep their factors via the full CARGO_PALLET_TYPES/PALLET_FACTORS.
-        pallet_type: z.preprocess(
-          (v) => (typeof v === "string" ? normalizePalletType(v) : v),
-          z.enum(BOOKABLE_CARGO_TYPES)
-        ),
-        quantity: z.number().int().min(1),
-        cartons: z.number().int().min(0).optional(),
-        custom_size: z.string().optional(),
-        // Optional requestor estimate of 4×4-pallet space for carton/"Others"
-        // cargo (which has no footprint by conversion). Given → auto-dispatch
-        // sizes on it; blank → the booking routes to manual assignment.
-        estimated_pallets: z.number().int().min(1).optional(),
-        remark: z.string().optional(),
-      })
-    )
-    .min(1, "At least one cargo line is required."),
+  cargo_details: z.array(cargoLineSchema(BOOKABLE_CARGO_TYPES)).min(1, "At least one cargo line is required."),
 });
 
 router.post(
@@ -348,10 +357,70 @@ export const updateTripSchema = z.object({
   route_type_id: z.string().min(1),
   pickup_datetime: z.coerce.date(),
   stops: createTripSchema.shape.stops,
-  cargo_details: createTripSchema.shape.cargo_details,
+  // Full/legacy vocabulary so a historical 1×1/1×2 line still PARSES on edit (the
+  // create schema's BOOKABLE enum would 400 the whole update). Optional: when the
+  // client omits cargo_details entirely, the handler preserves existing cargo
+  // unchanged. Introducing/increasing a deprecated size is blocked at runtime by
+  // deprecatedCargoViolations, not by the parser.
+  cargo_details: z
+    .array(cargoLineSchema(CARGO_PALLET_TYPES))
+    .min(1, "At least one cargo line is required.")
+    .optional(),
 });
 
 type UpdateTripInput = z.infer<typeof updateTripSchema>;
+
+/**
+ * A trip-edit's cargo, in the plain shape summarizeTripChanges compares (cargo is
+ * always resolved to a concrete array by the handler — either the submitted lines
+ * or, when omitted, the existing ones).
+ */
+export interface TripEditInput {
+  route_type_id: string;
+  pickup_datetime: Date;
+  stops: { sequence?: number | null; consignee_id: string }[];
+  cargo_details: {
+    pallet_type: string;
+    quantity: number;
+    cartons?: number | null;
+    custom_size?: string | null;
+    estimated_pallets?: number | null;
+    remark?: string | null;
+  }[];
+}
+
+/**
+ * Deprecated-size edit guard (Q1 legacy-edit fix). A deprecated footprint (1×1 /
+ * 1×2) may only be PRESERVED, REDUCED or REMOVED on an edit — never introduced or
+ * increased. Compares NORMALISED aggregate quantities (so "1x1"/"1×1" collapse,
+ * and multiple lines of the same size sum) between the stored booking and the
+ * submitted cargo, and returns every deprecated size whose total went UP (a new
+ * type is existing 0 → next > 0; an increase is next > existing). Empty = allowed.
+ * Pure — unit-tested; the handler throws a 400 when it returns anything.
+ */
+export function deprecatedCargoViolations(
+  existing: { pallet_type: string; quantity: number }[],
+  next: { pallet_type: string; quantity: number }[]
+): { pallet_type: string; existing: number; next: number }[] {
+  const deprecated = new Set<string>(DEPRECATED_PALLET_SIZES as readonly string[]);
+  const aggregate = (lines: { pallet_type: string; quantity: number }[]) => {
+    const totals = new Map<string, number>();
+    for (const l of lines) {
+      const key = normalizePalletType(l.pallet_type);
+      if (!deprecated.has(key)) continue;
+      totals.set(key, (totals.get(key) ?? 0) + l.quantity);
+    }
+    return totals;
+  };
+  const existingTotals = aggregate(existing);
+  const nextTotals = aggregate(next);
+  const violations: { pallet_type: string; existing: number; next: number }[] = [];
+  for (const [size, nextQty] of nextTotals) {
+    const existingQty = existingTotals.get(size) ?? 0;
+    if (nextQty > existingQty) violations.push({ pallet_type: size, existing: existingQty, next: nextQty });
+  }
+  return violations;
+}
 
 // Existing-trip slice summarizeTripChanges compares against (plain shape so the
 // helper stays pure and unit-testable without a DB).
@@ -377,7 +446,7 @@ export interface TripEditSnapshot {
  * (cargo-line remarks) are called out separately from real cargo changes
  * because that's how the requestor thinks of them. Exported for unit tests.
  */
-export function summarizeTripChanges(existing: TripEditSnapshot, next: UpdateTripInput): string | null {
+export function summarizeTripChanges(existing: TripEditSnapshot, next: TripEditInput): string | null {
   const changed: string[] = [];
 
   if (existing.route_type_id !== next.route_type_id) changed.push("route type");
@@ -393,7 +462,7 @@ export function summarizeTripChanges(existing: TripEditSnapshot, next: UpdateTri
 
   // Cargo compared line-by-line in order; remark-only differences report as
   // "notes", anything else as "cargo".
-  const cargoLine = (c: UpdateTripInput["cargo_details"][number] | TripEditSnapshot["cargo_details"][number]) =>
+  const cargoLine = (c: TripEditInput["cargo_details"][number] | TripEditSnapshot["cargo_details"][number]) =>
     [c.pallet_type, c.quantity, c.cartons ?? "", c.custom_size ?? "", c.estimated_pallets ?? ""].join("|");
   const remarkLine = (c: { remark?: string | null }) => c.remark ?? "";
   const sameCargo =
@@ -435,6 +504,35 @@ router.patch(
         );
       }
 
+      // Cargo is OPTIONAL on edit: when omitted, preserve the existing cargo
+      // unchanged (resolved from the stored rows). When present, it replaces the
+      // cargo — but only after the deprecated-size guard below.
+      const cargoProvided = cargo_details !== undefined;
+      const existingCargoInput = existing.cargo_details.map((c) => ({
+        pallet_type: c.pallet_type,
+        quantity: c.quantity,
+        cartons: c.cartons ?? undefined,
+        custom_size: c.custom_size ?? undefined,
+        estimated_pallets: c.estimated_pallets ?? undefined,
+        remark: c.remark ?? undefined,
+      }));
+      const effectiveCargo = cargoProvided ? cargo_details! : existingCargoInput;
+
+      // A deprecated footprint (1×1/1×2) may only be preserved/reduced/removed on
+      // an edit — never introduced or increased. Runs AFTER authorization (owner
+      // + pending) and BEFORE any write, comparing normalized aggregates.
+      if (cargoProvided) {
+        const violations = deprecatedCargoViolations(existing.cargo_details, cargo_details!);
+        if (violations.length > 0) {
+          const sizes = violations.map((v) => v.pallet_type).join(", ");
+          throw new ApiError(
+            400,
+            "DEPRECATED_CARGO_ADDED",
+            `${sizes} is no longer a bookable cargo size and cannot be added or increased. Existing quantities may only be kept or reduced.`
+          );
+        }
+      }
+
       // Same checks as create, against the NEW values.
       if (pickup_datetime.getTime() !== existing.pickup_datetime.getTime()) {
         if (pickup_datetime.getTime() < Date.now() - PICKUP_GRACE_MS) {
@@ -457,7 +555,7 @@ router.patch(
         );
       }
       if (!existing.is_external) {
-        const orderPallets = palletEquivalents(cargo_details);
+        const orderPallets = palletEquivalents(effectiveCargo);
         const largest = await prisma.truck.aggregate({ _max: { max_pallets: true } });
         const fleetMax = largest._max.max_pallets;
         if (fleetMax !== null && orderPallets > fleetMax) {
@@ -473,7 +571,7 @@ router.patch(
         route_type_id,
         pickup_datetime,
         stops,
-        cargo_details,
+        cargo_details: effectiveCargo,
       });
       if (changeNote === null) {
         // Nothing changed — don't write, don't audit, don't poke dispatch.
@@ -518,10 +616,14 @@ router.patch(
             sequence: s.sequence ?? idx + 1,
           })),
         });
-        await tx.cargoDetail.deleteMany({ where: { trip_id: id } });
-        await tx.cargoDetail.createMany({
-          data: cargo_details.map((c) => ({ ...c, trip_id: id })),
-        });
+        // Only rewrite cargo when the client actually submitted it; an omitted
+        // cargo_details preserves the existing rows untouched.
+        if (cargoProvided) {
+          await tx.cargoDetail.deleteMany({ where: { trip_id: id } });
+          await tx.cargoDetail.createMany({
+            data: cargo_details!.map((c) => ({ ...c, trip_id: id })),
+          });
+        }
         await tx.auditLog.create({
           data: { user_id: req.user!.id, action: "trip.updated", table_name: "Trip", record_id: id },
         });

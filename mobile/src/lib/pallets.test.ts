@@ -7,6 +7,7 @@ import {
   PALLET_SIZES,
   PALLET_FACTORS,
   isDeprecatedPalletSize,
+  partitionEditableCargo,
   palletEquivalents,
   palletFactor,
 } from "./pallets";
@@ -75,9 +76,11 @@ describe("pallet factors mirror the server", () => {
 
 // ── Q1 (CLIENT_ANSWERS_R1_2026-07-24): 1×1/1×2 removed from bookable sizes ────
 describe("Q1 — bookable vocabulary drops 1×1/1×2, mirrors the server", () => {
-  it("DEPRECATED_PALLET_SIZES matches the server", () => {
+  it("DEPRECATED_PALLET_SIZES matches the server (ASCII and × agree)", () => {
     expect([...DEPRECATED_PALLET_SIZES]).toEqual(["1×1", "1×2"]);
     expect(isDeprecatedPalletSize("1×2")).toBe(true);
+    expect(isDeprecatedPalletSize("1x1")).toBe(true); // ASCII normalises
+    expect(isDeprecatedPalletSize("1 X 2")).toBe(true);
     expect(isDeprecatedPalletSize("4×4")).toBe(false);
   });
 
@@ -98,6 +101,55 @@ describe("legacy display compatibility — historical 1×1/1×2 still convert", 
     expect(palletFactor("1×1")).toBe(0.0625);
     expect(palletFactor("1×2")).toBe(0.125);
     expect(palletEquivalents([{ pallet_type: "1×2", quantity: 4 }])).toBe(0.5);
+  });
+});
+
+// Edit-form legacy preservation (Q1 fix): the form must keep historical 1×1/1×2
+// lines read-only and re-append them verbatim, never silently dropping them.
+describe("partitionEditableCargo — legacy vs bookable split, round-trips", () => {
+  it("splits a legacy-only booking (all lines preserved as legacy)", () => {
+    const lines = [
+      { pallet_type: "1×1", quantity: 3 },
+      { pallet_type: "1×2", quantity: 1 },
+    ];
+    const { bookable, legacy } = partitionEditableCargo(lines);
+    expect(bookable).toEqual([]);
+    expect(legacy).toEqual(lines);
+    // Round-trip: rebuilt payload (no bookable steppers set) still carries legacy.
+    expect([...bookable, ...legacy]).toEqual(lines);
+  });
+
+  it("splits a MIXED booking and round-trips both current and legacy cargo", () => {
+    const lines = [
+      { pallet_type: "4×4", quantity: 2 },
+      { pallet_type: "1×1", quantity: 3 },
+      { pallet_type: "5×5", quantity: 1 },
+    ];
+    const { bookable, legacy } = partitionEditableCargo(lines);
+    expect(bookable).toEqual([
+      { pallet_type: "4×4", quantity: 2 },
+      { pallet_type: "5×5", quantity: 1 },
+    ]);
+    expect(legacy).toEqual([{ pallet_type: "1×1", quantity: 3 }]);
+    // Order-independent round-trip: every original line survives.
+    expect([...bookable, ...legacy].sort((a, b) => a.pallet_type.localeCompare(b.pallet_type))).toEqual(
+      [...lines].sort((a, b) => a.pallet_type.localeCompare(b.pallet_type))
+    );
+  });
+
+  it("classifies an ASCII-spelled legacy line consistently with the × form", () => {
+    const { bookable, legacy } = partitionEditableCargo([
+      { pallet_type: "4×4", quantity: 1 },
+      { pallet_type: "1x2", quantity: 2 }, // ASCII
+    ]);
+    expect(legacy).toEqual([{ pallet_type: "1x2", quantity: 2 }]); // preserved verbatim
+    expect(bookable).toEqual([{ pallet_type: "4×4", quantity: 1 }]);
+  });
+
+  it("carton/custom lines are NOT legacy (they go to the bookable side)", () => {
+    const { bookable, legacy } = partitionEditableCargo([{ pallet_type: "carton", quantity: 5 }]);
+    expect(legacy).toEqual([]);
+    expect(bookable).toEqual([{ pallet_type: "carton", quantity: 5 }]);
   });
 });
 
