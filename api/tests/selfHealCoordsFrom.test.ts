@@ -1,36 +1,30 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   ALGO,
+  DUMP_CLASSIFICATION,
   buildDump,
   validateDump,
   reconcileFromDump,
   applyHeals,
   DumpRejected,
   type Dump,
-  type HealDecision,
+  type HealInput,
   type Candidate,
   type WriteRow,
   type HealClient,
 } from "../scripts/self-heal-coords";
 
-// --from does NOT replay stored GPS — the dump holds only DECISIONS + counts.
-// It reconciles a saved decision against evidence recomputed FRESH from the DB.
-// These tests cover: the dump carries no raw fixes; the version/parameter gate;
-// the eligibility + drift reconciliation; and the fill-nulls-only full-pair
-// write guard. No live database — persistence takes an injected client.
+// --from does NOT replay stored GPS — the dump holds only DECISIONS + counts and
+// is CONFIDENTIAL operational data (no names, no PII, no raw fixes). It reconciles
+// a saved decision against evidence recomputed FRESH from the DB. These tests
+// cover: dump confidentiality; strict structural + version/parameter validation;
+// eligibility + drift reconciliation; and the fill-nulls-only full-pair write
+// guard. No live database — persistence takes an injected client.
 
 const BASE = { lat: 5.2, lng: 100.44 };
 
-function decision(over: Partial<HealDecision> = {}): HealDecision {
-  return {
-    consignee_id: "c1",
-    company_name: "ANON WIDGETS SDN BHD",
-    lat: BASE.lat,
-    lng: BASE.lng,
-    n_fixes: 3,
-    n_trips: 3,
-    ...over,
-  };
+function healInput(over: Partial<HealInput> = {}): HealInput {
+  return { consignee_id: "c1", lat: BASE.lat, lng: BASE.lng, n_fixes: 3, n_trips: 3, ...over };
 }
 
 function candidate(over: Partial<Candidate> = {}): Candidate {
@@ -47,14 +41,28 @@ function candidate(over: Partial<Candidate> = {}): Candidate {
   };
 }
 
-const validDump = (): Dump => buildDump([decision()], ALGO);
+const validDump = (): Dump => buildDump([healInput()], ALGO);
 
-describe("buildDump — decisions + counts only, NO raw fixes", () => {
-  it("records top-level metadata and every algorithm parameter", () => {
+// A structurally-valid raw heal object + a dump with arbitrary heals, for the
+// strict-validation cases (validateDump accepts `unknown`, so we pass raw objects).
+const rawHeal = (over: Record<string, unknown> = {}) => ({
+  consignee_id: "c1",
+  decision: "heal",
+  lat: BASE.lat,
+  lng: BASE.lng,
+  n_fixes: 3,
+  n_trips: 3,
+  ...over,
+});
+const withHeals = (heals: unknown[]): unknown => ({ ...validDump(), heals });
+
+describe("buildDump — CONFIDENTIAL decisions + counts only", () => {
+  it("records all top-level metadata, every parameter, and the confidentiality classification", () => {
     const d = validDump();
     expect(d.format_version).toBe(ALGO.format_version);
     expect(d.algorithm_version).toBe(ALGO.algorithm_version);
     expect(Number.isNaN(Date.parse(d.generated_at))).toBe(false);
+    expect(d.classification).toBe(DUMP_CLASSIFICATION);
     expect(d.window_min).toBe(ALGO.window_min);
     expect(d.radius_m).toBe(ALGO.radius_m);
     expect(d.min_fixes).toBe(ALGO.min_fixes);
@@ -62,30 +70,32 @@ describe("buildDump — decisions + counts only, NO raw fixes", () => {
     expect(d.from_tolerance_m).toBe(ALGO.from_tolerance_m);
   });
 
-  it("each heal has ONLY decision + count fields — no fixes / coordinates arrays", () => {
+  it("each heal has ONLY consignee_id + decision + centroid + counts — nothing else", () => {
     const d = validDump();
-    const heal = d.heals[0];
-    expect(Object.keys(heal).sort()).toEqual(
-      ["company_name", "consignee_id", "lat", "lng", "n_fixes", "n_trips"].sort(),
+    expect(Object.keys(d.heals[0]).sort()).toEqual(
+      ["consignee_id", "decision", "lat", "lng", "n_fixes", "n_trips"].sort(),
     );
-    // Belt-and-braces: nothing in the serialized dump smells like a raw GPS trace.
-    // (Note: "fixes" alone would collide with the min_fixes/n_fixes COUNT keys,
-    // so we match the raw-fix array key + per-fix fields instead.)
-    const json = JSON.stringify(d);
+    expect(d.heals[0].decision).toBe("heal");
+  });
+
+  it("PRIVACY: no company name, no unrelated consignee metadata, no raw fixes survive", () => {
+    // Feed buildDump an object polluted with names/PII/fixes; the projection drops all.
+    const dirty = {
+      ...healInput(),
+      company_name: "SECRET CUSTOMER SDN BHD",
+      address_1: "12 Jalan Rahsia",
+      phone: "0123456789",
+      fixes: [{ lat: 1, lng: 2, trip_id: "t", recorded_at: "2026-07-24" }],
+    } as unknown as HealInput;
+    const json = JSON.stringify(buildDump([dirty], ALGO));
+    expect(json).not.toContain("SECRET CUSTOMER");
+    expect(json).not.toContain("company_name");
+    expect(json).not.toContain("address");
+    expect(json).not.toContain("phone");
+    expect(json).not.toContain("Jalan Rahsia");
     expect(json).not.toContain('"fixes"');
     expect(json).not.toContain("trip_id");
     expect(json).not.toContain("recorded_at");
-    expect(json).not.toContain("gap_ms");
-  });
-
-  it("ignores any extra fields on the input decision (cannot leak fixes)", () => {
-    // Even if a caller hands buildDump an object with a stray `fixes` field,
-    // buildDump projects to the decision shape and drops it.
-    const dirty = { ...decision(), fixes: [{ lat: 1, lng: 2, trip_id: "t" }] } as unknown as HealDecision;
-    const d = buildDump([dirty], ALGO);
-    expect(JSON.stringify(d)).not.toContain('"fixes"');
-    expect(JSON.stringify(d)).not.toContain("trip_id");
-    expect((d.heals[0] as Record<string, unknown>).fixes).toBeUndefined();
   });
 });
 
@@ -113,6 +123,76 @@ describe("validateDump — version + parameter gate", () => {
     const d = { ...validDump(), [key]: value } as Dump;
     expect(() => validateDump(d)).toThrow(DumpRejected);
     expect(() => validateDump(d)).toThrow(new RegExp(key));
+  });
+});
+
+describe("validateDump — strict structural validation (rejects malformed dumps before any write)", () => {
+  it("rejects a non-object / array dump", () => {
+    expect(() => validateDump(null)).toThrow(/JSON object/);
+    expect(() => validateDump("nope")).toThrow(/JSON object/);
+    expect(() => validateDump([validDump()])).toThrow(/JSON object/);
+  });
+
+  it("rejects when heals is not an array", () => {
+    expect(() => validateDump({ ...validDump(), heals: "nope" })).toThrow(/heals must be an array/);
+  });
+
+  it("rejects a missing metadata field", () => {
+    const d: Record<string, unknown> = { ...validDump() };
+    delete d.radius_m;
+    expect(() => validateDump(d)).toThrow(/radius_m must be a finite number/);
+  });
+
+  it("rejects non-finite metadata (NaN / Infinity / string)", () => {
+    expect(() => validateDump({ ...validDump(), from_tolerance_m: NaN })).toThrow(/finite number/);
+    expect(() => validateDump({ ...validDump(), radius_m: Infinity })).toThrow(/finite number/);
+    expect(() => validateDump({ ...validDump(), window_min: "5" })).toThrow(/finite number/);
+  });
+
+  it("rejects an invalid generated_at timestamp", () => {
+    expect(() => validateDump({ ...validDump(), generated_at: "not-a-date" })).toThrow(/generated_at/);
+    expect(() => validateDump({ ...validDump(), generated_at: 123 })).toThrow(/generated_at/);
+  });
+
+  it("rejects a missing/blank classification", () => {
+    const d: Record<string, unknown> = { ...validDump() };
+    delete d.classification;
+    expect(() => validateDump(d)).toThrow(/classification/);
+    expect(() => validateDump({ ...validDump(), classification: "" })).toThrow(/classification/);
+  });
+
+  it("rejects a heal that is null / not an object", () => {
+    expect(() => validateDump(withHeals([null]))).toThrow(/each heal must be/);
+    expect(() => validateDump(withHeals(["x"]))).toThrow(/each heal must be/);
+  });
+
+  it("rejects an empty or non-string consignee_id", () => {
+    expect(() => validateDump(withHeals([rawHeal({ consignee_id: "" })]))).toThrow(/consignee_id/);
+    expect(() => validateDump(withHeals([rawHeal({ consignee_id: 5 })]))).toThrow(/consignee_id/);
+  });
+
+  it("rejects duplicate consignee_ids", () => {
+    expect(() => validateDump(withHeals([rawHeal(), rawHeal()]))).toThrow(/duplicate consignee_id/);
+  });
+
+  it("rejects a bad decision discriminator", () => {
+    expect(() => validateDump(withHeals([rawHeal({ decision: "skip" })]))).toThrow(/decision/);
+  });
+
+  it("rejects out-of-range or non-finite coordinates", () => {
+    expect(() => validateDump(withHeals([rawHeal({ lat: 91 })]))).toThrow(/lat/);
+    expect(() => validateDump(withHeals([rawHeal({ lat: -90.001 })]))).toThrow(/lat/);
+    expect(() => validateDump(withHeals([rawHeal({ lng: 181 })]))).toThrow(/lng/);
+    expect(() => validateDump(withHeals([rawHeal({ lng: -181 })]))).toThrow(/lng/);
+    expect(() => validateDump(withHeals([rawHeal({ lat: NaN })]))).toThrow(/lat/);
+    expect(() => validateDump(withHeals([rawHeal({ lng: "x" })]))).toThrow(/lng/);
+  });
+
+  it("rejects non-positive-integer counts", () => {
+    expect(() => validateDump(withHeals([rawHeal({ n_fixes: 0 })]))).toThrow(/n_fixes/);
+    expect(() => validateDump(withHeals([rawHeal({ n_fixes: -1 })]))).toThrow(/n_fixes/);
+    expect(() => validateDump(withHeals([rawHeal({ n_trips: 2.5 })]))).toThrow(/n_trips/);
+    expect(() => validateDump(withHeals([rawHeal({ n_trips: "3" })]))).toThrow(/n_trips/);
   });
 });
 

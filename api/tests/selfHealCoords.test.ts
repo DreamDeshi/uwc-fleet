@@ -7,12 +7,28 @@ import {
   nearestEligibleFix,
   tripCandidate,
   consigneeCandidates,
+  clusterOutcome,
+  selectHealTargets,
+  deliveryWindowRange,
   parseNumericFlag,
+  parseArgs,
   type AlgoParams,
   type Fix,
   type RawFix,
   type StopEvidence,
+  type ConsigneeCoordState,
 } from "../scripts/self-heal-coords";
+
+/** Every ordering of `arr` — used to prove clustering is input-order-independent. */
+function permutations<T>(arr: T[]): T[][] {
+  if (arr.length <= 1) return [arr];
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
+    for (const p of permutations(rest)) out.push([arr[i], ...p]);
+  }
+  return out;
+}
 
 // These pin the geometry + extraction the self-heal turns on. The whole design
 // is "only write a coordinate multiple INDEPENDENT trips agree on", so a
@@ -197,6 +213,162 @@ describe("consigneeCandidates — at most ONE candidate per (consignee, trip)", 
     const r = clusterHeal(cands);
     expect(r).not.toBeNull();
     expect(r!.n_trips).toBe(3);
+  });
+});
+
+describe("clusterOutcome — deterministic + ambiguity", () => {
+  it("returns a heal for a single confident cluster", () => {
+    const o = clusterOutcome([fix(0, 0, "t1"), fix(8, 0, "t2"), fix(0, 8, "t3")]);
+    expect(o.kind).toBe("heal");
+  });
+
+  it("returns AMBIGUOUS for two equally-strong, spatially-distinct clusters (never heals)", () => {
+    // Cluster A around BASE; cluster B ~500 m east — both exactly 3 trips.
+    const a = [fix(0, 0, "t1"), fix(6, 0, "t2"), fix(0, 6, "t3")];
+    const b = [fix(0, 500, "t4"), fix(6, 500, "t5"), fix(0, 506, "t6")];
+    const o = clusterOutcome([...a, ...b]);
+    expect(o.kind).toBe("ambiguous");
+    if (o.kind === "ambiguous") expect(o.centroids.length).toBe(2);
+    // The convenience wrapper refuses to guess.
+    expect(clusterHeal([...a, ...b])).toBeNull();
+  });
+
+  it("PERMUTATION: every ordering of a healable set yields an identical centroid", () => {
+    const set = [fix(0, 0, "t1"), fix(9, 0, "t2"), fix(0, 9, "t3"), fix(4, 4, "t4")];
+    const results = permutations(set).map((p) => clusterHeal(p));
+    for (const r of results) expect(r).not.toBeNull();
+    const first = results[0]!;
+    for (const r of results) {
+      expect(metersBetween(r!, first)).toBeLessThan(EPS_M); // same centroid regardless of order
+      expect(r!.n_fixes).toBe(first.n_fixes);
+      expect(r!.n_trips).toBe(first.n_trips);
+    }
+  });
+
+  it("PERMUTATION: every ordering of an ambiguous set refuses identically", () => {
+    const a = [fix(0, 0, "t1"), fix(6, 0, "t2"), fix(0, 6, "t3")];
+    const b = [fix(0, 500, "t4"), fix(6, 500, "t5"), fix(0, 506, "t6")];
+    const set = [...a, ...b];
+    // 6! = 720 orderings; all must be "ambiguous" and all must refuse to heal.
+    for (const p of permutations(set)) {
+      expect(clusterOutcome(p).kind).toBe("ambiguous");
+      expect(clusterHeal(p)).toBeNull();
+    }
+  });
+});
+
+describe("selectHealTargets — symmetric partial detection", () => {
+  const row = (id: string, lat: number | null, lng: number | null): ConsigneeCoordState => ({
+    id,
+    latitude: lat,
+    longitude: lng,
+  });
+
+  it("treats ONLY fully-null pairs as eligible for computation", () => {
+    const t = selectHealTargets([row("full", null, null), row("done", 5.2, 100.4)]);
+    expect(t.eligible).toEqual(["full"]);
+    expect(t.partial).toEqual([]);
+  });
+
+  it("reports a latitude-null / longitude-set anomaly (not eligible)", () => {
+    const t = selectHealTargets([row("a", null, 100.4)]);
+    expect(t.eligible).toEqual([]);
+    expect(t.partial).toEqual([{ id: "a", orientation: "latitude_null_longitude_set" }]);
+  });
+
+  it("reports a latitude-set / longitude-null anomaly (not eligible)", () => {
+    const t = selectHealTargets([row("b", 5.2, null)]);
+    expect(t.eligible).toEqual([]);
+    expect(t.partial).toEqual([{ id: "b", orientation: "latitude_set_longitude_null" }]);
+  });
+
+  it("partitions a mixed batch and never puts a partial row into eligible", () => {
+    const t = selectHealTargets([
+      row("full", null, null),
+      row("latnull", null, 100.4),
+      row("lngnull", 5.2, null),
+      row("done", 5.2, 100.4),
+    ]);
+    expect(t.eligible).toEqual(["full"]);
+    expect(t.partial.map((p) => p.id).sort()).toEqual(["latnull", "lngnull"]);
+  });
+});
+
+describe("deliveryWindowRange + bounded reads exclude irrelevant history", () => {
+  const D = new Date("2026-07-24T10:00:00Z");
+  const min = (m: number) => new Date(D.getTime() + m * 60_000);
+
+  it("bounds recorded_at to [min-window, max+window]", () => {
+    const r = deliveryWindowRange([min(0), min(30)], 5)!;
+    expect(r.gte.getTime()).toBe(min(-5).getTime());
+    expect(r.lte.getTime()).toBe(min(35).getTime());
+  });
+
+  it("null for no stops", () => {
+    expect(deliveryWindowRange([], 5)).toBeNull();
+  });
+
+  it("candidate extraction ignores substantial irrelevant history far from delivery", () => {
+    // One relevant fix at delivery time, buried in a long tail of old GPS pings.
+    const relevant: RawFix = { lat: BASE.lat, lng: BASE.lng, recorded_at: min(0) };
+    const ancientHistory: RawFix[] = Array.from({ length: 500 }, (_, i) => ({
+      lat: BASE.lat + 0.05, // ~5.5 km away
+      lng: BASE.lng + 0.05,
+      recorded_at: min(-600 - i), // 10+ hours before delivery, way outside window
+    }));
+    const logs = new Map<string, RawFix[]>([["tA", [...ancientHistory, relevant]]]);
+    const cands = consigneeCandidates([{ trip_id: "tA", delivered_at: min(0) }], logs, ALGO.window_min);
+    expect(cands).toHaveLength(1);
+    expect(metersBetween(cands[0], relevant)).toBeLessThan(EPS_M); // the near fix, not the history
+  });
+});
+
+describe("parseArgs — strict, complete CLI parsing", () => {
+  it("omitted optional flags keep defaults; booleans off", () => {
+    const a = parseArgs([]);
+    expect(a).toMatchObject({ dryRun: false, verbose: false, out: null, from: null });
+    expect(a.params.radius_m).toBe(100);
+    expect(a.params.from_tolerance_m).toBe(10);
+    expect(a.params.window_min).toBe(5);
+  });
+
+  it("parses a full valid command line", () => {
+    const a = parseArgs(["--dry-run", "--verbose", "--out", "d.json", "--radius-m", "150", "--from-tolerance-m", "12"]);
+    expect(a.dryRun).toBe(true);
+    expect(a.verbose).toBe(true);
+    expect(a.out).toBe("d.json");
+    expect(a.params.radius_m).toBe(150);
+    expect(a.params.from_tolerance_m).toBe(12);
+  });
+
+  it("rejects unknown flags, including misspellings", () => {
+    expect(() => parseArgs(["--dryrun"])).toThrow(/unknown flag/);
+    expect(() => parseArgs(["--verbos"])).toThrow(/unknown flag/);
+    expect(() => parseArgs(["--radius"])).toThrow(/unknown flag/); // misspelled --radius-m
+    expect(() => parseArgs(["--from-tolerance"])).toThrow(/unknown flag/);
+  });
+
+  it("rejects duplicate singleton flags (boolean and value)", () => {
+    expect(() => parseArgs(["--dry-run", "--dry-run"])).toThrow(/duplicate flag --dry-run/);
+    expect(() => parseArgs(["--out", "a.json", "--out", "b.json"])).toThrow(/duplicate flag --out/);
+  });
+
+  it("rejects unexpected positional arguments", () => {
+    expect(() => parseArgs(["apply"])).toThrow(/unexpected positional/);
+    expect(() => parseArgs(["--dry-run", "extra"])).toThrow(/unexpected positional/);
+  });
+
+  it("rejects a missing --out / --from value (last token or a flag mistaken for it)", () => {
+    expect(() => parseArgs(["--out"])).toThrow(/--out requires a value/);
+    expect(() => parseArgs(["--from", "--dry-run"])).toThrow(/--from requires a value/);
+    expect(() => parseArgs(["--out", ""])).toThrow(/--out requires a value/);
+  });
+
+  it("still enforces positive-finite numeric values through the parser", () => {
+    expect(() => parseArgs(["--radius-m", "0"])).toThrow(/positive/);
+    expect(() => parseArgs(["--radius-m", "-5"])).toThrow(/positive/);
+    expect(() => parseArgs(["--from-tolerance-m", "NaN"])).toThrow(/finite number/);
+    expect(() => parseArgs(["--window-min", "abc"])).toThrow(/finite number/);
   });
 });
 

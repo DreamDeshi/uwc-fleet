@@ -1,10 +1,10 @@
 /**
  * Consignee coordinate SELF-HEALING from driver GPS.
  *
- * A consignee whose address the Google geocoder could not place (latitude IS
- * NULL — a coarse zone-fallback stop) can still be pinned from where trucks
- * actually STOP to deliver to it. When enough INDEPENDENT trips agree on a spot,
- * that spot IS the building.
+ * A consignee whose address the Google geocoder could not place (BOTH latitude
+ * AND longitude NULL — a coarse zone-fallback stop) can still be pinned from
+ * where trucks actually STOP to deliver to it. When enough INDEPENDENT trips
+ * agree on a spot, that spot IS the building.
  *
  * This script is OFFLINE and additive. It NEVER overwrites an existing
  * coordinate (fill-nulls-only, enforced at write time by a full-pair
@@ -23,11 +23,14 @@
  * The result is a single candidate per trip — three candidates therefore always
  * represent three DISTINCT trips.
  *
- * ── The clustering rule (conservative on purpose) ───────────────────────────
- * Per-trip candidates are clustered by a SEED-based method: a heal is written
- * only when some candidate (the "seed") has at least `min_fixes` candidates
- * within `radius_m` of it, drawn from at least `min_distinct_trips` DISTINCT
- * trips. The healed coordinate is the centroid of that winning cluster.
+ * ── Deterministic, conservative clustering ──────────────────────────────────
+ * Candidates are canonically SORTED, then clustered by a SEED-based method: a
+ * heal is written only when some candidate (the "seed") has at least `min_fixes`
+ * candidates within `radius_m` of it, drawn from at least `min_distinct_trips`
+ * DISTINCT trips. Among the equally-strongest qualifying clusters a canonical
+ * tie-break picks the winner, so the result is INDEPENDENT of input order. If
+ * two spatially DISTINCT clusters are equally strong the outcome is AMBIGUOUS
+ * and NOTHING is healed — we never guess between two candidate buildings.
  *
  * ⚠ KNOWN FALSE-NEGATIVE LIMITATION: the seed-based method only considers
  * clusters ANCHORED at an actual candidate fix. A geometrically valid cluster
@@ -39,22 +42,30 @@
  * driver at a spot no single trip confirmed. A missed heal is safe; a wrong pin
  * is not.
  *
- * ── Dump = DECISIONS + EVIDENCE COUNTS ONLY (never raw GPS) ──────────────────
- * A dump records, per heal, only the DECISION (consignee, healed lat/lng) and
- * EVIDENCE COUNTS (n_fixes, n_trips) — plus top-level metadata (format /
- * algorithm version, timestamp, algorithm parameters). It contains NO individual
- * LocationLog coordinates and NO raw fixes: driver GPS traces never enter the
- * artifact. Consequently `--from` is NOT a self-contained replay. It:
- *   1. loads the saved decision + validates format/algorithm version + params;
+ * ── Dump = CONFIDENTIAL OPERATIONAL DATA (decisions + counts only) ───────────
+ * A dump records, per heal, only: consignee_id, the DECISION ("heal"), the
+ * healed centroid (lat/lng) and EVIDENCE COUNTS (n_fixes, n_trips) — plus
+ * top-level metadata (format/algorithm version, timestamp, algorithm
+ * parameters, classification). It contains NO company names, NO other consignee
+ * metadata, NO individual LocationLog coordinates and NO raw fixes. It is
+ * CONFIDENTIAL operational data (it maps a customer to a physical position) and
+ * must be handled accordingly. Consequently `--from` is NOT a self-contained
+ * replay. It:
+ *   1. loads the saved decision + strictly validates structure/version/params;
  *   2. re-reads CURRENT TripStop + LocationLog evidence from the database;
  *   3. recomputes the ENTIRE candidate pipeline from that current evidence;
  *   4. compares the fresh centroid with the saved one;
- *   5. applies only heals that remain ELIGIBLE and land within `from_tolerance_m`.
+ *   5. applies only heals that remain ELIGIBLE and land within `from_tolerance_m`,
+ *      writing the saved (reviewed) centroid — not the fresh one.
+ *
+ * By default the console prints COUNTS only — never customer names or precise
+ * coordinates. Pass `--verbose` for per-heal detail.
  *
  * Flags:
- *   --dry-run          compute + summarise, write nothing to the DB
- *   --out <file>       dump per-heal DECISIONS + counts (no raw fixes)
- *   --from <file>      reconcile a prior dump against CURRENT DB evidence
+ *   --dry-run               compute + summarise, write nothing to the DB
+ *   --verbose               print per-heal names + coordinates (off by default)
+ *   --out <file>            write the confidential decisions dump
+ *   --from <file>           reconcile a prior dump against CURRENT DB evidence
  *   --window-min <n>        override window_min (default 5), positive finite
  *   --radius-m <n>          override radius_m (default 100), positive finite
  *   --from-tolerance-m <n>  override from_tolerance_m (default 10), positive finite
@@ -70,6 +81,7 @@ import { dbHostOf, isLocalDbHost, isProdDbHost } from "../src/lib/dbGuard";
 // is what makes an old dump refuse to reconcile against new logic.
 export const SUPPORTED_FORMAT_VERSION = 1;
 export const SUPPORTED_ALGORITHM_VERSION = 1;
+export const DUMP_CLASSIFICATION = "confidential-operational-data";
 
 export interface AlgoParams {
   format_version: number;
@@ -131,6 +143,19 @@ export function centroid(points: Point[]): Point {
   };
 }
 
+/** Canonical total order on points: lat, then lng. Deterministic, order-free. */
+export function comparePoint(a: Point, b: Point): number {
+  if (a.lat !== b.lat) return a.lat - b.lat;
+  if (a.lng !== b.lng) return a.lng - b.lng;
+  return 0;
+}
+/** Canonical total order on candidate fixes: lat, lng, then trip_id. */
+export function compareFix(a: Fix, b: Fix): number {
+  const g = comparePoint(a, b);
+  if (g !== 0) return g;
+  return a.trip_id < b.trip_id ? -1 : a.trip_id > b.trip_id ? 1 : 0;
+}
+
 // ── Candidate extraction (pure) ──────────────────────────────────────────────
 export interface RawFix {
   lat: number;
@@ -144,7 +169,9 @@ export interface StopEvidence {
 
 /**
  * The nearest-in-time fix to a delivery, provided its gap is within `window_min`.
- * Returns the fix plus that gap (ms), or null when no fix is close enough in time.
+ * Returns the fix plus that gap (ms), or null when no fix is close enough in
+ * time. On an EXACT gap tie the canonically-smaller point wins, so the result is
+ * independent of the order fixes arrive in (e.g. database row order).
  */
 export function nearestEligibleFix(
   deliveredAt: Date,
@@ -155,7 +182,12 @@ export function nearestEligibleFix(
   let best: { lat: number; lng: number; gap_ms: number } | null = null;
   for (const f of tripFixes) {
     const gap = Math.abs(f.recorded_at.getTime() - deliveredAt.getTime());
-    if (gap <= windowMs && (best === null || gap < best.gap_ms)) {
+    if (gap > windowMs) continue;
+    if (
+      best === null ||
+      gap < best.gap_ms ||
+      (gap === best.gap_ms && comparePoint(f, best) < 0)
+    ) {
       best = { lat: f.lat, lng: f.lng, gap_ms: gap };
     }
   }
@@ -165,7 +197,8 @@ export function nearestEligibleFix(
 /**
  * The single candidate for ONE (consignee, trip): across every delivered stop of
  * that trip, take each stop's eligible fix and keep the one with the smallest
- * delivery-time difference. null = the trip contributes no evidence.
+ * delivery-time difference (canonical point tie-break). null = the trip
+ * contributes no evidence.
  */
 export function tripCandidate(
   stops: StopEvidence[],
@@ -175,7 +208,14 @@ export function tripCandidate(
   let best: { lat: number; lng: number; gap_ms: number } | null = null;
   for (const s of stops) {
     const near = nearestEligibleFix(s.delivered_at, tripFixes, windowMin);
-    if (near && (best === null || near.gap_ms < best.gap_ms)) best = near;
+    if (
+      near &&
+      (best === null ||
+        near.gap_ms < best.gap_ms ||
+        (near.gap_ms === best.gap_ms && comparePoint(near, best) < 0))
+    ) {
+      best = near;
+    }
   }
   return best;
 }
@@ -183,7 +223,7 @@ export function tripCandidate(
 /**
  * All per-trip candidates for one consignee: group its delivered stops by trip,
  * then emit AT MOST ONE Fix per trip. This is what guarantees N candidates ⇒ N
- * distinct trips.
+ * distinct trips. Output is canonically sorted so it is order-free.
  */
 export function consigneeCandidates(
   stops: StopEvidence[],
@@ -201,7 +241,7 @@ export function consigneeCandidates(
     const c = tripCandidate(tripStops, logsByTrip.get(trip_id) ?? [], windowMin);
     if (c) out.push({ lat: c.lat, lng: c.lng, trip_id });
   }
-  return out;
+  return out.sort(compareFix);
 }
 
 export interface HealResult extends Point {
@@ -210,42 +250,145 @@ export interface HealResult extends Point {
 }
 
 /**
- * The seed-based cluster heal. Returns the centroid of the strongest qualifying
- * cluster, or null when nothing qualifies (see the false-negative note above).
- *
- * Membership rule is INCLUSIVE of the radius: a candidate exactly `radius_m`
- * from the seed is a member (distance <= radius_m).
+ * The result of the seed-based cluster analysis:
+ *   - heal:      a single, confident centroid to write;
+ *   - none:      no qualifying cluster (or the accepted false-negative);
+ *   - ambiguous: two or more equally-strong, spatially-distinct clusters — we
+ *                refuse to guess. Never heal on this outcome.
  */
-export function clusterHeal(fixes: Fix[], p: AlgoParams = ALGO): HealResult | null {
-  if (fixes.length < p.min_fixes) return null;
+export type ClusterOutcome =
+  | { kind: "heal"; result: HealResult }
+  | { kind: "none" }
+  | { kind: "ambiguous"; centroids: Point[] };
 
-  let best: { members: Fix[]; trips: number } | null = null;
-  for (const seed of fixes) {
-    const members = fixes.filter((f) => metersBetween(seed, f) <= p.radius_m);
-    const trips = new Set(members.map((m) => m.trip_id)).size;
-    if (members.length >= p.min_fixes && trips >= p.min_distinct_trips) {
-      // Strongest = most member fixes; ties keep the first seed (stable/deterministic).
-      if (!best || members.length > best.members.length) best = { members, trips };
-    }
-  }
-  if (!best) return null;
-
-  const c = centroid(best.members);
-  return { lat: c.lat, lng: c.lng, n_fixes: best.members.length, n_trips: best.trips };
+/** A canonical string key for a cluster's member set — used for order-free tie-breaks. */
+function clusterKey(members: Fix[]): string {
+  return [...members]
+    .sort(compareFix)
+    .map((m) => `${m.lat},${m.lng},${m.trip_id}`)
+    .join("|");
 }
 
-// ── Dump shape (DECISIONS + COUNTS ONLY — no raw GPS) ─────────────────────────
+/**
+ * Deterministic, conservative seed clustering. Canonically sorts candidates,
+ * enumerates every qualifying seed-cluster, and:
+ *   - returns AMBIGUOUS when ≥2 of the strongest clusters are spatially distinct
+ *     (their centroids are more than `radius_m` apart);
+ *   - otherwise returns the centroid of the canonical strongest cluster.
+ * The output depends only on the SET of candidates, never their order.
+ */
+export function clusterOutcome(fixes: Fix[], p: AlgoParams = ALGO): ClusterOutcome {
+  if (fixes.length < p.min_fixes) return { kind: "none" };
+  const sorted = [...fixes].sort(compareFix);
+
+  const clusters: { members: Fix[]; trips: number; centroid: Point; key: string }[] = [];
+  for (const seed of sorted) {
+    const members = sorted.filter((f) => metersBetween(seed, f) <= p.radius_m);
+    const trips = new Set(members.map((m) => m.trip_id)).size;
+    if (members.length >= p.min_fixes && trips >= p.min_distinct_trips) {
+      clusters.push({ members, trips, centroid: centroid(members), key: clusterKey(members) });
+    }
+  }
+  if (clusters.length === 0) return { kind: "none" };
+
+  const maxSize = Math.max(...clusters.map((c) => c.members.length));
+  const top = clusters.filter((c) => c.members.length === maxSize);
+
+  // Are the strongest clusters all the SAME place? Group their centroids by
+  // proximity; more than one spatially-distinct group → ambiguous.
+  const distinct: Point[] = [];
+  for (const c of top) {
+    if (!distinct.some((d) => metersBetween(d, c.centroid) <= p.radius_m)) distinct.push(c.centroid);
+  }
+  if (distinct.length > 1) {
+    return { kind: "ambiguous", centroids: distinct.sort(comparePoint) };
+  }
+
+  // One place; pick the canonical member set among the ties so the written
+  // centroid is invariant to input order.
+  const winner = [...top].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))[0];
+  return {
+    kind: "heal",
+    result: { lat: winner.centroid.lat, lng: winner.centroid.lng, n_fixes: winner.members.length, n_trips: winner.trips },
+  };
+}
+
+/**
+ * Convenience wrapper: the centroid to write, or null on `none`/`ambiguous`.
+ * Callers that must distinguish ambiguity use clusterOutcome() directly.
+ */
+export function clusterHeal(fixes: Fix[], p: AlgoParams = ALGO): HealResult | null {
+  const o = clusterOutcome(fixes, p);
+  return o.kind === "heal" ? o.result : null;
+}
+
+// ── Symmetric partial-coordinate detection (pure) ────────────────────────────
+export type PartialOrientation = "latitude_null_longitude_set" | "latitude_set_longitude_null";
+export interface ConsigneeCoordState {
+  id: string;
+  latitude: number | null;
+  longitude: number | null;
+}
+export interface HealTargets {
+  /** Fully-null (both coordinates null) — the ONLY rows eligible for computation. */
+  eligible: string[];
+  /** Exactly one coordinate present — an anomaly, reported, never computed/written. */
+  partial: { id: string; orientation: PartialOrientation }[];
+}
+
+/**
+ * Partition consignees (queried as "latitude null OR longitude null") into
+ * fully-null heal targets and partial-coordinate anomalies. Both partial
+ * orientations are reported; only fully-null pairs may enter computation.
+ */
+export function selectHealTargets(rows: ConsigneeCoordState[]): HealTargets {
+  const eligible: string[] = [];
+  const partial: { id: string; orientation: PartialOrientation }[] = [];
+  for (const r of rows) {
+    const latNull = r.latitude === null;
+    const lngNull = r.longitude === null;
+    if (latNull && lngNull) eligible.push(r.id);
+    else if (latNull && !lngNull) partial.push({ id: r.id, orientation: "latitude_null_longitude_set" });
+    else if (!latNull && lngNull) partial.push({ id: r.id, orientation: "latitude_set_longitude_null" });
+    // both present → fully geocoded; not a target (should not be returned by the query).
+  }
+  return { eligible, partial };
+}
+
+/**
+ * Per-trip recorded_at bound for the LocationLog read: the trip's delivery
+ * window [min(delivered_at) - window, max(delivered_at) + window]. Bounding the
+ * query keeps us from scanning a truck's entire GPS history. null = no stops.
+ */
+export function deliveryWindowRange(deliveredAts: Date[], windowMin: number): { gte: Date; lte: Date } | null {
+  if (deliveredAts.length === 0) return null;
+  const times = deliveredAts.map((d) => d.getTime());
+  const w = windowMin * 60_000;
+  return { gte: new Date(Math.min(...times) - w), lte: new Date(Math.max(...times) + w) };
+}
+
+// ── Dump shape (CONFIDENTIAL — decisions + counts only, no raw GPS/PII) ───────
 export interface HealDecision {
   consignee_id: string;
-  company_name: string;
+  decision: "heal";
   lat: number;
   lng: number;
   n_fixes: number; // evidence count only
   n_trips: number; // evidence count only
 }
 
+/** The minimal input buildDump needs; anything extra (names, fixes) is dropped. */
+export interface HealInput {
+  consignee_id: string;
+  lat: number;
+  lng: number;
+  n_fixes: number;
+  n_trips: number;
+}
+
 export interface Dump extends AlgoParams {
   generated_at: string;
+  classification: string;
   heals: HealDecision[];
 }
 
@@ -257,20 +400,22 @@ export class DumpRejected extends Error {
   }
 }
 
-export function buildDump(decisions: HealDecision[], params: AlgoParams = ALGO): Dump {
+export function buildDump(decisions: HealInput[], params: AlgoParams = ALGO): Dump {
   return {
     format_version: params.format_version,
     algorithm_version: params.algorithm_version,
     generated_at: new Date().toISOString(),
+    classification: DUMP_CLASSIFICATION,
     window_min: params.window_min,
     radius_m: params.radius_m,
     min_fixes: params.min_fixes,
     min_distinct_trips: params.min_distinct_trips,
     from_tolerance_m: params.from_tolerance_m,
-    // Decisions carry only counts — never coordinates of individual fixes.
+    // Project to the decision shape ONLY — no company name, no other consignee
+    // metadata, no fix coordinates can survive this mapping.
     heals: decisions.map((d) => ({
       consignee_id: d.consignee_id,
-      company_name: d.company_name,
+      decision: "heal" as const,
       lat: d.lat,
       lng: d.lng,
       n_fixes: d.n_fixes,
@@ -279,34 +424,91 @@ export function buildDump(decisions: HealDecision[], params: AlgoParams = ALGO):
   };
 }
 
+const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const isPositiveInt = (v: unknown): boolean => typeof v === "number" && Number.isInteger(v) && v > 0;
+
 /**
- * Reject a dump whose format/algorithm version is unsupported, or whose recorded
- * algorithm parameters differ from the ones we would recompute with. This is the
- * gate that stops a dump made by a different algorithm from being reconciled.
+ * STRICT validation, run before any reconciliation or write. Rejects a malformed
+ * dump (bad types, missing fields, duplicate/empty ids, out-of-range coordinates,
+ * non-positive-integer counts, bad timestamp), an unsupported format/algorithm
+ * version, or a dump whose algorithm parameters differ from the ones we would
+ * recompute with. Throws DumpRejected; narrows `dump` to Dump on success.
  */
-export function validateDump(dump: Partial<Dump>, params: AlgoParams = ALGO): void {
-  if (dump.format_version !== SUPPORTED_FORMAT_VERSION) {
-    throw new DumpRejected(
-      `unsupported format_version ${dump.format_version} (supported: ${SUPPORTED_FORMAT_VERSION})`,
-    );
+export function validateDump(dump: unknown, params: AlgoParams = ALGO): asserts dump is Dump {
+  if (typeof dump !== "object" || dump === null || Array.isArray(dump)) {
+    throw new DumpRejected("dump must be a JSON object");
   }
-  if (dump.algorithm_version !== SUPPORTED_ALGORITHM_VERSION) {
-    throw new DumpRejected(
-      `unsupported algorithm_version ${dump.algorithm_version} (supported: ${SUPPORTED_ALGORITHM_VERSION})`,
-    );
-  }
-  const paramKeys: (keyof AlgoParams)[] = [
+  const d = dump as Record<string, unknown>;
+
+  // Metadata types.
+  const numMeta: (keyof AlgoParams)[] = [
+    "format_version",
+    "algorithm_version",
     "window_min",
     "radius_m",
     "min_fixes",
     "min_distinct_trips",
     "from_tolerance_m",
   ];
+  for (const k of numMeta) {
+    if (!isFiniteNumber(d[k])) {
+      throw new DumpRejected(`metadata ${k} must be a finite number (got ${JSON.stringify(d[k])})`);
+    }
+  }
+  if (typeof d.generated_at !== "string" || Number.isNaN(Date.parse(d.generated_at))) {
+    throw new DumpRejected(`generated_at must be a valid timestamp (got ${JSON.stringify(d.generated_at)})`);
+  }
+  if (typeof d.classification !== "string" || d.classification.length === 0) {
+    throw new DumpRejected("classification must be a non-empty string");
+  }
+  if (!Array.isArray(d.heals)) {
+    throw new DumpRejected("heals must be an array");
+  }
+
+  // Version support.
+  if (d.format_version !== SUPPORTED_FORMAT_VERSION) {
+    throw new DumpRejected(`unsupported format_version ${d.format_version} (supported: ${SUPPORTED_FORMAT_VERSION})`);
+  }
+  if (d.algorithm_version !== SUPPORTED_ALGORITHM_VERSION) {
+    throw new DumpRejected(`unsupported algorithm_version ${d.algorithm_version} (supported: ${SUPPORTED_ALGORITHM_VERSION})`);
+  }
+
+  // Parameter match (effective CLI params must equal the dump's).
+  const paramKeys: (keyof AlgoParams)[] = ["window_min", "radius_m", "min_fixes", "min_distinct_trips", "from_tolerance_m"];
   for (const k of paramKeys) {
-    if (dump[k] !== params[k]) {
-      throw new DumpRejected(
-        `parameter mismatch: dump.${k}=${dump[k]} but recomputation uses ${params[k]}`,
-      );
+    if (d[k] !== params[k]) {
+      throw new DumpRejected(`parameter mismatch: dump.${k}=${d[k]} but recomputation uses ${params[k]}`);
+    }
+  }
+
+  // Per-heal structure.
+  const seen = new Set<string>();
+  for (const h of d.heals as unknown[]) {
+    if (typeof h !== "object" || h === null || Array.isArray(h)) {
+      throw new DumpRejected("each heal must be a JSON object");
+    }
+    const heal = h as Record<string, unknown>;
+    if (typeof heal.consignee_id !== "string" || heal.consignee_id.length === 0) {
+      throw new DumpRejected("heal.consignee_id must be a non-empty string");
+    }
+    if (seen.has(heal.consignee_id)) {
+      throw new DumpRejected(`duplicate consignee_id "${heal.consignee_id}"`);
+    }
+    seen.add(heal.consignee_id);
+    if (heal.decision !== "heal") {
+      throw new DumpRejected(`heal.decision must be "heal" for "${heal.consignee_id}"`);
+    }
+    if (!isFiniteNumber(heal.lat) || heal.lat < -90 || heal.lat > 90) {
+      throw new DumpRejected(`heal.lat must be finite within [-90,90] for "${heal.consignee_id}" (got ${JSON.stringify(heal.lat)})`);
+    }
+    if (!isFiniteNumber(heal.lng) || heal.lng < -180 || heal.lng > 180) {
+      throw new DumpRejected(`heal.lng must be finite within [-180,180] for "${heal.consignee_id}" (got ${JSON.stringify(heal.lng)})`);
+    }
+    if (!isPositiveInt(heal.n_fixes)) {
+      throw new DumpRejected(`heal.n_fixes must be a positive integer for "${heal.consignee_id}" (got ${JSON.stringify(heal.n_fixes)})`);
+    }
+    if (!isPositiveInt(heal.n_trips)) {
+      throw new DumpRejected(`heal.n_trips must be a positive integer for "${heal.consignee_id}" (got ${JSON.stringify(heal.n_trips)})`);
     }
   }
 }
@@ -314,6 +516,7 @@ export function validateDump(dump: Partial<Dump>, params: AlgoParams = ALGO): vo
 // ── Recomputed evidence (fresh from the DB) ──────────────────────────────────
 // A candidate carries the fresh decision PLUS the consignee's CURRENT stored
 // coordinates, so the write layer can enforce fill-nulls-only atomically.
+// company_name is kept for --verbose console output ONLY and never dumped.
 export interface Candidate {
   consignee_id: string;
   company_name: string;
@@ -334,18 +537,18 @@ export interface WriteRow {
 }
 
 /**
- * --from reconciliation (pure): validate the dump, then for each saved decision
- * find the freshly-recomputed candidate for the same consignee and apply it only
- * if it is still eligible (present in `fresh`) and its centroid is within
- * `from_tolerance_m` of the saved one. Returns the write rows to apply plus the
+ * --from reconciliation (pure): strictly validate the dump, then for each saved
+ * decision find the freshly-recomputed candidate for the same consignee and
+ * apply it only if it is still eligible (present in `fresh`) and its centroid is
+ * within `from_tolerance_m` of the saved one. Returns the write rows plus the
  * consignees skipped as no-longer-eligible or drifted.
  */
 export function reconcileFromDump(
-  dump: Dump,
+  dump: unknown,
   fresh: Candidate[],
   params: AlgoParams = ALGO,
 ): { rows: WriteRow[]; ineligible: string[]; drifted: string[] } {
-  validateDump(dump, params); // throws DumpRejected on version/param mismatch
+  validateDump(dump, params); // throws DumpRejected on any structural/version/param problem
   const byId = new Map(fresh.map((f) => [f.consignee_id, f]));
   const rows: WriteRow[] = [];
   const ineligible: string[] = [];
@@ -361,7 +564,8 @@ export function reconcileFromDump(
       drifted.push(saved.consignee_id);
       continue;
     }
-    // Approved decision is the saved centroid; the fresh recompute only GATES it.
+    // Owner decision: apply the SAVED (reviewed) centroid; the fresh recompute
+    // only GATES it (proves it still reproduces within tolerance).
     rows.push({
       consignee_id: saved.consignee_id,
       lat: saved.lat,
@@ -391,12 +595,21 @@ export interface ApplyResult {
 }
 
 /**
- * Write heals, fill-nulls-only. A consignee is written ONLY when BOTH stored
- * coordinates are null. A record with exactly ONE coordinate present is a
- * partial-coordinate anomaly and is NEVER modified — the write operation is not
- * even called for it. The DB update carries the same full-pair guard
- * (`latitude: null, longitude: null`) so a coordinate set after this read can
- * never be clobbered.
+ * Write heals, fill-nulls-only, with PER-ROW ATOMIC COMMITS.
+ *
+ * A consignee is written ONLY when BOTH stored coordinates are null. A record
+ * with exactly ONE coordinate present is a partial-coordinate anomaly and is
+ * NEVER modified — the write operation is not even called for it. Each row is its
+ * own `updateMany` carrying the same full-pair guard (`latitude: null,
+ * longitude: null`) so a coordinate set after this read can never be clobbered.
+ *
+ * WRITE SEMANTICS — deliberately NOT wrapped in a single transaction (this change
+ * adds no all-or-nothing behaviour): each row commits independently, so if a
+ * LATER row throws, EARLIER successful rows are NOT rolled back. That is safe and
+ * intended, because the operation is idempotent under re-run: the full-pair null
+ * guard means a re-run SKIPS every already-filled coordinate (counted as
+ * skipped_existing / skipped_race) and only fills consignees still fully null.
+ * Re-running after a partial failure simply resumes the remaining work.
  */
 export async function applyHeals(client: HealClient, rows: WriteRow[]): Promise<ApplyResult> {
   const res: ApplyResult = { written: 0, skipped_existing: 0, skipped_partial: 0, skipped_race: 0 };
@@ -420,32 +633,52 @@ export async function applyHeals(client: HealClient, rows: WriteRow[]): Promise<
 }
 
 // ── DB → candidates (needs a live DB; exercised via integration) ─────────────
-async function computeHeals(params: AlgoParams): Promise<Candidate[]> {
-  // Only null-latitude consignees are candidates. We also read longitude so a
-  // partial-coordinate anomaly (lat null / lng set) is carried to the guard.
+async function computeHeals(params: AlgoParams): Promise<{ candidates: Candidate[]; partial: HealTargets["partial"] }> {
+  // Query consignees missing EITHER coordinate (symmetric), then partition.
   const consignees = await prisma.consignee.findMany({
-    where: { latitude: null },
+    where: { OR: [{ latitude: null }, { longitude: null }] },
     select: { id: true, company_name: true, latitude: true, longitude: true },
   });
+  const { eligible, partial } = selectHealTargets(consignees);
   const byId = new Map(consignees.map((c) => [c.id, c]));
-  if (byId.size === 0) return [];
+  if (eligible.length === 0) return { candidates: [], partial };
 
   const stops = await prisma.tripStop.findMany({
-    where: { consignee_id: { in: [...byId.keys()] }, status: "delivered", delivered_at: { not: null } },
+    where: { consignee_id: { in: eligible }, status: "delivered", delivered_at: { not: null } },
     select: { consignee_id: true, trip_id: true, delivered_at: true },
   });
-  if (stops.length === 0) return [];
+  if (stops.length === 0) return { candidates: [], partial };
 
-  const tripIds = [...new Set(stops.map((s) => s.trip_id))];
-  const logs = await prisma.locationLog.findMany({
-    where: { trip_id: { in: tripIds } },
-    select: { trip_id: true, latitude: true, longitude: true, recorded_at: true },
-  });
+  // Per-trip delivery-time ranges bound the LocationLog read to relevant history.
+  const deliveredByTrip = new Map<string, Date[]>();
+  for (const s of stops) {
+    if (!s.delivered_at) continue;
+    const arr = deliveredByTrip.get(s.trip_id) ?? [];
+    arr.push(s.delivered_at);
+    deliveredByTrip.set(s.trip_id, arr);
+  }
+  const orRanges: { trip_id: string; recorded_at: { gte: Date; lte: Date } }[] = [];
+  for (const [trip_id, times] of deliveredByTrip) {
+    const range = deliveryWindowRange(times, params.window_min);
+    if (range) orRanges.push({ trip_id, recorded_at: range });
+  }
+  const logs =
+    orRanges.length === 0
+      ? []
+      : await prisma.locationLog.findMany({
+          where: { OR: orRanges },
+          select: { trip_id: true, latitude: true, longitude: true, recorded_at: true },
+          orderBy: [{ recorded_at: "asc" }],
+        });
   const logsByTrip = new Map<string, RawFix[]>();
   for (const l of logs) {
     const arr = logsByTrip.get(l.trip_id) ?? [];
     arr.push({ lat: Number(l.latitude), lng: Number(l.longitude), recorded_at: l.recorded_at });
     logsByTrip.set(l.trip_id, arr);
+  }
+  // Deterministic ordering IN CODE, independent of the database's row order.
+  for (const arr of logsByTrip.values()) {
+    arr.sort((a, b) => a.recorded_at.getTime() - b.recorded_at.getTime() || comparePoint(a, b));
   }
 
   const stopsByConsignee = new Map<string, StopEvidence[]>();
@@ -459,7 +692,7 @@ async function computeHeals(params: AlgoParams): Promise<Candidate[]> {
   const out: Candidate[] = [];
   for (const [consignee_id, evidence] of stopsByConsignee) {
     const candidates = consigneeCandidates(evidence, logsByTrip, params.window_min);
-    const result = clusterHeal(candidates, params);
+    const result = clusterHeal(candidates, params); // null on none/ambiguous → skipped
     if (!result) continue;
     const c = byId.get(consignee_id)!;
     out.push({
@@ -473,73 +706,113 @@ async function computeHeals(params: AlgoParams): Promise<Candidate[]> {
       current_longitude: c.longitude,
     });
   }
-  return out;
+  // Stable dump/report order.
+  out.sort((a, b) => (a.consignee_id < b.consignee_id ? -1 : a.consignee_id > b.consignee_id ? 1 : 0));
+  return { candidates: out, partial };
 }
 
-function argValue(flag: string): string {
-  const i = process.argv.indexOf(flag);
-  return i > -1 ? process.argv[i + 1] : "";
+// ── Strict, complete CLI parsing ─────────────────────────────────────────────
+const BOOL_FLAGS = new Set(["--dry-run", "--verbose"]);
+const VALUE_FLAGS = new Set(["--out", "--from", "--window-min", "--radius-m", "--from-tolerance-m"]);
+
+export interface ParsedArgs {
+  dryRun: boolean;
+  verbose: boolean;
+  out: string | null;
+  from: string | null;
+  params: AlgoParams;
 }
 
-/**
- * Parse a numeric CLI override that must be a POSITIVE FINITE number.
- *
- * OMITTED entirely → the default (no error). Only an EXPLICITLY-supplied flag is
- * validated, and it is rejected — with a clear message — when its value is:
- *   - missing (flag is the last token);
- *   - empty ("");
- *   - the next CLI flag mistaken for the value (starts with "-");
- *   - non-numeric;
- *   - zero or negative;
- *   - NaN or Infinity.
- * Pure over an explicit argv so it is unit-testable without touching process.argv.
- */
-export function parseNumericFlag(argv: string[], flag: string, defaultValue: number): number {
-  const i = argv.indexOf(flag);
-  if (i === -1) return defaultValue; // omitted → default
-  const raw = argv[i + 1];
-  if (raw === undefined || raw === "") {
-    throw new Error(`${flag} requires a value (a positive finite number)`);
-  }
-  // A following token that is itself a flag ("--dry-run", "-5"→handled below by
-  // sign) must not be swallowed as the value. Guard the flag form here.
-  if (raw.startsWith("--")) {
-    throw new Error(`${flag} requires a value but was followed by the flag "${raw}"`);
-  }
+function positiveFiniteFromString(flag: string, raw: string): number {
   const n = Number(raw);
-  if (!Number.isFinite(n)) {
-    throw new Error(`${flag} must be a finite number (got "${raw}")`);
-  }
-  if (n <= 0) {
-    throw new Error(`${flag} must be a positive number greater than 0 (got ${n})`);
-  }
+  if (!Number.isFinite(n)) throw new Error(`${flag} must be a finite number (got "${raw}")`);
+  if (n <= 0) throw new Error(`${flag} must be a positive number greater than 0 (got ${n})`);
   return n;
 }
 
-async function main() {
-  const DRY_RUN = process.argv.includes("--dry-run");
-  const OUT = argValue("--out");
-  const FROM = argValue("--from");
-  // CLI overrides — omitting a flag keeps the approved default (5 / 100 / 10);
-  // an explicitly-supplied invalid value is rejected before any DB work.
+/**
+ * Standalone numeric-flag parser (kept for focused tests + reuse). OMITTED →
+ * default; an explicitly-supplied invalid value is rejected: missing/empty value,
+ * the next long flag mistaken for the value, non-numeric, zero/negative,
+ * NaN/Infinity.
+ */
+export function parseNumericFlag(argv: string[], flag: string, defaultValue: number): number {
+  const i = argv.indexOf(flag);
+  if (i === -1) return defaultValue;
+  const raw = argv[i + 1];
+  if (raw === undefined || raw === "") throw new Error(`${flag} requires a value (a positive finite number)`);
+  if (raw.startsWith("--")) throw new Error(`${flag} requires a value but was followed by the flag "${raw}"`);
+  return positiveFiniteFromString(flag, raw);
+}
+
+/**
+ * Strict, COMPLETE argv parser. Rejects unknown flags, duplicate singleton flags,
+ * unexpected positional arguments, and value flags with no value (last token or a
+ * long flag mistaken for the value). Omitted optional flags keep their defaults.
+ * `argv` is the user tokens only (already sliced past node + script path).
+ */
+export function parseArgs(argv: string[], base: AlgoParams = ALGO): ParsedArgs {
+  const seen = new Set<string>();
+  const values: Record<string, string> = {};
+  let dryRun = false;
+  let verbose = false;
+
+  for (let i = 0; i < argv.length; i++) {
+    const tok = argv[i];
+    if (!tok.startsWith("-")) throw new Error(`unexpected positional argument "${tok}"`);
+
+    if (BOOL_FLAGS.has(tok)) {
+      if (seen.has(tok)) throw new Error(`duplicate flag ${tok}`);
+      seen.add(tok);
+      if (tok === "--dry-run") dryRun = true;
+      else verbose = true;
+      continue;
+    }
+    if (VALUE_FLAGS.has(tok)) {
+      if (seen.has(tok)) throw new Error(`duplicate flag ${tok}`);
+      seen.add(tok);
+      const val = argv[i + 1];
+      if (val === undefined || val === "" || val.startsWith("--")) {
+        throw new Error(`${tok} requires a value`);
+      }
+      values[tok] = val;
+      i++; // consume the value token
+      continue;
+    }
+    throw new Error(`unknown flag ${tok}`);
+  }
+
+  const num = (flag: string, def: number) => (flag in values ? positiveFiniteFromString(flag, values[flag]) : def);
   const params: AlgoParams = {
-    ...ALGO,
-    window_min: parseNumericFlag(process.argv, "--window-min", ALGO.window_min),
-    radius_m: parseNumericFlag(process.argv, "--radius-m", ALGO.radius_m),
-    from_tolerance_m: parseNumericFlag(process.argv, "--from-tolerance-m", ALGO.from_tolerance_m),
+    ...base,
+    window_min: num("--window-min", base.window_min),
+    radius_m: num("--radius-m", base.radius_m),
+    from_tolerance_m: num("--from-tolerance-m", base.from_tolerance_m),
   };
+  return {
+    dryRun,
+    verbose,
+    out: values["--out"] ?? null,
+    from: values["--from"] ?? null,
+    params,
+  };
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const { dryRun, verbose, out: OUT, from: FROM, params } = args;
 
   const host = dbHostOf(process.env.DATABASE_URL);
   if (!host) throw new Error("DATABASE_URL is not set or unparseable.");
   const remoteOk = process.env.ALLOW_REMOTE_DB === "1";
-  if (!DRY_RUN && (!isLocalDbHost(host) || isProdDbHost(host)) && !remoteOk) {
+  if (!dryRun && (!isLocalDbHost(host) || isProdDbHost(host)) && !remoteOk) {
     throw new Error(
       `Refusing to write healed coordinates to non-local database host "${host}". ` +
         `Set ALLOW_REMOTE_DB=1 to override.`,
     );
   }
   console.log(`DB host      : ${host}${remoteOk ? "  (ALLOW_REMOTE_DB=1)" : "  (local)"}`);
-  console.log(`Mode         : ${DRY_RUN ? "DRY RUN — nothing will be written" : "WRITE"}`);
+  console.log(`Mode         : ${dryRun ? "DRY RUN — nothing will be written" : "WRITE"}${verbose ? "  (verbose)" : ""}`);
   console.log(
     `Algorithm    : format v${params.format_version} / algo v${params.algorithm_version}  ` +
       `radius ${params.radius_m}m, ≥${params.min_fixes} fixes / ≥${params.min_distinct_trips} trips, ` +
@@ -547,32 +820,38 @@ async function main() {
   );
 
   const fs = await import("fs");
+  const { candidates, partial } = await computeHeals(params);
+
+  const latNull = partial.filter((p) => p.orientation === "latitude_null_longitude_set").length;
+  const lngNull = partial.filter((p) => p.orientation === "latitude_set_longitude_null").length;
+  console.log(
+    `Partial-coord anomalies (excluded): ${partial.length}  ` +
+      `[lat null / lng set: ${latNull}] [lat set / lng null: ${lngNull}]`,
+  );
+
   let rows: WriteRow[];
 
   if (FROM) {
-    const dump = JSON.parse(fs.readFileSync(FROM, "utf8")) as Dump;
-    console.log(`Source       : --from ${FROM} (generated ${dump.generated_at})`);
-    const fresh = await computeHeals(params); // recompute the WHOLE pipeline from CURRENT evidence
-    const rec = reconcileFromDump(dump, fresh, params); // throws DumpRejected on version/param mismatch
+    const dump = JSON.parse(fs.readFileSync(FROM, "utf8")) as unknown;
+    const rec = reconcileFromDump(dump, candidates, params); // strict-validates, throws on any problem
     rows = rec.rows;
     console.log(
       `Reconcile    : ${rows.length} applicable  ` +
         `(${rec.ineligible.length} no-longer-eligible, ${rec.drifted.length} drifted > ${params.from_tolerance_m}m)`,
     );
   } else {
-    const candidates = await computeHeals(params);
-    console.log(`\nHeals found  : ${candidates.length}`);
-    for (const c of candidates) {
-      console.log(
-        `  ${c.company_name.padEnd(32).slice(0, 32)}  ${c.lat.toFixed(6)}, ${c.lng.toFixed(6)}  ` +
-          `(${c.n_fixes} fixes / ${c.n_trips} trips)`,
-      );
+    console.log(`Heals found  : ${candidates.length}`);
+    if (verbose) {
+      for (const c of candidates) {
+        console.log(
+          `  ${c.company_name.padEnd(32).slice(0, 32)}  ${c.lat.toFixed(6)}, ${c.lng.toFixed(6)}  ` +
+            `(${c.n_fixes} fixes / ${c.n_trips} trips)`,
+        );
+      }
     }
     if (OUT) {
-      // Decisions + counts only — buildDump strips everything else, so no raw fix
-      // coordinates can leak into the artifact.
       fs.writeFileSync(OUT, JSON.stringify(buildDump(candidates, params), null, 1), "utf8");
-      console.log(`\ndump written to ${OUT} (decisions + counts only — no raw fixes)`);
+      console.log(`dump written to ${OUT} (${DUMP_CLASSIFICATION} — decisions + counts only, no names/fixes)`);
     }
     rows = candidates.map((c) => ({
       consignee_id: c.consignee_id,
@@ -583,7 +862,7 @@ async function main() {
     }));
   }
 
-  if (!DRY_RUN) {
+  if (!dryRun) {
     const r = await applyHeals(prisma as unknown as HealClient, rows);
     console.log(`\n=== WRITE ===`);
     console.log(`  healed (null → driver_fix)      : ${r.written}`);
