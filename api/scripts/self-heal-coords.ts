@@ -42,17 +42,20 @@
  * driver at a spot no single trip confirmed. A missed heal is safe; a wrong pin
  * is not.
  *
- * ── Dump = CONFIDENTIAL OPERATIONAL DATA (decisions + counts only) ───────────
+ * ── Dump = CONFIDENTIAL, PSEUDONYMIZED OPERATIONAL DATA (decisions + counts) ──
  * A dump records, per heal, only: consignee_id, the DECISION ("heal"), the
  * healed centroid (lat/lng) and EVIDENCE COUNTS (n_fixes, n_trips) — plus
  * top-level metadata (format/algorithm version, timestamp, algorithm
- * parameters, classification). It contains NO company names, NO other consignee
- * metadata, NO individual LocationLog coordinates and NO raw fixes. It is
- * CONFIDENTIAL operational data (it maps a customer to a physical position) and
- * must be handled accordingly. Consequently `--from` is NOT a self-contained
- * replay. It:
- *   1. loads the saved decision + strictly validates structure/version/params;
- *   2. re-reads CURRENT TripStop + LocationLog evidence from the database;
+ * parameters, classification). consignee_id is a REQUIRED operational key for
+ * --from reconciliation, so the dump is intentionally PSEUDONYMIZED, not
+ * anonymous: it maps an opaque id to a position. It carries NO company names, NO
+ * addresses/phones/other identity fields, NO individual LocationLog coordinates
+ * and NO raw fixes. It is CONFIDENTIAL operational data, classified as such, and
+ * MUST be stored OUTSIDE the repository. Consequently `--from` is NOT a
+ * self-contained replay. It:
+ *   1. loads the dump and STRICTLY VALIDATES structure/version/params BEFORE any
+ *      database access (a malformed dump never reaches a query or a write);
+ *   2. re-reads CURRENT TripStop + phone LocationLog evidence from the database;
  *   3. recomputes the ENTIRE candidate pipeline from that current evidence;
  *   4. compares the fresh centroid with the saved one;
  *   5. applies only heals that remain ELIGIBLE and land within `from_tolerance_m`,
@@ -261,12 +264,27 @@ export type ClusterOutcome =
   | { kind: "none" }
   | { kind: "ambiguous"; centroids: Point[] };
 
-/** A canonical string key for a cluster's member set — used for order-free tie-breaks. */
+/** A canonical string key for a cluster's member set — used for dedup + order-free tie-breaks. */
 function clusterKey(members: Fix[]): string {
   return [...members]
     .sort(compareFix)
     .map((m) => `${m.lat},${m.lng},${m.trip_id}`)
     .join("|");
+}
+
+/**
+ * True when ANY pair of the given centroids is more than `radiusM` apart. This is
+ * the NON-GREEDY ambiguity test: it compares every pair, so a bridged chain
+ * (A~B within radius, B~C within radius, but A~C beyond radius) is correctly
+ * flagged rather than being collapsed onto a single representative.
+ */
+export function hasDistantCentroidPair(centroids: Point[], radiusM: number): boolean {
+  for (let i = 0; i < centroids.length; i++) {
+    for (let j = i + 1; j < centroids.length; j++) {
+      if (metersBetween(centroids[i], centroids[j]) > radiusM) return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -291,17 +309,29 @@ export function clusterOutcome(fixes: Fix[], p: AlgoParams = ALGO): ClusterOutco
   }
   if (clusters.length === 0) return { kind: "none" };
 
-  const maxSize = Math.max(...clusters.map((c) => c.members.length));
-  const top = clusters.filter((c) => c.members.length === maxSize);
+  // Deduplicate equivalent clusters (the SAME member set found via different
+  // seeds) by canonical signature, so a repeated cluster is not mistaken for a
+  // rival place.
+  const uniqueByKey = new Map<string, (typeof clusters)[number]>();
+  for (const c of clusters) if (!uniqueByKey.has(c.key)) uniqueByKey.set(c.key, c);
+  const unique = [...uniqueByKey.values()];
 
-  // Are the strongest clusters all the SAME place? Group their centroids by
-  // proximity; more than one spatially-distinct group → ambiguous.
-  const distinct: Point[] = [];
-  for (const c of top) {
-    if (!distinct.some((d) => metersBetween(d, c.centroid) <= p.radius_m)) distinct.push(c.centroid);
-  }
-  if (distinct.length > 1) {
-    return { kind: "ambiguous", centroids: distinct.sort(comparePoint) };
+  const maxSize = Math.max(...unique.map((c) => c.members.length));
+  const top = unique.filter((c) => c.members.length === maxSize);
+
+  // Conservative, NON-greedy ambiguity: compare EVERY pair of the strongest
+  // clusters' centroids. If any pair is more than radius_m apart the evidence
+  // points at two different places → refuse. No greedy representative grouping
+  // (which could wrongly bridge A~B~C when A and C are actually far apart).
+  const topCentroids = top.map((c) => c.centroid);
+  if (hasDistantCentroidPair(topCentroids, p.radius_m)) {
+    const seen = new Set<string>();
+    const centroids: Point[] = [];
+    for (const c of topCentroids) {
+      const k = `${c.lat},${c.lng}`;
+      if (!seen.has(k)) { seen.add(k); centroids.push(c); }
+    }
+    return { kind: "ambiguous", centroids: centroids.sort(comparePoint) };
   }
 
   // One place; pick the canonical member set among the ties so the written
@@ -355,16 +385,74 @@ export function selectHealTargets(rows: ConsigneeCoordState[]): HealTargets {
   return { eligible, partial };
 }
 
+export interface Interval {
+  gte: Date;
+  lte: Date;
+}
+
 /**
- * Per-trip recorded_at bound for the LocationLog read: the trip's delivery
- * window [min(delivered_at) - window, max(delivered_at) + window]. Bounding the
- * query keeps us from scanning a truck's entire GPS history. null = no stops.
+ * Merge a set of time intervals: sort by start, then coalesce only intervals that
+ * OVERLAP or touch. Intervals separated by a real gap are PRESERVED as distinct
+ * ranges (so two widely-separated deliveries do not pull in the hours of GPS
+ * history between them).
  */
-export function deliveryWindowRange(deliveredAts: Date[], windowMin: number): { gte: Date; lte: Date } | null {
-  if (deliveredAts.length === 0) return null;
-  const times = deliveredAts.map((d) => d.getTime());
+export function mergeIntervals(intervals: Interval[]): Interval[] {
+  if (intervals.length === 0) return [];
+  const sorted = [...intervals].sort(
+    (a, b) => a.gte.getTime() - b.gte.getTime() || a.lte.getTime() - b.lte.getTime(),
+  );
+  const merged: Interval[] = [{ gte: sorted[0].gte, lte: sorted[0].lte }];
+  for (let i = 1; i < sorted.length; i++) {
+    const last = merged[merged.length - 1];
+    const cur = sorted[i];
+    if (cur.gte.getTime() <= last.lte.getTime()) {
+      // overlap or touch → extend
+      if (cur.lte.getTime() > last.lte.getTime()) last.lte = cur.lte;
+    } else {
+      merged.push({ gte: cur.gte, lte: cur.lte }); // real gap → keep separate
+    }
+  }
+  return merged;
+}
+
+/**
+ * The recorded_at ranges to read for ONE trip: an individual ±window_min interval
+ * per delivered stop, with only overlapping intervals merged. Widely-separated
+ * deliveries stay as separate ranges. [] = no stops.
+ */
+export function tripDeliveryIntervals(deliveredAts: Date[], windowMin: number): Interval[] {
   const w = windowMin * 60_000;
-  return { gte: new Date(Math.min(...times) - w), lte: new Date(Math.max(...times) + w) };
+  return mergeIntervals(deliveredAts.map((d) => ({ gte: new Date(d.getTime() - w), lte: new Date(d.getTime() + w) })));
+}
+
+/** A single OR branch of the LocationLog predicate — one merged interval, phone only. */
+export interface LocationLogPredicate {
+  trip_id: string;
+  source: "phone";
+  recorded_at: { gte: Date; lte: Date };
+}
+
+/**
+ * Build the LocationLog read predicate from per-trip merged intervals. Only
+ * phone-sourced fixes are read (vendor ingestion is a separate concern), and only
+ * within the merged delivery windows. null = nothing to read. The OR branches are
+ * stably ordered (trip_id, then start) for predictable queries.
+ */
+export function buildLocationLogWhere(
+  intervalsByTrip: Map<string, Interval[]>,
+): { OR: LocationLogPredicate[] } | null {
+  const OR: LocationLogPredicate[] = [];
+  for (const [trip_id, intervals] of intervalsByTrip) {
+    for (const iv of intervals) {
+      OR.push({ trip_id, source: "phone", recorded_at: { gte: iv.gte, lte: iv.lte } });
+    }
+  }
+  OR.sort(
+    (a, b) =>
+      (a.trip_id < b.trip_id ? -1 : a.trip_id > b.trip_id ? 1 : 0) ||
+      a.recorded_at.gte.getTime() - b.recorded_at.gte.getTime(),
+  );
+  return OR.length ? { OR } : null;
 }
 
 // ── Dump shape (CONFIDENTIAL — decisions + counts only, no raw GPS/PII) ───────
@@ -434,11 +522,30 @@ const isPositiveInt = (v: unknown): boolean => typeof v === "number" && Number.i
  * version, or a dump whose algorithm parameters differ from the ones we would
  * recompute with. Throws DumpRejected; narrows `dump` to Dump on success.
  */
+const ALLOWED_DUMP_KEYS = new Set<string>([
+  "format_version",
+  "algorithm_version",
+  "generated_at",
+  "classification",
+  "window_min",
+  "radius_m",
+  "min_fixes",
+  "min_distinct_trips",
+  "from_tolerance_m",
+  "heals",
+]);
+const ALLOWED_HEAL_KEYS = new Set<string>(["consignee_id", "decision", "lat", "lng", "n_fixes", "n_trips"]);
+
 export function validateDump(dump: unknown, params: AlgoParams = ALGO): asserts dump is Dump {
   if (typeof dump !== "object" || dump === null || Array.isArray(dump)) {
     throw new DumpRejected("dump must be a JSON object");
   }
   const d = dump as Record<string, unknown>;
+
+  // Reject unknown top-level keys (no silently-ignored extra fields).
+  for (const k of Object.keys(d)) {
+    if (!ALLOWED_DUMP_KEYS.has(k)) throw new DumpRejected(`unknown top-level key "${k}"`);
+  }
 
   // Metadata types.
   const numMeta: (keyof AlgoParams)[] = [
@@ -458,8 +565,8 @@ export function validateDump(dump: unknown, params: AlgoParams = ALGO): asserts 
   if (typeof d.generated_at !== "string" || Number.isNaN(Date.parse(d.generated_at))) {
     throw new DumpRejected(`generated_at must be a valid timestamp (got ${JSON.stringify(d.generated_at)})`);
   }
-  if (typeof d.classification !== "string" || d.classification.length === 0) {
-    throw new DumpRejected("classification must be a non-empty string");
+  if (d.classification !== DUMP_CLASSIFICATION) {
+    throw new DumpRejected(`classification must equal "${DUMP_CLASSIFICATION}" (got ${JSON.stringify(d.classification)})`);
   }
   if (!Array.isArray(d.heals)) {
     throw new DumpRejected("heals must be an array");
@@ -488,6 +595,9 @@ export function validateDump(dump: unknown, params: AlgoParams = ALGO): asserts 
       throw new DumpRejected("each heal must be a JSON object");
     }
     const heal = h as Record<string, unknown>;
+    for (const k of Object.keys(heal)) {
+      if (!ALLOWED_HEAL_KEYS.has(k)) throw new DumpRejected(`unknown heal key "${k}"`);
+    }
     if (typeof heal.consignee_id !== "string" || heal.consignee_id.length === 0) {
       throw new DumpRejected("heal.consignee_id must be a non-empty string");
     }
@@ -509,6 +619,17 @@ export function validateDump(dump: unknown, params: AlgoParams = ALGO): asserts 
     }
     if (!isPositiveInt(heal.n_trips)) {
       throw new DumpRejected(`heal.n_trips must be a positive integer for "${heal.consignee_id}" (got ${JSON.stringify(heal.n_trips)})`);
+    }
+    // Evidence counts must meet the dump's OWN recorded thresholds…
+    if ((heal.n_fixes as number) < (d.min_fixes as number)) {
+      throw new DumpRejected(`heal.n_fixes ${heal.n_fixes} < recorded min_fixes ${d.min_fixes} for "${heal.consignee_id}"`);
+    }
+    if ((heal.n_trips as number) < (d.min_distinct_trips as number)) {
+      throw new DumpRejected(`heal.n_trips ${heal.n_trips} < recorded min_distinct_trips ${d.min_distinct_trips} for "${heal.consignee_id}"`);
+    }
+    // …and n_trips can never exceed n_fixes (one candidate per trip).
+    if ((heal.n_trips as number) > (heal.n_fixes as number)) {
+      throw new DumpRejected(`heal.n_trips ${heal.n_trips} > n_fixes ${heal.n_fixes} for "${heal.consignee_id}"`);
     }
   }
 }
@@ -632,10 +753,33 @@ export async function applyHeals(client: HealClient, rows: WriteRow[]): Promise<
   return res;
 }
 
-// ── DB → candidates (needs a live DB; exercised via integration) ─────────────
-async function computeHeals(params: AlgoParams): Promise<{ candidates: Candidate[]; partial: HealTargets["partial"] }> {
+// ── DB adapter (injectable so computeHeals is testable without a live DB) ─────
+export interface HealDbAdapter {
+  consignee: {
+    findMany(args: unknown): Promise<{ id: string; company_name: string; latitude: number | null; longitude: number | null }[]>;
+  };
+  tripStop: {
+    findMany(args: unknown): Promise<{ consignee_id: string; trip_id: string; delivered_at: Date | null }[]>;
+  };
+  locationLog: {
+    findMany(args: unknown): Promise<{ trip_id: string; latitude: unknown; longitude: unknown; recorded_at: Date }[]>;
+  };
+}
+
+/** The default adapter — the real Prisma client. */
+export const prismaAdapter: HealDbAdapter = {
+  consignee: { findMany: (a) => prisma.consignee.findMany(a as never) as never },
+  tripStop: { findMany: (a) => prisma.tripStop.findMany(a as never) as never },
+  locationLog: { findMany: (a) => prisma.locationLog.findMany(a as never) as never },
+};
+
+// ── DB → candidates (real DB by default; injected adapter in tests) ──────────
+export async function computeHeals(
+  params: AlgoParams,
+  db: HealDbAdapter = prismaAdapter,
+): Promise<{ candidates: Candidate[]; partial: HealTargets["partial"] }> {
   // Query consignees missing EITHER coordinate (symmetric), then partition.
-  const consignees = await prisma.consignee.findMany({
+  const consignees = await db.consignee.findMany({
     where: { OR: [{ latitude: null }, { longitude: null }] },
     select: { id: true, company_name: true, latitude: true, longitude: true },
   });
@@ -643,13 +787,15 @@ async function computeHeals(params: AlgoParams): Promise<{ candidates: Candidate
   const byId = new Map(consignees.map((c) => [c.id, c]));
   if (eligible.length === 0) return { candidates: [], partial };
 
-  const stops = await prisma.tripStop.findMany({
+  const stops = await db.tripStop.findMany({
     where: { consignee_id: { in: eligible }, status: "delivered", delivered_at: { not: null } },
     select: { consignee_id: true, trip_id: true, delivered_at: true },
   });
   if (stops.length === 0) return { candidates: [], partial };
 
-  // Per-trip delivery-time ranges bound the LocationLog read to relevant history.
+  // Per-trip merged delivery-window intervals bound the LocationLog read to the
+  // relevant history only, preserving gaps between separated deliveries. Only
+  // phone-sourced fixes are read.
   const deliveredByTrip = new Map<string, Date[]>();
   for (const s of stops) {
     if (!s.delivered_at) continue;
@@ -657,19 +803,18 @@ async function computeHeals(params: AlgoParams): Promise<{ candidates: Candidate
     arr.push(s.delivered_at);
     deliveredByTrip.set(s.trip_id, arr);
   }
-  const orRanges: { trip_id: string; recorded_at: { gte: Date; lte: Date } }[] = [];
+  const intervalsByTrip = new Map<string, Interval[]>();
   for (const [trip_id, times] of deliveredByTrip) {
-    const range = deliveryWindowRange(times, params.window_min);
-    if (range) orRanges.push({ trip_id, recorded_at: range });
+    intervalsByTrip.set(trip_id, tripDeliveryIntervals(times, params.window_min));
   }
-  const logs =
-    orRanges.length === 0
-      ? []
-      : await prisma.locationLog.findMany({
-          where: { OR: orRanges },
-          select: { trip_id: true, latitude: true, longitude: true, recorded_at: true },
-          orderBy: [{ recorded_at: "asc" }],
-        });
+  const logWhere = buildLocationLogWhere(intervalsByTrip);
+  const logs = logWhere
+    ? await db.locationLog.findMany({
+        where: logWhere,
+        select: { trip_id: true, latitude: true, longitude: true, recorded_at: true },
+        orderBy: [{ recorded_at: "asc" }],
+      })
+    : [];
   const logsByTrip = new Map<string, RawFix[]>();
   for (const l of logs) {
     const arr = logsByTrip.get(l.trip_id) ?? [];
@@ -709,6 +854,30 @@ async function computeHeals(params: AlgoParams): Promise<{ candidates: Candidate
   // Stable dump/report order.
   out.sort((a, b) => (a.consignee_id < b.consignee_id ? -1 : a.consignee_id > b.consignee_id ? 1 : 0));
   return { candidates: out, partial };
+}
+
+/**
+ * The full --from plan: parse + STRICTLY VALIDATE the dump BEFORE touching the
+ * database, then recompute fresh evidence and reconcile. Invalid JSON, structure,
+ * version, classification or parameters throw here WITHOUT any DB adapter call, so
+ * a malformed dump can never reach a Prisma query or a write. Returns the write
+ * rows, skip reasons, and partial-coordinate anomalies.
+ */
+export async function planFromDump(
+  rawJson: string,
+  params: AlgoParams = ALGO,
+  db: HealDbAdapter = prismaAdapter,
+): Promise<{ rows: WriteRow[]; ineligible: string[]; drifted: string[]; partial: HealTargets["partial"] }> {
+  let dump: unknown;
+  try {
+    dump = JSON.parse(rawJson);
+  } catch (e) {
+    throw new DumpRejected(`dump is not valid JSON: ${(e as Error).message}`);
+  }
+  validateDump(dump, params); // STRICT — runs before any DB access below
+  const { candidates, partial } = await computeHeals(params, db);
+  const rec = reconcileFromDump(dump, candidates, params);
+  return { ...rec, partial };
 }
 
 // ── Strict, complete CLI parsing ─────────────────────────────────────────────
@@ -820,26 +989,31 @@ async function main() {
   );
 
   const fs = await import("fs");
-  const { candidates, partial } = await computeHeals(params);
-
-  const latNull = partial.filter((p) => p.orientation === "latitude_null_longitude_set").length;
-  const lngNull = partial.filter((p) => p.orientation === "latitude_set_longitude_null").length;
-  console.log(
-    `Partial-coord anomalies (excluded): ${partial.length}  ` +
-      `[lat null / lng set: ${latNull}] [lat set / lng null: ${lngNull}]`,
-  );
+  const reportPartial = (partial: HealTargets["partial"]) => {
+    const latNull = partial.filter((p) => p.orientation === "latitude_null_longitude_set").length;
+    const lngNull = partial.filter((p) => p.orientation === "latitude_set_longitude_null").length;
+    console.log(
+      `Partial-coord anomalies (excluded): ${partial.length}  ` +
+        `[lat null / lng set: ${latNull}] [lat set / lng null: ${lngNull}]`,
+    );
+  };
 
   let rows: WriteRow[];
 
   if (FROM) {
-    const dump = JSON.parse(fs.readFileSync(FROM, "utf8")) as unknown;
-    const rec = reconcileFromDump(dump, candidates, params); // strict-validates, throws on any problem
-    rows = rec.rows;
+    // Read + STRICTLY VALIDATE the dump before any DB query (planFromDump throws
+    // on a malformed/incompatible dump without touching Prisma).
+    const raw = fs.readFileSync(FROM, "utf8");
+    const plan = await planFromDump(raw, params);
+    rows = plan.rows;
+    reportPartial(plan.partial);
     console.log(
       `Reconcile    : ${rows.length} applicable  ` +
-        `(${rec.ineligible.length} no-longer-eligible, ${rec.drifted.length} drifted > ${params.from_tolerance_m}m)`,
+        `(${plan.ineligible.length} no-longer-eligible, ${plan.drifted.length} drifted > ${params.from_tolerance_m}m)`,
     );
   } else {
+    const { candidates, partial } = await computeHeals(params);
+    reportPartial(partial);
     console.log(`Heals found  : ${candidates.length}`);
     if (verbose) {
       for (const c of candidates) {

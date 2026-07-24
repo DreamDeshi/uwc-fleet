@@ -8,8 +8,15 @@ import {
   tripCandidate,
   consigneeCandidates,
   clusterOutcome,
+  hasDistantCentroidPair,
   selectHealTargets,
-  deliveryWindowRange,
+  mergeIntervals,
+  tripDeliveryIntervals,
+  buildLocationLogWhere,
+  computeHeals,
+  planFromDump,
+  buildDump,
+  DumpRejected,
   parseNumericFlag,
   parseArgs,
   type AlgoParams,
@@ -17,6 +24,8 @@ import {
   type RawFix,
   type StopEvidence,
   type ConsigneeCoordState,
+  type HealDbAdapter,
+  type Interval,
 } from "../scripts/self-heal-coords";
 
 /** Every ordering of `arr` — used to prove clustering is input-order-independent. */
@@ -245,6 +254,25 @@ describe("clusterOutcome — deterministic + ambiguity", () => {
     }
   });
 
+  it("BRIDGED-CLUSTER regression: A~B ≤ r, B~C ≤ r, A~C > r ⇒ ambiguous for every permutation", () => {
+    // hasDistantCentroidPair compares EVERY pair (no greedy representative
+    // grouping), so a chain where the ends are far apart is correctly flagged.
+    // A east 0, B east 90, C east 180 (radius 100): A-B=90≤100, B-C=90≤100, A-C=180>100.
+    const A = at(0, 0);
+    const B = at(0, 90);
+    const C = at(0, 180);
+    expect(metersBetween(A, B)).toBeLessThanOrEqual(ALGO.radius_m);
+    expect(metersBetween(B, C)).toBeLessThanOrEqual(ALGO.radius_m);
+    expect(metersBetween(A, C)).toBeGreaterThan(ALGO.radius_m);
+    for (const p of permutations([A, B, C])) {
+      expect(hasDistantCentroidPair(p, ALGO.radius_m)).toBe(true); // refuse, order-free
+    }
+    // Control: three mutually-close centroids are NOT distant.
+    for (const p of permutations([at(0, 0), at(0, 10), at(0, 20)])) {
+      expect(hasDistantCentroidPair(p, ALGO.radius_m)).toBe(false);
+    }
+  });
+
   it("PERMUTATION: every ordering of an ambiguous set refuses identically", () => {
     const a = [fix(0, 0, "t1"), fix(6, 0, "t2"), fix(0, 6, "t3")];
     const b = [fix(0, 500, "t4"), fix(6, 500, "t5"), fix(0, 506, "t6")];
@@ -294,32 +322,162 @@ describe("selectHealTargets — symmetric partial detection", () => {
   });
 });
 
-describe("deliveryWindowRange + bounded reads exclude irrelevant history", () => {
+describe("mergeIntervals + tripDeliveryIntervals — exact delivery-window unions", () => {
   const D = new Date("2026-07-24T10:00:00Z");
   const min = (m: number) => new Date(D.getTime() + m * 60_000);
+  const iv = (a: number, b: number): Interval => ({ gte: min(a), lte: min(b) });
 
-  it("bounds recorded_at to [min-window, max+window]", () => {
-    const r = deliveryWindowRange([min(0), min(30)], 5)!;
-    expect(r.gte.getTime()).toBe(min(-5).getTime());
-    expect(r.lte.getTime()).toBe(min(35).getTime());
+  it("merges overlapping/touching intervals", () => {
+    const m = mergeIntervals([iv(0, 10), iv(5, 15), iv(15, 20)]);
+    expect(m).toHaveLength(1);
+    expect(m[0].gte.getTime()).toBe(min(0).getTime());
+    expect(m[0].lte.getTime()).toBe(min(20).getTime());
   });
 
-  it("null for no stops", () => {
-    expect(deliveryWindowRange([], 5)).toBeNull();
+  it("PRESERVES a real gap between separated intervals", () => {
+    const m = mergeIntervals([iv(0, 10), iv(100, 110)]);
+    expect(m).toHaveLength(2);
   });
 
-  it("candidate extraction ignores substantial irrelevant history far from delivery", () => {
-    // One relevant fix at delivery time, buried in a long tail of old GPS pings.
+  it("builds a per-stop ±window interval, merging only overlaps", () => {
+    // Two deliveries 3 min apart (windows overlap → merge); a third 8 h later (gap).
+    const merged = tripDeliveryIntervals([min(0), min(3), min(480)], 5);
+    expect(merged).toHaveLength(2);
+    expect(merged[0].gte.getTime()).toBe(min(-5).getTime());
+    expect(merged[0].lte.getTime()).toBe(min(8).getTime());
+    expect(merged[1].gte.getTime()).toBe(min(475).getTime());
+  });
+
+  it("candidate extraction still ignores irrelevant history far from delivery", () => {
     const relevant: RawFix = { lat: BASE.lat, lng: BASE.lng, recorded_at: min(0) };
     const ancientHistory: RawFix[] = Array.from({ length: 500 }, (_, i) => ({
-      lat: BASE.lat + 0.05, // ~5.5 km away
+      lat: BASE.lat + 0.05,
       lng: BASE.lng + 0.05,
-      recorded_at: min(-600 - i), // 10+ hours before delivery, way outside window
+      recorded_at: min(-600 - i),
     }));
     const logs = new Map<string, RawFix[]>([["tA", [...ancientHistory, relevant]]]);
     const cands = consigneeCandidates([{ trip_id: "tA", delivered_at: min(0) }], logs, ALGO.window_min);
     expect(cands).toHaveLength(1);
-    expect(metersBetween(cands[0], relevant)).toBeLessThan(EPS_M); // the near fix, not the history
+    expect(metersBetween(cands[0], relevant)).toBeLessThan(EPS_M);
+  });
+});
+
+describe("buildLocationLogWhere — phone-only, per-merged-interval predicate", () => {
+  const D = new Date("2026-07-24T10:00:00Z");
+  const min = (m: number) => new Date(D.getTime() + m * 60_000);
+
+  it("emits one phone-scoped OR branch per interval, stably ordered; null when empty", () => {
+    const w = buildLocationLogWhere(
+      new Map<string, Interval[]>([["tA", [{ gte: min(0), lte: min(10) }, { gte: min(100), lte: min(110) }]]]),
+    )!;
+    expect(w.OR).toHaveLength(2);
+    for (const branch of w.OR) {
+      expect(branch.trip_id).toBe("tA");
+      expect(branch.source).toBe("phone");
+    }
+    expect(buildLocationLogWhere(new Map())).toBeNull();
+  });
+});
+
+describe("computeHeals — production path via injected DB adapter", () => {
+  const D = new Date("2026-07-24T10:00:00Z");
+  const min = (m: number) => new Date(D.getTime() + m * 60_000);
+
+  // A recording mock adapter; each findMany returns canned rows and captures args.
+  function mockDb(overrides: Partial<Record<keyof HealDbAdapter, unknown>> = {}) {
+    const calls: { consignee: unknown[]; tripStop: unknown[]; locationLog: unknown[] } = {
+      consignee: [],
+      tripStop: [],
+      locationLog: [],
+    };
+    const db: HealDbAdapter = {
+      consignee: {
+        findMany: async (a) => {
+          calls.consignee.push(a);
+          return [{ id: "c1", company_name: "ANON", latitude: null, longitude: null }];
+        },
+      },
+      tripStop: {
+        findMany: async (a) => {
+          calls.tripStop.push(a);
+          // ONE trip, two deliveries 8 h apart → two separated windows.
+          return [
+            { consignee_id: "c1", trip_id: "tA", delivered_at: min(0) },
+            { consignee_id: "c1", trip_id: "tA", delivered_at: min(480) },
+          ];
+        },
+      },
+      locationLog: {
+        findMany: async (a) => {
+          calls.locationLog.push(a);
+          return [];
+        },
+      },
+      ...(overrides as Partial<HealDbAdapter>),
+    };
+    return { db, calls };
+  }
+
+  it("bounds the LocationLog query to phone fixes inside the two delivery windows, excluding the gap", async () => {
+    const { db, calls } = mockDb();
+    await computeHeals(ALGO, db);
+    expect(calls.locationLog).toHaveLength(1);
+    const where = (calls.locationLog[0] as { where: { OR: { trip_id: string; source: string; recorded_at: { gte: Date; lte: Date } }[] } }).where;
+    expect(where.OR).toHaveLength(2); // two separated windows, gap preserved
+    for (const b of where.OR) expect(b.source).toBe("phone");
+
+    // A timestamp in the GAP between the two deliveries must match NO interval.
+    const between = min(240).getTime(); // 4 h after first, 4 h before second
+    const inSomeWindow = where.OR.some(
+      (b) => between >= b.recorded_at.gte.getTime() && between <= b.recorded_at.lte.getTime(),
+    );
+    expect(inSomeWindow).toBe(false);
+
+    // The delivery timestamps themselves DO fall inside a window.
+    for (const t of [min(0).getTime(), min(480).getTime()]) {
+      expect(where.OR.some((b) => t >= b.recorded_at.gte.getTime() && t <= b.recorded_at.lte.getTime())).toBe(true);
+    }
+  });
+
+  it("reports a partial-coordinate consignee and never queries stops/logs for it", async () => {
+    const { db, calls } = mockDb({
+      consignee: {
+        findMany: async () => [{ id: "p1", company_name: "ANON", latitude: 5.2, longitude: null }],
+      },
+    } as Partial<HealDbAdapter>);
+    const { candidates, partial } = await computeHeals(ALGO, db);
+    expect(candidates).toEqual([]);
+    expect(partial).toEqual([{ id: "p1", orientation: "latitude_set_longitude_null" }]);
+    expect(calls.tripStop).toHaveLength(0); // no eligible rows → no further queries
+    expect(calls.locationLog).toHaveLength(0);
+  });
+});
+
+describe("planFromDump — strict validation BEFORE any database access", () => {
+  // An adapter that FAILS the test if any method is called.
+  function forbiddenDb(): HealDbAdapter {
+    const boom = (): never => {
+      throw new Error("database must not be queried for an invalid dump");
+    };
+    return {
+      consignee: { findMany: boom as never },
+      tripStop: { findMany: boom as never },
+      locationLog: { findMany: boom as never },
+    };
+  }
+
+  it("rejects invalid JSON without any DB call", async () => {
+    await expect(planFromDump("{ not json", ALGO, forbiddenDb())).rejects.toBeInstanceOf(DumpRejected);
+  });
+
+  it("rejects a malformed (bad structure) dump without any DB call", async () => {
+    const bad = JSON.stringify({ ...buildDump([], ALGO), heals: "nope" });
+    await expect(planFromDump(bad, ALGO, forbiddenDb())).rejects.toThrow(/heals must be an array/);
+  });
+
+  it("rejects a version mismatch without any DB call", async () => {
+    const bad = JSON.stringify({ ...buildDump([], ALGO), algorithm_version: 2 });
+    await expect(planFromDump(bad, ALGO, forbiddenDb())).rejects.toThrow(/algorithm_version/);
   });
 });
 

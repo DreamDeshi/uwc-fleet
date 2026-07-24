@@ -196,6 +196,37 @@ describe("validateDump — strict structural validation (rejects malformed dumps
   });
 });
 
+describe("validateDump — genuinely strict (keys, classification, count thresholds)", () => {
+  it("requires classification to equal the exact declared constant", () => {
+    expect(() => validateDump({ ...validDump(), classification: "confidential" })).toThrow(/classification/);
+    expect(() => validateDump({ ...validDump(), classification: DUMP_CLASSIFICATION.toUpperCase() })).toThrow(/classification/);
+  });
+
+  it("rejects unknown top-level keys", () => {
+    expect(() => validateDump({ ...validDump(), extra: 1 })).toThrow(/unknown top-level key "extra"/);
+  });
+
+  it("rejects unknown per-heal keys", () => {
+    expect(() => validateDump(withHeals([rawHeal({ company_name: "LEAK" })]))).toThrow(/unknown heal key "company_name"/);
+    expect(() => validateDump(withHeals([rawHeal({ note: "x" })]))).toThrow(/unknown heal key "note"/);
+  });
+
+  it("rejects n_trips greater than n_fixes", () => {
+    expect(() => validateDump(withHeals([rawHeal({ n_fixes: 3, n_trips: 5 })]))).toThrow(/n_trips 5 > n_fixes 3/);
+  });
+
+  it("rejects evidence counts below the dump's recorded thresholds", () => {
+    // n_fixes below recorded min_fixes (3)…
+    expect(() => validateDump(withHeals([rawHeal({ n_fixes: 2, n_trips: 2 })]))).toThrow(/min_fixes/);
+    // …n_trips below recorded min_distinct_trips (2).
+    expect(() => validateDump(withHeals([rawHeal({ n_fixes: 3, n_trips: 1 })]))).toThrow(/min_distinct_trips/);
+  });
+
+  it("accepts counts exactly at the thresholds", () => {
+    expect(() => validateDump(withHeals([rawHeal({ n_fixes: 3, n_trips: 2 })]))).not.toThrow();
+  });
+});
+
 describe("reconcileFromDump — eligibility + drift against FRESH evidence", () => {
   it("applies a saved decision that still clusters within tolerance", () => {
     const rec = reconcileFromDump(validDump(), [candidate()]);
