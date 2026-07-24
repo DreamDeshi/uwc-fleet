@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Platform } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
+import { statusRequestBody } from "../lib/statusRequest";
 import {
   Consignee,
   Department,
@@ -233,7 +234,7 @@ export function useUpdateTripStatus() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ tripId, action, stop_id }: StatusInput) =>
-      (await api.patch<Trip>(`/trips/${tripId}/status`, { action, stop_id })).data,
+      (await api.patch<Trip>(`/trips/${tripId}/status`, statusRequestBody(action, stop_id))).data,
     // Invalidate on SETTLED, not just success: on bad signal a status write
     // can commit server-side while the response is lost — the driver's retry
     // then 409s, and without an error-path refetch the screen keeps showing

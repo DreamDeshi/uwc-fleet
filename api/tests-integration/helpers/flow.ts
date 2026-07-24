@@ -146,6 +146,12 @@ export function arriveRaw(driverToken: string, tripId: string, stopId: string) {
     .send({ action: "arrived", stop_id: stopId });
 }
 
+/** PATCH /status with an ARBITRARY body — used to prove the route ignores any
+ *  extra client-supplied fields (e.g. a chosen arrived_at). */
+export function statusRaw(driverToken: string, tripId: string, body: Record<string, unknown>) {
+  return api().patch(`/api/v1/trips/${tripId}/status`).set(auth(driverToken)).send(body);
+}
+
 /** Mark a stop delivered — RAW response (POD must already be satisfied). */
 export function deliverRaw(driverToken: string, tripId: string, stopId: string) {
   return api()
