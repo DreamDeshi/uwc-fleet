@@ -23,7 +23,7 @@ import { ApiError } from "../lib/apiError";
 import { sendPushNotifications } from "../lib/pushNotifications";
 import { palletEquivalents, isUnsizedForDispatch } from "../lib/pallets";
 import { isSerializationConflict } from "../lib/prismaErrors";
-import { claimPendingTrip } from "./tripAssignment";
+import { claimUnpausedPendingTrip } from "./tripAssignment";
 import { truckRateSnapshot, snapshotStopZonePoints } from "./rateSnapshot";
 import { effectiveTruckRates, effectiveZonePoints } from "./pendingRates";
 import { leaveDateFilter } from "./driverLeave";
@@ -513,13 +513,15 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
           return { sel: null as TruckSelection | null, raced: false, window: windowEst };
         }
 
-        // Status-guarded claim: a concurrent dispatch that already assigned this
-        // trip leaves us with count 0 → we lost the race. The claim also freezes
-        // the truck's rates onto the trip (rate lock): finalization pays at these
-        // values even if an admin edits the rates while the trip is in flight.
-        // The rates frozen are those EFFECTIVE right now — a staged rate edit
-        // is invisible until its next-MYT-day cutoff (client rule).
-        const won = await claimPendingTrip(tx, tripId, {
+        // Status-AND-hold-guarded claim: a concurrent dispatch that already
+        // assigned this trip — OR an admin who set the manual-hold pin after our
+        // preflight — leaves us with count 0 → we lost the race and stop without
+        // assigning or clearing the hold. The claim also freezes the truck's rates
+        // onto the trip (rate lock): finalization pays at these values even if an
+        // admin edits the rates while the trip is in flight. The rates frozen are
+        // those EFFECTIVE right now — a staged rate edit is invisible until its
+        // next-MYT-day cutoff (client rule).
+        const won = await claimUnpausedPendingTrip(tx, tripId, {
           driver_id: sel.driverId,
           truck_plate: sel.plate,
           pending_alert_sent: true, // it's handled now; don't ping admins about it

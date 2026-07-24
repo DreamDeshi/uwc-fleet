@@ -42,6 +42,41 @@ export async function claimPendingTrip(
   return res.count === 1;
 }
 
+// The AUTOMATIC-claim client: its predicate additionally requires the manual-hold
+// pin to be clear, so it is a distinct type from the manual TripClaimClient.
+export interface TripAutoClaimClient {
+  trip: {
+    updateMany(args: {
+      where: { id: string; status: "pending"; auto_dispatch_paused: false };
+      data: Record<string, unknown>;
+    }): Promise<{ count: number }>;
+  };
+}
+
+/**
+ * AUTOMATIC-dispatch claim: pending → assigned, but ONLY while the manual-hold pin
+ * is CLEAR. The CAS predicate includes `auto_dispatch_paused: false`, so if the
+ * hold flips to true between the engine's preflight (autoDispatchBlockReason) and
+ * this claim, the update matches nothing (count 0) — auto-dispatch loses the race
+ * and stops WITHOUT assigning or touching the hold. This is the atomic counterpart
+ * of the preflight, and it is deliberately SEPARATE from claimPendingTrip so the
+ * shared manual predicate is never quietly narrowed.
+ *
+ * Manual assignment stays on claimPendingTrip (no pause predicate) as the explicit
+ * override: it may claim a paused pending ticket and clears the pin on success.
+ */
+export async function claimUnpausedPendingTrip(
+  client: TripAutoClaimClient,
+  tripId: string,
+  data: Record<string, unknown>
+): Promise<boolean> {
+  const res = await client.trip.updateMany({
+    where: { id: tripId, status: "pending", auto_dispatch_paused: false },
+    data: { ...data, status: "assigned", auto_dispatch_paused: false },
+  });
+  return res.count === 1;
+}
+
 /**
  * Same as claimPendingTrip but throws the canonical 409 when another assignment
  * won the race (used by the request-handling path; the engine uses the boolean
