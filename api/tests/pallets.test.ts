@@ -1,10 +1,15 @@
 import { describe, it, expect } from "vitest";
+import { z } from "zod";
 import {
   palletFactor,
   palletEquivalents,
   isUnsizedForDispatch,
+  isDeprecatedPalletSize,
   normalizePalletType,
   CARGO_PALLET_TYPES,
+  BOOKABLE_CARGO_TYPES,
+  BOOKABLE_PALLET_SIZES,
+  DEPRECATED_PALLET_SIZES,
   PALLET_SIZES,
 } from "../src/lib/pallets";
 
@@ -74,7 +79,66 @@ describe("palletFactor", () => {
   });
 });
 
-describe("CARGO_PALLET_TYPES (the route's enum)", () => {
+// ── Q1 (CLIENT_ANSWERS_R1_2026-07-24): 1×1/1×2 removed from bookable sizes ────
+describe("Q1 — 1×1 and 1×2 deprecated as bookable footprints", () => {
+  it("DEPRECATED_PALLET_SIZES is exactly the two boxes Mr. Teh removed", () => {
+    expect([...DEPRECATED_PALLET_SIZES]).toEqual(["1×1", "1×2"]);
+    expect(isDeprecatedPalletSize("1×1")).toBe(true);
+    expect(isDeprecatedPalletSize("1×2")).toBe(true);
+    expect(isDeprecatedPalletSize("4×4")).toBe(false);
+  });
+
+  it("BOOKABLE sizes are PALLET_SIZES minus the deprecated boxes (drift guard)", () => {
+    const expected = PALLET_SIZES.filter((s) => !(DEPRECATED_PALLET_SIZES as readonly string[]).includes(s));
+    expect([...BOOKABLE_PALLET_SIZES]).toEqual(expected);
+    expect(BOOKABLE_PALLET_SIZES).not.toContain("1×1");
+    expect(BOOKABLE_PALLET_SIZES).not.toContain("1×2");
+  });
+
+  it("the NEW-booking vocabulary excludes 1×1/1×2 but keeps carton/Others", () => {
+    expect([...BOOKABLE_CARGO_TYPES]).toEqual([
+      "2×2", "2×3", "3×3", "3×4", "4×4", "4×8", "5×5", "5×10", "carton", "custom",
+    ]);
+  });
+
+  it("the booking-route enum (z.enum on BOOKABLE_CARGO_TYPES) rejects a new 1×1/1×2 but accepts the rest", () => {
+    // Mirrors the route schema, proving frontend/backend agree on what is bookable.
+    const enumSchema = z.enum(BOOKABLE_CARGO_TYPES);
+    expect(enumSchema.safeParse("1×1").success).toBe(false);
+    expect(enumSchema.safeParse("1×2").success).toBe(false);
+    for (const ok of ["2×2", "4×4", "5×5", "5×10", "carton", "custom"]) {
+      expect(enumSchema.safeParse(ok).success, ok).toBe(true);
+    }
+  });
+});
+
+describe("legacy display compatibility — historical 1×1/1×2 rows still resolve", () => {
+  it("keeps the deprecated factors so an existing record converts unchanged", () => {
+    // A historical CargoDetail row with 1×1/1×2 must NOT become unpriced/zeroed.
+    expect(palletFactor("1×1")).toBe(0.0625);
+    expect(palletFactor("1×2")).toBe(0.125);
+  });
+
+  it("palletEquivalents on a legacy 1×1/1×2 line is unchanged (money logic untouched)", () => {
+    expect(palletEquivalents([{ pallet_type: "1×1", quantity: 256 }])).toBe(16);
+    expect(palletEquivalents([{ pallet_type: "1×2", quantity: 4 }])).toBe(0.5);
+  });
+
+  it("the deprecated sizes remain in the full legacy vocabulary CARGO_PALLET_TYPES", () => {
+    expect(CARGO_PALLET_TYPES).toContain("1×1");
+    expect(CARGO_PALLET_TYPES).toContain("1×2");
+  });
+});
+
+describe("Q1 — confirmed footprint factors (5×5 / 3×3 / 2×3)", () => {
+  it("matches the values Mr. Teh confirmed correct", () => {
+    expect(palletFactor("5×5")).toBe(1.5625);
+    expect(palletFactor("3×3")).toBe(0.5625);
+    expect(palletFactor("2×3")).toBe(0.375);
+  });
+});
+
+describe("CARGO_PALLET_TYPES (full/legacy vocabulary — kept for historical rows)", () => {
   it("is exactly the closed vocabulary: 10 pallet sizes + carton/Others", () => {
     expect([...CARGO_PALLET_TYPES]).toEqual([
       "1×1",

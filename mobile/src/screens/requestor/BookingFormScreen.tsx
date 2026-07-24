@@ -34,7 +34,7 @@ import { NewConsigneeModal } from "../../components/NewConsigneeModal";
 import { LoadingState } from "../../components/States";
 import { useToast } from "../../components/Toast";
 import { pickDocumentImage, PickedPhoto } from "../../lib/photo";
-import { palletEquivalents, type PalletSize } from "../../lib/pallets";
+import { palletEquivalents, type BookablePalletSize } from "../../lib/pallets";
 import {
   loadTemplates,
   persistTemplates,
@@ -60,12 +60,11 @@ type Nav = BottomTabNavigationProp<RequestorTabParamList>;
 // final Confirm step so there's no near-empty "When" page.
 const STEPS = ["stepWhere", "stepWhat", "stepConfirm"] as const;
 // Display order (commonest first, then largest → smallest) — deliberately NOT
-// the lib's order; palletQtys is indexed by this. Typed as PalletSize so an
-// ASCII "4x4" here fails to compile rather than shipping a line the server's
-// enum rejects, and so a size added to the lib but forgotten here is at least
-// not a wrong one.
-// The last five arrived with item 2 (Mr. Teh, 17 Jul 2026).
-const PALLET_SIZES: PalletSize[] = [
+// the lib's order; palletQtys is indexed by this. Typed as BookablePalletSize so
+// an ASCII "4x4" — or a re-added deprecated 1×1/1×2 (removed per Q1, R1
+// 2026-07-24: those are boxes, not pallets) — fails to compile rather than
+// shipping a line the server's booking enum now rejects.
+const PALLET_SIZES: BookablePalletSize[] = [
   "4×4",
   "3×4",
   "4×8",
@@ -74,8 +73,6 @@ const PALLET_SIZES: PalletSize[] = [
   "3×3",
   "2×3",
   "2×2",
-  "1×2",
-  "1×1",
 ];
 
 // Parse the optional "estimated pallets of space" field for carton/Others cargo:
@@ -986,11 +983,12 @@ function StepWhat({
 
       {cargoType === "pallet" && (
         <>
-          <FieldLabel>{t("booking.palletSizeQty")}</FieldLabel>
+          <FieldLabel>{t("booking.cargoSizeQty")}</FieldLabel>
+          <Text style={styles.cargoSizeHint}>{t("booking.cargoSizeFeetHint")}</Text>
           <View style={styles.palletList}>
             {PALLET_SIZES.map((size, i) => (
               <View key={size} style={[styles.palletRow, i < PALLET_SIZES.length - 1 && styles.palletDivider]}>
-                <Text style={styles.palletSize}>Pallet {size}</Text>
+                <Text style={styles.palletSize}>{t("booking.cargoSizeRow", { size })}</Text>
                 <View style={styles.stepper}>
                   <TouchableOpacity style={styles.stepBtnMinus} onPress={() => updateQty(i, -1)}>
                     <Text style={styles.stepBtnMinusText}>−</Text>
@@ -1350,6 +1348,7 @@ const styles = StyleSheet.create({
   cargoTab: { flex: 1, height: 44, borderRadius: radius.md, borderWidth: 2, borderColor: colors.border, backgroundColor: colors.white, alignItems: "center", justifyContent: "center" },
   cargoTabActive: { borderColor: colors.yellow, backgroundColor: colors.yellow },
   cargoTabText: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
+  cargoSizeHint: { fontSize: 13, color: colors.textMuted, lineHeight: 17, marginBottom: 8 },
   palletList: { backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, overflow: "hidden" },
   palletRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14 },
   palletDivider: { borderBottomWidth: 1, borderBottomColor: colors.bg },

@@ -64,7 +64,7 @@ import { sendPushNotifications } from "../lib/pushNotifications";
 import { signTrackingToken } from "../lib/trackingToken";
 import { getDispatchMode } from "../lib/settings";
 import { autoDispatchTrip } from "../services/dispatchEngine";
-import { palletEquivalents, CARGO_PALLET_TYPES, normalizePalletType } from "../lib/pallets";
+import { palletEquivalents, BOOKABLE_CARGO_TYPES, normalizePalletType } from "../lib/pallets";
 import { recordTripEvent } from "../lib/tripHistory";
 import { buildTripTimeline } from "../lib/tripTimeline";
 import {
@@ -194,15 +194,17 @@ export const createTripSchema = z.object({
   cargo_details: z
     .array(
       z.object({
-        // Closed vocabulary (workbook REQUESTOR INTERFACE): the five pallet
-        // footprints plus carton/"Others". Normalise the SPELLING first (ASCII
-        // "5x10"/"5 x 10" → "5×10", the workbook's own notation), THEN enum the
-        // VOCABULARY — so the spec's spelling round-trips and stores canonical,
-        // while a genuinely unknown footprint ("6x6") still 400s instead of
-        // silently under-counting a 3.125-slot pallet into an overloaded truck.
+        // BOOKABLE vocabulary (Q1, R1 2026-07-24): the pallet footprints a new
+        // booking may select — 1×1/1×2 removed (they are boxes, not pallets) —
+        // plus carton/"Others". Normalise the SPELLING first (ASCII "5x10"/"5 x
+        // 10" → "5×10", the workbook's own notation), THEN enum the VOCABULARY —
+        // so the spec's spelling round-trips and stores canonical, while a
+        // now-deprecated ("1×1") or unknown ("6x6") footprint 400s instead of
+        // silently under-counting a pallet into an overloaded truck. Historical
+        // rows keep their factors via the full CARGO_PALLET_TYPES/PALLET_FACTORS.
         pallet_type: z.preprocess(
           (v) => (typeof v === "string" ? normalizePalletType(v) : v),
-          z.enum(CARGO_PALLET_TYPES)
+          z.enum(BOOKABLE_CARGO_TYPES)
         ),
         quantity: z.number().int().min(1),
         cartons: z.number().int().min(0).optional(),

@@ -28,8 +28,38 @@ export type PalletSize = (typeof PALLET_SIZES)[number];
 /** "carton" / "custom" (Others) carry no pallet footprint by conversion. */
 export const UNSIZED_CARGO_TYPES = ["carton", "custom"] as const;
 
-/** Every pallet_type the API accepts — mirrors api/src/lib/pallets.ts. */
+/** The FULL, legacy pallet_type vocabulary — mirrors api/src/lib/pallets.ts.
+ *  Retained so historical CargoDetail rows (which may carry a deprecated 1×1/1×2)
+ *  still resolve. NEW bookings validate on BOOKABLE_CARGO_TYPES below. */
 export const CARGO_PALLET_TYPES = [...PALLET_SIZES, ...UNSIZED_CARGO_TYPES] as const;
+
+/** DEPRECATED as bookable footprints (Q1, R1 2026-07-24): 1×1/1×2 are boxes, not
+ *  pallets, so they are removed from new-booking options. Factors below are kept
+ *  ONLY so existing historical records display/convert unchanged. */
+export const DEPRECATED_PALLET_SIZES = ["1×1", "1×2"] as const;
+
+/** True for a footprint no longer offered on new bookings (kept for legacy display). */
+export function isDeprecatedPalletSize(size: string): boolean {
+  return (DEPRECATED_PALLET_SIZES as readonly string[]).includes(size);
+}
+
+/** The footprints a NEW booking may select — PALLET_SIZES minus the deprecated
+ *  boxes. Explicit tuple (not filtered) to keep literal types; mirrors the API. */
+export const BOOKABLE_PALLET_SIZES = [
+  "2×2",
+  "2×3",
+  "3×3",
+  "3×4",
+  "4×4",
+  "4×8",
+  "5×5",
+  "5×10",
+] as const;
+export type BookablePalletSize = (typeof BOOKABLE_PALLET_SIZES)[number];
+
+/** The vocabulary a NEW booking's pallet_type is validated against — bookable
+ *  pallet footprints + carton/Others. Mirrors the API's booking-route enum. */
+export const BOOKABLE_CARGO_TYPES = [...BOOKABLE_PALLET_SIZES, ...UNSIZED_CARGO_TYPES] as const;
 
 /**
  * Slots per pallet, relative to a single 4×4 (= 1 slot). Keyed by PALLET_SIZES
@@ -37,9 +67,10 @@ export const CARGO_PALLET_TYPES = [...PALLET_SIZES, ...UNSIZED_CARGO_TYPES] as c
  * The rule is AREA ÷ 16 — see api/src/lib/pallets.ts, which this mirrors.
  */
 export const PALLET_FACTORS: Record<(typeof PALLET_SIZES)[number], number> = {
-  // ⚠ 1×1 / 1×2 unconfirmed as pallet types — see the server's note.
-  "1×1": 0.0625, // 1 / 16
-  "1×2": 0.125, // 2 / 16
+  // 1×1 / 1×2 are DEPRECATED as bookable footprints (Q1, R1 2026-07-24: boxes,
+  // not pallets — see DEPRECATED_PALLET_SIZES). Factors kept for legacy display.
+  "1×1": 0.0625, // 1 / 16  (legacy display only)
+  "1×2": 0.125, // 2 / 16  (legacy display only)
   "2×2": 0.25, // 4 / 16
   "2×3": 0.375, // 6 / 16
   "3×3": 0.5625, // 9 / 16

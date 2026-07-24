@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { bookableConsigneesWhere, createTripSchema, PICKUP_GRACE_MS } from "../src/routes/trips";
-import { CARGO_PALLET_TYPES } from "../src/lib/pallets";
+import { BOOKABLE_CARGO_TYPES } from "../src/lib/pallets";
 
 /**
  * Booking-creation validation: a pickup in the past is rejected at CREATE time
@@ -55,9 +55,20 @@ describe("createTripSchema — pallet_type is the workbook's closed vocabulary",
     createTripSchema.safeParse({ ...base, cargo_details: cargo, pickup_datetime: future });
 
   it("accepts every bookable type", () => {
-    for (const t of CARGO_PALLET_TYPES) {
+    for (const t of BOOKABLE_CARGO_TYPES) {
       expect(withCargo([{ pallet_type: t, quantity: 1 }]).success, t).toBe(true);
     }
+  });
+
+  // Q1 (CLIENT_ANSWERS_R1_2026-07-24): 1×1/1×2 are boxes, not pallets, and are
+  // removed from new bookings. The route must reject them so backend agrees with
+  // the frontend selector — historical rows keep converting via PALLET_FACTORS.
+  it("rejects the deprecated 1×1 / 1×2 footprints on a NEW booking", () => {
+    expect(withCargo([{ pallet_type: "1×1", quantity: 1 }]).success).toBe(false);
+    expect(withCargo([{ pallet_type: "1×2", quantity: 1 }]).success).toBe(false);
+    // …including via the ASCII spelling a caller might send.
+    expect(withCargo([{ pallet_type: "1x1", quantity: 1 }]).success).toBe(false);
+    expect(withCargo([{ pallet_type: "1 x 2", quantity: 1 }]).success).toBe(false);
   });
 
   // Normalisation: the workbook prints "5x10" (ASCII x); it now round-trips to

@@ -39,12 +39,54 @@ export type PalletSize = (typeof PALLET_SIZES)[number];
 export const UNSIZED_CARGO_TYPES = ["carton", "custom"] as const;
 
 /**
- * Every `pallet_type` the API accepts — the workbook's CLOSED vocabulary. The
- * booking route enums on this, so an unrecognised footprint can never reach the
- * capacity math from a new booking (a "5x10" with an ASCII x would otherwise
- * convert to nothing and silently under-count a 3.125-slot pallet).
+ * The FULL, legacy pallet_type vocabulary — every footprint that has ever been
+ * bookable, plus carton/Others. Retained as the compatibility surface: historical
+ * CargoDetail rows may still carry a now-deprecated size (1×1 / 1×2), and their
+ * factors/labels must keep resolving. NEW bookings validate on the narrower
+ * BOOKABLE_CARGO_TYPES below — do not point the booking route at this list.
  */
 export const CARGO_PALLET_TYPES = [...PALLET_SIZES, ...UNSIZED_CARGO_TYPES] as const;
+
+/**
+ * DEPRECATED as bookable footprints (Q1, CLIENT_ANSWERS_R1_2026-07-24): Mr. Teh —
+ * "PLEASE REMOVE 1X1 & 1X2, above dimension is for pallets only, for box,
+ * requestor just indicate how many box." 1×1/1×2 are BOXES, not pallets, so they
+ * are removed from NEW-booking options. Their PALLET_FACTORS entries stay (below)
+ * purely so existing historical records still display and convert unchanged —
+ * this list is what separates "no longer selectable" from "erased".
+ */
+export const DEPRECATED_PALLET_SIZES = ["1×1", "1×2"] as const;
+export type DeprecatedPalletSize = (typeof DEPRECATED_PALLET_SIZES)[number];
+
+/** True for a footprint that is no longer offered on new bookings (kept for legacy display). */
+export function isDeprecatedPalletSize(size: string): boolean {
+  return (DEPRECATED_PALLET_SIZES as readonly string[]).includes(size);
+}
+
+/**
+ * The pallet footprints a NEW booking may select (Q1): PALLET_SIZES minus the
+ * deprecated boxes. Declared explicitly (not filtered) so it stays a literal
+ * tuple for z.enum; a drift-guard test asserts it equals PALLET_SIZES −
+ * DEPRECATED_PALLET_SIZES.
+ */
+export const BOOKABLE_PALLET_SIZES = [
+  "2×2",
+  "2×3",
+  "3×3",
+  "3×4",
+  "4×4",
+  "4×8",
+  "5×5",
+  "5×10",
+] as const;
+export type BookablePalletSize = (typeof BOOKABLE_PALLET_SIZES)[number];
+
+/**
+ * The vocabulary a NEW booking's pallet_type is validated against — bookable
+ * pallet footprints + carton/Others. The booking route enums on THIS, so 1×1/1×2
+ * are rejected on new bookings while remaining resolvable for historical rows.
+ */
+export const BOOKABLE_CARGO_TYPES = [...BOOKABLE_PALLET_SIZES, ...UNSIZED_CARGO_TYPES] as const;
 
 /**
  * Canonicalise a pallet_type's SPELLING before it's checked against the enum.
@@ -72,14 +114,12 @@ export function normalizePalletType(raw: string): string {
  * than computing it, so a wrong entry is visible on inspection.
  */
 export const PALLET_FACTORS: Record<(typeof PALLET_SIZES)[number], number> = {
-  // ⚠ 1×1 and 1×2 are UNCONFIRMED as pallet types (item 2, on the ask-him
-  // list). Area ÷ 16 gives 0.0625, which implies ~256 of them to a PLX 2406 —
-  // that is not a pallet-shaped number, and they may really be boxes or crates
-  // that belong under the "carton" cargo type with an estimated_pallets count
-  // instead. The factors below are the rule applied honestly; if Mr. Teh
-  // confirms they are cartons, these two entries come out rather than change.
-  "1×1": 0.0625, // 1 / 16
-  "1×2": 0.125, // 2 / 16
+  // 1×1 and 1×2 are DEPRECATED as bookable footprints (Q1, R1 2026-07-24: they
+  // are boxes, not pallets — see DEPRECATED_PALLET_SIZES). Their factors are
+  // KEPT so existing historical records still convert and display exactly as
+  // before; new bookings can no longer select them.
+  "1×1": 0.0625, // 1 / 16  (legacy display only)
+  "1×2": 0.125, // 2 / 16  (legacy display only)
   "2×2": 0.25, // 4 / 16
   "2×3": 0.375, // 6 / 16
   "3×3": 0.5625, // 9 / 16

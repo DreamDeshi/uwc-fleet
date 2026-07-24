@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { CARGO_PALLET_TYPES, PALLET_FACTORS, palletEquivalents, palletFactor } from "./pallets";
+import {
+  CARGO_PALLET_TYPES,
+  BOOKABLE_CARGO_TYPES,
+  BOOKABLE_PALLET_SIZES,
+  DEPRECATED_PALLET_SIZES,
+  PALLET_SIZES,
+  PALLET_FACTORS,
+  isDeprecatedPalletSize,
+  palletEquivalents,
+  palletFactor,
+} from "./pallets";
 
 // These factors MUST stay identical to api/src/lib/pallets.ts — the server
 // enforces capacity in 4×4-equivalents, and the booking form warns with this
@@ -38,7 +48,7 @@ describe("pallet factors mirror the server", () => {
     expect(palletFactor("5x10")).toBe(0); // ASCII "x" — not the U+00D7 key
   });
 
-  it("offers exactly the bookable vocabulary", () => {
+  it("keeps the full/legacy vocabulary (for historical rows) intact", () => {
     expect([...CARGO_PALLET_TYPES]).toEqual([
       "1×1",
       "1×2",
@@ -60,6 +70,42 @@ describe("pallet factors mirror the server", () => {
     // verdict diverge on the new sixteenth-sized footprints.
     expect(palletEquivalents([{ pallet_type: "1×1", quantity: 1 }])).toBe(0.0625);
     expect(palletEquivalents([{ pallet_type: "5×5", quantity: 1 }])).toBe(1.5625);
+  });
+});
+
+// ── Q1 (CLIENT_ANSWERS_R1_2026-07-24): 1×1/1×2 removed from bookable sizes ────
+describe("Q1 — bookable vocabulary drops 1×1/1×2, mirrors the server", () => {
+  it("DEPRECATED_PALLET_SIZES matches the server", () => {
+    expect([...DEPRECATED_PALLET_SIZES]).toEqual(["1×1", "1×2"]);
+    expect(isDeprecatedPalletSize("1×2")).toBe(true);
+    expect(isDeprecatedPalletSize("4×4")).toBe(false);
+  });
+
+  it("BOOKABLE sizes = PALLET_SIZES minus deprecated (drift guard)", () => {
+    const expected = PALLET_SIZES.filter((s) => !(DEPRECATED_PALLET_SIZES as readonly string[]).includes(s));
+    expect([...BOOKABLE_PALLET_SIZES]).toEqual(expected);
+  });
+
+  it("the bookable vocabulary excludes 1×1/1×2 and keeps carton/Others", () => {
+    expect([...BOOKABLE_CARGO_TYPES]).toEqual([
+      "2×2", "2×3", "3×3", "3×4", "4×4", "4×8", "5×5", "5×10", "carton", "custom",
+    ]);
+  });
+});
+
+describe("legacy display compatibility — historical 1×1/1×2 still convert", () => {
+  it("keeps the deprecated factors so an existing record renders/counts unchanged", () => {
+    expect(palletFactor("1×1")).toBe(0.0625);
+    expect(palletFactor("1×2")).toBe(0.125);
+    expect(palletEquivalents([{ pallet_type: "1×2", quantity: 4 }])).toBe(0.5);
+  });
+});
+
+describe("Q1 — confirmed factors (5×5 / 3×3 / 2×3)", () => {
+  it("matches the confirmed values", () => {
+    expect(palletFactor("5×5")).toBe(1.5625);
+    expect(palletFactor("3×3")).toBe(0.5625);
+    expect(palletFactor("2×3")).toBe(0.375);
   });
 });
 
