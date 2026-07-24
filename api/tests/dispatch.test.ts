@@ -4,6 +4,7 @@ import {
   enRouteZones,
   autoAssignNote,
   autoDispatchFailureNote,
+  autoDispatchBlockReason,
   type TruckCandidate,
 } from "../src/services/dispatchEngine";
 import { estimateOperatingWindow } from "../src/services/operatingWindow";
@@ -280,5 +281,37 @@ describe("selectTruck — long-haul zone (KL)", () => {
     ];
     const sel = selectTruck({ pallets: 10, zone: "KL" }, candidates, ADJACENCY);
     expect(sel?.plate).toBe("PLX 2406"); // only the 16-pallet truck fits 10
+  });
+});
+
+// Manual-unassignment hold (TEST TO REQUESTOR item 2 / feedback item 15): a
+// ticket an admin unassigns returns to pending and must NOT be auto-assigned
+// again. autoDispatchBlockReason is the single gate autoDispatchTrip runs, so
+// every automatic path (pending sweep, create/edit hook, admin auto-assign
+// endpoint) honours the `auto_dispatch_paused` pin — not just the sweep.
+describe("autoDispatchBlockReason — the auto-dispatch eligibility gate", () => {
+  it("allows a plain pending, not-paused trip (returns null → eligible)", () => {
+    expect(autoDispatchBlockReason({ status: "pending", auto_dispatch_paused: false })).toBeNull();
+  });
+
+  it("BLOCKS a manually-unassigned (paused) pending trip — no automatic path may pick it up", () => {
+    expect(
+      autoDispatchBlockReason({ status: "pending", auto_dispatch_paused: true })
+    ).toMatch(/manual assignment/i);
+  });
+
+  it("leaves a non-pending trip alone — never auto-dispatches assigned/in_progress/completed/cancelled", () => {
+    for (const status of ["assigned", "in_progress", "pending_approval", "completed", "cancelled"]) {
+      // Even with the pin absent, a non-pending trip is not dispatchable — the
+      // status reason wins, so an active/finished trip is never silently reset.
+      expect(autoDispatchBlockReason({ status, auto_dispatch_paused: false })).toBe("Trip is not pending.");
+      // And a paused non-pending trip is likewise blocked (status checked first).
+      expect(autoDispatchBlockReason({ status, auto_dispatch_paused: true })).toBe("Trip is not pending.");
+    }
+  });
+
+  it("the pin is what distinguishes two pending trips — only the paused one is blocked", () => {
+    expect(autoDispatchBlockReason({ status: "pending", auto_dispatch_paused: false })).toBeNull();
+    expect(autoDispatchBlockReason({ status: "pending", auto_dispatch_paused: true })).not.toBeNull();
   });
 });

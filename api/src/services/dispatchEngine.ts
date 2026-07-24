@@ -286,6 +286,30 @@ function loadTripWithRelations(id: string) {
  * it (endpoint); background callers omit it and the audit log falls back to the
  * bootstrap admin.
  */
+
+/**
+ * Why a trip must NOT be auto-dispatched, or null when it is eligible.
+ *
+ * A pure gate the whole auto path funnels through (autoDispatchTrip). It enforces
+ * two things every automatic caller must respect:
+ *   1. only a `pending` trip is dispatchable (an assigned/in_progress/completed/
+ *      cancelled trip is left exactly as it is — never silently reset);
+ *   2. the MANUAL-HOLD pin an admin sets on unassign — `auto_dispatch_paused`
+ *      (TEST TO REQUESTOR item 2 / feedback item 15, 16 Jul 2026: "no more auto
+ *      after unassign") — keeps a returned-to-pending ticket out of EVERY
+ *      automatic path (edit hook + admin auto-assign endpoint), not just the
+ *      pending sweep (which also filters on it via staleSweepWhere). The pin is
+ *      cleared only by a manual (re-)assignment (claimPendingTrip), so an admin
+ *      can still place the ticket by hand.
+ *
+ * Pure — unit-tested (no DB), same pattern as staleSweepWhere / assertStopArrivable.
+ */
+export function autoDispatchBlockReason(trip: { status: string; auto_dispatch_paused: boolean }): string | null {
+  if (trip.status !== "pending") return "Trip is not pending.";
+  if (trip.auto_dispatch_paused) return "Trip is pinned to manual assignment (unassigned by admin).";
+  return null;
+}
+
 export async function autoDispatchTrip(tripId: string, actorId?: string): Promise<DispatchResult> {
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
@@ -295,7 +319,13 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
     },
   });
   if (!trip) return { assigned: false, reason: "Trip not found." };
-  if (trip.status !== "pending") return { assigned: false, reason: "Trip is not pending." };
+  // Eligibility gate (status + manual-hold pin). autoDispatchTrip is the ONE
+  // choke point every automatic path funnels through — the pending sweep, the
+  // create/edit hooks and the admin auto-assign endpoint — so this is where the
+  // unassign manual-hold (`auto_dispatch_paused`) is honoured for ALL of them,
+  // not just the sweep's staleSweepWhere filter.
+  const blockReason = autoDispatchBlockReason(trip);
+  if (blockReason) return { assigned: false, reason: blockReason };
 
   // Unsized cargo (carton/"Others" with no requestor estimate) has no pallet
   // footprint by conversion, so a 0-equivalent order "fits" every truck and
