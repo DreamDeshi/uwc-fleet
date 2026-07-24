@@ -68,6 +68,36 @@ export function partitionEditableCargo<T extends { pallet_type: string }>(
   return { bookable, legacy };
 }
 
+/** One outgoing cargo line as the booking API accepts it. */
+export interface OutgoingCargoLine {
+  pallet_type: string;
+  quantity: number;
+  cartons?: number;
+  custom_size?: string;
+  estimated_pallets?: number;
+  remark?: string;
+}
+
+/**
+ * THE single finalization step every cargo-type branch of the booking form must
+ * funnel through. Given the branch's CURRENT lines (pallet / carton / custom) and
+ * the preserved `legacy` (deprecated 1×1/1×2) lines, it:
+ *   - appends the legacy lines ONCE, after the current ones (no duplication);
+ *   - rides the optional remark on the first line of the combined list.
+ *
+ * This is what stops a carton/custom (or any) edit from silently dropping legacy
+ * cargo: the payload is only ever built here, so legacy can never be bypassed.
+ * `legacy` is empty for new bookings, so a new booking can never emit legacy cargo.
+ */
+export function finalizeCargoPayload(
+  current: OutgoingCargoLine[],
+  legacy: readonly { pallet_type: string; quantity: number }[],
+  remark?: string
+): OutgoingCargoLine[] {
+  const combined: OutgoingCargoLine[] = [...current, ...legacy.map((l) => ({ pallet_type: l.pallet_type, quantity: l.quantity }))];
+  return combined.map((line, idx) => (idx === 0 && remark ? { ...line, remark } : line));
+}
+
 /** The footprints a NEW booking may select — PALLET_SIZES minus the deprecated
  *  boxes. Explicit tuple (not filtered) to keep literal types; mirrors the API. */
 export const BOOKABLE_PALLET_SIZES = [

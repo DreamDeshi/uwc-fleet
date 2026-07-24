@@ -8,6 +8,7 @@ import {
   PALLET_FACTORS,
   isDeprecatedPalletSize,
   partitionEditableCargo,
+  finalizeCargoPayload,
   palletEquivalents,
   palletFactor,
 } from "./pallets";
@@ -150,6 +151,72 @@ describe("partitionEditableCargo — legacy vs bookable split, round-trips", () 
     const { bookable, legacy } = partitionEditableCargo([{ pallet_type: "carton", quantity: 5 }]);
     expect(legacy).toEqual([]);
     expect(bookable).toEqual([{ pallet_type: "carton", quantity: 5 }]);
+  });
+});
+
+// Mixed-booking deletion bug fix: EVERY cargo-type branch of buildCargo funnels
+// through finalizeCargoPayload, so a carton/custom edit can no longer drop the
+// preserved legacy lines that only the pallet branch used to re-append.
+describe("finalizeCargoPayload — the one payload finalization every branch uses", () => {
+  const legacy1x1 = [{ pallet_type: "1×1", quantity: 3 }];
+
+  it("carton + 1×1 round-trips (legacy survives an unrelated carton edit)", () => {
+    const current = [{ pallet_type: "carton", quantity: 5, cartons: 5 }];
+    expect(finalizeCargoPayload(current, legacy1x1)).toEqual([
+      { pallet_type: "carton", quantity: 5, cartons: 5 },
+      { pallet_type: "1×1", quantity: 3 },
+    ]);
+  });
+
+  it("custom/others + 1×2 round-trips (legacy survives an unrelated custom edit)", () => {
+    const current = [{ pallet_type: "custom", quantity: 1, custom_size: "3x2x1 crate" }];
+    const legacy1x2 = [{ pallet_type: "1×2", quantity: 2 }];
+    expect(finalizeCargoPayload(current, legacy1x2)).toEqual([
+      { pallet_type: "custom", quantity: 1, custom_size: "3x2x1 crate" },
+      { pallet_type: "1×2", quantity: 2 },
+    ]);
+  });
+
+  it("current pallet + legacy round-trips", () => {
+    const current = [{ pallet_type: "4×4", quantity: 2 }];
+    expect(finalizeCargoPayload(current, legacy1x1)).toEqual([
+      { pallet_type: "4×4", quantity: 2 },
+      { pallet_type: "1×1", quantity: 3 },
+    ]);
+  });
+
+  it("legacy-only (no current lines) still emits the legacy cargo", () => {
+    expect(finalizeCargoPayload([], legacy1x1)).toEqual([{ pallet_type: "1×1", quantity: 3 }]);
+  });
+
+  it("intentional legacy removal stays removed (empty legacy → no legacy lines)", () => {
+    const current = [{ pallet_type: "carton", quantity: 5, cartons: 5 }];
+    expect(finalizeCargoPayload(current, [])).toEqual(current);
+  });
+
+  it("a new booking (empty legacy) can never emit legacy cargo", () => {
+    const current = [{ pallet_type: "4×4", quantity: 1 }];
+    const out = finalizeCargoPayload(current, []);
+    expect(out.some((l) => isDeprecatedPalletSize(l.pallet_type))).toBe(false);
+  });
+
+  it("appends legacy exactly ONCE — no duplication", () => {
+    const current = [{ pallet_type: "4×4", quantity: 1 }];
+    const out = finalizeCargoPayload(current, legacy1x1);
+    expect(out.filter((l) => l.pallet_type === "1×1")).toHaveLength(1);
+    expect(out).toHaveLength(2);
+  });
+
+  it("rides the remark on the first line of the combined payload", () => {
+    const current = [{ pallet_type: "carton", quantity: 5, cartons: 5 }];
+    const out = finalizeCargoPayload(current, legacy1x1, "handle with care");
+    expect(out[0].remark).toBe("handle with care");
+    expect(out[1].remark).toBeUndefined(); // legacy line untouched
+  });
+
+  it("legacy-only with a remark rides it on the legacy line", () => {
+    const out = finalizeCargoPayload([], legacy1x1, "fragile");
+    expect(out[0]).toEqual({ pallet_type: "1×1", quantity: 3, remark: "fragile" });
   });
 });
 

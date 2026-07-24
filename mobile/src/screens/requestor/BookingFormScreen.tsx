@@ -34,7 +34,13 @@ import { NewConsigneeModal } from "../../components/NewConsigneeModal";
 import { LoadingState } from "../../components/States";
 import { useToast } from "../../components/Toast";
 import { pickDocumentImage, PickedPhoto } from "../../lib/photo";
-import { palletEquivalents, partitionEditableCargo, type BookablePalletSize } from "../../lib/pallets";
+import {
+  palletEquivalents,
+  partitionEditableCargo,
+  finalizeCargoPayload,
+  type BookablePalletSize,
+  type OutgoingCargoLine,
+} from "../../lib/pallets";
 import {
   loadTemplates,
   persistTemplates,
@@ -401,18 +407,18 @@ export function BookingFormScreen() {
 
   const buildCargo = () => {
     const estimate = parsedEstimate(sizeEstimate);
+    // Each branch builds ONLY its current lines; finalizeCargoPayload is the one
+    // shared step that appends the preserved legacy (1×1/1×2) cargo — so no
+    // cargo type can bypass it and silently drop legacy lines on an edit.
+    let current: OutgoingCargoLine[];
     if (cargoType === "carton") {
-      return [{ pallet_type: "carton", quantity: cartonQty, cartons: cartonQty, estimated_pallets: estimate, remark: remarks || undefined }];
+      current = [{ pallet_type: "carton", quantity: cartonQty, cartons: cartonQty, estimated_pallets: estimate }];
+    } else if (cargoType === "others") {
+      current = [{ pallet_type: "custom", quantity: 1, custom_size: othersText.trim(), estimated_pallets: estimate }];
+    } else {
+      current = PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] })).filter((c) => c.quantity > 0);
     }
-    if (cargoType === "others") {
-      return [{ pallet_type: "custom", quantity: 1, custom_size: othersText.trim(), estimated_pallets: estimate, remark: remarks || undefined }];
-    }
-    const built = PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] })).filter(
-      (c) => c.quantity > 0
-    );
-    // Re-append the preserved legacy (1×1/1×2) lines verbatim so an edit never
-    // drops them. Remark rides the first line of the combined list.
-    return [...built, ...legacyCargo].map((c, idx) => (idx === 0 && remarks ? { ...c, remark: remarks } : c));
+    return finalizeCargoPayload(current, legacyCargo, remarks || undefined);
   };
 
   const onNext = async () => {
