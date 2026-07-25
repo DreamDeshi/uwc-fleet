@@ -11,6 +11,7 @@
     "expo-font": "~14.0.12"
   },
   "scripts": {
+    "prepare": "node -e \"try{require('child_process').execSync('git config core.hooksPath .githooks')}catch(e){}\"",
     "dev:api": "npm run dev --workspace=api",
     "seed": "npm run seed --workspace=api",
     "test:db:up": "node scripts/test-db.mjs up",
