@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "prisma generate && tsc",
+    "typecheck": "tsc --noEmit",
     "gen:spec": "node scripts/gen-spec.mjs",
     "start": "node dist/index.js",
     "migrate:deploy": "prisma migrate deploy",
