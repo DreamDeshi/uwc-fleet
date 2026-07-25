@@ -23,6 +23,7 @@ import { BrandLogo } from "../../components/BrandLogo";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { AttentionPanel, attentionHasRows } from "../components/AttentionPanel";
 import { AdminSearchButton } from "../components/AdminSearchButton";
+import { exceptionsEnabled } from "../../lib/featureFlags";
 import { AdminFleetMap } from "../platform/map";
 import { DashboardWide } from "./DashboardWide";
 
@@ -76,6 +77,8 @@ export function AdminHomeScreen() {
     { route: "AdminUsers", labelKey: "admin.users.title", icon: "people-outline", count: pendingCount },
     { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },
     { route: "AdminCalendar", labelKey: "admin.nav.calendar", icon: "calendar-outline" },
+    // Failed-delivery / exception lane (feature-gated — hidden while the flag is off).
+    ...(exceptionsEnabled() ? [{ route: "AdminExceptions", labelKey: "exception.laneTitle", icon: "warning-outline" as IoniconName }] : []),
   ];
 
   return (

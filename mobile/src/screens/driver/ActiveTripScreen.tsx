@@ -32,6 +32,10 @@ import { PLANT_ORIGIN, regionFor, zoneCoord, haversineKm } from "../../lib/geo";
 import { ActiveTripMap } from "../../components/ActiveTripMap";
 import { tripDestination, tripDestZone } from "../../lib/trip";
 import { formatMoney, formatDateTime } from "../../lib/format";
+import { exceptionsEnabled } from "../../lib/featureFlags";
+import { ReportExceptionSheet } from "../../components/ReportExceptionSheet";
+import { ExceptionStatusCard } from "../../components/ExceptionStatusCard";
+import { useExceptionOutboxFlush } from "../../hooks/useExceptionOutbox";
 import { TripStop } from "../../types";
 
 type Nav = NativeStackNavigationProp<TripsStackParamList, "ActiveTrip">;
@@ -57,6 +61,10 @@ export function ActiveTripScreen() {
   const toast = useToast();
   const { params } = useRoute<Rt>();
   const { data: trip, isLoading, isError, refetch, isRefetching } = useTrip(params.tripId);
+  // Failed-delivery / exception workflow (feature-gated). Flush the offline
+  // report outbox while the driver is on the active-trip surface.
+  useExceptionOutboxFlush();
+  const [showReport, setShowReport] = useState(false);
 
   // GPS consent (per device): the driver must agree to the active-trip-only,
   // foreground-only explainer before we request the OS location permission.
@@ -413,6 +421,16 @@ export function ActiveTripScreen() {
             <Text style={styles.sheetTicket}>{trip.ticket_number}</Text>
           </View>
 
+          {exceptionsEnabled() && trip.status === "in_progress" && (
+            <>
+              <ExceptionStatusCard tripId={trip.id} />
+              <TouchableOpacity style={styles.reportExceptionBtn} onPress={() => setShowReport(true)}>
+                <Ionicons name="warning-outline" size={18} color={colors.red} />
+                <Text style={styles.reportExceptionText}>{t("exception.reportButton")}</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
           {stops.map((stop, idx) => (
             <StopCard
               key={stop.id}
@@ -462,6 +480,15 @@ export function ActiveTripScreen() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </BottomSheetScrollView>
       </BottomSheet>
+
+      {exceptionsEnabled() && (
+        <ReportExceptionSheet
+          visible={showReport}
+          tripId={trip.id}
+          stops={stops.map((s) => ({ id: s.id, label: t("exception.stopN", { n: s.sequence, name: s.consignee?.company_name ?? "" }) }))}
+          onClose={() => setShowReport(false)}
+        />
+      )}
 
       {/* Completion modal */}
       <Modal visible={earned !== null} transparent animationType="fade">
@@ -777,6 +804,8 @@ function DocCheckbox({
 }
 
 const styles = StyleSheet.create({
+  reportExceptionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.red, marginBottom: 12 },
+  reportExceptionText: { color: colors.red, fontWeight: "700" },
   fill: { flex: 1, backgroundColor: colors.bg },
   topCard: {
     position: "absolute",

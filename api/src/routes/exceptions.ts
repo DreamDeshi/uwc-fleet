@@ -396,6 +396,38 @@ router.post("/:id/exception/:exId/resolve", requireRole("admin"), validateBody(r
   } catch (err) { next(err); }
 });
 
+// ── GET /exceptions/open — admin list for the Exceptions lane (open only) ─────
+// Read-only summary rows; the detail view fetches GET /:id/exception (full). The
+// path (2 segments, 2nd = "open") cannot collide with /:id/exception.
+router.get("/exceptions/open", requireRole("admin"), async (_req, res, next) => {
+  try {
+    const rows = await prisma.tripException.findMany({
+      where: { closed_at: null },
+      orderBy: { created_at: "asc" },
+      include: {
+        trip: { select: { id: true, ticket_number: true, truck_plate: true, driver: { select: { name: true } } } },
+        trip_stop: { select: { sequence: true, consignee: { select: { company_name: true } } } },
+      },
+    });
+    res.json({
+      exceptions: rows.map((r) => ({
+        id: r.id,
+        trip_id: r.trip_id,
+        ticket_number: r.trip.ticket_number,
+        driver_name: r.trip.driver?.name ?? null,
+        truck_plate: r.trip.truck_plate,
+        category: r.category,
+        current_state: r.current_state,
+        reason: r.reason,
+        reported_at: r.reported_at,
+        stop: r.trip_stop ? { sequence: r.trip_stop.sequence, company_name: r.trip_stop.consignee.company_name } : null,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── GET /:id/exception — current/latest exception (role-aware, requestor redacted)
 router.get("/:id/exception", requireRole("driver", "admin", "requestor"), async (req, res, next) => {
   try {

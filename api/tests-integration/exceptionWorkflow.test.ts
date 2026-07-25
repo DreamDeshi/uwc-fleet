@@ -618,4 +618,29 @@ describe("exception workflow — end-to-end through Postgres", () => {
     expect(exc.resolution).toBeNull();
     expect(await prisma.exceptionAction.count({ where: { exception_id: exId, type: "resume" } })).toBe(0);
   });
+
+  it("admin open-exceptions list: admin-only, open-only, 404 when feature off", async () => {
+    const t = await inProgressTrip();
+    const exId = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
+
+    const list = await api().get("/api/v1/trips/exceptions/open").set(auth(admin));
+    expect(list.status).toBe(200);
+    const row = (list.body.exceptions as Array<{ id: string; category: string; ticket_number: string }>).find((r) => r.id === exId);
+    expect(row?.category).toBe("customer_site");
+    expect(row?.ticket_number).toBeTruthy();
+
+    // non-admin forbidden
+    expect((await api().get("/api/v1/trips/exceptions/open").set(auth(driver))).status).toBe(403);
+    expect((await api().get("/api/v1/trips/exceptions/open").set(auth(requestor))).status).toBe(403);
+
+    // a closed exception drops off the list
+    await api().post(`/api/v1/trips/${t.id}/exception/${exId}/resume`).set(auth(admin)).send({ client_action_id: randomUUID() });
+    const after = await api().get("/api/v1/trips/exceptions/open").set(auth(admin));
+    expect((after.body.exceptions as Array<{ id: string }>).find((r) => r.id === exId)).toBeUndefined();
+
+    // feature off → 404
+    process.env.FEATURE_EXCEPTIONS = "";
+    expect((await api().get("/api/v1/trips/exceptions/open").set(auth(admin))).status).toBe(404);
+    process.env.FEATURE_EXCEPTIONS = "true";
+  });
 });

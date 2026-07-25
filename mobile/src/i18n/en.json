@@ -1293,5 +1293,77 @@
     "pallet": "Pallet {{size}} × {{qty}}",
     "custom": "Custom",
     "more": "(+{{qty}} more)"
+  },
+  "exception": {
+    "reportButton": "Report Exception",
+    "reportTitle": "Report an exception",
+    "categoryLabel": "What is the problem?",
+    "stopLabel": "Affected stop (optional)",
+    "stopN": "Stop {{n}} — {{name}}",
+    "reasonLabel": "Describe what happened",
+    "reasonPlaceholder": "e.g. gate locked, nobody at the site to receive",
+    "photoLabel": "Photo proof",
+    "capturePhoto": "Take a photo",
+    "submit": "Submit report",
+    "reportedToast": "Exception reported — the dispatcher has been notified",
+    "queuedToast": "Saved — will send when you're back online",
+    "reportFailed": "Could not report the exception",
+    "photoPermissionDenied": "Camera and photo access were denied — enable them in Settings.",
+    "bannerTitle": "Exception reported",
+    "moreEvidencePrompt": "The dispatcher asked for more evidence.",
+    "addEvidence": "Add more evidence",
+    "evidenceAddedToast": "Evidence added",
+    "evidenceFailed": "Could not add evidence",
+    "requestorTitle": "Delivery exception",
+    "affectedStop": "Affected stop: {{n}}",
+    "reportedAt": "Reported {{time}}",
+    "laneTitle": "Exceptions",
+    "noneOpen": "No open exceptions.",
+    "evidenceLabel": "Evidence",
+    "timelineLabel": "Activity",
+    "noteLabel": "Note",
+    "notePlaceholder": "Add a note (required to reject or request more evidence)",
+    "verify": "Verify",
+    "requestMore": "Request more evidence",
+    "reject": "Reject",
+    "resume": "Resume trip",
+    "retry": "Retry",
+    "noteRequired": "A note is required for this action.",
+    "actionDone": "Done",
+    "conflictRefreshed": "This exception changed — refreshed to the latest. Please review and retry.",
+    "actionFailed": "Could not complete the action",
+    "category": {
+      "customer_site": "Customer / Site",
+      "truck": "Truck",
+      "cargo": "Cargo",
+      "external": "External",
+      "documentation": "Documentation"
+    },
+    "state": {
+      "reported": "Reported",
+      "more_evidence": "More evidence needed",
+      "verified": "Verified",
+      "rejected": "Rejected",
+      "resolved": "Resolved"
+    },
+    "publicStatus": {
+      "open": "In review",
+      "resolved": "Resolved"
+    },
+    "action": {
+      "report": "Reported",
+      "request_more_evidence": "Requested more evidence",
+      "verify": "Verified",
+      "reject": "Rejected",
+      "resume": "Resumed",
+      "resolve": "Resolved",
+      "evidence_added": "Evidence added"
+    },
+    "validation": {
+      "categoryRequired": "Please choose a category.",
+      "reasonRequired": "Please describe what happened.",
+      "reasonTooLong": "The reason is too long.",
+      "photoRequired": "A photo is required."
+    }
   }
 }

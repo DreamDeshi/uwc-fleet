@@ -30,6 +30,7 @@ import { AuditLogScreen } from "../screens/AuditLogScreen";
 import { AdminSearchScreen } from "../screens/AdminSearchScreen";
 import { CalendarScreen } from "../screens/CalendarScreen";
 import { AdminSettingsScreen } from "../screens/AdminSettingsScreen";
+import { ExceptionsScreen } from "../screens/ExceptionsScreen";
 
 // Same web-height fix as DriverTabs/RequestorTabs: RN-Web under-reserves
 // space for the label row, so the bar is taller with more bottom padding on
@@ -66,6 +67,7 @@ function MoreStack() {
       <Stack.Screen name="AdminCalendar" component={CalendarScreen} options={{ title: t("admin.titles.calendar") }} />
       <Stack.Screen name="AdminSearch" component={AdminSearchScreen} options={{ title: t("admin.search.title") }} />
       <Stack.Screen name="AdminAudit" component={AuditLogScreen} options={{ title: t("admin.audit.title") }} />
+      <Stack.Screen name="AdminExceptions" component={ExceptionsScreen} options={{ title: t("exception.laneTitle") }} />
       <Stack.Screen name="AdminSettings" component={AdminSettingsScreen} options={{ title: t("admin.titles.settings") }} />
     </Stack.Navigator>
   );
