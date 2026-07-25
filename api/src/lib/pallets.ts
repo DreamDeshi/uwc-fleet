@@ -97,9 +97,13 @@ export function isValidDimension(n: unknown): n is number {
 export const DEPRECATED_PALLET_SIZES = ["1×1", "1×2"] as const;
 export type DeprecatedPalletSize = (typeof DEPRECATED_PALLET_SIZES)[number];
 
-/** True for a footprint that is no longer offered on new bookings (kept for legacy display). */
+/** True for a footprint that is no longer offered on new bookings (kept for legacy
+ *  display). Normalises the separator first so "1x1" / "1 X 2" and "1×1" agree —
+ *  matches mobile/src/lib/pallets.ts (locked by tests/palletsMirror.test.ts). No
+ *  live api caller sends a non-canonical size, so this is a no-op on real data;
+ *  it keeps the twin functions identical. */
 export function isDeprecatedPalletSize(size: string): boolean {
-  return (DEPRECATED_PALLET_SIZES as readonly string[]).includes(size);
+  return (DEPRECATED_PALLET_SIZES as readonly string[]).includes(normalizePalletType(size));
 }
 
 /**
