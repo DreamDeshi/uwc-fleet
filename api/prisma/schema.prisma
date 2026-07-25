@@ -401,7 +401,17 @@ model TripStop {
   // (prisma/secure-existing-pods.ts) flips + records it. Additive, nullable.
   pod_public_id  String?
   do_uploaded    Boolean         @default(false)
-  k2_form_ack    Boolean         @default(false) // required only when destination zone is K2
+  // K2 customs form (Borang K2). Mr. Teh, R1 2026-07-24 Q6: "Prefer they need
+  // upload the form … we need admin to final validate and approve, only they can
+  // get pay." So for a K2-zone stop the driver must UPLOAD the actual document
+  // (k2_photo/_public_id, same authenticated-Cloudinary pipeline as pod_photo) —
+  // the tick-box `k2_form_ack` below is now LEGACY (kept for grandfathered rows;
+  // the delivery gate keys on the uploaded document). The upload is visible to
+  // the admin at the existing POD/incentive approval (that IS "admin validate +
+  // approve, only then pay"). All additive/nullable.
+  k2_photo       String?
+  k2_public_id   String?
+  k2_form_ack    Boolean         @default(false) // LEGACY tick (grandfathered rows only)
   // This stop's destination-zone points, snapshotted at assignment (rate lock —
   // same rationale as the Trip claim-rate snapshot). Null = pre-migration stop;
   // finalization falls back to the live DestinationRate points.

@@ -1925,6 +1925,56 @@ router.post(
   }
 );
 
+// ── POST /trips/:id/stops/:stopId/k2 — driver uploads the Borang K2 document ──
+//
+// Mr. Teh R1 Q6: for a K2-zone stop the driver must UPLOAD the actual customs
+// form (not a tick); the admin validates it at the existing POD/incentive
+// approval. Same authenticated-Cloudinary pipeline + finalize-lock as the POD
+// upload. Sets k2_photo/k2_public_id, which the K2 delivery gate keys on.
+router.post(
+  "/:id/stops/:stopId/k2",
+  requireRole("driver"),
+  upload.single("photo"),
+  async (req, res, next) => {
+    try {
+      const { id, stopId } = req.params;
+      if (!req.file) {
+        throw new ApiError(400, "NO_FILE", "A file is required (field name 'photo').");
+      }
+      const trip = await prisma.trip.findUnique({ where: { id }, include: { stops: true } });
+      if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      if (trip.driver_id !== req.user!.id) {
+        throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+      }
+      const stop = trip.stops.find((s) => s.id === stopId);
+      if (!stop) throw new ApiError(400, "STOP_NOT_FOUND", "That stop is not part of this trip.");
+
+      // Finalize-lock — same as POD: once the trip is proposed/paid/cancelled its
+      // approved documents are frozen.
+      if (trip.status === "pending_approval" || trip.status === "completed" || trip.status === "cancelled") {
+        throw new ApiError(409, "POD_LOCKED", "This trip is finalized — its documents can no longer be changed.");
+      }
+
+      const { url, publicId } = await uploadBuffer(req.file.buffer, "uwc/k2", {
+        type: "authenticated",
+        publicId: `${trip.ticket_number}-stop-${stop.sequence}-k2`,
+      });
+      await prisma.tripStop.update({
+        where: { id: stopId },
+        data: { k2_photo: url, k2_public_id: publicId },
+      });
+      await prisma.auditLog.create({
+        data: { user_id: req.user!.id, action: "stop.k2_uploaded", table_name: "TripStop", record_id: stopId },
+      });
+
+      const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
+      res.status(201).json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // ── POST /trips/:id/documents — requestor/admin uploads a DO or invoice ──
 //
 // Multipart upload (field name "file") plus a "type" field. Accepts images or

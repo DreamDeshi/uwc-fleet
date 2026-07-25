@@ -88,6 +88,10 @@ export interface TripStop {
   delivered_at: string | null;
   pod_photo: string | null;
   do_uploaded: boolean;
+  // K2 (Borang K2) customs document — uploaded for K2-zone stops (Q6). The
+  // signed URL is set when the driver has uploaded it; `k2_form_ack` is the
+  // legacy tick (grandfathered rows only).
+  k2_photo: string | null;
   k2_form_ack: boolean;
   consignee?: Consignee;
 }

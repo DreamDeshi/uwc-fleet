@@ -14,6 +14,7 @@ import {
   useUpdateStopDocs,
   useTripRoute,
   useUploadPod,
+  useUploadK2,
 } from "../../hooks/queries";
 import { capturePodPhoto, toDurablePhotoUri } from "../../lib/photo";
 import { useTripLocation, TripLocationState } from "../../hooks/useTripLocation";
@@ -141,6 +142,7 @@ export function ActiveTripScreen() {
   const updateStatus = useUpdateTripStatus();
   const updateDocs = useUpdateStopDocs();
   const uploadPod = useUploadPod();
+  const uploadK2 = useUploadK2();
   // POD offline outbox: deliveries saved on dead signal live here until the
   // background flush (usePodOutboxFlush in DriverTabs) replays them. The
   // per-stop queued item drives the "waiting for signal" UI below.
@@ -257,6 +259,25 @@ export function ActiveTripScreen() {
   // call rejects ("Different image picking in progress") into a spurious
   // "Something went wrong" toast mid-capture. Holding the guard across the
   // picker also stops a Delivered tap landing while the camera is open.
+  // K2 (Borang K2) document upload for a K2-zone stop (Q6). The delivery gate
+  // requires the uploaded document (not a tick). Online-only for now: on a dead
+  // signal the driver is told to reconnect (the K2 zone has usable coverage).
+  const onCaptureK2 = (stop: TripStop) =>
+    oncePerAction(async () => {
+      setError(null);
+      try {
+        const photo = await capturePodPhoto();
+        if (photo === "permission_denied") { const m = t("trip.cameraBlocked"); setError(m); toast(m, "error"); return; }
+        if (!photo) return;
+        await uploadK2.mutateAsync({ tripId: trip.id, stopId: stop.id, photo });
+        toast(t("trip.k2Uploaded"), "success");
+      } catch (err) {
+        if (apiErrorCode(err) === "POD_LOCKED") { await reconcile(); return; }
+        if (isNetworkError(err)) { toast(t("trip.k2NeedsConnection"), "error"); return; }
+        const msg = apiErrorMessage(err); setError(msg); toast(msg, "error");
+      }
+    });
+
   const onCapturePod = (stop: TripStop) =>
     oncePerAction(async () => {
     setError(null);
@@ -438,10 +459,12 @@ export function ActiveTripScreen() {
               index={idx}
               busy={updateStatus.isPending || updateDocs.isPending}
               uploadingPod={uploadPod.isPending}
+              uploadingK2={uploadK2.isPending}
               queued={findOutboxItem(outbox, stop.id)}
               onArrived={() => onArrived(stop)}
               onToggleDoc={(f, v) => toggleDoc(stop, f, v)}
               onCapturePod={() => onCapturePod(stop)}
+              onCaptureK2={() => onCaptureK2(stop)}
               onDelivered={() => onDelivered(stop)}
             />
           ))}
@@ -606,20 +629,24 @@ function StopCard({
   index,
   busy,
   uploadingPod,
+  uploadingK2,
   queued,
   onArrived,
   onToggleDoc,
   onCapturePod,
+  onCaptureK2,
   onDelivered,
 }: {
   stop: TripStop;
   index: number;
   busy: boolean;
   uploadingPod: boolean;
+  uploadingK2: boolean;
   queued?: PodOutboxItem;
   onArrived: () => void;
   onToggleDoc: (field: "do_uploaded" | "k2_form_ack", value: boolean) => void;
   onCapturePod: () => void;
+  onCaptureK2: () => void;
   onDelivered: () => void;
 }) {
   const { t } = useTranslation();
@@ -635,8 +662,13 @@ function StopCard({
   // Delivered already queued → the stop is done as far as the driver is
   // concerned; show the waiting-for-signal state instead of buttons.
   const deliveryQueued = queued?.confirmDelivered === true && stop.status !== "delivered";
-  // do_uploaded is now driven by the POD photo upload, not a checkbox.
-  const docsComplete = (stop.do_uploaded || queuedPhoto) && (!isK2 || stop.k2_form_ack || queuedAck);
+  // do_uploaded is driven by the POD photo upload. The ACTIVE K2 gate is the
+  // UPLOADED Borang K2 document ONLY (Q6) — the legacy `k2_form_ack` tick (and its
+  // queued form) must NEVER authorize a new delivery, matching the server gate
+  // (isDocumentationComplete keys on k2_photo). A historical completed record may
+  // still show the old ack, but it cannot satisfy this active gate.
+  const k2Done = !isK2 || !!stop.k2_photo;
+  const docsComplete = (stop.do_uploaded || queuedPhoto) && k2Done;
   // Translated stop-status label (was a raw, untranslated enum like "ARRIVED").
   const statusLabel: Record<string, string> = {
     pending: t("trip.stopPending"),
@@ -757,11 +789,25 @@ function StopCard({
           )}
 
           {isK2 ? (
-            <DocCheckbox
-              label={t("trip.k2Form")}
-              checked={stop.k2_form_ack || queuedAck}
-              onToggle={(v) => onToggleDoc("k2_form_ack", v)}
-            />
+            stop.k2_photo ? (
+              <View style={styles.podDoneRow}>
+                <Ionicons name="checkmark-circle" size={16} color={colors.green} />
+                <Text style={styles.podDoneText}>{t("trip.k2Uploaded")}</Text>
+                <TouchableOpacity onPress={onCaptureK2} hitSlop={8} disabled={uploadingK2}>
+                  <Text style={styles.podRetake}>{t("trip.podRetake")}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <Button
+                title={t("trip.k2Capture")}
+                onPress={onCaptureK2}
+                loading={uploadingK2}
+                variant="outline"
+                size="xl"
+                style={{ marginTop: 8 }}
+                icon={<Ionicons name="document-attach" size={20} color={colors.blue} />}
+              />
+            )
           ) : null}
           <Button
             title={t("trip.markDelivered")}

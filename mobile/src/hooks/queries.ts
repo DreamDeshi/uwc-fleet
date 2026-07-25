@@ -344,6 +344,26 @@ export function useUploadPod() {
   });
 }
 
+// K2 (Borang K2) customs document for a K2-zone stop (Q6). Uploads the actual
+// document; the API stores k2_photo/k2_public_id, which the K2 delivery gate
+// keys on. Same shape as useUploadPod.
+export function useUploadK2() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tripId, stopId, photo }: { tripId: string; stopId: string; photo: PickedPhoto }) => {
+      const form = new FormData();
+      await appendPhoto(form, "photo", photo);
+      return (
+        await api.post<Trip>(`/trips/${tripId}/stops/${stopId}/k2`, form, { headers: UPLOAD_HEADERS, timeout: 60_000 })
+      ).data;
+    },
+    onSettled: (_trip, _err, vars) => {
+      qc.invalidateQueries({ queryKey: ["trip", vars.tripId] });
+      qc.invalidateQueries({ queryKey: ["trips"] });
+    },
+  });
+}
+
 // Requestor/admin uploads a DO or invoice against a booking.
 export function useUploadTripDocument() {
   const qc = useQueryClient();

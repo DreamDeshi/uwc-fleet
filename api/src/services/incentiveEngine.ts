@@ -225,15 +225,19 @@ export function scoreDrops(
 
 /**
  * Step 3 — documentation gate. A delivery cannot be finalized until the DO
- * photo is uploaded, and (only when the destination zone is K2) the K2
- * customs form is acknowledged.
+ * photo is uploaded, and (only when the destination zone is K2) the K2 customs
+ * form (Borang K2) has been UPLOADED as an actual document.
  *
- * TODO confirm with Mr. Teh: is the K2 form a checkbox ack or a real file
- * upload (open question 3)? Treated as a boolean ack for now — actual file
- * upload is Phase 4+.
+ * Mr. Teh, R1 2026-07-24 Q6 (RESOLVED — was the old "checkbox vs upload" TODO):
+ * "Prefer they need upload the form … we need admin to final validate and
+ * approve, only they can get pay." So the K2 gate now keys on the uploaded
+ * document (`k2_photo`), NOT the legacy `k2_form_ack` tick. Admin validation +
+ * approval is the existing POD/incentive-approval gate (16 Jul 2026): the K2
+ * document rides in the trip payload for the admin to review before approving.
+ * This is a DOCUMENT gate only — no incentive amount or rate calculation changes.
  */
 export function isDocumentationComplete(
-  stop: { do_uploaded: boolean; k2_form_ack: boolean; pod_photo: string | null },
+  stop: { do_uploaded: boolean; k2_photo: string | null; pod_photo: string | null },
   destinationZoneCode: string
 ): boolean {
   // The gate is the actual POD PHOTO, not the do_uploaded flag alone — the
@@ -241,7 +245,8 @@ export function isDocumentationComplete(
   // self-attested via PATCH /docs with no photo behind it (audit finding).
   if (!stop.pod_photo) return false;
   if (!stop.do_uploaded) return false;
-  if (destinationZoneCode === "K2" && !stop.k2_form_ack) return false;
+  // K2 destinations require the uploaded Borang K2 document (not a tick).
+  if (destinationZoneCode === "K2" && !stop.k2_photo) return false;
   return true;
 }
 
