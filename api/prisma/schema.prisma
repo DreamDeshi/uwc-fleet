@@ -463,6 +463,13 @@ model TripException {
   trip_stop_id         String? // Q2(a): the stop the driver could not deliver
   trip_stop            TripStop?            @relation(fields: [trip_stop_id], references: [id])
   client_occurrence_id String // device UUID → dedup on offline replay
+  // SERVER-computed SHA-256 over the NORMALIZED report inputs (trip/stop, category,
+  // reason, actor, client_action_id, client_evidence_id, GPS, client timestamps)
+  // + the uploaded photo's byte digest. A reused client_occurrence_id whose
+  // recomputed fingerprint differs is a payload change → 409 IDEMPOTENCY_KEY_REUSED;
+  // an identical replay matches and returns the original committed result. Never
+  // client-supplied. Nullable only for pre-feature rows (every write sets it).
+  request_fingerprint  String?
   category             ExceptionCategory
   reason               String // driver's free-text at report
   reported_by          String // driver User id (no FK — matches TripStatusHistory.actor_id)
@@ -520,9 +527,16 @@ model ExceptionEvidence {
   // SAME exception — Prisma can't express a composite FK that shares exception_id
   // with the `exception` relation above, so it is added by raw SQL (and will show
   // as drift on a future `prisma migrate dev` — keep it).
+  // Restrict: actions are append-only and NEVER deleted, so SET NULL (which would
+  // also try to null the NOT NULL exception_id via the composite FK) must never
+  // fire — RESTRICT makes that explicit and consistent across both FKs.
   action_id          String?
-  action             ExceptionAction?      @relation(fields: [action_id], references: [id])
+  action             ExceptionAction?      @relation(fields: [action_id], references: [id], onDelete: Restrict)
   client_evidence_id String // device UUID → idempotent upload replay
+  // SERVER-computed SHA-256 of the uploaded photo BYTES — the stable content
+  // identity used (with uploader + capture time + kind) to distinguish a genuine
+  // idempotent evidence replay from a reused UUID carrying a different photo.
+  content_sha256     String?
   kind               ExceptionEvidenceKind @default(photo)
   url                String // Cloudinary authenticated URL (not directly accessible)
   public_id          String // signed per-read (lib/exceptionEvidence.ts) — SEPARATE from POD

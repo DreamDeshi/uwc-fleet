@@ -9,6 +9,9 @@ import { validateBody } from "../middleware/validate";
 import { upload } from "../lib/upload";
 import { uploadBuffer } from "../lib/cloudinary";
 import { exceptionsEnabled } from "../lib/featureFlags";
+import { lockTripRow } from "../lib/tripLock";
+import { testHook } from "../lib/testHooks";
+import { sha256Hex, reportFingerprint, evidenceFingerprint } from "../lib/exceptionFingerprint";
 import {
   EXCEPTION_EVIDENCE_FOLDER,
   serializeException,
@@ -16,7 +19,6 @@ import {
 } from "../lib/exceptionEvidence";
 import {
   EXCEPTION_CATEGORIES,
-  assertCanReport,
   assertVersion,
   allowedFromStates,
   nextExceptionState,
@@ -26,24 +28,20 @@ import {
 } from "../services/exceptionWorkflow";
 
 // ── Failed-delivery / exception workflow (Phase 1, feature-flagged) ───────────
-// Mounted at /api/v1/trips (alongside the trips router). MONEY-FREE: this router
-// never reads or writes an incentive/rate/finalization field, never changes
-// Trip.status (it stays in_progress), and never releases capacity.
-//
-// Concurrency model (hardened): every state change is an ATOMIC compare-and-set —
-// updateMany WHERE id + the read `version` + closed_at IS NULL + current_state IN
-// (allowed) — requiring count === 1, with the action append + projection update +
-// pointer clear all in ONE transaction. A CAS miss rolls the whole thing back and
-// returns 409. Idempotency is payload-sensitive: the SAME operation UUID with the
-// SAME semantics returns the original committed result; a REUSED UUID with a
-// different actor/action/resolution/payload returns 409.
-//
-// Authorization ALWAYS precedes any aggregate exposure (including idempotent
-// replays). Only ADMINS close/resolve an exception (verify/reject/resume/retry);
-// drivers may only report and resubmit evidence.
+// MONEY-FREE. Concurrency model:
+//   • Trip-lifecycle serialization: opening a TripException and the Arrived/
+//     Delivered mutations both take a Trip row lock (lib/tripLock) and RE-READ
+//     status/driver/open_exception_id/stop under it — never a stale preloaded
+//     value. So a report and a delivery can never interleave into an inconsistent
+//     state (see routes/trips.ts for the Arrived/Delivered side).
+//   • Every state change is an atomic version+state CAS requiring count === 1,
+//     with the action append + projection + pointer clear in one transaction.
+//   • Idempotency is payload-sensitive via SERVER-computed fingerprints: same op
+//     UUID + identical payload → the original committed result; a reused UUID with
+//     any changed semantic field (incl. the photo bytes) → 409.
+// Only ADMINS close/resolve; drivers report + resubmit evidence.
 const router = Router();
 
-// Feature gate FIRST: while off, these routes 404 as if absent (reads + writes).
 router.use((_req, _res, next) => {
   if (!exceptionsEnabled()) {
     next(new ApiError(404, "NOT_FOUND", "Not found."));
@@ -53,23 +51,18 @@ router.use((_req, _res, next) => {
 });
 router.use(requireAuth);
 
-// Deterministic action/evidence ordering: (created_at, id) — id breaks same-instant
-// ties so replay + timelines are stable.
 const orderByCreatedThenId = [{ created_at: "asc" as const }, { id: "asc" as const }];
 const exceptionInclude = {
   actions: { orderBy: orderByCreatedThenId },
   evidence: { orderBy: orderByCreatedThenId },
 };
 
-// ── Validation limits ────────────────────────────────────────────────────────
 const MAX_REASON = 2000;
 const MAX_NOTE = 2000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function requireUuid(name: string, v: string | undefined): string {
-  if (!v || !UUID_RE.test(v)) {
-    throw new ApiError(400, "INVALID_OPERATION_ID", `${name} must be a valid UUID.`);
-  }
+  if (!v || !UUID_RE.test(v)) throw new ApiError(400, "INVALID_OPERATION_ID", `${name} must be a valid UUID.`);
   return v;
 }
 function validateGeo(lat: number | null, lng: number | null, accuracy: number | null): void {
@@ -79,20 +72,15 @@ function validateGeo(lat: number | null, lng: number | null, accuracy: number | 
 }
 
 async function loadException(tripId: string, exId: string) {
-  const exc = await prisma.tripException.findFirst({
-    where: { id: exId, trip_id: tripId },
-    include: exceptionInclude,
-  });
+  const exc = await prisma.tripException.findFirst({ where: { id: exId, trip_id: tripId }, include: exceptionInclude });
   if (!exc) throw new ApiError(404, "EXCEPTION_NOT_FOUND", "Exception not found.");
   return exc;
 }
-
 async function reloadAndSend(res: import("express").Response, tripId: string, exId: string, audience: ExceptionAudience, status = 200) {
   const fresh = await loadException(tripId, exId);
   res.status(status).json({ exception: serializeException(fresh, audience) });
 }
 
-// Multipart text-field coercers.
 function numField(v: unknown): number | null {
   if (typeof v !== "string" || v.trim() === "") return null;
   const n = Number(v);
@@ -120,9 +108,7 @@ router.post("/:id/exception", requireRole("driver"), upload.single("photo"), asy
     const clientEvidenceId = requireUuid("client_evidence_id", strField(req.body.client_evidence_id));
     const tripStopId = strField(req.body.trip_stop_id) ?? null;
 
-    if (!category || !(EXCEPTION_CATEGORIES as readonly string[]).includes(category)) {
-      throw new ApiError(400, "INVALID_CATEGORY", "A valid exception category is required.");
-    }
+    if (!category || !(EXCEPTION_CATEGORIES as readonly string[]).includes(category)) throw new ApiError(400, "INVALID_CATEGORY", "A valid exception category is required.");
     if (!reason) throw new ApiError(400, "REASON_REQUIRED", "A reason is required.");
     if (reason.length > MAX_REASON) throw new ApiError(400, "REASON_TOO_LONG", `Reason exceeds ${MAX_REASON} characters.`);
     if (!req.file) throw new ApiError(400, "EVIDENCE_REQUIRED", "A photo is required (field name 'photo').");
@@ -131,104 +117,86 @@ router.post("/:id/exception", requireRole("driver"), upload.single("photo"), asy
     const lng = numField(req.body.lng);
     const accuracy = numField(req.body.accuracy_m);
     validateGeo(lat, lng, accuracy);
+    const clientReportedAt = dateField(req.body.client_at);
+    const capturedClientAt = dateField(req.body.captured_client_at);
 
-    const trip = await prisma.trip.findUnique({
-      where: { id: tripId },
-      select: { id: true, status: true, driver_id: true },
+    // SERVER-computed content identity (no client-supplied digest trusted).
+    const photoSha256 = sha256Hex(req.file.buffer);
+    const fingerprint = reportFingerprint({
+      tripId, tripStopId, category, reason, reportedBy: driverId,
+      clientActionId, clientEvidenceId, lat, lng, accuracyM: accuracy,
+      clientReportedAt, capturedClientAt, photoSha256,
     });
-    if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
 
-    // AUTHORIZATION FIRST — before any aggregate is exposed (incl. replay).
-    if (trip.driver_id !== driverId) {
-      throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { id: true, driver_id: true } });
+    if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+    // AUTHORIZATION before any aggregate exposure (incl. replay).
+    if (trip.driver_id !== driverId) throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+
+    if (tripStopId) {
+      const stop = await prisma.tripStop.findFirst({ where: { id: tripStopId, trip_id: tripId }, select: { id: true } });
+      if (!stop) throw new ApiError(400, "STOP_NOT_FOUND", "That stop is not part of this trip.");
     }
 
-    // Payload-sensitive idempotent replay: this occurrence already landed.
+    // Payload-sensitive idempotent replay (no re-upload).
     const existing = await prisma.tripException.findUnique({
       where: { trip_id_client_occurrence_id: { trip_id: tripId, client_occurrence_id: clientOccurrenceId } },
     });
     if (existing) {
-      if (existing.category !== category || existing.reason !== reason || existing.reported_by !== driverId || (existing.trip_stop_id ?? null) !== tripStopId) {
-        throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This operation id was already used with different details.");
-      }
+      if (existing.request_fingerprint !== fingerprint) throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This operation id was already used with different details.");
       await reloadAndSend(res, tripId, existing.id, "full", 200);
       return;
     }
 
-    // NEW report: trip must be in_progress.
-    assertCanReport(trip, driverId);
-    if (tripStopId) {
-      const stop = await prisma.tripStop.findFirst({ where: { id: tripStopId, trip_id: tripId } });
-      if (!stop) throw new ApiError(400, "STOP_NOT_FOUND", "That stop is not part of this trip.");
-    }
-    // Cheap pre-check for a friendly error; the partial unique index is the atomic backstop.
-    const openAlready = await prisma.tripException.findFirst({ where: { trip_id: tripId, closed_at: null }, select: { id: true } });
-    if (openAlready) throw new ApiError(409, "EXCEPTION_ALREADY_OPEN", "This trip already has an open exception.");
-
     const { url, publicId } = await uploadBuffer(req.file.buffer, EXCEPTION_EVIDENCE_FOLDER, { type: "authenticated" });
 
-    let excId: string;
+    let outcome: { id: string; created: boolean };
     try {
-      excId = await prisma.$transaction(async (tx) => {
-        // The create itself is the atomic one-open guard (partial unique index on
-        // trip_id WHERE closed_at IS NULL). A concurrent open → P2002 (caught below).
+      outcome = await prisma.$transaction(async (tx) => {
+        await lockTripRow(tx, tripId); // serialize with Arrived/Delivered
+        // Re-read the AUTHORITATIVE state under the lock (never a preloaded value).
+        const t2 = await tx.trip.findUnique({ where: { id: tripId }, select: { status: true, driver_id: true, open_exception_id: true } });
+        if (!t2) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+        if (t2.driver_id !== driverId) throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+        // Under the lock, re-check for THIS occurrence first: a concurrent winner
+        // that committed the SAME occurrence is an idempotent replay (return it),
+        // NOT an "already open" conflict. A DIFFERENT occurrence falls through to
+        // the open-exception check below.
+        const raced = await tx.tripException.findUnique({ where: { trip_id_client_occurrence_id: { trip_id: tripId, client_occurrence_id: clientOccurrenceId } } });
+        if (raced) {
+          if (raced.request_fingerprint !== fingerprint) throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This operation id was already used with different details.");
+          return { id: raced.id, created: false };
+        }
+        if (t2.status !== "in_progress") throw new ApiError(409, "TRIP_NOT_IN_PROGRESS", "An exception can only be reported while the trip is in progress.");
+        if (t2.open_exception_id) throw new ApiError(409, "EXCEPTION_ALREADY_OPEN", "This trip already has an open exception.");
+
         const exc = await tx.tripException.create({
           data: {
-            trip_id: tripId,
-            trip_stop_id: tripStopId,
-            client_occurrence_id: clientOccurrenceId,
-            category: category as never,
-            reason,
-            reported_by: driverId,
-            client_reported_at: dateField(req.body.client_at),
-            current_state: "reported",
+            trip_id: tripId, trip_stop_id: tripStopId,
+            client_occurrence_id: clientOccurrenceId, request_fingerprint: fingerprint,
+            category: category as never, reason, reported_by: driverId,
+            client_reported_at: clientReportedAt, current_state: "reported",
           },
         });
-        // Cache pointer — also verifies in_progress atomically.
-        const claim = await tx.trip.updateMany({
-          where: { id: tripId, status: "in_progress", open_exception_id: null },
-          data: { open_exception_id: exc.id },
-        });
-        if (claim.count !== 1) {
-          throw new ApiError(409, "EXCEPTION_ALREADY_OPEN", "This trip already has an open exception, or is no longer in progress.");
-        }
+        const claim = await tx.trip.updateMany({ where: { id: tripId, status: "in_progress", open_exception_id: null }, data: { open_exception_id: exc.id } });
+        if (claim.count !== 1) throw new ApiError(409, "EXCEPTION_ALREADY_OPEN", "This trip already has an open exception.");
         const action = await tx.exceptionAction.create({
-          data: {
-            exception_id: exc.id,
-            client_action_id: clientActionId,
-            type: "report",
-            actor_id: driverId,
-            actor_role: "driver",
-            lat, lng, accuracy_m: accuracy,
-            client_at: dateField(req.body.client_at),
-          },
+          data: { exception_id: exc.id, client_action_id: clientActionId, type: "report", actor_id: driverId, actor_role: "driver", lat, lng, accuracy_m: accuracy, client_at: clientReportedAt },
         });
         await tx.exceptionEvidence.create({
-          data: {
-            exception_id: exc.id,
-            action_id: action.id,
-            client_evidence_id: clientEvidenceId,
-            url, public_id: publicId,
-            uploaded_by: driverId,
-            captured_client_at: dateField(req.body.captured_client_at),
-          },
+          data: { exception_id: exc.id, action_id: action.id, client_evidence_id: clientEvidenceId, content_sha256: photoSha256, url, public_id: publicId, uploaded_by: driverId, captured_client_at: capturedClientAt },
         });
-        await tx.auditLog.create({
-          data: { user_id: driverId, action: `exception.reported (${category})`, table_name: "TripException", record_id: exc.id },
-        });
-        return exc.id;
+        await tx.auditLog.create({ data: { user_id: driverId, action: `exception.reported (${category})`, table_name: "TripException", record_id: exc.id } });
+        await testHook("exceptionReport.beforeCommit");
+        return { id: exc.id, created: true };
       });
     } catch (err) {
-      // Concurrent unique-key race: either the SAME occurrence committed (→ compare
-      // + return the original), or a DIFFERENT exception is already open (→ 409).
       if (isUniqueViolation(err)) {
-        const dupe = await prisma.tripException.findUnique({
-          where: { trip_id_client_occurrence_id: { trip_id: tripId, client_occurrence_id: clientOccurrenceId } },
-        });
+        // Concurrent unique-key race: same occurrence committed → compare + return;
+        // otherwise a different exception is already open.
+        const dupe = await prisma.tripException.findUnique({ where: { trip_id_client_occurrence_id: { trip_id: tripId, client_occurrence_id: clientOccurrenceId } } });
         if (dupe) {
-          if (dupe.category !== category || dupe.reason !== reason || dupe.reported_by !== driverId || (dupe.trip_stop_id ?? null) !== tripStopId) {
-            throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This operation id was already used with different details.");
-          }
+          if (dupe.request_fingerprint !== fingerprint) throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This operation id was already used with different details.");
           await reloadAndSend(res, tripId, dupe.id, "full", 200);
           return;
         }
@@ -237,7 +205,7 @@ router.post("/:id/exception", requireRole("driver"), upload.single("photo"), asy
       throw err;
     }
 
-    await reloadAndSend(res, tripId, excId, "full", 201);
+    await reloadAndSend(res, tripId, outcome.id, "full", outcome.created ? 201 : 200);
   } catch (err) {
     next(err);
   }
@@ -250,70 +218,65 @@ router.post("/:id/exception/:exId/evidence", requireRole("driver"), upload.singl
     const driverId = req.user!.id;
     const clientEvidenceId = requireUuid("client_evidence_id", strField(req.body.client_evidence_id));
     if (!req.file) throw new ApiError(400, "EVIDENCE_REQUIRED", "A photo is required (field name 'photo').");
+    const capturedClientAt = dateField(req.body.captured_client_at);
+    const photoSha256 = sha256Hex(req.file.buffer);
 
-    // AUTHORIZATION FIRST.
     const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { driver_id: true } });
     if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
     if (trip.driver_id !== driverId) throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
 
     const exc = await loadException(tripId, exId);
-    // Idempotent replay.
+    const incomingFp = evidenceFingerprint({ exceptionId: exId, kind: "photo", uploadedBy: driverId, capturedClientAt, photoSha256 });
+
+    // Payload-sensitive idempotent replay (no re-upload).
     const prior = exc.evidence.find((e) => e.client_evidence_id === clientEvidenceId);
     if (prior) {
-      if (prior.uploaded_by !== driverId) throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This evidence id was already used by someone else.");
+      const priorFp = evidenceFingerprint({ exceptionId: exId, kind: prior.kind, uploadedBy: prior.uploaded_by, capturedClientAt: prior.captured_client_at, photoSha256: prior.content_sha256 ?? "" });
+      if (priorFp !== incomingFp) throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This evidence id was already used with different content.");
       await reloadAndSend(res, tripId, exId, "full", 200);
       return;
     }
-    // Never reopen a closed exception; more_evidence → reported for re-review.
-    const nextState = stateAfterEvidence(exc.current_state as never);
+    const nextState = stateAfterEvidence(exc.current_state as never); // throws if closed
 
     const { url, publicId } = await uploadBuffer(req.file.buffer, EXCEPTION_EVIDENCE_FOLDER, { type: "authenticated" });
-    // The evidence_added action's operation id is server-derived from the evidence
-    // id (namespaced), so it is unique per exception and not client-forgeable.
-    const evidenceActionId = `ev:${clientEvidenceId}`;
+    const evidenceActionId = `ev:${clientEvidenceId}`; // server-derived, unique per exception
 
+    let created: boolean;
     try {
-      await prisma.$transaction(async (tx) => {
-        // Atomic CAS: only advance if still at the version we read AND still open.
+      created = await prisma.$transaction(async (tx) => {
         const cas = await tx.tripException.updateMany({
           where: { id: exId, version: exc.version, closed_at: null },
           data: { current_state: nextState as never, version: { increment: 1 } },
         });
         if (cas.count !== 1) {
+          // Re-read under the SAME op id: a same-evidence winner → idempotent OK;
+          // a genuine change → conflict.
+          const committed = await tx.exceptionEvidence.findFirst({ where: { exception_id: exId, client_evidence_id: clientEvidenceId } });
+          if (committed) {
+            const cFp = evidenceFingerprint({ exceptionId: exId, kind: committed.kind, uploadedBy: committed.uploaded_by, capturedClientAt: committed.captured_client_at, photoSha256: committed.content_sha256 ?? "" });
+            if (cFp !== incomingFp) throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This evidence id was already used with different content.");
+            return false; // idempotent — winner already applied
+          }
           throw new ApiError(409, "EXCEPTION_STATE_CHANGED", "This exception changed since you loaded it. Refresh and try again.");
         }
-        const action = await tx.exceptionAction.create({
-          data: {
-            exception_id: exId,
-            client_action_id: evidenceActionId,
-            type: "evidence_added",
-            actor_id: driverId,
-            actor_role: "driver",
-          },
-        });
-        await tx.exceptionEvidence.create({
-          data: {
-            exception_id: exId,
-            action_id: action.id,
-            client_evidence_id: clientEvidenceId,
-            url, public_id: publicId,
-            uploaded_by: driverId,
-            captured_client_at: dateField(req.body.captured_client_at),
-          },
-        });
-        await tx.auditLog.create({
-          data: { user_id: driverId, action: "exception.evidence_added", table_name: "TripException", record_id: exId },
-        });
+        const action = await tx.exceptionAction.create({ data: { exception_id: exId, client_action_id: evidenceActionId, type: "evidence_added", actor_id: driverId, actor_role: "driver" } });
+        await tx.exceptionEvidence.create({ data: { exception_id: exId, action_id: action.id, client_evidence_id: clientEvidenceId, content_sha256: photoSha256, url, public_id: publicId, uploaded_by: driverId, captured_client_at: capturedClientAt } });
+        await tx.auditLog.create({ data: { user_id: driverId, action: "exception.evidence_added", table_name: "TripException", record_id: exId } });
+        return true;
       });
     } catch (err) {
       if (isUniqueViolation(err)) {
-        // Concurrent same-evidence replay committed — return the original.
-        await reloadAndSend(res, tripId, exId, "full", 200);
-        return;
+        const committed = await prisma.exceptionEvidence.findFirst({ where: { exception_id: exId, client_evidence_id: clientEvidenceId } });
+        if (committed) {
+          const cFp = evidenceFingerprint({ exceptionId: exId, kind: committed.kind, uploadedBy: committed.uploaded_by, capturedClientAt: committed.captured_client_at, photoSha256: committed.content_sha256 ?? "" });
+          if (cFp !== incomingFp) throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This evidence id was already used with different content.");
+          await reloadAndSend(res, tripId, exId, "full", 200);
+          return;
+        }
       }
       throw err;
     }
-    await reloadAndSend(res, tripId, exId, "full", 201);
+    await reloadAndSend(res, tripId, exId, "full", created ? 201 : 200);
   } catch (err) {
     next(err);
   }
@@ -326,8 +289,10 @@ const reviewSchema = z.object({
   expected_version: z.number().int().min(0).optional(),
 });
 
-/** Atomic transition executor: payload-sensitive idempotency, version+state CAS,
- *  action append + projection + pointer clear in one transaction. */
+function sameActionSemantics(a: { type: string; resolution: string | null; actor_id: string; note: string | null }, opts: { action: string; resolveWith?: string; actorId: string; note?: string }): boolean {
+  return a.type === opts.action && (a.resolution ?? null) === (opts.resolveWith ?? null) && a.actor_id === opts.actorId && (a.note ?? null) === (opts.note ?? null);
+}
+
 async function applyTransition(opts: {
   tripId: string;
   exId: string;
@@ -340,17 +305,11 @@ async function applyTransition(opts: {
 }): Promise<void> {
   const exc = await loadException(opts.tripId, opts.exId);
 
-  // Payload-sensitive idempotent replay: same op id + same semantics → no-op OK;
-  // reused op id with different actor/action/resolution/note → 409.
+  // Sequential replay (op id already committed): same semantics → OK; different → 409.
   const prior = exc.actions.find((a) => a.client_action_id === opts.clientActionId);
   if (prior) {
-    const same =
-      prior.type === opts.action &&
-      (prior.resolution ?? null) === (opts.resolveWith ?? null) &&
-      prior.actor_id === opts.actorId &&
-      (prior.note ?? null) === (opts.note ?? null);
-    if (!same) throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This operation id was already used with different details.");
-    return; // already applied
+    if (!sameActionSemantics(prior, opts)) throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This operation id was already used with different details.");
+    return;
   }
 
   assertVersion(exc.version, opts.expectedVersion);
@@ -359,57 +318,34 @@ async function applyTransition(opts: {
 
   try {
     await prisma.$transaction(async (tx) => {
-      // Atomic CAS — id + read version + still-open + allowed source state. Two
-      // admins racing the same version: exactly one gets count === 1.
       const cas = await tx.tripException.updateMany({
         where: { id: opts.exId, version: exc.version, closed_at: null, current_state: { in: allowed as never } },
-        data: {
-          current_state: t.state as never,
-          resolution: t.resolution ?? undefined,
-          resolved_at: t.closes ? new Date() : undefined,
-          closed_at: t.closes ? new Date() : undefined,
-          version: { increment: 1 },
-        },
+        data: { current_state: t.state as never, resolution: t.resolution ?? undefined, resolved_at: t.closes ? new Date() : undefined, closed_at: t.closes ? new Date() : undefined, version: { increment: 1 } },
       });
       if (cas.count !== 1) {
+        // Concurrent same-op replay → return the winner's result; else genuine conflict.
+        const committed = await tx.exceptionAction.findFirst({ where: { exception_id: opts.exId, client_action_id: opts.clientActionId } });
+        if (committed) {
+          if (!sameActionSemantics(committed, opts)) throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This operation id was already used with different details.");
+          return; // idempotent — winner already applied
+        }
         throw new ApiError(409, "EXCEPTION_STATE_CHANGED", "This exception changed since you loaded it. Refresh and try again.");
       }
-      await tx.exceptionAction.create({
-        data: {
-          exception_id: opts.exId,
-          client_action_id: opts.clientActionId,
-          type: opts.action,
-          resolution: t.resolution ?? null,
-          actor_id: opts.actorId,
-          actor_role: "admin",
-          note: opts.note ?? null,
-        },
-      });
-      // Closing releases the trip's one-open pointer. Trip.status UNCHANGED.
+      await tx.exceptionAction.create({ data: { exception_id: opts.exId, client_action_id: opts.clientActionId, type: opts.action, resolution: t.resolution ?? null, actor_id: opts.actorId, actor_role: "admin", note: opts.note ?? null } });
       if (t.closes) {
-        await tx.trip.updateMany({ where: { id: opts.tripId, open_exception_id: opts.exId }, data: { open_exception_id: null } });
+        // Pointer clear MUST match exactly one row, else the projection and the
+        // cache pointer would disagree — throw and roll the whole close back.
+        const ptr = await tx.trip.updateMany({ where: { id: opts.tripId, open_exception_id: opts.exId }, data: { open_exception_id: null } });
+        if (ptr.count !== 1) throw new ApiError(409, "POINTER_INCONSISTENT", "The trip's open-exception pointer was not in the expected state; the close was rolled back.");
       }
-      await tx.auditLog.create({
-        data: {
-          user_id: opts.actorId,
-          action: `exception.${opts.action}${t.resolution ? ` (${t.resolution})` : ""}${opts.note ? `: ${opts.note}` : ""}`,
-          table_name: "TripException",
-          record_id: opts.exId,
-        },
-      });
+      await tx.auditLog.create({ data: { user_id: opts.actorId, action: `exception.${opts.action}${t.resolution ? ` (${t.resolution})` : ""}${opts.note ? `: ${opts.note}` : ""}`, table_name: "TripException", record_id: opts.exId } });
     });
   } catch (err) {
-    // Concurrent same-op replay committed → compare + return original / 409.
     if (isUniqueViolation(err)) {
       const fresh = await loadException(opts.tripId, opts.exId);
       const committed = fresh.actions.find((a) => a.client_action_id === opts.clientActionId);
       if (committed) {
-        const same =
-          committed.type === opts.action &&
-          (committed.resolution ?? null) === (opts.resolveWith ?? null) &&
-          committed.actor_id === opts.actorId &&
-          (committed.note ?? null) === (opts.note ?? null);
-        if (!same) throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This operation id was already used with different details.");
+        if (!sameActionSemantics(committed, opts)) throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This operation id was already used with different details.");
         return;
       }
     }
@@ -443,7 +379,6 @@ router.post("/:id/exception/:exId/reject", requireRole("admin"), validateBody(re
   } catch (err) { next(err); }
 });
 
-// Resume + Resolve are ADMIN-ONLY (owner decision): only admins close/resolve.
 router.post("/:id/exception/:exId/resume", requireRole("admin"), validateBody(reviewSchema), async (req, res, next) => {
   try {
     const { note, client_action_id, expected_version } = req.body as { note?: string; client_action_id: string; expected_version?: number };
@@ -456,7 +391,6 @@ const resolveSchema = reviewSchema.extend({ resolution: z.string().min(1) });
 router.post("/:id/exception/:exId/resolve", requireRole("admin"), validateBody(resolveSchema), async (req, res, next) => {
   try {
     const { resolution, note, client_action_id, expected_version } = req.body as { resolution: string; note?: string; client_action_id: string; expected_version?: number };
-    // nextExceptionState → assertResolutionExecutable refuses anything but retry.
     await applyTransition({ tripId: req.params.id, exId: req.params.exId, actorId: req.user!.id, action: "resolve", clientActionId: client_action_id, note, resolveWith: resolution as ExceptionResolutionT, expectedVersion: expected_version });
     await reloadAndSend(res, req.params.id, req.params.exId, "full");
   } catch (err) { next(err); }
@@ -466,10 +400,7 @@ router.post("/:id/exception/:exId/resolve", requireRole("admin"), validateBody(r
 router.get("/:id/exception", requireRole("driver", "admin", "requestor"), async (req, res, next) => {
   try {
     const tripId = req.params.id;
-    const trip = await prisma.trip.findUnique({
-      where: { id: tripId },
-      select: { driver_id: true, requestor_id: true },
-    });
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { driver_id: true, requestor_id: true } });
     if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
 
     const role = req.user!.role;
@@ -480,16 +411,8 @@ router.get("/:id/exception", requireRole("driver", "admin", "requestor"), async 
     else throw new ApiError(403, "FORBIDDEN", "You do not have access to this trip's exceptions.");
 
     const exc =
-      (await prisma.tripException.findFirst({
-        where: { trip_id: tripId, closed_at: null },
-        include: exceptionInclude,
-        orderBy: [{ created_at: "desc" }, { id: "desc" }],
-      })) ??
-      (await prisma.tripException.findFirst({
-        where: { trip_id: tripId },
-        include: exceptionInclude,
-        orderBy: [{ created_at: "desc" }, { id: "desc" }],
-      }));
+      (await prisma.tripException.findFirst({ where: { trip_id: tripId, closed_at: null }, include: exceptionInclude, orderBy: [{ created_at: "desc" }, { id: "desc" }] })) ??
+      (await prisma.tripException.findFirst({ where: { trip_id: tripId }, include: exceptionInclude, orderBy: [{ created_at: "desc" }, { id: "desc" }] }));
 
     res.json({ exception: exc ? serializeException(exc, audience) : null });
   } catch (err) {

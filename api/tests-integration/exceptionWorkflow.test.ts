@@ -20,6 +20,7 @@ import bcrypt from "bcrypt";
 import { api, auth, prisma, resetDb, loginAs, ADMIN, DRIVER, REQUESTOR } from "./helpers/harness";
 import { userIdByPhone, firstRouteTypeId, bookTrip, approveTrip, startTrip } from "./helpers/flow";
 import { uploadBuffer } from "../src/lib/cloudinary"; // the mocked adapter (vi.fn) — asserted for contract
+import { armBarrier } from "../src/lib/testHooks"; // deterministic interleaving for concurrency tests
 
 const PLX_PLATE = "PLX 2406";
 const PHOTO = Buffer.from("fake-jpeg-bytes");
@@ -35,13 +36,28 @@ let driverId = "";
 let rt = "";
 const REQUESTOR2_PHONE = "+60199990002";
 
-/** Book A2 → assign PLX → start. Leaves the trip in_progress. */
-async function inProgressTrip() {
-  const t = await bookTrip(requestor, ["A2"], rt);
+/** Book zones → assign PLX → start. Leaves the trip in_progress. */
+async function inProgressTripZones(zones: string[]) {
+  const t = await bookTrip(requestor, zones, rt);
   await approveTrip(admin, t.id, driverId, PLX_PLATE);
   await startTrip(driver, t.id);
   return t;
 }
+function inProgressTrip() {
+  return inProgressTripZones(["A2"]);
+}
+/** Arrive a stop and stub its POD so it is deliverable (no Cloudinary). */
+async function arriveAndReadyPod(tripId: string, stopId: string) {
+  const r = await api().patch(`/api/v1/trips/${tripId}/status`).set(auth(driver)).send({ action: "arrived", stop_id: stopId });
+  expect(r.status).toBe(200);
+  await prisma.tripStop.update({ where: { id: stopId }, data: { pod_photo: "test://pod.jpg", do_uploaded: true } });
+}
+const patchTrip = (token: string, tripId: string, body: Record<string, unknown>) =>
+  api().patch(`/api/v1/trips/${tripId}/status`).set(auth(token)).send(body);
+// Supertest requests are LAZY (they don't send until .then/await). `fire` kicks a
+// request off immediately and returns a real Promise, so a barrier test can pause
+// it mid-flight (holding a DB lock) and then start a second request.
+const fire = <T>(req: PromiseLike<T>): Promise<T> => Promise.resolve(req);
 
 function reportReq(driver: string, tripId: string, over: Record<string, string> = {}) {
   const r = api().post(`/api/v1/trips/${tripId}/exception`).set(auth(driver));
@@ -132,13 +148,15 @@ describe("exception workflow — end-to-end through Postgres", () => {
     expect(res.body.error.code).toBe("EVIDENCE_REQUIRED");
   });
 
-  it("idempotent replay: same client_occurrence_id returns the same row, no duplicate", async () => {
+  it("idempotent replay: identical report (same op ids + photo) returns the same row, no duplicate", async () => {
     const t = await inProgressTrip();
 
-    const occ = randomUUID();
-    const first = await reportReq(driver, t.id, { client_occurrence_id: occ }).attach("photo", PHOTO, "e.jpg");
+    // A TRUE replay reuses ALL operation ids (occurrence, action, evidence) and
+    // the same photo bytes — anything else is a payload change (tested below).
+    const ids = { client_occurrence_id: randomUUID(), client_action_id: randomUUID(), client_evidence_id: randomUUID() };
+    const first = await reportReq(driver, t.id, ids).attach("photo", PHOTO, "e.jpg");
     expect(first.status).toBe(201);
-    const second = await reportReq(driver, t.id, { client_occurrence_id: occ }).attach("photo", PHOTO, "e.jpg");
+    const second = await reportReq(driver, t.id, ids).attach("photo", PHOTO, "e.jpg");
     expect(second.status).toBe(200);
     expect(second.body.exception.id).toBe(first.body.exception.id);
     expect(await prisma.tripException.count({ where: { trip_id: t.id } })).toBe(1);
@@ -417,5 +435,187 @@ describe("exception workflow — end-to-end through Postgres", () => {
     const stop = (await prisma.tripStop.findUnique({ where: { id: t.stops[0].id } }))!;
     expect(stop.pod_photo).toBeNull();
     expect(stop.do_uploaded).toBe(false);
+  });
+
+  // ── Barrier-forced interleavings (deterministic, not Promise.all-and-hope) ──
+
+  it("BARRIER: report reaches commit first → a racing Arrived fails EXCEPTION_OPEN, writes nothing", async () => {
+    const t = await inProgressTrip();
+    const stopId = t.stops[0].id;
+    const barrier = armBarrier("exceptionReport.beforeCommit");
+    const reportP = fire(reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")); // holds the Trip lock at the hook
+    await barrier.reached;
+    const arrivedP = patchTrip(driver, t.id, { action: "arrived", stop_id: stopId }); // blocks on the lock
+    barrier.release();
+    const [report, arrived] = await Promise.all([reportP, arrivedP]);
+    expect(report.status).toBe(201);
+    expect(arrived.status).toBe(409);
+    expect(arrived.body.error.code).toBe("EXCEPTION_OPEN");
+    expect((await prisma.tripStop.findUnique({ where: { id: stopId } }))!.status).toBe("pending"); // arrived wrote nothing
+  });
+
+  it("BARRIER: Arrived commits first → a later report opens against the remaining trip", async () => {
+    const t = await inProgressTrip();
+    const stopId = t.stops[0].id;
+    const barrier = armBarrier("arrived.beforeCommit");
+    const arrivedP = fire(patchTrip(driver, t.id, { action: "arrived", stop_id: stopId })); // holds the lock at its hook
+    await barrier.reached;
+    const reportP = reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg"); // uploads, then blocks on the lock
+    barrier.release();
+    const [arrived, report] = await Promise.all([arrivedP, reportP]);
+    expect(arrived.status).toBe(200);
+    expect(report.status).toBe(201);
+    expect((await prisma.tripStop.findUnique({ where: { id: stopId } }))!.status).toBe("arrived");
+  });
+
+  it("BARRIER: report racing a NON-final Delivered → delivery commits, report still opens", async () => {
+    const t = await inProgressTripZones(["A2", "A1"]); // 2 stops
+    const [s1] = [...t.stops].sort((a, b) => a.sequence - b.sequence);
+    await arriveAndReadyPod(t.id, s1.id);
+    const barrier = armBarrier("delivered.beforeCommit");
+    const deliveredP = fire(patchTrip(driver, t.id, { action: "delivered", stop_id: s1.id })); // non-final → holds lock at hook
+    await barrier.reached;
+    const reportP = reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg");
+    barrier.release();
+    const [delivered, report] = await Promise.all([deliveredP, reportP]);
+    expect(delivered.status).toBe(200);
+    expect(report.status).toBe(201); // trip still in_progress after a non-final delivery
+    expect((await prisma.trip.findUnique({ where: { id: t.id } }))!.status).toBe("in_progress");
+  });
+
+  it("BARRIER: report racing FINAL Delivered/finalization → finalize wins, report fails (not eligible)", async () => {
+    const t = await inProgressTrip(); // single stop
+    const stopId = t.stops[0].id;
+    await arriveAndReadyPod(t.id, stopId);
+    const barrier = armBarrier("delivered.beforeCommit");
+    const deliveredP = fire(patchTrip(driver, t.id, { action: "delivered", stop_id: stopId })); // final → proposes, holds lock at hook
+    await barrier.reached;
+    const reportP = reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg");
+    barrier.release();
+    const [delivered, report] = await Promise.all([deliveredP, reportP]);
+    expect(delivered.status).toBe(200);
+    expect(report.status).toBe(409); // trip is pending_approval — no longer eligible
+    const trip = (await prisma.trip.findUnique({ where: { id: t.id } }))!;
+    expect(trip.status).toBe("pending_approval");
+    // The invariant the whole pass protects: never all-delivered + in_progress + open exception.
+    expect(trip.open_exception_id).toBeNull();
+    expect(await prisma.tripException.count({ where: { trip_id: t.id } })).toBe(0);
+  });
+
+  // ── Extended idempotency ──
+
+  it("same admin action UUID submitted concurrently → both succeed idempotently, ONE action", async () => {
+    const t = await inProgressTrip();
+    const exId = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
+    const cid = randomUUID();
+    const verify = () => api().post(`/api/v1/trips/${t.id}/exception/${exId}/verify`).set(auth(admin)).send({ client_action_id: cid });
+    const [a, b] = await Promise.all([verify(), verify()]);
+    expect([a.status, b.status].sort()).toEqual([200, 200]);
+    expect(await prisma.exceptionAction.count({ where: { exception_id: exId, type: "verify" } })).toBe(1);
+  });
+
+  it("same evidence UUID submitted concurrently → both succeed, ONE evidence row added", async () => {
+    const t = await inProgressTrip();
+    const exId = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
+    const ev = randomUUID();
+    const add = () => api().post(`/api/v1/trips/${t.id}/exception/${exId}/evidence`).set(auth(driver)).field("client_evidence_id", ev).attach("photo", PHOTO, "same.jpg");
+    const [a, b] = await Promise.all([add(), add()]);
+    expect([a.status, b.status].sort()).toEqual([200, 201]);
+    // report evidence (1) + exactly one resubmission (1) = 2.
+    expect(await prisma.exceptionEvidence.count({ where: { exception_id: exId } })).toBe(2);
+  });
+
+  it("evidence UUID reused with a DIFFERENT photo → 409", async () => {
+    const t = await inProgressTrip();
+    const exId = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
+    const ev = randomUUID();
+    const first = await api().post(`/api/v1/trips/${t.id}/exception/${exId}/evidence`).set(auth(driver)).field("client_evidence_id", ev).attach("photo", PHOTO, "a.jpg");
+    expect(first.status).toBe(201);
+    const reused = await api().post(`/api/v1/trips/${t.id}/exception/${exId}/evidence`).set(auth(driver)).field("client_evidence_id", ev).attach("photo", Buffer.from("DIFFERENT-bytes"), "b.jpg");
+    expect(reused.status).toBe(409);
+    expect(reused.body.error.code).toBe("IDEMPOTENCY_KEY_REUSED");
+  });
+
+  it("evidence UUID reused with a DIFFERENT capture timestamp → 409", async () => {
+    const t = await inProgressTrip();
+    const exId = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
+    const ev = randomUUID();
+    await api().post(`/api/v1/trips/${t.id}/exception/${exId}/evidence`).set(auth(driver)).field("client_evidence_id", ev).field("captured_client_at", "2026-08-01T02:00:00.000Z").attach("photo", PHOTO, "a.jpg");
+    const reused = await api().post(`/api/v1/trips/${t.id}/exception/${exId}/evidence`).set(auth(driver)).field("client_evidence_id", ev).field("captured_client_at", "2026-08-01T09:00:00.000Z").attach("photo", PHOTO, "a.jpg");
+    expect(reused.status).toBe(409);
+    expect(reused.body.error.code).toBe("IDEMPOTENCY_KEY_REUSED");
+  });
+
+  it("report occurrence UUID reused with a changed action id / GPS / photo → 409", async () => {
+    const t = await inProgressTrip();
+    const occ = randomUUID();
+    const ids = { client_occurrence_id: occ, client_action_id: randomUUID(), client_evidence_id: randomUUID() };
+    await reportReq(driver, t.id, ids).attach("photo", PHOTO, "e.jpg");
+    // changed client_action_id
+    const changedAction = await reportReq(driver, t.id, { ...ids, client_action_id: randomUUID() }).attach("photo", PHOTO, "e.jpg");
+    expect(changedAction.status).toBe(409);
+    // changed GPS
+    const changedGps = await reportReq(driver, t.id, { ...ids, lat: "1.0" }).attach("photo", PHOTO, "e.jpg");
+    expect(changedGps.status).toBe(409);
+    // changed photo bytes
+    const changedPhoto = await reportReq(driver, t.id, ids).attach("photo", Buffer.from("OTHER"), "e.jpg");
+    expect(changedPhoto.status).toBe(409);
+  });
+
+  it("admin op UUID reused with a different action/resolution/note → 409", async () => {
+    const t = await inProgressTrip();
+    const exId = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
+    const cid = randomUUID();
+    await api().post(`/api/v1/trips/${t.id}/exception/${exId}/verify`).set(auth(admin)).send({ client_action_id: cid });
+    // Same UUID, different action (reject).
+    const asReject = await api().post(`/api/v1/trips/${t.id}/exception/${exId}/reject`).set(auth(admin)).send({ client_action_id: cid, note: "different op" });
+    expect(asReject.status).toBe(409);
+    expect(asReject.body.error.code).toBe("IDEMPOTENCY_KEY_REUSED");
+  });
+
+  it("evidence resubmission allowed after verified; BLOCKED after rejected and resolved", async () => {
+    // One trip stays in_progress throughout (one-active-trip rule); each exception
+    // is closed before the next opens.
+    const t = await inProgressTrip();
+    const addEvidence = (exId: string) =>
+      api().post(`/api/v1/trips/${t.id}/exception/${exId}/evidence`).set(auth(driver)).field("client_evidence_id", randomUUID()).attach("photo", PHOTO, "x.jpg");
+
+    // after VERIFIED (still open) → allowed
+    const ex1 = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
+    await api().post(`/api/v1/trips/${t.id}/exception/${ex1}/verify`).set(auth(admin)).send({ client_action_id: randomUUID() });
+    expect((await addEvidence(ex1)).status).toBe(201);
+    await api().post(`/api/v1/trips/${t.id}/exception/${ex1}/resume`).set(auth(admin)).send({ client_action_id: randomUUID() }); // close it
+
+    // after REJECTED (closed) → 409 EXCEPTION_CLOSED
+    const ex2 = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
+    await api().post(`/api/v1/trips/${t.id}/exception/${ex2}/reject`).set(auth(admin)).send({ client_action_id: randomUUID(), note: "no" });
+    const afterRejected = await addEvidence(ex2);
+    expect(afterRejected.status).toBe(409);
+    expect(afterRejected.body.error.code).toBe("EXCEPTION_CLOSED");
+
+    // after RESOLVED (closed) → 409 EXCEPTION_CLOSED
+    const ex3 = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
+    await api().post(`/api/v1/trips/${t.id}/exception/${ex3}/resume`).set(auth(admin)).send({ client_action_id: randomUUID() });
+    const afterResolved = await addEvidence(ex3);
+    expect(afterResolved.status).toBe(409);
+    expect(afterResolved.body.error.code).toBe("EXCEPTION_CLOSED");
+  });
+
+  it("pointer-clear failure rolls back the action, projection AND resolution", async () => {
+    const t = await inProgressTrip();
+    const exId = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
+    // Deliberately break the cache pointer so the close-time CAS matches 0 rows.
+    await prisma.trip.update({ where: { id: t.id }, data: { open_exception_id: null } });
+
+    const resume = await api().post(`/api/v1/trips/${t.id}/exception/${exId}/resume`).set(auth(admin)).send({ client_action_id: randomUUID() });
+    expect(resume.status).toBe(409);
+    expect(resume.body.error.code).toBe("POINTER_INCONSISTENT");
+
+    // Everything rolled back: exception still OPEN, no resume action, version unchanged.
+    const exc = (await prisma.tripException.findUnique({ where: { id: exId } }))!;
+    expect(exc.closed_at).toBeNull();
+    expect(exc.current_state).toBe("reported");
+    expect(exc.resolution).toBeNull();
+    expect(await prisma.exceptionAction.count({ where: { exception_id: exId, type: "resume" } })).toBe(0);
   });
 });

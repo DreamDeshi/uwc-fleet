@@ -58,6 +58,8 @@ import { getRoute } from "../services/routeLegs";
 import { loadHolidaySet } from "../lib/holidays";
 import { upload } from "../lib/upload";
 import { uploadBuffer } from "../lib/cloudinary";
+import { lockTripRow } from "../lib/tripLock";
+import { testHook } from "../lib/testHooks";
 import { signTripResponse } from "../lib/podPhotos";
 import { resolveFleetFix } from "../lib/gpsPosition";
 import { sendPushNotifications } from "../lib/pushNotifications";
@@ -2079,28 +2081,25 @@ router.patch(
       }
 
       if (action === "arrived") {
-        // Lifecycle isolation (Phase 1 hardening): an OPEN exception freezes
-        // ordinary stop transitions — Arrived/Delivered are blocked until an
-        // admin resolves it. GPS tracking continues (the trip stays in_progress).
-        if (trip.open_exception_id) {
-          throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before continuing this trip.");
-        }
-        // Pure guard (services/tripCompletion.ts): stop-status check FIRST,
-        // then trip-status — the ordering the offline outbox depends on. Same
-        // checks that used to live inline here; see the function's doc.
-        assertStopArrivable(trip, stop);
-        await prisma.tripStop.update({
-          where: { id: stop.id },
-          data: { status: "arrived", arrived_at: new Date() },
-        });
-        await prisma.auditLog.create({
-          data: { user_id: req.user!.id, action: "stop.arrived", table_name: "TripStop", record_id: stop.id },
-        });
-        await recordTripEvent(prisma, {
-          tripId: id,
-          event: "stop_arrived",
-          stopId: stop.id,
-          actorId: req.user!.id,
+        // Serialize with exception-open (lib/tripLock): lock the Trip row, then
+        // RE-READ status / driver / open_exception_id / stop status under the lock
+        // (never the preloaded values). Stop mutation + audit + timeline commit in
+        // ONE transaction, so a report can never interleave into an inconsistent
+        // state. An OPEN exception freezes Arrived (GPS tracking continues — the
+        // trip stays in_progress).
+        await prisma.$transaction(async (tx) => {
+          await lockTripRow(tx, id);
+          const t2 = await tx.trip.findUnique({ where: { id }, select: { status: true, driver_id: true, open_exception_id: true } });
+          if (!t2) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+          if (t2.driver_id !== req.user!.id) throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+          if (t2.open_exception_id) throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before continuing this trip.");
+          const stop2 = await tx.tripStop.findUnique({ where: { id: stop.id }, select: { status: true } });
+          if (!stop2) throw new ApiError(400, "STOP_NOT_FOUND", "That stop is not part of this trip.");
+          assertStopArrivable({ status: t2.status }, stop2);
+          await tx.tripStop.update({ where: { id: stop.id }, data: { status: "arrived", arrived_at: new Date() } });
+          await tx.auditLog.create({ data: { user_id: req.user!.id, action: "stop.arrived", table_name: "TripStop", record_id: stop.id } });
+          await recordTripEvent(tx, { tripId: id, event: "stop_arrived", stopId: stop.id, actorId: req.user!.id });
+          await testHook("arrived.beforeCommit");
         });
         const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
         res.json(updated);
@@ -2108,232 +2107,126 @@ router.patch(
       }
 
       // action === "delivered"
-      // Lifecycle isolation (Phase 1 hardening): an OPEN exception blocks
-      // delivery + finalization. The finalize CAS also carries open_exception_id
-      // = null (proposeTripIncentiveOnce) so no incentive proposal / pending_approval
-      // can race in while an exception is open; this up-front check is the friendly
-      // error and stops the stop being marked delivered.
-      if (trip.open_exception_id) {
-        throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before delivering this stop.");
-      }
-      // A stop can be delivered only while the trip is out, and only once —
-      // re-posting "delivered" on a completed trip would otherwise re-run the
-      // finalization below and overwrite incentive_earned at whatever the
-      // rates/day-ledger are NOW (the audit's re-finalization pay hole).
-      assertStopDeliverable(trip, stop);
-      const consigneeForGate = await prisma.consignee.findUnique({ where: { id: stop.consignee_id } });
-      if (!consigneeForGate) {
-        throw new ApiError(400, "CONSIGNEE_NOT_FOUND", "Consignee for this stop no longer exists.");
-      }
-      if (!isDocumentationComplete(stop, consigneeForGate.zone_code)) {
-        throw new ApiError(
-          400,
-          "DOCUMENTATION_INCOMPLETE",
-          "DO photo (and K2 form ack for K2 destinations) must be completed before marking delivered."
-        );
-      }
+      // Serialize with exception-open (lib/tripLock): the stop mutation AND — for
+      // the last stop — the incentive proposal + pending_approval flip run in ONE
+      // locked transaction, so there is NO gap where the stop is committed
+      // delivered but an exception can open before finalization. Every value is
+      // RE-READ under the lock (never the preloaded trip/stop). The incentive math
+      // is byte-for-byte unchanged — only the transaction boundary + lock are new.
+      const finalizedTrip = await prisma.$transaction(async (tx) => {
+        await lockTripRow(tx, id);
+        const t2 = await tx.trip.findUnique({ where: { id }, include: { truck: true } });
+        if (!t2) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+        if (t2.driver_id !== req.user!.id) throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+        // An OPEN exception blocks delivery + finalization: no final delivery,
+        // incentive proposal or pending_approval may occur while one is open.
+        if (t2.open_exception_id) throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before delivering this stop.");
+        const stop2 = await tx.tripStop.findUnique({ where: { id: stop.id } });
+        if (!stop2) throw new ApiError(400, "STOP_NOT_FOUND", "That stop is not part of this trip.");
+        // A stop can be delivered only while the trip is out, and only once.
+        assertStopDeliverable({ status: t2.status }, stop2);
+        const consigneeForGate = await tx.consignee.findUnique({ where: { id: stop2.consignee_id } });
+        if (!consigneeForGate) throw new ApiError(400, "CONSIGNEE_NOT_FOUND", "Consignee for this stop no longer exists.");
+        if (!isDocumentationComplete(stop2, consigneeForGate.zone_code)) {
+          throw new ApiError(400, "DOCUMENTATION_INCOMPLETE", "DO photo (and K2 form ack for K2 destinations) must be completed before marking delivered.");
+        }
 
-      await prisma.tripStop.update({
-        where: { id: stop.id },
-        data: { status: "delivered", delivered_at: new Date() },
-      });
-      await prisma.auditLog.create({
-        data: { user_id: req.user!.id, action: "stop.delivered", table_name: "TripStop", record_id: stop.id },
-      });
-      await recordTripEvent(prisma, {
-        tripId: id,
-        event: "stop_delivered",
-        stopId: stop.id,
-        actorId: req.user!.id,
-      });
+        await tx.tripStop.update({ where: { id: stop.id }, data: { status: "delivered", delivered_at: new Date() } });
+        await tx.auditLog.create({ data: { user_id: req.user!.id, action: "stop.delivered", table_name: "TripStop", record_id: stop.id } });
+        await recordTripEvent(tx, { tripId: id, event: "stop_delivered", stopId: stop.id, actorId: req.user!.id });
 
-      const remainingStops = await prisma.tripStop.count({
-        where: { trip_id: id, status: { not: "delivered" } },
-      });
+        const remainingStops = await tx.tripStop.count({ where: { trip_id: id, status: { not: "delivered" } } });
+        if (remainingStops > 0) {
+          // More stops to go — no money moves. (Barrier: a report may still open
+          // against the remaining trip after this NON-final delivery commits.)
+          await testHook("delivered.beforeCommit");
+          return false;
+        }
 
-      if (remainingStops > 0) {
-        // More stops to go — the trip stays in_progress and no money moves yet.
-        const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
-        res.json(updated);
-        return;
-      }
+        // Last stop delivered — finalize IN THE SAME transaction.
+        if (!t2.truck) throw new ApiError(400, "TRUCK_NOT_ASSIGNED", "This trip has no truck assigned.");
 
-      // Last stop delivered — finalize the trip and run the incentive engine.
-      if (!trip.truck) {
-        throw new ApiError(400, "TRUCK_NOT_ASSIGNED", "This trip has no truck assigned.");
-      }
-
-      // This trip's delivered drops, in delivered order, each with its zone's
-      // full destination points. Scored stop-by-stop (per-zone-per-day), summed.
-      const thisTripStops = await prisma.tripStop.findMany({
-        where: { trip_id: id },
-        orderBy: { delivered_at: "asc" },
-        include: { consignee: { select: { zone_code: true } } },
-      });
-      // Rate lock: points, claim rates AND the zone identity come from the
-      // ASSIGNMENT-time snapshot (TripStop.zone_points + zone_code / the
-      // trip's rate fields); the live lookups below are only the fallback for
-      // trips assigned before the snapshots existed or rows seeded directly
-      // into `assigned`. Scoring against the snapshotted zone_code keeps the
-      // ledger key and the persisted evidence consistent with the snapshotted
-      // points even if an admin corrects the consignee's zone mid-flight
-      // (audit #4). The fallback also respects the next-day cutoff: points
-      // effective NOW, not a staged edit.
-      const zoneCodes = [...new Set(thisTripStops.map((s) => dropZoneCode(s, s.consignee.zone_code)))];
-      const rateRows = await prisma.destinationRate.findMany({
-        where: { zone_code: { in: zoneCodes } },
-        select: {
-          zone_code: true,
-          location_name: true,
-          points: true,
-          pending_points: true,
-          pending_points_effective: true,
-        },
-      });
-      const pointsByZone = buildPointsByZone(
-        rateRows.map((r) => ({ ...r, points: effectiveZonePoints(r, new Date()) }))
-      );
-
-      // The incentive day keys on DELIVERY confirm time, not pickup (client
-      // rule, Mr. Teh 3 Jul 2026: "points calculate on delivery confirm time;
-      // after 12am points refresh for next day"). A trip picked up 23:30 and
-      // delivered 00:30 counts for the DELIVERY day's ledger and deduction.
-      // Stops are grouped per MYT delivery day (normally one group; a trip
-      // straddling midnight splits, and each day scores against its own
-      // ledger with its own deduction + confirm-time rate tier).
-      const dayGroups = groupStopsByDeliveryDay(thisTripStops, new Date());
-      // Admin-managed calendar (PublicHoliday table) — loaded here so the
-      // engine stays pure. The weekday/off-peak decision runs exactly once,
-      // at this finalization; later calendar edits never touch stored pay
-      // (write-once finalizeTripOnce below).
-      const publicHolidays = await loadHolidaySet();
-      const truckRates = finalizationRateParams({
-        entitled_claim_weekday: trip.entitled_claim_weekday,
-        entitled_claim_offpeak: trip.entitled_claim_offpeak,
-        daily_deduction_points: trip.daily_deduction_points,
-        // The live fallback (pre-snapshot legacy trips only) also respects the
-        // next-day cutoff: pay at the rates effective NOW, not a staged edit.
-        truck: effectiveTruckRates(trip.truck, new Date()),
-      });
-
-      let incentiveThisTrip = 0;
-      // Each group's stops + the engine's own outputs, kept index-aligned so
-      // the per-drop breakdown can be persisted verbatim (no recomputation).
-      const finalizedGroups: FinalizedGroup[] = [];
-      for (const group of dayGroups) {
-        // Per-day ledger: drops this driver already DELIVERED on this group's
-        // MYT day BEFORE this group's first confirm, on OTHER trips that are
-        // in_progress OR completed — regardless of when those trips were
-        // picked up. A stop whose zone is already on the ledger scores 1 point;
-        // their summed points (priorPointsToday) fold the daily deduction in at
-        // the day-total level. Counting in_progress siblings + bounding by
-        // delivered-time order keeps the money right even if trips overlap (see
-        // dayLedger.ts — the RM88-instead-of-RM55 double-first-drop hole).
-        const priorStopsToday = await prisma.tripStop.findMany({
-          where: priorDeliveredDropsWhere({
-            driverId: req.user!.id,
-            excludeTripId: id,
-            dayStart: group.dayStart,
-            anchor: group.anchor,
-          }),
-          // IN DELIVERED ORDER so the prior drops can be scored per-zone-per-day
-          // (first-in-zone full, repeat 1pt) to get the day's cumulative points
-          // BEFORE this group. Prior drops carry their own scored zone identity +
-          // points: snapshotted at assignment (in_progress siblings) or stamped at
-          // finalization (completed trips) — prefer it over the live consignee zone
-          // so the whole day keys on the zones/points the drops were PAID under.
+        // This trip's delivered drops, in delivered order, each with its zone's
+        // full destination points. Scored stop-by-stop (per-zone-per-day), summed.
+        const thisTripStops = await tx.tripStop.findMany({
+          where: { trip_id: id },
           orderBy: { delivered_at: "asc" },
-          select: { zone_code: true, zone_points: true, consignee: { select: { zone_code: true } } },
+          include: { consignee: { select: { zone_code: true } } },
         });
-        const priorDrops = priorStopsToday.map((s) => {
-          const zone = dropZoneCode(s, s.consignee.zone_code);
-          return { zoneCode: zone, zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone) };
+        const zoneCodes = [...new Set(thisTripStops.map((s) => dropZoneCode(s, s.consignee.zone_code)))];
+        const rateRows = await tx.destinationRate.findMany({
+          where: { zone_code: { in: zoneCodes } },
+          select: { zone_code: true, location_name: true, points: true, pending_points: true, pending_points_effective: true },
         });
-        const zonesDeliveredEarlierToday = priorDrops.map((d) => d.zoneCode);
-        // The driver's cumulative SCORED points delivered earlier today (0 iff this
-        // group holds the day's first drop). Folds the daily deduction in at the
-        // day-total level, telescoping the per-trip marginals (see the engine doc).
-        const priorPointsToday = scoreDrops(priorDrops).reduce((a, b) => a + b, 0);
+        const pointsByZone = buildPointsByZone(rateRows.map((r) => ({ ...r, points: effectiveZonePoints(r, new Date()) })));
 
-        const drops = group.stops.map((s) => {
-          const zone = dropZoneCode(s, s.consignee.zone_code);
-          return {
-            zoneCode: zone,
-            zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone),
-          };
+        // Incentive day keys on DELIVERY confirm time (client rule 3 Jul 2026).
+        const dayGroups = groupStopsByDeliveryDay(thisTripStops, new Date());
+        const publicHolidays = await loadHolidaySet();
+        const truckRates = finalizationRateParams({
+          entitled_claim_weekday: t2.entitled_claim_weekday,
+          entitled_claim_offpeak: t2.entitled_claim_offpeak,
+          daily_deduction_points: t2.daily_deduction_points,
+          truck: effectiveTruckRates(t2.truck, new Date()),
         });
 
-        const incentive = calculateDeliveryIncentive({
-          rateDateTime: group.anchor,
-          drops,
-          zonesDeliveredEarlierToday,
-          priorPointsToday,
-          publicHolidays,
-          truck: truckRates,
-        });
-        incentiveThisTrip += incentive.incentiveThisTrip;
-        finalizedGroups.push({
-          stops: group.stops.map((s) => ({ id: s.id, zoneCode: dropZoneCode(s, s.consignee.zone_code) })),
-          result: incentive,
-        });
-      }
-      // Guard against float dust from summing per-group marginals.
-      incentiveThisTrip = Math.round(incentiveThisTrip * 100) / 100;
+        let incentiveThisTrip = 0;
+        const finalizedGroups: FinalizedGroup[] = [];
+        for (const group of dayGroups) {
+          // Per-day ledger: drops this driver already DELIVERED earlier today on
+          // OTHER in_progress/completed trips (see dayLedger.ts).
+          const priorStopsToday = await tx.tripStop.findMany({
+            where: priorDeliveredDropsWhere({ driverId: req.user!.id, excludeTripId: id, dayStart: group.dayStart, anchor: group.anchor }),
+            orderBy: { delivered_at: "asc" },
+            select: { zone_code: true, zone_points: true, consignee: { select: { zone_code: true } } },
+          });
+          const priorDrops = priorStopsToday.map((s) => {
+            const zone = dropZoneCode(s, s.consignee.zone_code);
+            return { zoneCode: zone, zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone) };
+          });
+          const zonesDeliveredEarlierToday = priorDrops.map((d) => d.zoneCode);
+          const priorPointsToday = scoreDrops(priorDrops).reduce((a, b) => a + b, 0);
+          const drops = group.stops.map((s) => {
+            const zone = dropZoneCode(s, s.consignee.zone_code);
+            return { zoneCode: zone, zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone) };
+          });
+          const incentive = calculateDeliveryIncentive({ rateDateTime: group.anchor, drops, zonesDeliveredEarlierToday, priorPointsToday, publicHolidays, truck: truckRates });
+          incentiveThisTrip += incentive.incentiveThisTrip;
+          finalizedGroups.push({ stops: group.stops.map((s) => ({ id: s.id, zoneCode: dropZoneCode(s, s.consignee.zone_code) })), result: incentive });
+        }
+        incentiveThisTrip = Math.round(incentiveThisTrip * 100) / 100;
 
-      // Store the MARGINAL (per-trip) incentive as the PROPOSAL, and move the
-      // trip to `pending_approval` — the amount is frozen (this day's ledger +
-      // snapshot rates) but NOT paid until an admin approves the POD (Mr. Teh
-      // 16 Jul 2026). Write-once compare-and-set: a concurrent/repeated delivery
-      // loses the guard and never overwrites the stored proposal. The per-drop
-      // breakdown commits atomically in the same transaction.
-      const breakdown = collectFinalizeBreakdown(finalizedGroups);
-      const proposed = await prisma.$transaction((tx) =>
-        proposeTripIncentiveOnce(tx, id, incentiveThisTrip, breakdown)
-      );
-      if (!proposed) {
-        throw new ApiError(
-          409,
-          "TRIP_ALREADY_FINALIZED",
-          "This trip has already been delivered and its incentive proposed."
-        );
-      }
+        // Write-once CAS (status in_progress + incentive_earned null +
+        // open_exception_id null) — under the lock this is fully atomic.
+        const breakdown = collectFinalizeBreakdown(finalizedGroups);
+        const proposed = await proposeTripIncentiveOnce(tx, id, incentiveThisTrip, breakdown);
+        if (!proposed) throw new ApiError(409, "TRIP_ALREADY_FINALIZED", "This trip has already been delivered and its incentive proposed.");
+        await tx.auditLog.create({ data: { user_id: req.user!.id, action: "trip.delivered_pending_approval", table_name: "Trip", record_id: id } });
+        await testHook("delivered.beforeCommit");
+        return true;
+      });
+
       const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
 
-      // The trip is delivered + awaiting approval, NOT completed. The `completed`
-      // audit + timeline event now fire at approval (PATCH /trips/:id/approve-incentive).
-      await prisma.auditLog.create({
-        data: { user_id: req.user!.id, action: "trip.delivered_pending_approval", table_name: "Trip", record_id: id },
-      });
-
-      // Notify admins there's a POD to approve (money is held until they do).
-      const adminsToNotify = await prisma.user.findMany({
-        where: { role: "admin", status: "active", expo_push_token: { not: null } },
-        select: { expo_push_token: true },
-      });
-      await sendPushNotifications(
-        adminsToNotify.map((a) => a.expo_push_token),
-        {
+      // Notifications (best-effort, OUTSIDE the tx) — only when the trip finalized.
+      if (finalizedTrip) {
+        const adminsToNotify = await prisma.user.findMany({
+          where: { role: "admin", status: "active", expo_push_token: { not: null } },
+          select: { expo_push_token: true },
+        });
+        await sendPushNotifications(adminsToNotify.map((a) => a.expo_push_token), {
           title: "Trip awaiting approval",
           body: `Trip ${updated?.ticket_number ?? ""} was delivered — approve the POD to release the incentive`,
           data: { type: "pending_approval", tripId: id },
+        });
+        if (updated) {
+          const requestorDevice = await prisma.user.findUnique({ where: { id: updated.requestor_id }, select: { expo_push_token: true } });
+          await sendPushNotifications([requestorDevice?.expo_push_token], {
+            title: "Delivery complete",
+            body: `Your booking ${updated.ticket_number} has been delivered`,
+            data: { type: "trip_delivered", tripId: id },
+          });
         }
-      );
-
-      // Notify the REQUESTOR their delivery is complete — the goods have arrived.
-      // (The admin POD approval that follows is an internal money step the
-      // requestor never sees, so "delivered" is the right moment to tell them.)
-      // Best-effort, like every other push; the requestor's token isn't in
-      // tripInclude, so fetch it the same way the assign path does.
-      if (updated) {
-        const requestorDevice = await prisma.user.findUnique({
-          where: { id: updated.requestor_id },
-          select: { expo_push_token: true },
-        });
-        await sendPushNotifications([requestorDevice?.expo_push_token], {
-          title: "Delivery complete",
-          body: `Your booking ${updated.ticket_number} has been delivered`,
-          data: { type: "trip_delivered", tripId: id },
-        });
       }
 
       res.json(updated);
