@@ -52,3 +52,8 @@ process.env.NODE_ENV = "test";
 // test, so leave the sensitive limiter (now on /login too) as a pass-through —
 // same reason the browser e2e run sets RATE_LIMIT_MAX=0. Prod sets neither.
 process.env.SENSITIVE_RATE_LIMIT_MAX ||= "0";
+// Same rationale for the GENERAL per-IP limiter: the whole suite shares one IP
+// and one budget, so a large test file (e.g. the exception-workflow concurrency
+// tests) would otherwise trip the 100/min cap. No integration test asserts the
+// general limiter; e2e disables it identically. Prod sets neither.
+process.env.RATE_LIMIT_MAX ||= "0";

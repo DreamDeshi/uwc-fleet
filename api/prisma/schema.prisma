@@ -93,6 +93,7 @@ enum ExceptionActionType {
   reject
   resume
   resolve
+  evidence_added // driver resubmitted evidence (append-only; never reopens a closed exception)
 }
 
 // Evidence media type (photo for Phase 1; extensible).
@@ -354,10 +355,11 @@ model Trip {
   auto_dispatch_paused      Boolean        @default(false)
   // Failed-delivery / exception workflow (Phase 1, feature-flagged). A trip's
   // exception state is DERIVED, not stored: Trip.status stays `in_progress` while
-  // an exception is open. `open_exception_id` is BOTH the cheap "has an open
-  // exception" flag/board pointer AND the concurrency guard that enforces
-  // one-open-exception-per-trip — a report CASes it null→id (a second concurrent
-  // open loses), and closing (resume/retry/reject) clears it back to null. All
+  // an exception is open. `open_exception_id` is a CACHE/pointer (cheap "has an
+  // open exception" flag for the board + the report CAS), NOT the canonical
+  // invariant — the partial unique index on TripException(trip_id) WHERE
+  // closed_at IS NULL is (see the TripException model note). Kept transactionally
+  // consistent: set null→id when an exception opens, cleared when it closes. All
   // additive/nullable; a trip with open_exception_id = null is a normal trip.
   open_exception_id         String?        @unique
   open_exception            TripException? @relation("TripOpenException", fields: [open_exception_id], references: [id])
@@ -442,6 +444,15 @@ model TripStop {
 // decision. NOTE: append-only rows do NOT prevent orphaned Cloudinary assets — an
 // upload whose request never commits still needs the standard 7-day unattached-
 // asset cleanup (out of scope here; tracked separately).
+//
+// ⚠ ONE-OPEN-PER-TRIP is enforced by a PARTIAL UNIQUE INDEX in
+// prisma/migrations/20260725130000_exception_hardening (UNIQUE ON (trip_id)
+// WHERE closed_at IS NULL) — that DB index, NOT Trip.open_exception_id, is the
+// CANONICAL invariant. Prisma cannot express partial indexes in this schema, so
+// it is added by raw SQL and is intentionally NOT represented here (a future
+// `prisma migrate dev` will surface it as drift — keep it). Trip.open_exception_id
+// is a CACHE/pointer for cheap board queries + the report CAS, kept transactionally
+// consistent with the header's closed_at.
 model TripException {
   id                   String               @id @default(cuid())
   trip_id              String
@@ -487,8 +498,13 @@ model ExceptionAction {
   accuracy_m       Float?
   client_at        DateTime? // device capture time
   created_at       DateTime             @default(now()) // SERVER receipt — immutable
+  evidence         ExceptionEvidence[] // evidence supplied by this action
 
   @@unique([exception_id, client_action_id])
+  // Backs the composite FK on ExceptionEvidence(action_id, exception_id) that
+  // enforces evidence + action belong to the SAME exception (added by raw SQL in
+  // the hardening migration; id is already the PK, so this is a cheap superset).
+  @@unique([id, exception_id])
   @@index([exception_id, created_at])
 }
 
@@ -496,7 +512,16 @@ model ExceptionEvidence {
   id                 String                @id @default(cuid())
   exception_id       String
   exception          TripException         @relation(fields: [exception_id], references: [id])
-  action_id          String? // the action that supplied it (report / provide-more)
+  // The action that supplied this evidence (report / evidence_added). A REAL
+  // relation now (was a bare String). Nullable is retained for a possible future
+  // pre-action upload-session flow, but every current write sets it. A raw
+  // COMPOSITE FK (action_id, exception_id) → ExceptionAction(id, exception_id) in
+  // the hardening migration additionally guarantees the action belongs to the
+  // SAME exception — Prisma can't express a composite FK that shares exception_id
+  // with the `exception` relation above, so it is added by raw SQL (and will show
+  // as drift on a future `prisma migrate dev` — keep it).
+  action_id          String?
+  action             ExceptionAction?      @relation(fields: [action_id], references: [id])
   client_evidence_id String // device UUID → idempotent upload replay
   kind               ExceptionEvidenceKind @default(photo)
   url                String // Cloudinary authenticated URL (not directly accessible)

@@ -166,7 +166,7 @@ export async function releaseAssignedTrip(
 export interface TripExitClient {
   trip: {
     updateMany(args: {
-      where: { id: string; status: { in: ("pending" | "approved" | "in_progress")[] } };
+      where: { id: string; status: { in: ("pending" | "approved" | "in_progress")[] }; open_exception_id?: null };
       data: Record<string, unknown>;
     }): Promise<{ count: number }>;
   };
@@ -225,7 +225,10 @@ export async function abortActiveTrip(
   tripId: string
 ): Promise<boolean> {
   const res = await client.trip.updateMany({
-    where: { id: tripId, status: { in: ["in_progress"] } },
+    // open_exception_id: null — an OPEN exception atomically blocks abort: no
+    // capacity release may occur while one is open (lifecycle isolation, Phase 1
+    // hardening). The exception must be resolved first.
+    where: { id: tripId, status: { in: ["in_progress"] }, open_exception_id: null },
     data: { status: "cancelled", auto_dispatch_failed: false, auto_dispatch_note: null },
   });
   return res.count === 1;

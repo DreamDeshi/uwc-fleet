@@ -1734,7 +1734,7 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
 
     const trip = await prisma.trip.findUnique({
       where: { id },
-      select: { id: true, status: true },
+      select: { id: true, status: true, open_exception_id: true },
     });
     if (!trip) {
       throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
@@ -1745,6 +1745,12 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
         "INVALID_STATUS",
         "Only an in-progress trip can be aborted. Use unassign or reassign for a scheduled trip, or cancel for one not yet assigned."
       );
+    }
+    // Lifecycle isolation (Phase 1 hardening): an OPEN exception blocks abort /
+    // capacity release. The abortActiveTrip CAS also carries open_exception_id =
+    // null; this is the friendly up-front error.
+    if (trip.open_exception_id) {
+      throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before aborting this trip.");
     }
 
     // Status-guarded CAS: aborts ONLY while still in_progress. If the last stop
@@ -2073,6 +2079,12 @@ router.patch(
       }
 
       if (action === "arrived") {
+        // Lifecycle isolation (Phase 1 hardening): an OPEN exception freezes
+        // ordinary stop transitions — Arrived/Delivered are blocked until an
+        // admin resolves it. GPS tracking continues (the trip stays in_progress).
+        if (trip.open_exception_id) {
+          throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before continuing this trip.");
+        }
         // Pure guard (services/tripCompletion.ts): stop-status check FIRST,
         // then trip-status — the ordering the offline outbox depends on. Same
         // checks that used to live inline here; see the function's doc.
@@ -2096,6 +2108,14 @@ router.patch(
       }
 
       // action === "delivered"
+      // Lifecycle isolation (Phase 1 hardening): an OPEN exception blocks
+      // delivery + finalization. The finalize CAS also carries open_exception_id
+      // = null (proposeTripIncentiveOnce) so no incentive proposal / pending_approval
+      // can race in while an exception is open; this up-front check is the friendly
+      // error and stops the stop being marked delivered.
+      if (trip.open_exception_id) {
+        throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before delivering this stop.");
+      }
       // A stop can be delivered only while the trip is out, and only once —
       // re-posting "delivered" on a completed trip would otherwise re-run the
       // finalization below and overwrite incentive_earned at whatever the

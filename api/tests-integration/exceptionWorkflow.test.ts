@@ -16,8 +16,10 @@ vi.mock("../src/lib/cloudinary", () => ({
   cloudinary: { url: (publicId: string) => `https://res.cloudinary.test/signed/${publicId}` },
 }));
 
+import bcrypt from "bcrypt";
 import { api, auth, prisma, resetDb, loginAs, ADMIN, DRIVER, REQUESTOR } from "./helpers/harness";
 import { userIdByPhone, firstRouteTypeId, bookTrip, approveTrip, startTrip } from "./helpers/flow";
+import { uploadBuffer } from "../src/lib/cloudinary"; // the mocked adapter (vi.fn) — asserted for contract
 
 const PLX_PLATE = "PLX 2406";
 const PHOTO = Buffer.from("fake-jpeg-bytes");
@@ -26,10 +28,12 @@ const PHOTO = Buffer.from("fake-jpeg-bytes");
 // the whole in-process app, so we log in ONCE (resetDb does not wipe users, so
 // the tokens stay valid across tests) rather than on every test.
 let requestor = "";
+let requestor2 = ""; // a DIFFERENT requestor — for the non-owner read test
 let admin = "";
 let driver = "";
 let driverId = "";
 let rt = "";
+const REQUESTOR2_PHONE = "+60199990002";
 
 /** Book A2 → assign PLX → start. Leaves the trip in_progress. */
 async function inProgressTrip() {
@@ -59,7 +63,24 @@ function reportReq(driver: string, tripId: string, over: Record<string, string> 
 describe("exception workflow — end-to-end through Postgres", () => {
   beforeAll(async () => {
     process.env.FEATURE_EXCEPTIONS = "true";
-    [requestor, admin, driver] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN), loginAs(DRIVER)]);
+    // A second active requestor who owns NO trips here — for the non-owner read.
+    await prisma.user.upsert({
+      where: { phone: REQUESTOR2_PHONE },
+      update: { status: "active" },
+      create: {
+        phone: REQUESTOR2_PHONE,
+        password_hash: await bcrypt.hash("Password123", 10),
+        name: "Other Requestor",
+        role: "requestor",
+        status: "active",
+      },
+    });
+    [requestor, requestor2, admin, driver] = await Promise.all([
+      loginAs(REQUESTOR),
+      loginAs({ phone: REQUESTOR2_PHONE, password: "Password123" }),
+      loginAs(ADMIN),
+      loginAs(DRIVER),
+    ]);
     driverId = await userIdByPhone(DRIVER.phone);
     rt = await firstRouteTypeId(requestor);
   });
@@ -208,11 +229,15 @@ describe("exception workflow — end-to-end through Postgres", () => {
     expect(add.body.exception.evidence).toHaveLength(2); // append-only, no overwrite
   });
 
-  it("driver resume (CAN CONTINUE) → resolved(resume), closed, trip in_progress", async () => {
+  it("admin resume (CAN CONTINUE) → resolved(resume), closed, trip in_progress; driver cannot resume", async () => {
     const t = await inProgressTrip();
     const exId = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
 
-    const resumed = await api().post(`/api/v1/trips/${t.id}/exception/${exId}/resume`).set(auth(driver)).send({ client_action_id: randomUUID() });
+    // Owner decision: only admins close/resolve — a driver resume is forbidden.
+    const asDriver = await api().post(`/api/v1/trips/${t.id}/exception/${exId}/resume`).set(auth(driver)).send({ client_action_id: randomUUID() });
+    expect(asDriver.status).toBe(403);
+
+    const resumed = await api().post(`/api/v1/trips/${t.id}/exception/${exId}/resume`).set(auth(admin)).send({ client_action_id: randomUUID() });
     expect(resumed.status).toBe(200);
     expect(resumed.body.exception.resolution).toBe("resume");
     expect(resumed.body.exception.is_open).toBe(false);
@@ -256,5 +281,141 @@ describe("exception workflow — end-to-end through Postgres", () => {
     const asDriver = await api().get(`/api/v1/trips/${t.id}/exception`).set(auth(driver));
     expect(asDriver.body.exception.evidence).toHaveLength(1);
     expect(asDriver.body.exception.actions[0].lat).toBeCloseTo(5.28, 2);
+  });
+
+  // ── Hardening: concurrency / payload idempotency / lifecycle isolation / authz ──
+
+  it("simultaneous reports (different occurrence ids): exactly one opens", async () => {
+    const t = await inProgressTrip();
+    const [a, b] = await Promise.all([
+      reportReq(driver, t.id).attach("photo", PHOTO, "a.jpg"),
+      reportReq(driver, t.id).attach("photo", PHOTO, "b.jpg"),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    const conflict = a.status === 409 ? a : b;
+    expect(conflict.body.error.code).toBe("EXCEPTION_ALREADY_OPEN");
+    expect(await prisma.tripException.count({ where: { trip_id: t.id, closed_at: null } })).toBe(1);
+  });
+
+  it("same-operation concurrent replay: both return the ONE committed row", async () => {
+    const t = await inProgressTrip();
+    const occ = randomUUID(), act = randomUUID(), ev = randomUUID();
+    const mk = () => reportReq(driver, t.id, { client_occurrence_id: occ, client_action_id: act, client_evidence_id: ev }).attach("photo", PHOTO, "x.jpg");
+    const [a, b] = await Promise.all([mk(), mk()]);
+    expect([a.status, b.status].sort()).toEqual([200, 201]);
+    expect(a.body.exception.id).toBe(b.body.exception.id);
+    expect(await prisma.tripException.count({ where: { trip_id: t.id } })).toBe(1);
+  });
+
+  it("operation UUID reused with a DIFFERENT payload → 409 IDEMPOTENCY_KEY_REUSED", async () => {
+    const t = await inProgressTrip();
+    const occ = randomUUID();
+    await reportReq(driver, t.id, { client_occurrence_id: occ, reason: "first reason" }).attach("photo", PHOTO, "x.jpg");
+    const reused = await reportReq(driver, t.id, { client_occurrence_id: occ, reason: "different reason" }).attach("photo", PHOTO, "x.jpg");
+    expect(reused.status).toBe(409);
+    expect(reused.body.error.code).toBe("IDEMPOTENCY_KEY_REUSED");
+  });
+
+  it("two admin actions on the SAME version: one wins, the other 409", async () => {
+    const t = await inProgressTrip();
+    const exId = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
+    const verify = (cid: string) => api().post(`/api/v1/trips/${t.id}/exception/${exId}/verify`).set(auth(admin)).send({ client_action_id: cid, expected_version: 0 });
+    const [a, b] = await Promise.all([verify(randomUUID()), verify(randomUUID())]);
+    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    expect(await prisma.exceptionAction.count({ where: { exception_id: exId, type: "verify" } })).toBe(1);
+  });
+
+  it("evidence resubmission racing reject: exactly one lands, state stays consistent", async () => {
+    const t = await inProgressTrip();
+    const exId = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
+    await api().post(`/api/v1/trips/${t.id}/exception/${exId}/request-more-evidence`).set(auth(admin)).send({ client_action_id: randomUUID(), note: "more" });
+    const addEv = api().post(`/api/v1/trips/${t.id}/exception/${exId}/evidence`).set(auth(driver)).field("client_evidence_id", randomUUID()).attach("photo", PHOTO, "e2.jpg");
+    const reject = api().post(`/api/v1/trips/${t.id}/exception/${exId}/reject`).set(auth(admin)).send({ client_action_id: randomUUID(), note: "no good" });
+    const [ev, rj] = await Promise.all([addEv, reject]);
+    expect([ev.status, rj.status]).toContain(409); // one lost the version CAS
+    const fresh = (await prisma.tripException.findUnique({ where: { id: exId } }))!;
+    // closed_at is set iff the reject won.
+    if (rj.status < 400) expect(fresh.closed_at).not.toBeNull();
+    else expect(fresh.closed_at).toBeNull();
+  });
+
+  it("lifecycle isolation: Arrived, Delivered and abort are BLOCKED while an exception is open", async () => {
+    const t = await inProgressTrip();
+    const stopId = t.stops[0].id;
+    const exId = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
+
+    const arrived = await api().patch(`/api/v1/trips/${t.id}/status`).set(auth(driver)).send({ action: "arrived", stop_id: stopId });
+    expect(arrived.status).toBe(409); expect(arrived.body.error.code).toBe("EXCEPTION_OPEN");
+    const delivered = await api().patch(`/api/v1/trips/${t.id}/status`).set(auth(driver)).send({ action: "delivered", stop_id: stopId });
+    expect(delivered.status).toBe(409); expect(delivered.body.error.code).toBe("EXCEPTION_OPEN");
+    const aborted = await api().patch(`/api/v1/trips/${t.id}/abort`).set(auth(admin)).send({});
+    expect(aborted.status).toBe(409); expect(aborted.body.error.code).toBe("EXCEPTION_OPEN");
+
+    const trip = (await prisma.trip.findUnique({ where: { id: t.id }, include: { stops: true } }))!;
+    expect(trip.status).toBe("in_progress"); // no capacity release
+    expect(trip.stops[0].status).toBe("pending"); // no delivery
+    expect(trip.incentive_earned).toBeNull(); // no incentive proposal
+
+    // After the admin resumes (closes the exception), ordinary flow resumes.
+    await api().post(`/api/v1/trips/${t.id}/exception/${exId}/resume`).set(auth(admin)).send({ client_action_id: randomUUID() });
+    const arrivedNow = await api().patch(`/api/v1/trips/${t.id}/status`).set(auth(driver)).send({ action: "arrived", stop_id: stopId });
+    expect(arrivedNow.status).toBe(200);
+  });
+
+  it("wrong driver cannot replay a report; NO aggregate is exposed before authz", async () => {
+    const t = await inProgressTrip();
+    const occ = randomUUID();
+    await reportReq(driver, t.id, { client_occurrence_id: occ }).attach("photo", PHOTO, "e.jpg");
+    const otherDriver = await loginAs({ phone: "+60100000102", password: "Password123" }); // PND, not assigned here
+    const replay = await reportReq(otherDriver, t.id, { client_occurrence_id: occ }).attach("photo", PHOTO, "e.jpg");
+    expect(replay.status).toBe(403);
+    expect(replay.body.exception).toBeUndefined();
+    const resubmit = await api().post(`/api/v1/trips/${t.id}/exception/xxx/evidence`).set(auth(otherDriver)).field("client_evidence_id", randomUUID()).attach("photo", PHOTO, "e.jpg");
+    expect(resubmit.status).toBe(403);
+  });
+
+  it("unauthorized roles: requestor cannot verify; driver cannot resolve", async () => {
+    const t = await inProgressTrip();
+    const exId = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
+    const reqVerify = await api().post(`/api/v1/trips/${t.id}/exception/${exId}/verify`).set(auth(requestor)).send({ client_action_id: randomUUID() });
+    expect(reqVerify.status).toBe(403);
+    const drvResolve = await api().post(`/api/v1/trips/${t.id}/exception/${exId}/resolve`).set(auth(driver)).send({ client_action_id: randomUUID(), resolution: "retry" });
+    expect(drvResolve.status).toBe(403);
+  });
+
+  it("non-owner requestor cannot read another requestor's exception → 403", async () => {
+    const t = await inProgressTrip();
+    await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg");
+    const res = await api().get(`/api/v1/trips/${t.id}/exception`).set(auth(requestor2));
+    expect(res.status).toBe(403);
+  });
+
+  it("operation IDs must be UUIDs; geo must be in range", async () => {
+    const t = await inProgressTrip();
+    const badId = await reportReq(driver, t.id, { client_occurrence_id: "not-a-uuid" }).attach("photo", PHOTO, "e.jpg");
+    expect(badId.status).toBe(400); expect(badId.body.error.code).toBe("INVALID_OPERATION_ID");
+    const badGeo = await reportReq(driver, t.id, { lat: "999" }).attach("photo", PHOTO, "e.jpg");
+    expect(badGeo.status).toBe(400); expect(badGeo.body.error.code).toBe("INVALID_GEO");
+  });
+
+  it("feature OFF: reads AND mutations 404", async () => {
+    const t = await inProgressTrip(); // trips router is unaffected by the flag
+    process.env.FEATURE_EXCEPTIONS = "";
+    const read = await api().get(`/api/v1/trips/${t.id}/exception`).set(auth(admin));
+    expect(read.status).toBe(404);
+    const mutate = await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg");
+    expect(mutate.status).toBe(404);
+    process.env.FEATURE_EXCEPTIONS = "true";
+  });
+
+  it("adapter contract: evidence uploaded AUTHENTICATED to the exceptions folder; POD untouched", async () => {
+    const t = await inProgressTrip();
+    (uploadBuffer as unknown as { mockClear: () => void }).mockClear();
+    await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg");
+    expect(uploadBuffer).toHaveBeenCalledWith(expect.any(Buffer), "uwc/exceptions", { type: "authenticated" });
+    // POD-neutral: the stop's delivery gate fields are never touched by exception evidence.
+    const stop = (await prisma.tripStop.findUnique({ where: { id: t.stops[0].id } }))!;
+    expect(stop.pod_photo).toBeNull();
+    expect(stop.do_uploaded).toBe(false);
   });
 });

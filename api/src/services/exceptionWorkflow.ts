@@ -43,6 +43,15 @@ export function isOpenState(state: ExceptionStateT): boolean {
   return OPEN_STATES.has(state);
 }
 
+/** The source states an action is allowed from — used to build the atomic CAS
+ *  `current_state IN (...)` guard so a transition and its state check are one
+ *  conditional update, not a read-then-write. */
+export function allowedFromStates(
+  action: Exclude<ExceptionActionTypeT, "report">
+): readonly ExceptionStateT[] {
+  return ALLOWED_FROM[action];
+}
+
 // The SOURCE states each admin/driver action is allowed from. `report` is
 // creation-only (never a transition on an existing row).
 const ALLOWED_FROM: Record<Exclude<ExceptionActionTypeT, "report">, readonly ExceptionStateT[]> = {

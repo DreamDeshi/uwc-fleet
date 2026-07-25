@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { z } from "zod";
-import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
 import { isUniqueViolation } from "../lib/prismaErrors";
@@ -19,20 +18,32 @@ import {
   EXCEPTION_CATEGORIES,
   assertCanReport,
   assertVersion,
+  allowedFromStates,
   nextExceptionState,
   stateAfterEvidence,
   type ExceptionActionTypeT,
+  type ExceptionResolutionT,
 } from "../services/exceptionWorkflow";
 
 // ── Failed-delivery / exception workflow (Phase 1, feature-flagged) ───────────
 // Mounted at /api/v1/trips (alongside the trips router). MONEY-FREE: this router
 // never reads or writes an incentive/rate/finalization field, never changes
-// Trip.status (it stays in_progress), and never releases capacity. See
-// services/exceptionWorkflow.ts for the pure state machine + the frozen-boundary
-// gate that limits execution to resume/retry.
+// Trip.status (it stays in_progress), and never releases capacity.
+//
+// Concurrency model (hardened): every state change is an ATOMIC compare-and-set —
+// updateMany WHERE id + the read `version` + closed_at IS NULL + current_state IN
+// (allowed) — requiring count === 1, with the action append + projection update +
+// pointer clear all in ONE transaction. A CAS miss rolls the whole thing back and
+// returns 409. Idempotency is payload-sensitive: the SAME operation UUID with the
+// SAME semantics returns the original committed result; a REUSED UUID with a
+// different actor/action/resolution/payload returns 409.
+//
+// Authorization ALWAYS precedes any aggregate exposure (including idempotent
+// replays). Only ADMINS close/resolve an exception (verify/reject/resume/retry);
+// drivers may only report and resubmit evidence.
 const router = Router();
 
-// Feature gate FIRST: while off, these routes 404 as if absent.
+// Feature gate FIRST: while off, these routes 404 as if absent (reads + writes).
 router.use((_req, _res, next) => {
   if (!exceptionsEnabled()) {
     next(new ApiError(404, "NOT_FOUND", "Not found."));
@@ -42,10 +53,30 @@ router.use((_req, _res, next) => {
 });
 router.use(requireAuth);
 
+// Deterministic action/evidence ordering: (created_at, id) — id breaks same-instant
+// ties so replay + timelines are stable.
+const orderByCreatedThenId = [{ created_at: "asc" as const }, { id: "asc" as const }];
 const exceptionInclude = {
-  actions: { orderBy: { created_at: "asc" as const } },
-  evidence: { orderBy: { created_at: "asc" as const } },
+  actions: { orderBy: orderByCreatedThenId },
+  evidence: { orderBy: orderByCreatedThenId },
 };
+
+// ── Validation limits ────────────────────────────────────────────────────────
+const MAX_REASON = 2000;
+const MAX_NOTE = 2000;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function requireUuid(name: string, v: string | undefined): string {
+  if (!v || !UUID_RE.test(v)) {
+    throw new ApiError(400, "INVALID_OPERATION_ID", `${name} must be a valid UUID.`);
+  }
+  return v;
+}
+function validateGeo(lat: number | null, lng: number | null, accuracy: number | null): void {
+  if (lat !== null && (lat < -90 || lat > 90)) throw new ApiError(400, "INVALID_GEO", "Latitude out of range.");
+  if (lng !== null && (lng < -180 || lng > 180)) throw new ApiError(400, "INVALID_GEO", "Longitude out of range.");
+  if (accuracy !== null && (accuracy < 0 || accuracy > 100000)) throw new ApiError(400, "INVALID_GEO", "Accuracy out of range.");
+}
 
 async function loadException(tripId: string, exId: string) {
   const exc = await prisma.tripException.findFirst({
@@ -61,7 +92,7 @@ async function reloadAndSend(res: import("express").Response, tripId: string, ex
   res.status(status).json({ exception: serializeException(fresh, audience) });
 }
 
-// A best-effort finite number from a multipart text field.
+// Multipart text-field coercers.
 function numField(v: unknown): number | null {
   if (typeof v !== "string" || v.trim() === "") return null;
   const n = Number(v);
@@ -84,21 +115,22 @@ router.post("/:id/exception", requireRole("driver"), upload.single("photo"), asy
 
     const category = strField(req.body.category);
     const reason = strField(req.body.reason);
-    const clientOccurrenceId = strField(req.body.client_occurrence_id);
-    const clientActionId = strField(req.body.client_action_id);
-    const clientEvidenceId = strField(req.body.client_evidence_id);
+    const clientOccurrenceId = requireUuid("client_occurrence_id", strField(req.body.client_occurrence_id));
+    const clientActionId = requireUuid("client_action_id", strField(req.body.client_action_id));
+    const clientEvidenceId = requireUuid("client_evidence_id", strField(req.body.client_evidence_id));
     const tripStopId = strField(req.body.trip_stop_id) ?? null;
 
     if (!category || !(EXCEPTION_CATEGORIES as readonly string[]).includes(category)) {
       throw new ApiError(400, "INVALID_CATEGORY", "A valid exception category is required.");
     }
     if (!reason) throw new ApiError(400, "REASON_REQUIRED", "A reason is required.");
-    if (!clientOccurrenceId || !clientActionId || !clientEvidenceId) {
-      throw new ApiError(400, "MISSING_OPERATION_ID", "client_occurrence_id, client_action_id and client_evidence_id are required.");
-    }
-    if (!req.file) {
-      throw new ApiError(400, "EVIDENCE_REQUIRED", "A photo is required (field name 'photo').");
-    }
+    if (reason.length > MAX_REASON) throw new ApiError(400, "REASON_TOO_LONG", `Reason exceeds ${MAX_REASON} characters.`);
+    if (!req.file) throw new ApiError(400, "EVIDENCE_REQUIRED", "A photo is required (field name 'photo').");
+
+    const lat = numField(req.body.lat);
+    const lng = numField(req.body.lng);
+    const accuracy = numField(req.body.accuracy_m);
+    validateGeo(lat, lng, accuracy);
 
     const trip = await prisma.trip.findUnique({
       where: { id: tripId },
@@ -106,33 +138,40 @@ router.post("/:id/exception", requireRole("driver"), upload.single("photo"), asy
     });
     if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
 
-    // Idempotent replay: this occurrence already landed — return it, don't
-    // re-upload or duplicate.
+    // AUTHORIZATION FIRST — before any aggregate is exposed (incl. replay).
+    if (trip.driver_id !== driverId) {
+      throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+    }
+
+    // Payload-sensitive idempotent replay: this occurrence already landed.
     const existing = await prisma.tripException.findUnique({
       where: { trip_id_client_occurrence_id: { trip_id: tripId, client_occurrence_id: clientOccurrenceId } },
     });
     if (existing) {
+      if (existing.category !== category || existing.reason !== reason || existing.reported_by !== driverId || (existing.trip_stop_id ?? null) !== tripStopId) {
+        throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This operation id was already used with different details.");
+      }
       await reloadAndSend(res, tripId, existing.id, "full", 200);
       return;
     }
 
-    // Cheap up-front guards (pure) before the upload, so an ineligible report
-    // never orphans a Cloudinary asset. The one-open race is still closed
-    // atomically by the CAS below.
+    // NEW report: trip must be in_progress.
     assertCanReport(trip, driverId);
-
     if (tripStopId) {
       const stop = await prisma.tripStop.findFirst({ where: { id: tripStopId, trip_id: tripId } });
       if (!stop) throw new ApiError(400, "STOP_NOT_FOUND", "That stop is not part of this trip.");
     }
+    // Cheap pre-check for a friendly error; the partial unique index is the atomic backstop.
+    const openAlready = await prisma.tripException.findFirst({ where: { trip_id: tripId, closed_at: null }, select: { id: true } });
+    if (openAlready) throw new ApiError(409, "EXCEPTION_ALREADY_OPEN", "This trip already has an open exception.");
 
-    const { url, publicId } = await uploadBuffer(req.file.buffer, EXCEPTION_EVIDENCE_FOLDER, {
-      type: "authenticated",
-    });
+    const { url, publicId } = await uploadBuffer(req.file.buffer, EXCEPTION_EVIDENCE_FOLDER, { type: "authenticated" });
 
     let excId: string;
     try {
       excId = await prisma.$transaction(async (tx) => {
+        // The create itself is the atomic one-open guard (partial unique index on
+        // trip_id WHERE closed_at IS NULL). A concurrent open → P2002 (caught below).
         const exc = await tx.tripException.create({
           data: {
             trip_id: tripId,
@@ -145,9 +184,7 @@ router.post("/:id/exception", requireRole("driver"), upload.single("photo"), asy
             current_state: "reported",
           },
         });
-        // Atomic one-open-per-trip guard: claim the pointer only while the trip
-        // is in_progress AND has no open exception. A loser rolls the whole tx
-        // back (no orphan row) with a 409.
+        // Cache pointer — also verifies in_progress atomically.
         const claim = await tx.trip.updateMany({
           where: { id: tripId, status: "in_progress", open_exception_id: null },
           data: { open_exception_id: exc.id },
@@ -162,9 +199,7 @@ router.post("/:id/exception", requireRole("driver"), upload.single("photo"), asy
             type: "report",
             actor_id: driverId,
             actor_role: "driver",
-            lat: numField(req.body.lat),
-            lng: numField(req.body.lng),
-            accuracy_m: numField(req.body.accuracy_m),
+            lat, lng, accuracy_m: accuracy,
             client_at: dateField(req.body.client_at),
           },
         });
@@ -173,8 +208,7 @@ router.post("/:id/exception", requireRole("driver"), upload.single("photo"), asy
             exception_id: exc.id,
             action_id: action.id,
             client_evidence_id: clientEvidenceId,
-            url,
-            public_id: publicId,
+            url, public_id: publicId,
             uploaded_by: driverId,
             captured_client_at: dateField(req.body.captured_client_at),
           },
@@ -185,15 +219,20 @@ router.post("/:id/exception", requireRole("driver"), upload.single("photo"), asy
         return exc.id;
       });
     } catch (err) {
-      // Lost the idempotency race (same occurrence id committed concurrently).
+      // Concurrent unique-key race: either the SAME occurrence committed (→ compare
+      // + return the original), or a DIFFERENT exception is already open (→ 409).
       if (isUniqueViolation(err)) {
         const dupe = await prisma.tripException.findUnique({
           where: { trip_id_client_occurrence_id: { trip_id: tripId, client_occurrence_id: clientOccurrenceId } },
         });
         if (dupe) {
+          if (dupe.category !== category || dupe.reason !== reason || dupe.reported_by !== driverId || (dupe.trip_stop_id ?? null) !== tripStopId) {
+            throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This operation id was already used with different details.");
+          }
           await reloadAndSend(res, tripId, dupe.id, "full", 200);
           return;
         }
+        throw new ApiError(409, "EXCEPTION_ALREADY_OPEN", "This trip already has an open exception.");
       }
       throw err;
     }
@@ -204,47 +243,63 @@ router.post("/:id/exception", requireRole("driver"), upload.single("photo"), asy
   }
 });
 
-// ── POST /:id/exception/:exId/evidence — driver adds evidence (resubmission)
+// ── POST /:id/exception/:exId/evidence — driver resubmits evidence (append-only)
 router.post("/:id/exception/:exId/evidence", requireRole("driver"), upload.single("photo"), async (req, res, next) => {
   try {
     const { id: tripId, exId } = req.params;
     const driverId = req.user!.id;
-    const clientEvidenceId = strField(req.body.client_evidence_id);
-    if (!clientEvidenceId) throw new ApiError(400, "MISSING_OPERATION_ID", "client_evidence_id is required.");
+    const clientEvidenceId = requireUuid("client_evidence_id", strField(req.body.client_evidence_id));
     if (!req.file) throw new ApiError(400, "EVIDENCE_REQUIRED", "A photo is required (field name 'photo').");
 
-    const exc = await loadException(tripId, exId);
+    // AUTHORIZATION FIRST.
     const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { driver_id: true } });
-    if (trip?.driver_id !== driverId) {
-      throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
-    }
+    if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+    if (trip.driver_id !== driverId) throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+
+    const exc = await loadException(tripId, exId);
     // Idempotent replay.
-    if (exc.evidence.some((e) => e.client_evidence_id === clientEvidenceId)) {
+    const prior = exc.evidence.find((e) => e.client_evidence_id === clientEvidenceId);
+    if (prior) {
+      if (prior.uploaded_by !== driverId) throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This evidence id was already used by someone else.");
       await reloadAndSend(res, tripId, exId, "full", 200);
       return;
     }
-    // Throws EXCEPTION_CLOSED if not open; computes the derived state after add.
+    // Never reopen a closed exception; more_evidence → reported for re-review.
     const nextState = stateAfterEvidence(exc.current_state as never);
 
-    const { url, publicId } = await uploadBuffer(req.file.buffer, EXCEPTION_EVIDENCE_FOLDER, {
-      type: "authenticated",
-    });
+    const { url, publicId } = await uploadBuffer(req.file.buffer, EXCEPTION_EVIDENCE_FOLDER, { type: "authenticated" });
+    // The evidence_added action's operation id is server-derived from the evidence
+    // id (namespaced), so it is unique per exception and not client-forgeable.
+    const evidenceActionId = `ev:${clientEvidenceId}`;
 
     try {
       await prisma.$transaction(async (tx) => {
+        // Atomic CAS: only advance if still at the version we read AND still open.
+        const cas = await tx.tripException.updateMany({
+          where: { id: exId, version: exc.version, closed_at: null },
+          data: { current_state: nextState as never, version: { increment: 1 } },
+        });
+        if (cas.count !== 1) {
+          throw new ApiError(409, "EXCEPTION_STATE_CHANGED", "This exception changed since you loaded it. Refresh and try again.");
+        }
+        const action = await tx.exceptionAction.create({
+          data: {
+            exception_id: exId,
+            client_action_id: evidenceActionId,
+            type: "evidence_added",
+            actor_id: driverId,
+            actor_role: "driver",
+          },
+        });
         await tx.exceptionEvidence.create({
           data: {
             exception_id: exId,
+            action_id: action.id,
             client_evidence_id: clientEvidenceId,
-            url,
-            public_id: publicId,
+            url, public_id: publicId,
             uploaded_by: driverId,
             captured_client_at: dateField(req.body.captured_client_at),
           },
-        });
-        await tx.tripException.update({
-          where: { id: exId },
-          data: { current_state: nextState as never, version: { increment: 1 } },
         });
         await tx.auditLog.create({
           data: { user_id: driverId, action: "exception.evidence_added", table_name: "TripException", record_id: exId },
@@ -252,6 +307,7 @@ router.post("/:id/exception/:exId/evidence", requireRole("driver"), upload.singl
       });
     } catch (err) {
       if (isUniqueViolation(err)) {
+        // Concurrent same-evidence replay committed — return the original.
         await reloadAndSend(res, tripId, exId, "full", 200);
         return;
       }
@@ -263,78 +319,109 @@ router.post("/:id/exception/:exId/evidence", requireRole("driver"), upload.singl
   }
 });
 
-// ── Admin review transitions (request-more-evidence / verify / reject) ────────
+// ── Admin transitions (verify / reject / request-more-evidence / resume / resolve)
 const reviewSchema = z.object({
-  client_action_id: z.string().min(1),
-  note: z.string().optional(),
-  expected_version: z.number().int().optional(),
+  client_action_id: z.string().uuid(),
+  note: z.string().max(MAX_NOTE).optional(),
+  expected_version: z.number().int().min(0).optional(),
 });
 
-/** Shared admin/driver transition executor for the non-multipart actions. */
+/** Atomic transition executor: payload-sensitive idempotency, version+state CAS,
+ *  action append + projection + pointer clear in one transaction. */
 async function applyTransition(opts: {
   tripId: string;
   exId: string;
   actorId: string;
-  actorRole: "admin" | "driver";
-  action: Exclude<ExceptionActionTypeT, "report">;
+  action: Exclude<ExceptionActionTypeT, "report" | "evidence_added">;
   clientActionId: string;
   note?: string;
-  resolveWith?: "retry" | "resume";
+  resolveWith?: ExceptionResolutionT;
   expectedVersion?: number;
 }): Promise<void> {
   const exc = await loadException(opts.tripId, opts.exId);
-  // Idempotent replay: this exact action already recorded → no-op success.
-  if (exc.actions.some((a) => a.client_action_id === opts.clientActionId)) return;
+
+  // Payload-sensitive idempotent replay: same op id + same semantics → no-op OK;
+  // reused op id with different actor/action/resolution/note → 409.
+  const prior = exc.actions.find((a) => a.client_action_id === opts.clientActionId);
+  if (prior) {
+    const same =
+      prior.type === opts.action &&
+      (prior.resolution ?? null) === (opts.resolveWith ?? null) &&
+      prior.actor_id === opts.actorId &&
+      (prior.note ?? null) === (opts.note ?? null);
+    if (!same) throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This operation id was already used with different details.");
+    return; // already applied
+  }
+
   assertVersion(exc.version, opts.expectedVersion);
-
   const t = nextExceptionState(exc.current_state as never, opts.action, opts.resolveWith);
+  const allowed = allowedFromStates(opts.action);
 
-  await prisma.$transaction(async (tx) => {
-    await tx.exceptionAction.create({
-      data: {
-        exception_id: opts.exId,
-        client_action_id: opts.clientActionId,
-        type: opts.action,
-        resolution: t.resolution ?? null,
-        actor_id: opts.actorId,
-        actor_role: opts.actorRole,
-        note: opts.note ?? null,
-      },
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Atomic CAS — id + read version + still-open + allowed source state. Two
+      // admins racing the same version: exactly one gets count === 1.
+      const cas = await tx.tripException.updateMany({
+        where: { id: opts.exId, version: exc.version, closed_at: null, current_state: { in: allowed as never } },
+        data: {
+          current_state: t.state as never,
+          resolution: t.resolution ?? undefined,
+          resolved_at: t.closes ? new Date() : undefined,
+          closed_at: t.closes ? new Date() : undefined,
+          version: { increment: 1 },
+        },
+      });
+      if (cas.count !== 1) {
+        throw new ApiError(409, "EXCEPTION_STATE_CHANGED", "This exception changed since you loaded it. Refresh and try again.");
+      }
+      await tx.exceptionAction.create({
+        data: {
+          exception_id: opts.exId,
+          client_action_id: opts.clientActionId,
+          type: opts.action,
+          resolution: t.resolution ?? null,
+          actor_id: opts.actorId,
+          actor_role: "admin",
+          note: opts.note ?? null,
+        },
+      });
+      // Closing releases the trip's one-open pointer. Trip.status UNCHANGED.
+      if (t.closes) {
+        await tx.trip.updateMany({ where: { id: opts.tripId, open_exception_id: opts.exId }, data: { open_exception_id: null } });
+      }
+      await tx.auditLog.create({
+        data: {
+          user_id: opts.actorId,
+          action: `exception.${opts.action}${t.resolution ? ` (${t.resolution})` : ""}${opts.note ? `: ${opts.note}` : ""}`,
+          table_name: "TripException",
+          record_id: opts.exId,
+        },
+      });
     });
-    await tx.tripException.update({
-      where: { id: opts.exId },
-      data: {
-        current_state: t.state as never,
-        resolution: t.resolution ?? undefined,
-        resolved_at: t.closes ? new Date() : undefined,
-        closed_at: t.closes ? new Date() : undefined,
-        version: { increment: 1 },
-      },
-    });
-    // Closing an exception releases the trip's one-open pointer. Trip.status is
-    // deliberately UNCHANGED (stays in_progress) — no capacity/pay effect.
-    if (t.closes) {
-      await tx.trip.updateMany({ where: { id: opts.tripId, open_exception_id: opts.exId }, data: { open_exception_id: null } });
+  } catch (err) {
+    // Concurrent same-op replay committed → compare + return original / 409.
+    if (isUniqueViolation(err)) {
+      const fresh = await loadException(opts.tripId, opts.exId);
+      const committed = fresh.actions.find((a) => a.client_action_id === opts.clientActionId);
+      if (committed) {
+        const same =
+          committed.type === opts.action &&
+          (committed.resolution ?? null) === (opts.resolveWith ?? null) &&
+          committed.actor_id === opts.actorId &&
+          (committed.note ?? null) === (opts.note ?? null);
+        if (!same) throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This operation id was already used with different details.");
+        return;
+      }
     }
-    await tx.auditLog.create({
-      data: {
-        user_id: opts.actorId,
-        action: `exception.${opts.action}${t.resolution ? ` (${t.resolution})` : ""}${opts.note ? `: ${opts.note}` : ""}`,
-        table_name: "TripException",
-        record_id: opts.exId,
-      },
-    });
-  });
+    throw err;
+  }
 }
 
 router.post("/:id/exception/:exId/request-more-evidence", requireRole("admin"), validateBody(reviewSchema), async (req, res, next) => {
   try {
     const { note, client_action_id, expected_version } = req.body as { note?: string; client_action_id: string; expected_version?: number };
     if (!note || note.trim() === "") throw new ApiError(400, "NOTE_REQUIRED", "A note is required when requesting more evidence.");
-    await applyTransition({
-      tripId: req.params.id, exId: req.params.exId, actorId: req.user!.id, actorRole: "admin",
-      action: "request_more_evidence", clientActionId: client_action_id, note, expectedVersion: expected_version,
-    });
+    await applyTransition({ tripId: req.params.id, exId: req.params.exId, actorId: req.user!.id, action: "request_more_evidence", clientActionId: client_action_id, note, expectedVersion: expected_version });
     await reloadAndSend(res, req.params.id, req.params.exId, "full");
   } catch (err) { next(err); }
 });
@@ -342,10 +429,7 @@ router.post("/:id/exception/:exId/request-more-evidence", requireRole("admin"), 
 router.post("/:id/exception/:exId/verify", requireRole("admin"), validateBody(reviewSchema), async (req, res, next) => {
   try {
     const { note, client_action_id, expected_version } = req.body as { note?: string; client_action_id: string; expected_version?: number };
-    await applyTransition({
-      tripId: req.params.id, exId: req.params.exId, actorId: req.user!.id, actorRole: "admin",
-      action: "verify", clientActionId: client_action_id, note, expectedVersion: expected_version,
-    });
+    await applyTransition({ tripId: req.params.id, exId: req.params.exId, actorId: req.user!.id, action: "verify", clientActionId: client_action_id, note, expectedVersion: expected_version });
     await reloadAndSend(res, req.params.id, req.params.exId, "full");
   } catch (err) { next(err); }
 });
@@ -354,41 +438,26 @@ router.post("/:id/exception/:exId/reject", requireRole("admin"), validateBody(re
   try {
     const { note, client_action_id, expected_version } = req.body as { note?: string; client_action_id: string; expected_version?: number };
     if (!note || note.trim() === "") throw new ApiError(400, "NOTE_REQUIRED", "A note is required when rejecting.");
-    await applyTransition({
-      tripId: req.params.id, exId: req.params.exId, actorId: req.user!.id, actorRole: "admin",
-      action: "reject", clientActionId: client_action_id, note, expectedVersion: expected_version,
-    });
+    await applyTransition({ tripId: req.params.id, exId: req.params.exId, actorId: req.user!.id, action: "reject", clientActionId: client_action_id, note, expectedVersion: expected_version });
     await reloadAndSend(res, req.params.id, req.params.exId, "full");
   } catch (err) { next(err); }
 });
 
-// ── Resume (driver or admin: CAN CONTINUE = yes) ─────────────────────────────
-router.post("/:id/exception/:exId/resume", requireRole("driver", "admin"), validateBody(reviewSchema), async (req, res, next) => {
+// Resume + Resolve are ADMIN-ONLY (owner decision): only admins close/resolve.
+router.post("/:id/exception/:exId/resume", requireRole("admin"), validateBody(reviewSchema), async (req, res, next) => {
   try {
     const { note, client_action_id, expected_version } = req.body as { note?: string; client_action_id: string; expected_version?: number };
-    if (req.user!.role === "driver") {
-      const trip = await prisma.trip.findUnique({ where: { id: req.params.id }, select: { driver_id: true } });
-      if (trip?.driver_id !== req.user!.id) throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
-    }
-    await applyTransition({
-      tripId: req.params.id, exId: req.params.exId, actorId: req.user!.id, actorRole: req.user!.role as "admin" | "driver",
-      action: "resume", clientActionId: client_action_id, note, resolveWith: "resume", expectedVersion: expected_version,
-    });
+    await applyTransition({ tripId: req.params.id, exId: req.params.exId, actorId: req.user!.id, action: "resume", clientActionId: client_action_id, note, resolveWith: "resume", expectedVersion: expected_version });
     await reloadAndSend(res, req.params.id, req.params.exId, "full");
   } catch (err) { next(err); }
 });
 
-// ── Resolve (admin decision). Phase 1 EXECUTES only `retry`. ─────────────────
 const resolveSchema = reviewSchema.extend({ resolution: z.string().min(1) });
 router.post("/:id/exception/:exId/resolve", requireRole("admin"), validateBody(resolveSchema), async (req, res, next) => {
   try {
     const { resolution, note, client_action_id, expected_version } = req.body as { resolution: string; note?: string; client_action_id: string; expected_version?: number };
-    // assertResolutionExecutable (inside nextExceptionState) refuses anything but
-    // retry — reschedule/reassign/return/cancel cross a frozen boundary.
-    await applyTransition({
-      tripId: req.params.id, exId: req.params.exId, actorId: req.user!.id, actorRole: "admin",
-      action: "resolve", clientActionId: client_action_id, note, resolveWith: resolution as "retry", expectedVersion: expected_version,
-    });
+    // nextExceptionState → assertResolutionExecutable refuses anything but retry.
+    await applyTransition({ tripId: req.params.id, exId: req.params.exId, actorId: req.user!.id, action: "resolve", clientActionId: client_action_id, note, resolveWith: resolution as ExceptionResolutionT, expectedVersion: expected_version });
     await reloadAndSend(res, req.params.id, req.params.exId, "full");
   } catch (err) { next(err); }
 });
@@ -410,17 +479,16 @@ router.get("/:id/exception", requireRole("driver", "admin", "requestor"), async 
     else if (role === "requestor" && trip.requestor_id === req.user!.id) audience = "redacted";
     else throw new ApiError(403, "FORBIDDEN", "You do not have access to this trip's exceptions.");
 
-    // Prefer the OPEN one; otherwise the most recent.
     const exc =
       (await prisma.tripException.findFirst({
         where: { trip_id: tripId, closed_at: null },
         include: exceptionInclude,
-        orderBy: { created_at: "desc" },
+        orderBy: [{ created_at: "desc" }, { id: "desc" }],
       })) ??
       (await prisma.tripException.findFirst({
         where: { trip_id: tripId },
         include: exceptionInclude,
-        orderBy: { created_at: "desc" },
+        orderBy: [{ created_at: "desc" }, { id: "desc" }],
       }));
 
     res.json({ exception: exc ? serializeException(exc, audience) : null });
