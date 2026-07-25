@@ -1,0 +1,13 @@
+// Runtime feature flags, read per-request (never cached) so a flag can be
+// flipped without a redeploy of already-running code. All flags DEFAULT OFF:
+// an unset / blank / non-"true" value is disabled, so a typo can never turn a
+// feature on in production by accident.
+
+/**
+ * Failed-delivery / exception workflow (Phase 1). Off by default. Enable with
+ * FEATURE_EXCEPTIONS=true. While off, the /trips/:id/exception* routes 404 as
+ * if they do not exist, so the feature is invisible until deliberately turned on.
+ */
+export function exceptionsEnabled(): boolean {
+  return process.env.FEATURE_EXCEPTIONS === "true";
+}

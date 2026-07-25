@@ -7,6 +7,7 @@ import authRoutes from "./routes/auth";
 import usersRoutes from "./routes/users";
 import meRoutes from "./routes/me";
 import tripsRoutes from "./routes/trips";
+import exceptionsRoutes from "./routes/exceptions";
 import metaRoutes from "./routes/meta";
 import consigneesRoutes from "./routes/consignees";
 import incentivesRoutes from "./routes/incentives";
@@ -76,6 +77,10 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", meRoutes);
 app.use("/api/v1/users", usersRoutes);
 app.use("/api/v1/trips", tripsRoutes);
+// Failed-delivery / exception workflow (Phase 1, feature-flagged off by default).
+// Mounted on the same /trips prefix; its paths (/:id/exception*) don't collide
+// with the trips router's routes.
+app.use("/api/v1/trips", exceptionsRoutes);
 app.use("/api/v1", metaRoutes); // /departments, /route-types
 app.use("/api/v1/consignees", consigneesRoutes);
 app.use("/api/v1/incentives", incentivesRoutes);

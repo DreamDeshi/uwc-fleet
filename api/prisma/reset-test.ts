@@ -22,6 +22,9 @@ import { ensureRequestor, ensureConsignees } from "./seed-test";
 // (No @@map in schema.prisma → Postgres table names are the PascalCase model
 // names; they must stay double-quoted in SQL.)
 export const TRANSACTIONAL_TABLES = [
+  "ExceptionEvidence",
+  "ExceptionAction",
+  "TripException",
   "TripStatusHistory",
   "LocationLog",
   "TripDocument",
