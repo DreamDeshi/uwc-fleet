@@ -61,6 +61,9 @@ export interface CargoLine {
   pallet_type: string;
   quantity: number;
   estimated_pallets?: number;
+  width_ft?: number;
+  length_ft?: number;
+  custom_size?: string;
 }
 export interface FlowStop {
   id: string;

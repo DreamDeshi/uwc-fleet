@@ -54,10 +54,31 @@ describe("createTripSchema — pallet_type is the workbook's closed vocabulary",
   const withCargo = (cargo: unknown) =>
     createTripSchema.safeParse({ ...base, cargo_details: cargo, pickup_datetime: future });
 
-  it("accepts every bookable type", () => {
+  it("accepts every bookable type (crate/rack/custom carry structured dimensions)", () => {
+    const DIMENSIONED = new Set(["crate", "rack", "custom"]);
     for (const t of BOOKABLE_CARGO_TYPES) {
-      expect(withCargo([{ pallet_type: t, quantity: 1 }]).success, t).toBe(true);
+      const line = DIMENSIONED.has(t)
+        ? { pallet_type: t, quantity: 1, width_ft: 4, length_ft: 3 }
+        : { pallet_type: t, quantity: 1 };
+      expect(withCargo([line]).success, t).toBe(true);
     }
+  });
+
+  it("Q10: Box has no dimensions; Crate/Rack/Custom require positive finite width_ft × length_ft", () => {
+    // Box rejects dimensions.
+    expect(withCargo([{ pallet_type: "box", quantity: 2, width_ft: 4, length_ft: 3 }]).success).toBe(false);
+    expect(withCargo([{ pallet_type: "box", quantity: 2 }]).success).toBe(true);
+    // Crate/Rack/Custom require both dims.
+    for (const t of ["crate", "rack", "custom"]) {
+      expect(withCargo([{ pallet_type: t, quantity: 1 }]).success, `${t} no dims`).toBe(false);
+      expect(withCargo([{ pallet_type: t, quantity: 1, width_ft: 4 }]).success, `${t} half dims`).toBe(false);
+      expect(withCargo([{ pallet_type: t, quantity: 1, width_ft: 4, length_ft: 3 }]).success, `${t} ok`).toBe(true);
+    }
+    // Malformed dimensions are rejected: zero, negative (NaN/Infinity can't ride in JSON).
+    expect(withCargo([{ pallet_type: "crate", quantity: 1, width_ft: 0, length_ft: 3 }]).success).toBe(false);
+    expect(withCargo([{ pallet_type: "crate", quantity: 1, width_ft: -2, length_ft: 3 }]).success).toBe(false);
+    // NEW custom must be structured — a free-text custom_size is NOT enough.
+    expect(withCargo([{ pallet_type: "custom", quantity: 1, custom_size: "big box" }]).success).toBe(false);
   });
 
   // Q1 (CLIENT_ANSWERS_R1_2026-07-24): 1×1/1×2 are boxes, not pallets, and are

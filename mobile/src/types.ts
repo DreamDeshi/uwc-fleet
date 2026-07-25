@@ -74,6 +74,10 @@ export interface CargoDetail {
   quantity: number;
   cartons?: number | null;
   custom_size?: string | null;
+  // Q10 structured dimensions in feet for crate/rack/custom (canonical string in
+  // custom_size). Legacy custom rows carry a free-text custom_size with these null.
+  width_ft?: number | null;
+  length_ft?: number | null;
   estimated_pallets?: number | null;
   remark?: string | null;
 }

@@ -72,7 +72,22 @@ import {
   CARGO_PALLET_TYPES,
   DEPRECATED_PALLET_SIZES,
   normalizePalletType,
+  canonicalCargoSize,
+  isValidDimension,
 } from "../lib/pallets";
+
+// Q10: canonicalise a cargo line's stored size. A crate/rack/custom line with
+// structured dimensions gets its `custom_size` set to the canonical "W × L ft"
+// (derived from width_ft/length_ft). A legacy free-text custom line (no dims) is
+// left untouched, so an unrelated edit never rewrites it.
+function withCanonicalCargoSize<
+  T extends { width_ft?: number | null; length_ft?: number | null; custom_size?: string | null }
+>(line: T): T {
+  if (isValidDimension(line.width_ft) && isValidDimension(line.length_ft)) {
+    return { ...line, custom_size: canonicalCargoSize(line.width_ft, line.length_ft) };
+  }
+  return line;
+}
 import { recordTripEvent } from "../lib/tripHistory";
 import { buildTripTimeline } from "../lib/tripTimeline";
 import {
@@ -194,21 +209,47 @@ export const bookableConsigneesWhere = (ids: string[]) => ({
  * guard (deprecatedCargoViolations) then blocks introducing or increasing a
  * deprecated size on an edit. Either way the factor/capacity math is unchanged.
  */
-export function cargoLineSchema(types: readonly [string, ...string[]]) {
-  return z.object({
-    pallet_type: z.preprocess(
-      (v) => (typeof v === "string" ? normalizePalletType(v) : v),
-      z.enum(types)
-    ),
-    quantity: z.number().int().min(1),
-    cartons: z.number().int().min(0).optional(),
-    custom_size: z.string().optional(),
-    // Optional requestor estimate of 4×4-pallet space for carton/"Others" cargo
-    // (which has no footprint by conversion). Given → auto-dispatch sizes on it;
-    // blank → the booking routes to manual assignment.
-    estimated_pallets: z.number().int().min(1).optional(),
-    remark: z.string().optional(),
-  });
+export function cargoLineSchema(
+  types: readonly [string, ...string[]],
+  opts: { allowLegacyCustom?: boolean } = {}
+) {
+  const allowLegacyCustom = opts.allowLegacyCustom ?? false;
+  return z
+    .object({
+      pallet_type: z.preprocess(
+        (v) => (typeof v === "string" ? normalizePalletType(v) : v),
+        z.enum(types)
+      ),
+      quantity: z.number().int().min(1),
+      cartons: z.number().int().min(0).optional(),
+      custom_size: z.string().optional(),
+      // Q10 structured dimensions (feet) for crate/rack/custom. Positive + finite
+      // rejects 0, negative, NaN and ±Infinity at the schema level.
+      width_ft: z.number().finite().positive().optional(),
+      length_ft: z.number().finite().positive().optional(),
+      // Optional requestor estimate of 4×4-pallet space for a carton line (its
+      // estimate may size auto-dispatch). box/crate/rack/custom ALWAYS route to
+      // manual assignment, so an estimate never lets them auto-dispatch.
+      estimated_pallets: z.number().int().min(1).optional(),
+      remark: z.string().optional(),
+    })
+    .superRefine((line, ctx) => {
+      const type = line.pallet_type;
+      const hasDims = line.width_ft != null && line.length_ft != null;
+      // Both dimensions must be present together.
+      if ((line.width_ft != null) !== (line.length_ft != null)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["length_ft"], message: "Both width_ft and length_ft are required." });
+      }
+      if (type === "crate" || type === "rack") {
+        if (!hasDims) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["width_ft"], message: "Crate and Rack require width_ft and length_ft in feet." });
+      } else if (type === "custom") {
+        // NEW custom requires structured dims; EDIT may keep a legacy free-text size.
+        const hasLegacy = allowLegacyCustom && typeof line.custom_size === "string" && line.custom_size.trim().length > 0;
+        if (!hasDims && !hasLegacy) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["width_ft"], message: "Custom cargo requires width_ft and length_ft in feet." });
+      } else if (type === "box") {
+        if (line.width_ft != null || line.length_ft != null) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["width_ft"], message: "Box has no dimensions — use a count only." });
+      }
+    });
 }
 
 export const createTripSchema = z.object({
@@ -292,7 +333,7 @@ router.post(
                   sequence: s.sequence ?? idx + 1,
                 })),
               },
-              cargo_details: { create: cargo_details },
+              cargo_details: { create: cargo_details.map(withCanonicalCargoSize) },
             },
             include: tripInclude,
           });
@@ -365,7 +406,9 @@ export const updateTripSchema = z.object({
   // unchanged. Introducing/increasing a deprecated size is blocked at runtime by
   // deprecatedCargoViolations, not by the parser.
   cargo_details: z
-    .array(cargoLineSchema(CARGO_PALLET_TYPES))
+    // allowLegacyCustom: a historical `custom` line carrying only a free-text
+    // custom_size (no structured dims) must still PARSE on edit and be preserved.
+    .array(cargoLineSchema(CARGO_PALLET_TYPES, { allowLegacyCustom: true }))
     .min(1, "At least one cargo line is required.")
     .optional(),
 });
@@ -386,6 +429,8 @@ export interface TripEditInput {
     quantity: number;
     cartons?: number | null;
     custom_size?: string | null;
+    width_ft?: number | null;
+    length_ft?: number | null;
     estimated_pallets?: number | null;
     remark?: string | null;
   }[];
@@ -435,6 +480,8 @@ export interface TripEditSnapshot {
     quantity: number;
     cartons: number | null;
     custom_size: string | null;
+    width_ft: number | null;
+    length_ft: number | null;
     estimated_pallets: number | null;
     remark: string | null;
   }[];
@@ -465,7 +512,7 @@ export function summarizeTripChanges(existing: TripEditSnapshot, next: TripEditI
   // Cargo compared line-by-line in order; remark-only differences report as
   // "notes", anything else as "cargo".
   const cargoLine = (c: TripEditInput["cargo_details"][number] | TripEditSnapshot["cargo_details"][number]) =>
-    [c.pallet_type, c.quantity, c.cartons ?? "", c.custom_size ?? "", c.estimated_pallets ?? ""].join("|");
+    [c.pallet_type, c.quantity, c.cartons ?? "", c.custom_size ?? "", c.width_ft ?? "", c.length_ft ?? "", c.estimated_pallets ?? ""].join("|");
   const remarkLine = (c: { remark?: string | null }) => c.remark ?? "";
   const sameCargo =
     existing.cargo_details.length === next.cargo_details.length &&
@@ -515,6 +562,8 @@ router.patch(
         quantity: c.quantity,
         cartons: c.cartons ?? undefined,
         custom_size: c.custom_size ?? undefined,
+        width_ft: c.width_ft ?? undefined,
+        length_ft: c.length_ft ?? undefined,
         estimated_pallets: c.estimated_pallets ?? undefined,
         remark: c.remark ?? undefined,
       }));
@@ -623,7 +672,9 @@ router.patch(
         if (cargoProvided) {
           await tx.cargoDetail.deleteMany({ where: { trip_id: id } });
           await tx.cargoDetail.createMany({
-            data: cargo_details!.map((c) => ({ ...c, trip_id: id })),
+            // Canonicalise structured dims; a legacy free-text custom_size (no
+            // dims) is preserved verbatim (withCanonicalCargoSize is a no-op on it).
+            data: cargo_details!.map((c) => ({ ...withCanonicalCargoSize(c), trip_id: id })),
           });
         }
         await tx.auditLog.create({

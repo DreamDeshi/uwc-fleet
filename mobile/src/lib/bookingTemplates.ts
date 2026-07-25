@@ -23,12 +23,19 @@ export interface BookingTemplate {
   // Device-local: a renamed consignee shows its old label until re-saved — the
   // Confirm step still shows what will actually be booked before submit.
   stops: Consignee[];
-  cargoType: "pallet" | "carton" | "others";
+  // Q10 cargo types. Legacy on-disk templates may still carry "carton"/"others"
+  // (mapped to box/pallet on load) — kept in the union for backward compat.
+  cargoType: "pallet" | "box" | "crate" | "rack" | "custom" | "carton" | "others";
   // Only non-zero sizes are kept; missing = 0 on reload.
   pallets: Partial<Record<PalletSize, number>>;
-  cartonQty: number;
-  othersText: string;
-  sizeEstimate: string;
+  boxQty?: number;
+  dimW?: string;
+  dimL?: string;
+  dimQty?: number;
+  // Legacy fields (optional) — old on-disk templates only.
+  cartonQty?: number;
+  othersText?: string;
+  sizeEstimate?: string;
   remarks: string;
 }
 

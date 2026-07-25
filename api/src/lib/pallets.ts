@@ -33,19 +33,58 @@ export const PALLET_SIZES = [
 export type PalletSize = (typeof PALLET_SIZES)[number];
 
 /**
- * Workbook REQUESTOR INTERFACE cargo types "Carton" and "Others": no pallet
- * footprint by conversion, so they need the requestor's `estimated_pallets`.
+ * Non-pallet cargo types — no pallet footprint by conversion (factor 0):
+ *   • carton  — LEGACY box (kept for backward compat + edit); count + optional
+ *               `estimated_pallets` (its estimate may still size auto-dispatch).
+ *   • box     — Q10 first-class Box: count only, NO dimensions, ALWAYS manual
+ *               assignment (an estimate must never let it auto-dispatch).
+ *   • crate   — Q10 first-class Crate: dimensions in feet (width_ft × length_ft)
+ *               + count; ALWAYS manual (no authoritative auto-dispatch rule).
+ *   • rack    — Q10 first-class Rack: like Crate.
+ *   • custom  — "Others": structured width_ft × length_ft (legacy rows may carry
+ *               a free-text `custom_size`); ALWAYS manual.
+ * `UNSIZED_CARGO_TYPES` is kept (carton/custom) as the historical name some
+ * callers/tests reference; the full non-pallet set is `NONPALLET_CARGO_TYPES`.
  */
 export const UNSIZED_CARGO_TYPES = ["carton", "custom"] as const;
+export const NONPALLET_CARGO_TYPES = ["carton", "custom", "box", "crate", "rack"] as const;
+
+/** Q10: cargo types that carry structured dimensions (width_ft × length_ft, feet). */
+export const DIMENSIONED_CARGO_TYPES = ["crate", "rack", "custom"] as const;
+
+/**
+ * Q10: cargo types that ALWAYS route to manual admin assignment — box has no
+ * dimensions, and crate/rack/custom have no authoritative auto-dispatch capacity
+ * rule (we do NOT invent area-summing/packing for them). Any order containing one
+ * of these is flagged for manual assignment regardless of an estimate. `carton`
+ * is deliberately EXCLUDED — its legacy estimate-sized auto-dispatch is preserved.
+ */
+export const ALWAYS_MANUAL_TYPES = ["box", "crate", "rack", "custom"] as const;
+export function isAlwaysManualType(palletType: string): boolean {
+  return (ALWAYS_MANUAL_TYPES as readonly string[]).includes(palletType);
+}
 
 /**
  * The FULL, legacy pallet_type vocabulary — every footprint that has ever been
- * bookable, plus carton/Others. Retained as the compatibility surface: historical
- * CargoDetail rows may still carry a now-deprecated size (1×1 / 1×2), and their
- * factors/labels must keep resolving. NEW bookings validate on the narrower
- * BOOKABLE_CARGO_TYPES below — do not point the booking route at this list.
+ * bookable, plus every non-pallet type. Retained as the compatibility surface:
+ * historical CargoDetail rows may still carry a now-deprecated size (1×1 / 1×2),
+ * and their factors/labels must keep resolving. NEW bookings validate on the
+ * narrower BOOKABLE_CARGO_TYPES below — do not point the booking route at this list.
  */
-export const CARGO_PALLET_TYPES = [...PALLET_SIZES, ...UNSIZED_CARGO_TYPES] as const;
+export const CARGO_PALLET_TYPES = [...PALLET_SIZES, ...NONPALLET_CARGO_TYPES] as const;
+
+/**
+ * Canonical stored representation of a structured dimension (Q10): "W × L ft"
+ * with trailing-zero-trimmed numbers (4 × 3 ft, 4.5 × 3 ft). The "×" is U+00D7.
+ */
+export function canonicalCargoSize(widthFt: number, lengthFt: number): string {
+  const fmt = (n: number) => String(Math.round(n * 100) / 100);
+  return `${fmt(widthFt)} × ${fmt(lengthFt)} ft`;
+}
+/** A positive, finite dimension (rejects 0, negative, NaN, ±Infinity). */
+export function isValidDimension(n: unknown): n is number {
+  return typeof n === "number" && Number.isFinite(n) && n > 0;
+}
 
 /**
  * DEPRECATED as bookable footprints (Q1, CLIENT_ANSWERS_R1_2026-07-24): Mr. Teh —
@@ -83,10 +122,12 @@ export type BookablePalletSize = (typeof BOOKABLE_PALLET_SIZES)[number];
 
 /**
  * The vocabulary a NEW booking's pallet_type is validated against — bookable
- * pallet footprints + carton/Others. The booking route enums on THIS, so 1×1/1×2
- * are rejected on new bookings while remaining resolvable for historical rows.
+ * pallet footprints + the non-pallet types. The booking route enums on THIS, so
+ * 1×1/1×2 are rejected on new bookings while remaining resolvable for historical
+ * rows. `carton` stays accepted for backward compatibility (the mobile UI offers
+ * `box` instead); box/crate/rack/custom are the Q10 first-class additions.
  */
-export const BOOKABLE_CARGO_TYPES = [...BOOKABLE_PALLET_SIZES, ...UNSIZED_CARGO_TYPES] as const;
+export const BOOKABLE_CARGO_TYPES = [...BOOKABLE_PALLET_SIZES, ...NONPALLET_CARGO_TYPES] as const;
 
 /**
  * Canonicalise a pallet_type's SPELLING before it's checked against the enum.
@@ -99,7 +140,11 @@ export const BOOKABLE_CARGO_TYPES = [...BOOKABLE_PALLET_SIZES, ...UNSIZED_CARGO_
  * Non-ASCII lookalikes (✕, Cyrillic х) are deliberately out of scope.
  */
 export function normalizePalletType(raw: string): string {
-  return raw.replace(/\s+/g, "").replace(/[xX]/g, "×");
+  // Convert the separator ONLY between two digits ("5x10" → "5×10", "1 X 2" →
+  // "1×2"). A blanket [xX] → × would mangle a word type — "box" → "bo×" — so the
+  // digit-bounded rule keeps box/carton/crate/rack/custom untouched. Uses a
+  // capturing group (NOT lookbehind) so it runs on the mobile's Hermes engine.
+  return raw.replace(/\s+/g, "").replace(/(\d)[xX](\d)/g, "$1×$2");
 }
 
 /**
@@ -157,6 +202,8 @@ export interface CargoLine {
   pallet_type: string;
   quantity: number;
   estimated_pallets?: number | null;
+  width_ft?: number | null;
+  length_ft?: number | null;
 }
 
 /**
@@ -190,6 +237,13 @@ export function palletEquivalents(cargo: CargoLine[]): number {
  */
 export function isUnsizedForDispatch(cargo: CargoLine[]): boolean {
   return cargo.some(
-    (c) => isUnsizedType(c.pallet_type) && !(c.estimated_pallets != null && c.estimated_pallets > 0)
+    (c) =>
+      // Q10: box/crate/rack/custom ALWAYS force manual assignment — an estimate
+      // must never let them auto-dispatch (box has no dimensions; crate/rack/
+      // custom have no authoritative capacity rule).
+      isAlwaysManualType(c.pallet_type) ||
+      // Legacy unsized (carton / unrecognised) still auto-dispatch only when the
+      // requestor supplied a usable estimate.
+      (isUnsizedType(c.pallet_type) && !(c.estimated_pallets != null && c.estimated_pallets > 0))
   );
 }

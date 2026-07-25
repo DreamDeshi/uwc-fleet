@@ -626,9 +626,15 @@ model CargoDetail {
   id                String  @id @default(cuid())
   trip_id           String
   trip              Trip    @relation(fields: [trip_id], references: [id])
-  pallet_type       String // e.g. "4x4"
+  pallet_type       String // e.g. "4x4"; or a non-pallet type: carton/box/crate/rack/custom
   quantity          Int
   cartons           Int?
+  // Q10 structured dimensions (feet) for crate/rack/custom cargo. `custom_size`
+  // holds the canonical "W × L ft" display string (derived from these); a LEGACY
+  // custom row may carry a free-text `custom_size` with these null — preserved
+  // as-is on unrelated edits. Additive/nullable.
+  width_ft          Float?
+  length_ft         Float?
   custom_size       String?
   // Requestor's OPTIONAL estimated 4×4-pallet-equivalent for a "carton"/"custom"
   // (Others) line — those types carry no pallet footprint by conversion (factor

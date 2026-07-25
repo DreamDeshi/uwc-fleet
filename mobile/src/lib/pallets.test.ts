@@ -11,6 +11,9 @@ import {
   finalizeCargoPayload,
   palletEquivalents,
   palletFactor,
+  canonicalCargoSize,
+  isValidDimension,
+  isAlwaysManualType,
 } from "./pallets";
 
 // These factors MUST stay identical to api/src/lib/pallets.ts — the server
@@ -64,6 +67,9 @@ describe("pallet factors mirror the server", () => {
       "5×10",
       "carton",
       "custom",
+      "box",
+      "crate",
+      "rack",
     ]);
   });
 
@@ -90,9 +96,9 @@ describe("Q1 — bookable vocabulary drops 1×1/1×2, mirrors the server", () =>
     expect([...BOOKABLE_PALLET_SIZES]).toEqual(expected);
   });
 
-  it("the bookable vocabulary excludes 1×1/1×2 and keeps carton/Others", () => {
+  it("the bookable vocabulary excludes 1×1/1×2 and includes the Q10 non-pallet types", () => {
     expect([...BOOKABLE_CARGO_TYPES]).toEqual([
-      "2×2", "2×3", "3×3", "3×4", "4×4", "4×8", "5×5", "5×10", "carton", "custom",
+      "2×2", "2×3", "3×3", "3×4", "4×4", "4×8", "5×5", "5×10", "carton", "custom", "box", "crate", "rack",
     ]);
   });
 });
@@ -147,10 +153,23 @@ describe("partitionEditableCargo — legacy vs bookable split, round-trips", () 
     expect(bookable).toEqual([{ pallet_type: "4×4", quantity: 1 }]);
   });
 
-  it("carton/custom lines are NOT legacy (they go to the bookable side)", () => {
-    const { bookable, legacy } = partitionEditableCargo([{ pallet_type: "carton", quantity: 5 }]);
-    expect(legacy).toEqual([]);
-    expect(bookable).toEqual([{ pallet_type: "carton", quantity: 5 }]);
+  it("Q10: legacy carton + free-text custom are legacy; structured custom + box/crate/rack are bookable", () => {
+    // Legacy carton and a legacy free-text custom (no dims) → read-only legacy.
+    const legacyOut = partitionEditableCargo([
+      { pallet_type: "carton", quantity: 5 },
+      { pallet_type: "custom", quantity: 1, custom_size: "free text" },
+    ]);
+    expect(legacyOut.bookable).toEqual([]);
+    expect(legacyOut.legacy).toHaveLength(2);
+
+    // Box, crate/rack, and a STRUCTURED custom (with dims) → editable/bookable.
+    const bookableOut = partitionEditableCargo([
+      { pallet_type: "box", quantity: 3 },
+      { pallet_type: "crate", quantity: 1, width_ft: 4, length_ft: 3 },
+      { pallet_type: "custom", quantity: 1, width_ft: 6, length_ft: 2 },
+    ]);
+    expect(bookableOut.legacy).toEqual([]);
+    expect(bookableOut.bookable).toHaveLength(3);
   });
 });
 
@@ -245,5 +264,35 @@ describe("booking-form warning cases (audit finding 4.2)", () => {
         { pallet_type: "2×2", quantity: 4 },
       ])
     ).toBe(8);
+  });
+});
+
+describe("Q10 — mirror of the API dimension helpers + always-manual set", () => {
+  it("canonicalCargoSize renders W × L ft, trimming trailing zeros", () => {
+    expect(canonicalCargoSize(4, 3)).toBe("4 × 3 ft");
+    expect(canonicalCargoSize(4.5, 3)).toBe("4.5 × 3 ft");
+    expect(canonicalCargoSize(4.0, 3.0)).toBe("4 × 3 ft");
+  });
+
+  it("isValidDimension rejects 0, negative, NaN and infinities", () => {
+    expect(isValidDimension(4)).toBe(true);
+    for (const bad of [0, -1, NaN, Infinity, -Infinity, "4", null, undefined]) {
+      expect(isValidDimension(bad)).toBe(false);
+    }
+  });
+
+  it("box/crate/rack/custom are always-manual; carton and pallets are not", () => {
+    for (const t of ["box", "crate", "rack", "custom"]) expect(isAlwaysManualType(t)).toBe(true);
+    expect(isAlwaysManualType("carton")).toBe(false);
+    expect(isAlwaysManualType("4×4")).toBe(false);
+  });
+
+  it("finalizeCargoPayload preserves a legacy line VERBATIM (custom_size + dims)", () => {
+    const legacy = [{ pallet_type: "custom", quantity: 1, custom_size: "irregular frame" }];
+    const out = finalizeCargoPayload([{ pallet_type: "box", quantity: 3 }], legacy);
+    expect(out).toEqual([
+      { pallet_type: "box", quantity: 3 },
+      { pallet_type: "custom", quantity: 1, custom_size: "irregular frame" },
+    ]);
   });
 });
