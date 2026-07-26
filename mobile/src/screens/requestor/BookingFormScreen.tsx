@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,
   ScrollView,
@@ -11,7 +11,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { RequestorTabParamList } from "../../navigation/types";
 import {
@@ -154,7 +154,12 @@ export function BookingFormScreen() {
   const editTripId = routeParams?.tripId;
   const isEdit = Boolean(editTripId);
 
-  const { data: routeTypes = [], isLoading: rtLoading } = useRouteTypes();
+  const {
+    data: routeTypes = [],
+    isLoading: rtLoading,
+    isError: rtError,
+    refetch: refetchRouteTypes,
+  } = useRouteTypes();
   const { data: trips = [] } = useTrips();
   const { data: editTrip } = useTrip(editTripId ?? "");
   const createTrip = useCreateTrip();
@@ -212,6 +217,20 @@ export function BookingFormScreen() {
   // Date/time chosen from quick pickers (no native datepicker dependency).
   const [dayOffset, setDayOffset] = useState(() => nextBookableSlot().dayOffset);
   const [hour, setHour] = useState(() => nextBookableSlot().hour);
+  // DG-R7: the NewBooking TAB never unmounts, so these mount-time defaults
+  // went stale — hours later the pre-filled slot was in the past and the
+  // submit bounced with PICKUP_IN_PAST. Refresh the default every time the
+  // screen regains focus, but NEVER over a slot the user (or the edit
+  // prefill) explicitly chose.
+  const slotTouched = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (isEdit || slotTouched.current) return;
+      const slot = nextBookableSlot();
+      setDayOffset(slot.dayOffset);
+      setHour(slot.hour);
+    }, [isEdit])
+  );
   const [dayOpen, setDayOpen] = useState(false);
   const [timeOpen, setTimeOpen] = useState(false);
 
@@ -316,6 +335,7 @@ export function BookingFormScreen() {
     setDimQty(1);
     setRemarks("");
     const slot = nextBookableSlot();
+    slotTouched.current = false; // fresh form — the default may auto-refresh again
     setDayOffset(slot.dayOffset);
     setHour(slot.hour);
     setDocs([]);
@@ -588,6 +608,8 @@ export function BookingFormScreen() {
         <StepWhere
           wide={wide}
           routeTypes={routeTypes}
+          routeTypesFailed={rtError && !rtLoading}
+          onRetryRouteTypes={() => refetchRouteTypes()}
           routeTypeId={routeTypeId}
           setRouteTypeId={setRouteTypeId}
           stops={stops}
@@ -745,7 +767,10 @@ export function BookingFormScreen() {
         title={t("booking.pickupDate")}
         options={dayOptions}
         selectedValue={String(dayOffset)}
-        onSelect={(v) => setDayOffset(Number(v))}
+        onSelect={(v) => {
+          slotTouched.current = true; // user's explicit choice — never auto-refresh over it
+          setDayOffset(Number(v));
+        }}
         onClose={() => setDayOpen(false)}
       />
       <OptionsModal
@@ -753,7 +778,10 @@ export function BookingFormScreen() {
         title={t("booking.pickupTime")}
         options={timeOptions}
         selectedValue={String(hour)}
-        onSelect={(v) => setHour(Number(v))}
+        onSelect={(v) => {
+          slotTouched.current = true; // user's explicit choice — never auto-refresh over it
+          setHour(Number(v));
+        }}
         onClose={() => setTimeOpen(false)}
       />
 
@@ -830,6 +858,8 @@ export function BookingFormScreen() {
 function StepWhere({
   wide,
   routeTypes,
+  routeTypesFailed,
+  onRetryRouteTypes,
   routeTypeId,
   setRouteTypeId,
   stops,
@@ -843,6 +873,8 @@ function StepWhere({
 }: {
   wide: boolean;
   routeTypes: { id: string; name: string }[];
+  routeTypesFailed: boolean;
+  onRetryRouteTypes: () => void;
   routeTypeId?: string;
   setRouteTypeId: (id: string) => void;
   stops: Consignee[];
@@ -904,6 +936,18 @@ function StepWhere({
       ) : null}
 
       <FieldLabel>{t("booking.routeType")}</FieldLabel>
+      {/* DG-R8: a failed route-types fetch used to render an EMPTY grid, then
+          Next blocked on "choose a route type" with no way forward. Say what
+          broke and offer a retry. */}
+      {routeTypesFailed && routeTypes.length === 0 ? (
+        <View style={styles.routeTypesError}>
+          <Ionicons name="cloud-offline-outline" size={18} color={colors.red} />
+          <Text style={styles.routeTypesErrorText}>{t("booking.routeTypesFailed")}</Text>
+          <TouchableOpacity onPress={onRetryRouteTypes} style={styles.routeTypesRetry}>
+            <Text style={styles.routeTypesRetryText}>{t("common.retry")}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
       <View style={styles.routeGrid}>
         {routeTypes.map((r) => {
           const active = routeTypeId === r.id;
@@ -1450,6 +1494,10 @@ const styles = StyleSheet.create({
   saveTemplateText: { fontSize: 14, fontWeight: "700", color: colors.blue },
 
   routeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 },
+  routeTypesError: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#FDECEA", borderWidth: 1, borderColor: colors.red, borderRadius: radius.md, padding: 12, marginBottom: 12 },
+  routeTypesErrorText: { flex: 1, fontSize: 13, color: colors.red, fontWeight: "600" },
+  routeTypesRetry: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.red, borderRadius: radius.md, paddingVertical: 6, paddingHorizontal: 12 },
+  routeTypesRetryText: { fontSize: 13, fontWeight: "700", color: colors.red },
   routeCard: { width: "48%", borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md, padding: 14, backgroundColor: colors.white },
   routeCardWide: { width: "31.5%" },
   routeCardActive: { borderColor: colors.blue, borderWidth: 2, backgroundColor: colors.tintBlue },

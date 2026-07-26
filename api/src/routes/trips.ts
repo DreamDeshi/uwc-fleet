@@ -196,6 +196,29 @@ export const PICKUP_GRACE_MS = 15 * 60 * 1000;
 // (e.g. a wrong-zone duplicate) stays reachable through stale references —
 // recent-consignee chips and "Rebook last trip" hold old IDs — so search-level
 // filtering alone can't stop it being re-booked. Exported for unit tests.
+/**
+ * 400 whose message names the failing stop POSITION(S) (DG-R9): both booking
+ * paths threw a generic "one or more consignees…" string, leaving a requestor
+ * with N stops to guess which one broke — while the failing ids were computable
+ * at both sites. Same code, richer message; clients surface it verbatim.
+ */
+export function consigneesNotFoundError(
+  stops: { consignee_id: string }[],
+  found: { id: string }[]
+): ApiError {
+  const ok = new Set(found.map((c) => c.id));
+  const positions = stops
+    .map((s, i) => (ok.has(s.consignee_id) ? null : i + 1))
+    .filter((n): n is number => n !== null);
+  const label =
+    positions.length === 1 ? `stop ${positions[0]}` : `stops ${positions.join(", ")}`;
+  return new ApiError(
+    400,
+    "CONSIGNEE_NOT_FOUND",
+    `The consignee for ${label} is no longer available (it may have been removed or deactivated) — please reselect it.`
+  );
+}
+
 export const bookableConsigneesWhere = (ids: string[]) => ({
   id: { in: ids },
   is_active: true,
@@ -319,11 +342,7 @@ router.post(
         where: bookableConsigneesWhere(consigneeIds),
       });
       if (foundConsignees.length !== new Set(consigneeIds).size) {
-        throw new ApiError(
-          400,
-          "CONSIGNEE_NOT_FOUND",
-          "One or more consignees do not exist or are no longer active."
-        );
+        throw consigneesNotFoundError(stops, foundConsignees);
       }
 
       // Cargo bigger than the biggest truck can NEVER be dispatched internally —
@@ -660,11 +679,7 @@ router.patch(
         where: bookableConsigneesWhere(consigneeIds),
       });
       if (foundConsignees.length !== new Set(consigneeIds).size) {
-        throw new ApiError(
-          400,
-          "CONSIGNEE_NOT_FOUND",
-          "One or more consignees do not exist or are no longer active."
-        );
+        throw consigneesNotFoundError(stops, foundConsignees);
       }
       if (!existing.is_external) {
         const orderPallets = palletEquivalents(effectiveCargo);
@@ -2228,6 +2243,20 @@ router.patch(
           );
         }
         const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
+        // DG-R1 (best-effort, outside the tx): approve/reject/cancel/final-
+        // delivery all push the requestor, but STARTING pushed nothing — the
+        // requestor never learned their delivery left the yard.
+        if (updated) {
+          const requestorDevice = await prisma.user.findUnique({
+            where: { id: updated.requestor_id },
+            select: { expo_push_token: true },
+          });
+          await sendPushNotifications([requestorDevice?.expo_push_token], {
+            title: "Delivery on the way",
+            body: `Your delivery ${updated.ticket_number} has started — the driver is on the way`,
+            data: { type: "trip_started", tripId: id },
+          });
+        }
         res.json(updated);
         return;
       }
@@ -2389,6 +2418,20 @@ router.patch(
             data: { type: "trip_delivered", tripId: id },
           });
         }
+      } else if (updated) {
+        // NON-final stop on a multi-drop trip (DG-R1's remaining half — the
+        // finalize push above already existed): the requestor used to hear
+        // nothing until the LAST drop. Best-effort, outside the tx.
+        const deliveredStop = updated.stops.find((s) => s.id === stop.id);
+        const requestorDevice = await prisma.user.findUnique({
+          where: { id: updated.requestor_id },
+          select: { expo_push_token: true },
+        });
+        await sendPushNotifications([requestorDevice?.expo_push_token], {
+          title: "Stop delivered",
+          body: `${deliveredStop?.consignee?.company_name ?? "A stop"} was delivered (${updated.ticket_number})`,
+          data: { type: "stop_delivered", tripId: id },
+        });
       }
 
       res.json(updated);
