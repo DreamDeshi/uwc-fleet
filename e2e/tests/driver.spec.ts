@@ -92,11 +92,14 @@ test.describe("Driver (mobile web)", () => {
 
     // The Delivered button enables once the POD refetch lands, and the bottom
     // sheet can swallow the first tap as a drag — so retry until the completion
-    // modal appears, short-circuiting once it's up.
+    // modal appears, short-circuiting once it's up. force: the live map keeps
+    // animating on a real (prod) network, so strict stability never settles and
+    // an unforced click times out; the modal + API poll below still verify the
+    // click actually delivered.
     const completed = page.getByText("Trip Completed!");
     await expect(async () => {
       if (await completed.isVisible()) return;
-      await page.getByText("Delivered", { exact: true }).click();
+      await page.getByText("Delivered", { exact: true }).click({ force: true });
       await expect(completed).toBeVisible({ timeout: 2500 });
     }).toPass({ timeout: 30_000 });
 
