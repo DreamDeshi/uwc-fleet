@@ -225,6 +225,7 @@
   "profile": {
     "title": "Profil",
     "language": "Bahasa",
+    "preferences": "Keutamaan",
     "english": "English",
     "malay": "Bahasa Malaysia",
     "chinese": "简体中文",
@@ -264,6 +265,7 @@
     "noTruck": "Anda tiada lori yang ditetapkan. Minta admin menetapkannya sebelum merekod minyak.",
     "invalid": "Masukkan nombor positif untuk liter, kos dan odometer.",
     "saved": "Rekod minyak disimpan.",
+    "monthSummary": "Bulan ini: {{fills}} isian · {{litres}} L · RM {{cost}}",
     "error": "Rekod minyak tidak dapat disimpan.",
     "recentTitle": "Isian terkini",
     "efficiency": "{{l}} L / 100 km",

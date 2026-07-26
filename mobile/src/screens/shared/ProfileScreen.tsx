@@ -85,7 +85,10 @@ export function ProfileScreen() {
             logs a fill-up often — it belongs on the dashboard, not in Settings). */}
 
         {/* Language picker (EN / BM) */}
-        <Text style={styles.sectionTitle}>{t("profile.language")}</Text>
+        {/* "Preferences", not "Language": this screen mixes identity (the card
+            above), account actions, app preferences, and session — the section
+            headers are what keep the concepts legible on one screen. */}
+        <Text style={styles.sectionTitle}>{t("profile.preferences")}</Text>
         <View style={styles.langRow}>
           {(["en", "ms", "zh"] as const).map((l) => {
             const active = lang === l;

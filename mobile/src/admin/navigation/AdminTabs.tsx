@@ -57,7 +57,10 @@ function MoreStack() {
   );
   return (
     <Stack.Navigator screenOptions={{ header }}>
-      <Stack.Screen name="MoreHome" component={AdminSettingsScreen} options={{ title: t("profile.title") }} />
+      {/* Titled "Settings" to MATCH the wide sidebar — this screen was the
+          same AdminSettingsScreen under TWO names ("Profile" here, "Settings"
+          on desktop), the core of the profile-vs-settings muddle. */}
+      <Stack.Screen name="MoreHome" component={AdminSettingsScreen} options={{ title: t("admin.titles.settings") }} />
       <Stack.Screen name="AdminIncentiveApprovals" component={IncentiveApprovalsScreen} options={{ title: t("admin.titles.incentiveApprovals") }} />
       <Stack.Screen name="AdminIncentives" component={IncentivesScreen} options={{ title: t("admin.titles.incentives") }} />
       <Stack.Screen name="AdminReports" component={ReportsScreen} options={{ title: t("admin.titles.reports") }} />
@@ -124,8 +127,8 @@ export function AdminTabs() {
         name="AdminMore"
         component={MoreStack}
         options={{
-          title: t("tabs.profile"),
-          tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" size={size} color={color} />,
+          title: t("admin.nav.settings"),
+          tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
         }}
       />
     </Tab.Navigator>

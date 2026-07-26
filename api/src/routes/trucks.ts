@@ -11,6 +11,7 @@ import { palletEquivalents } from "../lib/pallets";
 import { loadSpecTrucks } from "../lib/uwcSpec";
 import { planRateReset } from "../services/rateReset";
 import { summariseFuel } from "../lib/fuelSummary";
+import { odometerViolation } from "../lib/fuelOdometer";
 import { effectiveTruckRates, nextMytDayKey } from "../services/pendingRates";
 import { currentMytMonthBounds } from "../lib/myt";
 
@@ -92,14 +93,37 @@ router.post(
         }
       }
 
+      // Odometer plausibility (DG-M5): readings must be non-decreasing along
+      // the truck's timeline — interval-aware so backdated fills stay legal.
+      // Without this, one fat-fingered reading silently poisons every derived
+      // metric (RM/km, L/100km, CO2e) the fuel panel reports.
+      const candidate = {
+        odometer: Math.round(odometer_km),
+        logged_at: logged_at ? new Date(logged_at) : new Date(),
+      };
+      const priorPoints = await prisma.fuelLog.findMany({
+        where: { truck_plate: plate },
+        select: { odometer: true, logged_at: true },
+      });
+      const violation = odometerViolation(priorPoints, candidate);
+      if (violation) {
+        throw new ApiError(
+          400,
+          "ODOMETER_OUT_OF_ORDER",
+          violation.neighbor === "earlier"
+            ? `Odometer ${candidate.odometer} km is below the ${violation.neighborKm} km already logged earlier — check the reading.`
+            : `Odometer ${candidate.odometer} km is above the ${violation.neighborKm} km logged after this time — check the reading (or the date).`
+        );
+      }
+
       const log = await prisma.fuelLog.create({
         data: {
           truck_plate: plate,
           driver_id: req.user!.id,
           liters: litres,
           cost: cost_rm,
-          odometer: Math.round(odometer_km),
-          logged_at: logged_at ? new Date(logged_at) : new Date(),
+          odometer: candidate.odometer,
+          logged_at: candidate.logged_at,
         },
       });
 
