@@ -102,7 +102,7 @@ export function AdminSettingsScreen() {
         </Card>
 
         <Card>
-          <SectionTitle title={t("admin.settings.languageSection")} />
+          <SectionTitle title={t("profile.preferences")} />
           <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: -4, marginBottom: 14, lineHeight: 19 }}>
             {t("admin.settings.languageHint")}
           </Text>
