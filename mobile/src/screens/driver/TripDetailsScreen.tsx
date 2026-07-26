@@ -26,7 +26,7 @@ import { StatusTimeline } from "../../components/StatusTimeline";
 import { LoadingState, ErrorState } from "../../components/States";
 import { WebRefreshButton } from "../../components/WebRefreshButton";
 import { formatMoney, formatDate, formatTime } from "../../lib/format";
-import { tripMoneyState } from "../../lib/earnings";
+import { incentiveAdjustment, tripMoneyState } from "../../lib/earnings";
 import { buildPayBreakdown } from "../../lib/payBreakdown";
 import { consigneeDestination } from "../../lib/geo";
 import {
@@ -299,6 +299,30 @@ export function TripDetailsScreen() {
             );
           })()}
 
+          {/* Admin pay adjustment — the server REQUIRES a reason whenever the
+              approved final differs from the proposal, but no driver screen
+              ever showed it: the driver saw RM50 become RM40 with no
+              explanation (money-review finding; the dispute Mr. Teh's R1
+              email anticipates). Completed trips only (lib/earnings rule). */}
+          {(() => {
+            const adj = incentiveAdjustment(trip);
+            if (!adj) return null;
+            return (
+              <Card style={{ marginBottom: 12 }}>
+                <Text style={styles.cardLabel}>{t("trip.payAdjustedTitle")}</Text>
+                <Text style={styles.adjustAmounts}>
+                  {t("trip.payAdjustedAmounts", {
+                    proposed: adj.proposed.toFixed(2),
+                    final: adj.final.toFixed(2),
+                  })}
+                </Text>
+                <Text style={styles.adjustReason}>
+                  {adj.reason ?? t("trip.payAdjustedNoReason")}
+                </Text>
+              </Card>
+            );
+          })()}
+
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>
       </ScrollView>
@@ -401,6 +425,10 @@ const styles = StyleSheet.create({
   breakdownTotalLabel: { flex: 1, fontSize: 14, fontWeight: "700", color: colors.navy },
   breakdownTotalPts: { fontSize: 14, fontWeight: "800", color: colors.navy },
   breakdownRate: { fontSize: 12, color: colors.textFaint, marginTop: 6 },
+  // Neutral treatment: informative, not alarming (no red) and never green
+  // (green = paid-as-proposed elsewhere).
+  adjustAmounts: { fontSize: 14, fontWeight: "800", color: colors.navy },
+  adjustReason: { fontSize: 13, color: colors.textMuted, marginTop: 6, lineHeight: 18 },
   // Muted, matching TripCard's awaiting treatment — never orange (offline-only
   // colour, owner ruling) and never green (green = paid).
   breakdownCaveat: { fontSize: 12, fontWeight: "700", color: colors.textMuted, marginTop: 4 },
