@@ -359,6 +359,7 @@
     "numCartons": "Number of Cartons",
     "describeCargo": "Describe your cargo",
     "cargoPlaceholder": "Specify cargo size and type…",
+    "routeTypesFailed": "Could not load the route types — check your connection.",
     "estimatedPallets": "Estimated pallets of space (optional)",
     "estimatedPalletsPlaceholder": "e.g. 3",
     "estimatedPalletsHint": "About how many 4×4 pallets of space? Leave blank and an admin will assign a truck manually.",

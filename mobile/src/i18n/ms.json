@@ -356,6 +356,7 @@
     "numCartons": "Bilangan Kotak",
     "describeCargo": "Terangkan kargo anda",
     "cargoPlaceholder": "Nyatakan saiz dan jenis kargo…",
+    "routeTypesFailed": "Tidak dapat memuatkan jenis laluan — semak sambungan anda.",
     "estimatedPallets": "Anggaran ruang palet (pilihan)",
     "estimatedPalletsPlaceholder": "cth. 3",
     "estimatedPalletsHint": "Lebih kurang berapa palet 4×4 ruang? Biarkan kosong dan admin akan tetapkan lori secara manual.",
