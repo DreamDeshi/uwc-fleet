@@ -3,6 +3,7 @@ import { startPendingTripAlerts } from "./services/pendingTripAlerts";
 import { startRateMaturation } from "./services/pendingRates";
 import { startStaleTicketSweep } from "./services/staleTicketSweep";
 import { startDocExpiryReminders } from "./services/docExpiryReminders";
+import { startExceptionAlerts } from "./services/exceptionAlerts";
 import { prisma } from "./lib/prisma";
 import { checkLocalDb, isDeployedRuntime } from "./lib/dbGuard";
 
@@ -34,4 +35,8 @@ app.listen(PORT, () => {
   // Background job: once a day (09:00 MYT), push admins about trucks whose
   // insurance/permit/road-tax expires within the reminder window.
   startDocExpiryReminders();
+  // Background job: ping admins about exceptions left open past the threshold
+  // (the trip is operationally paused until they act). No-op while
+  // FEATURE_EXCEPTIONS is off — the flag is read per sweep.
+  startExceptionAlerts();
 });
