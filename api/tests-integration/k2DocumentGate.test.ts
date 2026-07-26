@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { api, auth, prisma, resetDb, loginAs, ADMIN, DRIVER, REQUESTOR } from "./helpers/harness";
 import { userIdByPhone, firstRouteTypeId, bookTrip, approveTrip, startTrip, arriveRaw, deliverRaw } from "./helpers/flow";
+import { cloudinary } from "../src/lib/cloudinary";
 
 // Q6 (Mr. Teh R1 2026-07-24): a K2-zone delivery requires the UPLOADED Borang K2
 // document, not a checkbox tick. Pay stays gated on the existing admin POD/
@@ -22,6 +23,11 @@ async function readyK2Stop() {
 
 describe("K2 document gate — Q6", () => {
   beforeAll(async () => {
+    // Deterministic signing, exactly as podPrivacy.test.ts does: the trip
+    // serializer mints a SIGNED url for any stored k2_public_id, and the real
+    // CLOUDINARY_* env is not set in the integration harness — unconfigured,
+    // cloudinary.url() throws ("Must supply cloud_name") and the delivery 500s.
+    cloudinary.config({ cloud_name: "testcloud", api_key: "k", api_secret: "s", secure: true });
     [admin, driver, requestor] = await Promise.all([loginAs(ADMIN), loginAs(DRIVER), loginAs(REQUESTOR)]);
     driverId = await userIdByPhone(DRIVER.phone);
     rt = await firstRouteTypeId(requestor);
