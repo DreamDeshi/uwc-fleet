@@ -134,3 +134,48 @@ export function pendingTotal(trips: IncentiveTrip[]): number {
 export function pendingCount(trips: IncentiveTrip[]): number {
   return trips.filter((trip) => !isPaid(trip)).length;
 }
+
+/**
+ * The admin's pay ADJUSTMENT on a completed trip, or null when there is
+ * nothing to explain. The server requires `incentive_override_reason`
+ * whenever the approved `incentive_final` differs from the proposed
+ * `incentive_earned` — but no driver screen ever rendered it, so a driver saw
+ * RM50 proposed become RM40 paid with no reason (money-review finding, and
+ * exactly the dispute Mr. Teh's R1 covering email anticipates).
+ *
+ * Rules, in line with tripMoneyState's discipline:
+ *  - Only a `completed` trip can carry a final figure, so only there can an
+ *    adjustment exist. Any other status → null, whatever fields are set.
+ *  - No `incentive_final`, or final == proposal → null (nothing was changed;
+ *    grandfathered pre-gate trips also land here).
+ *  - Amounts compared NUMERICALLY (Decimal arrives as string; "40.00" ≠ 40
+ *    as strings but is the same money).
+ */
+export interface IncentiveAdjustment {
+  proposed: number;
+  final: number;
+  /** The admin's justification. Server-mandatory on a change; if a legacy row
+   *  somehow lacks it, the adjustment still shows with reason null — hiding a
+   *  changed amount would be worse than a missing note. */
+  reason: string | null;
+}
+
+export function incentiveAdjustment(trip: {
+  status: TripStatus;
+  incentive_earned: string | number | null;
+  incentive_final?: string | number | null;
+  incentive_override_reason?: string | null;
+}): IncentiveAdjustment | null {
+  if (trip.status !== "completed") return null;
+  if (trip.incentive_final === null || trip.incentive_final === undefined) return null;
+  if (trip.incentive_earned === null || trip.incentive_earned === undefined) return null;
+  const proposed = Number(trip.incentive_earned);
+  const final = Number(trip.incentive_final);
+  if (!Number.isFinite(proposed) || !Number.isFinite(final)) return null;
+  if (proposed === final) return null;
+  return {
+    proposed,
+    final,
+    reason: trip.incentive_override_reason?.trim() ? trip.incentive_override_reason.trim() : null,
+  };
+}

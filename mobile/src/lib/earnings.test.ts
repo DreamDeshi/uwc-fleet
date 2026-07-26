@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isPaid, pendingCount, pendingTotal, tripMoneyState, weekBuckets, weekStart } from "./earnings";
+import { incentiveAdjustment, isPaid, pendingCount, pendingTotal, tripMoneyState, weekBuckets, weekStart } from "./earnings";
 import type { IncentiveTrip, TripStatus } from "../types";
 
 // Wednesday 2026-07-15, local time — mid-week so the fixtures land either side.
@@ -151,5 +151,48 @@ describe("tripMoneyState — how a trip card shows money", () => {
     ];
     const green = all.filter((status) => tripMoneyState({ status }) === "final");
     expect(green).toEqual(["completed"]);
+  });
+});
+
+describe("incentiveAdjustment — the admin edit a driver must be able to see", () => {
+  const base = {
+    status: "completed" as TripStatus,
+    incentive_earned: "50.00",
+    incentive_final: "40.00",
+    incentive_override_reason: "POD photo shows 1 pallet short",
+  };
+
+  it("surfaces an edited completed trip: proposed, final, and the reason", () => {
+    expect(incentiveAdjustment(base)).toEqual({
+      proposed: 50,
+      final: 40,
+      reason: "POD photo shows 1 pallet short",
+    });
+  });
+
+  it("returns null when the admin confirmed the proposal as-is", () => {
+    expect(incentiveAdjustment({ ...base, incentive_final: "50.00" })).toBeNull();
+    // Decimal-string vs number is the SAME money, not an adjustment.
+    expect(incentiveAdjustment({ ...base, incentive_earned: 40, incentive_final: "40.00" })).toBeNull();
+  });
+
+  it("returns null off the completed status, whatever fields are set", () => {
+    for (const status of ["pending_approval", "in_progress", "cancelled"] as TripStatus[]) {
+      expect(incentiveAdjustment({ ...base, status })).toBeNull();
+    }
+  });
+
+  it("returns null for grandfathered trips (no incentive_final)", () => {
+    expect(incentiveAdjustment({ ...base, incentive_final: null })).toBeNull();
+    expect(incentiveAdjustment({ ...base, incentive_final: undefined })).toBeNull();
+  });
+
+  it("still surfaces a changed amount when the reason is missing/blank", () => {
+    expect(incentiveAdjustment({ ...base, incentive_override_reason: "  " })?.reason).toBeNull();
+    expect(incentiveAdjustment({ ...base, incentive_override_reason: undefined })).toEqual({
+      proposed: 50,
+      final: 40,
+      reason: null,
+    });
   });
 });

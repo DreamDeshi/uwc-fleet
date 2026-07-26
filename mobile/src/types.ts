@@ -173,6 +173,10 @@ export interface Trip {
    *  payable figure on `completed` trips is COALESCE(incentive_final,
    *  incentive_earned). Never set on other statuses. */
   incentive_final?: string | number | null;
+  /** Mandatory server-side whenever incentive_final differs from the proposal
+   *  — the admin's written justification. The server has always shipped it in
+   *  the trip payload; the driver adjustment note renders it. */
+  incentive_override_reason?: string | null;
   // Finalize-time pay evidence (write-once, with the per-stop points_awarded):
   // the RM/point actually paid and the deduction points actually subtracted.
   // Null = finalized pre-feature. The server has always shipped these.
