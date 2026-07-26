@@ -33,6 +33,7 @@ import {
   TripStatusBadge,
 } from "../components/ui";
 import { DispatchToggle } from "../components/DispatchToggle";
+import { exceptionsEnabled } from "../../lib/featureFlags";
 import { LoadCapacityBar } from "../components/LoadCapacityBar";
 import { AttentionPanel } from "../components/AttentionPanel";
 import { AdminFleetMap } from "../platform/map";
@@ -93,6 +94,31 @@ export function DashboardWide() {
                 {t("admin.dashboard.autoFailed", { count: k.auto_dispatch_failed })}
               </Text>
             </View>
+          )}
+          {/* Failed-delivery / exception lane (feature-gated — hidden while the
+              flag is off). The phone home reaches it via the nav grid; this chip
+              is the wide dashboard's only entry, so dropping it would strand
+              desktop dispatchers once the flag turns on. */}
+          {exceptionsEnabled() && (
+            <Pressable
+              onPress={() => navigation.navigate("AdminExceptions")}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                backgroundColor: colors.blueTint,
+                borderWidth: 1,
+                borderColor: colors.blue,
+                borderRadius: radius.pill,
+                paddingVertical: 5,
+                paddingHorizontal: 11,
+              }}
+            >
+              <Ionicons name="warning-outline" size={13} color={colors.blue} />
+              <Text style={{ color: colors.blue, fontSize: font.sm, fontWeight: "700" }}>
+                {t("exception.laneTitle")}
+              </Text>
+            </Pressable>
           )}
           <Text style={{ fontSize: font.sm, color: colors.textMuted }}>
             {t("admin.dashboard.awaitingManual", { count: k.awaiting_manual })}
