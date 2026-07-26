@@ -243,7 +243,9 @@ test.describe("K2 destination gate (driver, mobile web)", () => {
     await expect(page.getByText("K2 form uploaded")).toBeVisible({ timeout: 20_000 });
     await expect(async () => {
       if (await completed.isVisible()) return;
-      await page.getByText("Delivered", { exact: true }).click();
+      // force: the live map animates continuously on a real network, so strict
+      // stability never settles; the modal + status poll verify the outcome.
+      await page.getByText("Delivered", { exact: true }).click({ force: true });
       await expect(completed).toBeVisible({ timeout: 2500 });
     }).toPass({ timeout: 30_000 });
 
