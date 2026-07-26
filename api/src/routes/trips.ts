@@ -3,7 +3,11 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
-import { isSerializationConflict, isUniqueViolation } from "../lib/prismaErrors";
+import {
+  isSerializationConflict,
+  isUniqueViolation,
+  isUniqueViolationOnField,
+} from "../lib/prismaErrors";
 import {
   claimPendingTripOrThrow,
   releaseAssignedTrip,
@@ -253,6 +257,11 @@ export function cargoLineSchema(
 }
 
 export const createTripSchema = z.object({
+  // DG-T7 idempotency key. Optional so an older client keeps working unchanged
+  // (an unkeyed booking is simply not deduplicated). Bounded and non-empty so a
+  // junk value can't bloat the unique index; any opaque string is accepted
+  // rather than strict UUID, since it is only ever compared for equality.
+  client_request_id: z.string().min(8).max(128).optional(),
   route_type_id: z.string().min(1),
   pickup_datetime: z.coerce
     .date()
@@ -277,7 +286,28 @@ router.post(
   validateBody(createTripSchema),
   async (req, res, next) => {
     try {
-      const { route_type_id, pickup_datetime, is_external, stops, cargo_details } = req.body;
+      const { client_request_id, route_type_id, pickup_datetime, is_external, stops, cargo_details } =
+        req.body;
+
+      // ── DG-T7 idempotency, fast path ──────────────────────────────────────
+      // The form reuses one key for every retry of the SAME booking, so a
+      // submit that timed out but actually committed lands here and returns the
+      // ORIGINAL trip. Without this the retry created a second booking and, in
+      // `auto` mode, immediately dispatched a second truck.
+      //
+      // Scoped by requestor: the key alone must never be able to surface
+      // somebody else's booking. This is only the fast path — the unique index
+      // below is what actually closes the concurrent race.
+      if (client_request_id) {
+        const existing = await prisma.trip.findFirst({
+          where: { requestor_id: req.user!.id, client_request_id },
+          include: tripInclude,
+        });
+        if (existing) {
+          res.status(201).json(existing);
+          return;
+        }
+      }
 
       const routeType = await prisma.routeType.findUnique({ where: { id: route_type_id } });
       if (!routeType) {
@@ -323,6 +353,7 @@ router.post(
           trip = await prisma.trip.create({
             data: {
               ticket_number,
+              client_request_id,
               requestor_id: req.user!.id,
               route_type_id,
               pickup_datetime,
@@ -339,6 +370,36 @@ router.post(
           });
           break;
         } catch (err) {
+          // ── DG-T7 idempotency, race path ────────────────────────────────
+          // Two retries in flight at once: the fast path above found nothing
+          // for either, and the loser now trips the unique index. Return the
+          // WINNER's trip — the caller cannot tell which request created it,
+          // which is exactly the point.
+          //
+          // Checked BEFORE the ticket branch, and with the STRICT matcher: the
+          // permissive isUniqueViolation answers `true` when Prisma reports no
+          // target metadata, which would send ticket collisions down this path
+          // and turn a retryable one into a spurious conflict. Named-column
+          // match only — an unnamed violation falls through to the ticket
+          // retry, preserving the existing behaviour exactly.
+          if (client_request_id && isUniqueViolationOnField(err, "client_request_id")) {
+            const winner = await prisma.trip.findFirst({
+              where: { requestor_id: req.user!.id, client_request_id },
+              include: tripInclude,
+            });
+            if (winner) {
+              res.status(201).json(winner);
+              return;
+            }
+            // The constraint fired but the row isn't readable (it lost its own
+            // transaction, or a rollback beat this read). Fall through: this is
+            // a genuine conflict, not a settled duplicate.
+            throw new ApiError(
+              409,
+              "BOOKING_IN_FLIGHT",
+              "This booking is still being submitted — please check your bookings before trying again."
+            );
+          }
           if (!isUniqueViolation(err, "ticket_number")) {
             throw err;
           }

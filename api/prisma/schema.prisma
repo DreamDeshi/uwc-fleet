@@ -353,6 +353,18 @@ model Trip {
   // (claimPendingTrip), so it strictly means "this pending trip is here because
   // an admin pulled the driver, and must not be auto-re-dispatched."
   auto_dispatch_paused      Boolean        @default(false)
+  // Client-supplied idempotency key for POST /trips (DG-T7). The booking form
+  // holds ONE key per booking attempt and reuses it on every retry, so a submit
+  // that timed out but actually succeeded returns the ORIGINAL trip instead of
+  // creating a second one — which, in `auto` dispatch mode, would immediately
+  // claim a second truck. Additive and NULLABLE: every existing trip, and any
+  // client too old to send a key, keeps working exactly as before (a NULL never
+  // collides in Postgres, so unkeyed bookings are simply not deduplicated).
+  //
+  // Scoped to the requestor, NOT globally unique: a global key would let one
+  // requestor's (guessed or replayed) key return ANOTHER requestor's booking.
+  // Composite means a replay can only ever return your own trip.
+  client_request_id         String?
   // Failed-delivery / exception workflow (Phase 1, feature-flagged). A trip's
   // exception state is DERIVED, not stored: Trip.status stays `in_progress` while
   // an exception is open. `open_exception_id` is a CACHE/pointer (cheap "has an
@@ -378,6 +390,10 @@ model Trip {
   // composite serves it via a backward index scan. Also covers the legacy
   // newest-N limit window the other admin pages still use.
   @@index([created_at, id])
+  // The idempotency constraint itself (DG-T7). This is what makes a concurrent
+  // double-submit safe: the second INSERT loses on the unique index rather than
+  // racing the pre-check, and the handler then returns the winner's trip.
+  @@unique([requestor_id, client_request_id])
 }
 
 // ── 8. TripStop ──────────────────────────────────────────────────────

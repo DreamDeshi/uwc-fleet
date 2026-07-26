@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Prisma } from "@prisma/client";
-import { isUniqueViolation } from "../src/lib/prismaErrors";
+import { isUniqueViolation, isUniqueViolationOnField } from "../src/lib/prismaErrors";
 import { ticketDatePart, ticketSequence } from "../src/routes/trips";
 
 /**
@@ -38,6 +38,41 @@ describe("isUniqueViolation", () => {
 
   it("a P2002 with no target metadata still matches (retry beats a 500)", () => {
     expect(isUniqueViolation(p2002(undefined), "ticket_number")).toBe(true);
+  });
+});
+
+/**
+ * Trip now carries a SECOND unique constraint (client_request_id, DG-T7), and
+ * the create loop must treat the two oppositely: a ticket collision RETRIES,
+ * an idempotency collision returns the existing booking. The permissive
+ * matcher above answers "true" for an unnamed violation, which would send
+ * ticket collisions down the idempotency path — hence the strict variant.
+ */
+describe("isUniqueViolationOnField — strict, for the two-constraint create loop", () => {
+  it("matches only when the driver actually names the column", () => {
+    expect(isUniqueViolationOnField(p2002(["client_request_id"]), "client_request_id")).toBe(true);
+    // Composite index: Prisma reports every column in the constraint.
+    expect(
+      isUniqueViolationOnField(p2002(["requestor_id", "client_request_id"]), "client_request_id")
+    ).toBe(true);
+    expect(
+      isUniqueViolationOnField(p2002("Trip_requestor_id_client_request_id_key"), "client_request_id")
+    ).toBe(true);
+  });
+
+  it("REFUSES an unnamed violation — the regression that would break ticket retry", () => {
+    // The whole point: with no metadata this must NOT claim to be an
+    // idempotency conflict, or a retryable ticket collision becomes a 409.
+    expect(isUniqueViolationOnField(p2002(undefined), "client_request_id")).toBe(false);
+  });
+
+  it("keeps the two constraints apart", () => {
+    expect(isUniqueViolationOnField(p2002(["ticket_number"]), "client_request_id")).toBe(false);
+    expect(isUniqueViolationOnField(p2002(["client_request_id"]), "ticket_number")).toBe(false);
+  });
+
+  it("ignores non-P2002 errors", () => {
+    expect(isUniqueViolationOnField(new Error("boom"), "client_request_id")).toBe(false);
   });
 });
 
