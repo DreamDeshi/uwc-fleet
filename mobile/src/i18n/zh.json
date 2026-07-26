@@ -119,6 +119,7 @@
     "arrivedAtPickup": "已到达提货点",
     "markDelivered": "已送达",
     "navigate": "导航",
+    "approxLocation": "大致位置 — 区域中心，请核对地址",
     "headingTo": "前往",
     "eta": "预计到达",
     "remaining": "剩余 {{km}} 公里",

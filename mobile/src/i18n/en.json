@@ -119,6 +119,7 @@
     "arrivedAtPickup": "Arrived at Pickup",
     "markDelivered": "Delivered",
     "navigate": "Navigate",
+    "approxLocation": "Approximate — zone centre, check the address",
     "headingTo": "Heading to",
     "eta": "ETA",
     "remaining": "{{km}} km remaining",

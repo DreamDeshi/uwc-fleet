@@ -24,6 +24,36 @@ export function tripConsigneeName(trip: Trip): string {
   return firstStop(trip)?.consignee?.company_name || "—";
 }
 
+/**
+ * The delivery address as the driver should read it, e.g.
+ * "NO.5, LORONG PERDA UTAMA 10, 14000 BUKIT MERTAJAM, PENANG".
+ *
+ * The API already sends these fields; the driver app simply never showed them,
+ * so the only cue was the zone. This is also the human backstop for a wrong
+ * pin: a geocode can land on the wrong unit, but the driver can still read the
+ * address and ask. Returns "" when the row has no address at all, so callers
+ * can fall back to area/state.
+ *
+ * `address_2` is included on purpose — on a "C/O <forwarder>" row it holds the
+ * only real street text (the same rule scripts/geocode-google.ts geocodes by).
+ * Postal code is joined to the area with a space, not a comma ("14000 BUKIT
+ * MERTAJAM"), which is how Malaysian addresses are written.
+ */
+export function consigneeAddress(c?: {
+  address_1?: string | null;
+  address_2?: string | null;
+  postal_code?: string | null;
+  area?: string | null;
+  state?: string | null;
+} | null): string {
+  if (!c) return "";
+  const clean = (s?: string | null) => s?.trim().replace(/,+$/, "").trim() || "";
+  const locality = [clean(c.postal_code), clean(c.area)].filter(Boolean).join(" ");
+  return [clean(c.address_1), clean(c.address_2), locality, clean(c.state)]
+    .filter(Boolean)
+    .join(", ");
+}
+
 // "Pallet 4×4 × 3  (+1 more)" style summary from the cargo lines. Localised
 // (these lines sit on the driver's pay-adjacent cards) via i18n.t directly —
 // same lib-level pattern as format.ts. "{{qty}}" not "{{count}}" on purpose:

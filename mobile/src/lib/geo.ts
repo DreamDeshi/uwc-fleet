@@ -1,7 +1,8 @@
-// The schema stores consignees by zone/area, not lat-long, so the map can only
-// be approximate. We centre on the UWC plant (Batu Kawan) and plot a marker at
-// the rough centroid of the destination zone. This is illustrative — clearly
-// not turn-by-turn (no GPS this phase). TODO: geocode consignee addresses.
+// Map + navigation geometry. Consignees ARE geocoded now (offline, by
+// scripts/geocode-google.ts), so a destination is the consignee's own building
+// coordinate where one exists — see `consigneeDestination`. The zone centroids
+// below remain the fallback for rows the precision gate rejected, and still
+// frame the map. Distances here stay straight-line and are labelled approximate.
 
 export interface LatLng {
   latitude: number;
@@ -44,6 +45,44 @@ export const ZONE_COORDS: Record<string, LatLng> = {
 export function zoneCoord(zoneCode?: string | null): LatLng {
   if (zoneCode && ZONE_COORDS[zoneCode]) return ZONE_COORDS[zoneCode];
   return { latitude: 5.4, longitude: 100.4 };
+}
+
+/** The subset of a consignee this module needs — keeps geo.ts free of types.ts. */
+export interface PositionedConsignee {
+  latitude?: number | null;
+  longitude?: number | null;
+  zone_code?: string | null;
+}
+
+export interface Destination {
+  coord: LatLng;
+  /**
+   * True when `coord` is this consignee's own geocoded building position;
+   * false when it is the zone centroid, i.e. an area, not an address.
+   */
+  precise: boolean;
+}
+
+/**
+ * Where the driver is actually going.
+ *
+ * Prefers the consignee's geocoded building coordinate and falls back to the
+ * zone centroid. The centroid is one shared point per zone, so before this
+ * every consignee in (say) P2 navigated to the same dot in Juru — the driver
+ * had to already know the route.
+ *
+ * **Presence of the coordinates IS the precision gate** — see the note on
+ * `Consignee.latitude` in types.ts. The geocode scripts null out anything
+ * coarser than a real building, so there is nothing to re-check here; matching
+ * on `geocode_match_type` would be wrong, as that column carries two different
+ * provider vocabularies. `Number.isFinite` guards against a malformed payload
+ * (a null/NaN pair must fall back, never navigate to 0,0 in the Atlantic).
+ */
+export function consigneeDestination(c?: PositionedConsignee | null): Destination {
+  if (c && Number.isFinite(c.latitude) && Number.isFinite(c.longitude)) {
+    return { coord: { latitude: c.latitude as number, longitude: c.longitude as number }, precise: true };
+  }
+  return { coord: zoneCoord(c?.zone_code), precise: false };
 }
 
 // Rough straight-line distance (km) — labelled as approximate in the UI.

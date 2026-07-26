@@ -119,6 +119,7 @@
     "arrivedAtPickup": "Tiba di Lokasi Ambil",
     "markDelivered": "Telah Dihantar",
     "navigate": "Navigasi",
+    "approxLocation": "Anggaran — pusat zon, semak alamat",
     "headingTo": "Menuju ke",
     "eta": "Anggaran",
     "remaining": "{{km}} km lagi",

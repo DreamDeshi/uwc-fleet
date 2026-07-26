@@ -2,7 +2,7 @@ import React from "react";
 import { StyleSheet, View } from "react-native";
 import MapView, { Marker, Polyline } from "react-native-maps";
 import { colors } from "../theme";
-import { PLANT_ORIGIN, regionFor, zoneCoord } from "../lib/geo";
+import { PLANT_ORIGIN, regionFor, zoneCoord, type LatLng } from "../lib/geo";
 import { mapsEnabled } from "../lib/maps";
 import { MapPlaceholder } from "./MapPlaceholder";
 import { useTripRoute, useTripLatestLocation } from "../hooks/queries";
@@ -15,15 +15,19 @@ import { useTripRoute, useTripLatestLocation } from "../hooks/queries";
 export function LiveTripMap({
   tripId,
   destZone,
+  destCoord,
   live = true,
   height = 200,
 }: {
   tripId: string;
   destZone?: string | null;
+  /** The consignee's geocoded position when it has one (see consigneeDestination).
+   *  Falls back to the zone centroid so a caller can still pass only destZone. */
+  destCoord?: LatLng | null;
   live?: boolean; // poll the truck's position — true only while in transit
   height?: number;
 }) {
-  const dest = zoneCoord(destZone);
+  const dest = destCoord ?? zoneCoord(destZone);
   const region = regionFor(PLANT_ORIGIN, dest);
   const { data: route } = useTripRoute(tripId, true);
   const { data: pos } = useTripLatestLocation(tripId, live);

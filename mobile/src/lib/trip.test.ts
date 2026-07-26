@@ -1,6 +1,46 @@
 import { describe, it, expect } from "vitest";
-import { estimateIncentive } from "./trip";
+import { estimateIncentive, consigneeAddress } from "./trip";
 import type { Trip } from "../types";
+
+// The address the driver reads on the stop card. It is also the backstop for a
+// wrong pin, so an empty/partial row must degrade cleanly rather than render
+// stray punctuation like ", , PENANG".
+describe("consigneeAddress", () => {
+  it("builds the full address, postcode joined to the area Malaysian-style", () => {
+    expect(
+      consigneeAddress({
+        address_1: "NO.5,LORONG PERDA UTAMA 10,",
+        area: "BUKIT MERTAJAM",
+        postal_code: "14000",
+        state: "PENANG",
+      })
+    ).toBe("NO.5,LORONG PERDA UTAMA 10, 14000 BUKIT MERTAJAM, PENANG");
+  });
+
+  it("includes address_2 — on a C/O row it holds the only real street text", () => {
+    const a = consigneeAddress({
+      address_1: "C/O KINTETSU WORLDWIDE EXPRESS (M) S/B",
+      address_2: "GRID K8-K19, BLOCK B, CARGO COMPLEX",
+      area: "BAYAN LEPAS",
+      postal_code: "11900",
+      state: "PENANG",
+    });
+    expect(a).toContain("GRID K8-K19, BLOCK B, CARGO COMPLEX");
+    expect(a).toContain("11900 BAYAN LEPAS");
+  });
+
+  it("drops empty components instead of emitting empty comma runs", () => {
+    expect(consigneeAddress({ address_1: "JALAN X", state: "PENANG" })).toBe("JALAN X, PENANG");
+    expect(consigneeAddress({ area: "KULIM", state: "KEDAH" })).toBe("KULIM, KEDAH");
+    expect(consigneeAddress({ address_1: "  ", address_2: null, state: null })).toBe("");
+  });
+
+  it("returns empty for a missing row so the caller can fall back", () => {
+    expect(consigneeAddress(null)).toBe("");
+    expect(consigneeAddress(undefined)).toBe("");
+    expect(consigneeAddress({})).toBe("");
+  });
+});
 
 /**
  * The client's "Estimated incentive" mirrors the server's incentiveEngine rate

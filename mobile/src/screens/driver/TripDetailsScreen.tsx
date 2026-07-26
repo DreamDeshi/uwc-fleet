@@ -26,6 +26,7 @@ import { StatusTimeline } from "../../components/StatusTimeline";
 import { LoadingState, ErrorState } from "../../components/States";
 import { WebRefreshButton } from "../../components/WebRefreshButton";
 import { formatMoney, formatDate, formatTime } from "../../lib/format";
+import { consigneeDestination } from "../../lib/geo";
 import {
   tripDestination,
   tripDestZone,
@@ -34,6 +35,7 @@ import {
   totalPallets,
   estimateIncentive,
   firstStop,
+  consigneeAddress,
   ORIGIN_LABEL,
 } from "../../lib/trip";
 
@@ -112,7 +114,13 @@ export function TripDetailsScreen() {
         {/* Map header */}
         <View>
           {/* Route preview before the trip starts — no live dot yet (live={false}) */}
-          <LiveTripMap tripId={trip.id} destZone={tripDestZone(trip)} live={false} height={190} />
+          <LiveTripMap
+            tripId={trip.id}
+            destZone={tripDestZone(trip)}
+            destCoord={consigneeDestination(consignee).coord}
+            live={false}
+            height={190}
+          />
           <TouchableOpacity
             style={[styles.backBtn, { top: insets.top + 8 }]}
             onPress={() => navigation.goBack()}
@@ -169,9 +177,14 @@ export function TripDetailsScreen() {
             {consignee?.contact_person ? (
               <Text style={styles.consigneeSub}>{consignee.contact_person}</Text>
             ) : null}
-            {[consignee?.area, consignee?.state].filter(Boolean).length > 0 ? (
+            {/* Full delivery address — this is the screen the driver reads
+                BEFORE starting, so it is where the route gets planned. Falls
+                back to area/state when the row has no street address. */}
+            {consigneeAddress(consignee) ||
+            [consignee?.area, consignee?.state].filter(Boolean).length > 0 ? (
               <Text style={styles.consigneeArea}>
-                {[consignee?.area, consignee?.state].filter(Boolean).join(", ")}
+                {consigneeAddress(consignee) ||
+                  [consignee?.area, consignee?.state].filter(Boolean).join(", ")}
               </Text>
             ) : null}
             {consignee?.phone ? (
