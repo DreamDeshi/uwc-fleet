@@ -16,6 +16,11 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./tests",
+  // Capture the backend's dispatch_mode before the run and restore that exact
+  // value after — resetState() flips it to manual per spec and a prod run once
+  // left the live trial that way.
+  globalSetup: "./setup.ts",
+  globalTeardown: "./teardown.ts",
   // A cold Railway dyno + RN-web bundle can be slow on first paint.
   timeout: 90_000,
   expect: { timeout: 20_000 },
