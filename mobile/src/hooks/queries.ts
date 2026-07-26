@@ -188,6 +188,13 @@ export function useMyAnalytics() {
 
 // ── Mutations ────────────────────────────────────────────────────────────
 export interface CreateTripInput {
+  /**
+   * DG-T7 idempotency key — CREATE only (the edit path never sets it, and the
+   * PATCH schema ignores it). Re-sent unchanged on a retry so a submit that
+   * timed out but committed returns the original booking instead of creating a
+   * duplicate that auto-dispatch answers with a second truck.
+   */
+  client_request_id?: string;
   route_type_id: string;
   pickup_datetime: string; // ISO
   stops: { consignee_id: string }[];

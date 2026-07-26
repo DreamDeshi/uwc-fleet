@@ -60,6 +60,7 @@ import {
   PICKUP_WINDOW_END_HOUR,
 } from "../../lib/bookingEdit";
 import { formatDate, formatTime } from "../../lib/format";
+import { uuidv4 } from "../../lib/uuid";
 import { Consignee, Trip } from "../../types";
 
 type Nav = BottomTabNavigationProp<RequestorTabParamList>;
@@ -222,6 +223,10 @@ export function BookingFormScreen() {
   // trip is created (see onNext).
   const [docs, setDocs] = useState<PickedPhoto[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  // DG-T7 idempotency key for the create below. A ref, not state: it must
+  // survive the re-render that re-arms Submit after a timeout WITHOUT itself
+  // triggering one, and it must be the SAME value on the retry.
+  const requestKey = useRef<string | null>(null);
 
   // Saved booking templates (device-local "save function"). Loaded once; the
   // name dialog is driven from here so it can be reached from the Confirm step.
@@ -501,7 +506,19 @@ export function BookingFormScreen() {
         return;
       }
 
-      const trip = await createTrip.mutateAsync(payload);
+      // DG-T7: one idempotency key per BOOKING, deliberately NOT per attempt.
+      // The 15s timeout below is shorter than a slow-but-successful create, so
+      // Submit re-arms (see the `finally`) while the first request may already
+      // have committed. Reusing the key makes the server return that original
+      // booking instead of creating a second one — which auto-dispatch would
+      // answer with a second truck. Regenerated only after a success, so a
+      // genuine re-booking of the same cargo still gets its own key.
+      if (!requestKey.current) requestKey.current = uuidv4();
+      const trip = await createTrip.mutateAsync({
+        ...payload,
+        client_request_id: requestKey.current,
+      });
+      requestKey.current = null;
       // Upload any documents attached on the review screen against the new trip.
       // A failed upload must not hide the (already created) booking — flag it and
       // let the requestor add it later from the booking details.
