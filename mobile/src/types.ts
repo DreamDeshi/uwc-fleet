@@ -114,6 +114,12 @@ export interface TripStop {
   // legacy tick (grandfathered rows only).
   k2_photo: string | null;
   k2_form_ack: boolean;
+  // Per-drop pay evidence, persisted at finalization (write-once). Null until
+  // the trip finalizes (and on legacy pre-snapshot rows). The server has
+  // always shipped these via tripInclude; the driver breakdown renders them.
+  zone_points?: number | null;
+  points_awarded?: number | null;
+  was_repeat?: boolean | null;
   consignee?: Consignee;
 }
 
@@ -163,6 +169,15 @@ export interface Trip {
   status: TripStatus;
   pickup_datetime: string;
   incentive_earned: string | number | null;
+  /** Admin-approved (possibly edited) final amount — set at POD approval; the
+   *  payable figure on `completed` trips is COALESCE(incentive_final,
+   *  incentive_earned). Never set on other statuses. */
+  incentive_final?: string | number | null;
+  // Finalize-time pay evidence (write-once, with the per-stop points_awarded):
+  // the RM/point actually paid and the deduction points actually subtracted.
+  // Null = finalized pre-feature. The server has always shipped these.
+  rate_used?: string | number | null;
+  deduction_applied?: number | null;
   is_external: boolean;
   rejection_reason?: string | null;
   created_at: string;

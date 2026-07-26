@@ -71,10 +71,19 @@ export function useHolidaySet(): ReadonlySet<string> {
 // the tab is hidden; native builds still also receive real push.
 const TRIP_POLL_MS = 25_000;
 
+// Newest-N window for the driver/requestor lists (server: the legacy `limit`
+// param, capped at TRIP_LIST_MAX_TAKE=500). Without it every 25s poll
+// re-downloaded the account's ENTIRE trip history with the full include —
+// unbounded growth (DG-D8/DG-R11). 100 covers weeks of trial volume; the
+// screens themselves show far fewer. Older history simply ages out of the
+// list, same windowing philosophy as the admin board.
+const TRIP_LIST_LIMIT = 100;
+
 export function useTrips() {
   return useQuery({
     queryKey: ["trips"],
-    queryFn: async () => (await api.get<Trip[]>("/trips")).data,
+    queryFn: async () =>
+      (await api.get<Trip[]>("/trips", { params: { limit: TRIP_LIST_LIMIT } })).data,
     refetchInterval: TRIP_POLL_MS,
   });
 }

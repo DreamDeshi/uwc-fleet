@@ -201,6 +201,41 @@ export function BookingDetailScreen() {
     </Card>
   );
 
+  // Proof-of-delivery photos. The server has always shipped stop.pod_photo to
+  // the trip's requestor as a freshly-signed viewable URL (signTripResponse) —
+  // this card finally renders it. Shown once any stop has a POD.
+  const podStops = (trip.stops ?? []).filter((s) => s.pod_photo);
+  const podCard =
+    podStops.length > 0 ? (
+      <Card style={{ marginBottom: 12 }}>
+        <Text style={styles.cardLabel}>{t("bookingDetail.podTitle")}</Text>
+        <View style={{ marginTop: 12, gap: 10 }}>
+          {podStops.map((s) => (
+            <TouchableOpacity
+              key={s.id}
+              style={styles.docRow}
+              onPress={() => Linking.openURL(s.pod_photo!)}
+              activeOpacity={0.8}
+            >
+              <Image source={{ uri: s.pod_photo! }} style={styles.docThumb} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.docName}>
+                  {t("bookingDetail.podStop", {
+                    n: s.sequence,
+                    name: s.consignee?.company_name ?? "",
+                  })}
+                </Text>
+                {s.delivered_at ? (
+                  <Text style={styles.docDate}>{formatDateTime(s.delivered_at)}</Text>
+                ) : null}
+              </View>
+              <Ionicons name="open-outline" size={18} color={colors.blue} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Card>
+    ) : null;
+
   const timelineCard = (
     <Card>
       <Text style={[styles.cardLabel, { marginBottom: 16 }]}>{t("bookingDetail.timeline")}</Text>
@@ -240,6 +275,7 @@ export function BookingDetailScreen() {
             </View>
             <View style={styles.wideSide}>
               {documentsCard}
+              {podCard}
               {timelineCard}
             </View>
           </View>
@@ -250,6 +286,7 @@ export function BookingDetailScreen() {
             {liveCard}
             {detailsCard}
             {documentsCard}
+            {podCard}
             {timelineCard}
           </>
         )}
