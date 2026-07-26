@@ -26,6 +26,8 @@ import { StatusTimeline } from "../../components/StatusTimeline";
 import { LoadingState, ErrorState } from "../../components/States";
 import { WebRefreshButton } from "../../components/WebRefreshButton";
 import { formatMoney, formatDate, formatTime } from "../../lib/format";
+import { tripMoneyState } from "../../lib/earnings";
+import { buildPayBreakdown } from "../../lib/payBreakdown";
 import { consigneeDestination } from "../../lib/geo";
 import {
   tripDestination,
@@ -60,19 +62,37 @@ export function TripDetailsScreen() {
 
   const consignee = firstStop(trip)?.consignee;
 
-  // Show the real incentive once it's finalised (set on completion); before
-  // that, show an estimate (destination points × truck rate) marked "Estimated".
-  const finalized = trip.incentive_earned !== null && trip.incentive_earned !== undefined;
-  const estimate = finalized ? null : estimateIncentive(trip, holidays);
+  // Money display follows lib/earnings.ts's ruling: classification is on
+  // STATUS, never on "an amount is present". `incentive_earned` is written at
+  // PROPOSAL (delivery), so a pending_approval trip has an amount while the
+  // money is still held — this screen used to turn it green forever, even
+  // after an admin approved a DIFFERENT final figure. Now:
+  //   final    → COALESCE(incentive_final, incentive_earned), green (the
+  //              payable figure — same COALESCE payroll uses);
+  //   awaiting → the proposed amount, "Awaiting approval" sub, not green;
+  //   estimate → destination points × truck rate, "Estimated";
+  //   none     → "—".
+  const moneyState = tripMoneyState(trip);
+  const estimate = moneyState === "estimate" ? estimateIncentive(trip, holidays) : null;
   // No estimate computable (missing truck/rate/zone) → "—", never a green
   // "RM 0" that reads as "this run pays nothing" (audit 2026-07-05 #5 —
   // same rule TripCard applies by hiding the row).
-  const incentiveValue = finalized
-    ? formatMoney(trip.incentive_earned)
-    : estimate !== null
-      ? formatMoney(estimate)
-      : "—";
-  const incentiveSub = !finalized && estimate !== null ? t("trip.estimated") : undefined;
+  const incentiveValue =
+    moneyState === "final"
+      ? formatMoney(trip.incentive_final ?? trip.incentive_earned)
+      : moneyState === "awaiting"
+        ? formatMoney(trip.incentive_earned)
+        : estimate !== null
+          ? formatMoney(estimate)
+          : "—";
+  const incentiveSub =
+    moneyState === "awaiting"
+      ? t("trip.awaitingApproval")
+      : moneyState === "estimate" && estimate !== null
+        ? t("trip.estimated")
+        : undefined;
+  const incentiveColor =
+    moneyState === "final" && incentiveValue !== "—" ? colors.green : undefined;
 
   const onStart = async () => {
     if (startInFlight.current) return;
@@ -166,7 +186,7 @@ export function TripDetailsScreen() {
               label={t("trip.incentive")}
               value={incentiveValue}
               sub={incentiveSub}
-              valueColor={incentiveValue === "—" ? undefined : colors.green}
+              valueColor={incentiveColor}
             />
           </View>
 
@@ -225,6 +245,59 @@ export function TripDetailsScreen() {
               <StatusTimeline steps={trip.timeline ?? []} />
             </View>
           </Card>
+
+          {/* Per-drop pay breakdown — the server's own finalize-time evidence
+              (lib/payBreakdown.ts, pure + unit-tested), arranged so the RM in
+              the InfoCard above RECONCILES: per-drop points (repeats marked),
+              the daily deduction actually subtracted, and the RM/point rate.
+              No RM is computed client-side. Null on unfinalized/legacy trips →
+              the card doesn't render. */}
+          {(() => {
+            const breakdown = buildPayBreakdown(trip);
+            if (!breakdown) return null;
+            return (
+              <Card style={{ marginBottom: 12 }}>
+                <Text style={styles.cardLabel}>{t("trip.payBreakdownTitle")}</Text>
+                <View style={{ marginTop: 8 }}>
+                  {breakdown.rows.map((r) => (
+                    <View key={r.stopId} style={styles.breakdownRow}>
+                      <Text style={styles.breakdownName} numberOfLines={1}>
+                        {r.sequence}. {r.name ?? "—"}
+                        {r.wasRepeat ? ` ${t("trip.payBreakdownRepeat")}` : ""}
+                      </Text>
+                      <Text style={styles.breakdownPts}>
+                        {t("trip.payBreakdownPts", { pts: r.points })}
+                      </Text>
+                    </View>
+                  ))}
+                  {breakdown.deduction !== null && breakdown.deduction > 0 ? (
+                    <View style={styles.breakdownRow}>
+                      <Text style={styles.breakdownName}>{t("trip.payBreakdownDeduction")}</Text>
+                      <Text style={styles.breakdownPts}>
+                        −{t("trip.payBreakdownPts", { pts: breakdown.deduction })}
+                      </Text>
+                    </View>
+                  ) : null}
+                  <View style={[styles.breakdownRow, styles.breakdownTotalRow]}>
+                    <Text style={styles.breakdownTotalLabel}>{t("trip.payBreakdownTotal")}</Text>
+                    <Text style={styles.breakdownTotalPts}>
+                      {t("trip.payBreakdownPts", {
+                        pts: breakdown.payablePoints ?? breakdown.totalPoints,
+                      })}
+                    </Text>
+                  </View>
+                  {breakdown.rate !== null ? (
+                    <Text style={styles.breakdownRate}>
+                      {t("trip.payBreakdownRate", { rate: breakdown.rate.toFixed(2) })}
+                    </Text>
+                  ) : null}
+                  {moneyState === "awaiting" ? (
+                    <Text style={styles.breakdownCaveat}>{t("trip.awaitingApproval")}</Text>
+                  ) : null}
+                </View>
+              </Card>
+            );
+          })()}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>
@@ -321,6 +394,16 @@ const styles = StyleSheet.create({
   callBtnText: { color: colors.white, fontSize: 14, fontWeight: "800" },
   smallStrong: { fontSize: 14, fontWeight: "700", color: colors.navy },
   smallMuted: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
+  breakdownRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingVertical: 6 },
+  breakdownName: { flex: 1, fontSize: 14, color: colors.textMuted },
+  breakdownPts: { fontSize: 14, fontWeight: "700", color: colors.navy },
+  breakdownTotalRow: { marginTop: 4, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.bg },
+  breakdownTotalLabel: { flex: 1, fontSize: 14, fontWeight: "700", color: colors.navy },
+  breakdownTotalPts: { fontSize: 14, fontWeight: "800", color: colors.navy },
+  breakdownRate: { fontSize: 12, color: colors.textFaint, marginTop: 6 },
+  // Muted, matching TripCard's awaiting treatment — never orange (offline-only
+  // colour, owner ruling) and never green (green = paid).
+  breakdownCaveat: { fontSize: 12, fontWeight: "700", color: colors.textMuted, marginTop: 4 },
   error: { color: colors.red, fontSize: 14, fontWeight: "600", marginTop: 8 },
   bottom: { paddingHorizontal: 16, paddingTop: 12, backgroundColor: colors.bg, width: "100%", maxWidth: layout.content, alignSelf: "center" },
 });
