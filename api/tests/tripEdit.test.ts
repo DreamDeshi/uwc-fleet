@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { summarizeTripChanges, updateTripSchema, type TripEditSnapshot } from "../src/routes/trips";
+import {
+  summarizeTripChanges,
+  updateTripSchema,
+  deprecatedCargoViolations,
+  type TripEditSnapshot,
+} from "../src/routes/trips";
 
 /**
  * Booking-edit validation + change summary. The route-level guards (owner,
@@ -59,6 +64,76 @@ describe("updateTripSchema", () => {
     if (r.success) {
       expect("is_external" in r.data).toBe(false); // stripped, never applied
     }
+  });
+
+  // Legacy-edit regression fix (Q1): the UPDATE schema must PARSE an existing
+  // 1×1/1×2 line (create's BOOKABLE enum would 400 the whole edit). The runtime
+  // guard — not the parser — blocks introducing/increasing a deprecated size.
+  it("PARSES an existing deprecated 1×1/1×2 cargo line (legacy edit compatibility)", () => {
+    expect(updateTripSchema.safeParse({ ...sameInput, cargo_details: [{ pallet_type: "1×1", quantity: 2 }] }).success).toBe(true);
+    expect(updateTripSchema.safeParse({ ...sameInput, cargo_details: [{ pallet_type: "1x2", quantity: 1 }] }).success).toBe(true); // ASCII
+  });
+
+  it("accepts an OMITTED cargo_details (handler preserves existing cargo unchanged)", () => {
+    const { cargo_details, ...noCargo } = sameInput;
+    void cargo_details;
+    const r = updateTripSchema.safeParse(noCargo);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.cargo_details).toBeUndefined();
+  });
+
+  it("still rejects an empty cargo array when cargo_details IS present", () => {
+    expect(updateTripSchema.safeParse({ ...sameInput, cargo_details: [] }).success).toBe(false);
+  });
+});
+
+describe("deprecatedCargoViolations — deprecated sizes may only be kept/reduced/removed", () => {
+  const legacy = [{ pallet_type: "1×1", quantity: 3 }];
+
+  it("allows preserving the same deprecated quantity", () => {
+    expect(deprecatedCargoViolations(legacy, [{ pallet_type: "1×1", quantity: 3 }])).toEqual([]);
+  });
+
+  it("allows reducing a deprecated quantity", () => {
+    expect(deprecatedCargoViolations(legacy, [{ pallet_type: "1×1", quantity: 1 }])).toEqual([]);
+  });
+
+  it("allows removing a deprecated line entirely", () => {
+    expect(deprecatedCargoViolations(legacy, [{ pallet_type: "4×4", quantity: 5 }])).toEqual([]);
+  });
+
+  it("REJECTS adding a deprecated type that was not on the booking", () => {
+    const v = deprecatedCargoViolations([{ pallet_type: "4×4", quantity: 1 }], [
+      { pallet_type: "4×4", quantity: 1 },
+      { pallet_type: "1×2", quantity: 1 },
+    ]);
+    expect(v).toEqual([{ pallet_type: "1×2", existing: 0, next: 1 }]);
+  });
+
+  it("REJECTS increasing an existing deprecated quantity", () => {
+    expect(deprecatedCargoViolations(legacy, [{ pallet_type: "1×1", quantity: 4 }])).toEqual([
+      { pallet_type: "1×1", existing: 3, next: 4 },
+    ]);
+  });
+
+  it("normalizes ASCII vs × on both sides (preserve via ASCII is allowed; increase via ASCII is caught)", () => {
+    expect(deprecatedCargoViolations(legacy, [{ pallet_type: "1x1", quantity: 3 }])).toEqual([]);
+    expect(deprecatedCargoViolations(legacy, [{ pallet_type: "1 X 1", quantity: 5 }])).toEqual([
+      { pallet_type: "1×1", existing: 3, next: 5 },
+    ]);
+  });
+
+  it("sums multiple lines of the same deprecated size before comparing", () => {
+    expect(
+      deprecatedCargoViolations(legacy, [
+        { pallet_type: "1×1", quantity: 2 },
+        { pallet_type: "1x1", quantity: 2 },
+      ])
+    ).toEqual([{ pallet_type: "1×1", existing: 3, next: 4 }]);
+  });
+
+  it("ignores non-deprecated cargo entirely", () => {
+    expect(deprecatedCargoViolations([{ pallet_type: "4×4", quantity: 1 }], [{ pallet_type: "4×4", quantity: 9 }])).toEqual([]);
   });
 });
 

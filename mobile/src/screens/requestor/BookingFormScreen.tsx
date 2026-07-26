@@ -34,7 +34,15 @@ import { NewConsigneeModal } from "../../components/NewConsigneeModal";
 import { LoadingState } from "../../components/States";
 import { useToast } from "../../components/Toast";
 import { pickDocumentImage, PickedPhoto } from "../../lib/photo";
-import { palletEquivalents, type PalletSize } from "../../lib/pallets";
+import {
+  palletEquivalents,
+  partitionEditableCargo,
+  finalizeCargoPayload,
+  isValidDimension,
+  canonicalCargoSize,
+  type BookablePalletSize,
+  type OutgoingCargoLine,
+} from "../../lib/pallets";
 import {
   loadTemplates,
   persistTemplates,
@@ -52,6 +60,7 @@ import {
   PICKUP_WINDOW_END_HOUR,
 } from "../../lib/bookingEdit";
 import { formatDate, formatTime } from "../../lib/format";
+import { uuidv4 } from "../../lib/uuid";
 import { Consignee, Trip } from "../../types";
 
 type Nav = BottomTabNavigationProp<RequestorTabParamList>;
@@ -60,12 +69,11 @@ type Nav = BottomTabNavigationProp<RequestorTabParamList>;
 // final Confirm step so there's no near-empty "When" page.
 const STEPS = ["stepWhere", "stepWhat", "stepConfirm"] as const;
 // Display order (commonest first, then largest → smallest) — deliberately NOT
-// the lib's order; palletQtys is indexed by this. Typed as PalletSize so an
-// ASCII "4x4" here fails to compile rather than shipping a line the server's
-// enum rejects, and so a size added to the lib but forgotten here is at least
-// not a wrong one.
-// The last five arrived with item 2 (Mr. Teh, 17 Jul 2026).
-const PALLET_SIZES: PalletSize[] = [
+// the lib's order; palletQtys is indexed by this. Typed as BookablePalletSize so
+// an ASCII "4x4" — or a re-added deprecated 1×1/1×2 (removed per Q1, R1
+// 2026-07-24: those are boxes, not pallets) — fails to compile rather than
+// shipping a line the server's booking enum now rejects.
+const PALLET_SIZES: BookablePalletSize[] = [
   "4×4",
   "3×4",
   "4×8",
@@ -74,16 +82,7 @@ const PALLET_SIZES: PalletSize[] = [
   "3×3",
   "2×3",
   "2×2",
-  "1×2",
-  "1×1",
 ];
-
-// Parse the optional "estimated pallets of space" field for carton/Others cargo:
-// a positive whole number, or undefined when blank (→ manual admin assignment).
-function parsedEstimate(v: string): number | undefined {
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) && n > 0 ? n : undefined;
-}
 
 // Soft cap: the largest truck (PLX 2406) holds 16 pallets measured in
 // 4×4-EQUIVALENTS — the same units the server enforces (a 5×10 occupies
@@ -92,6 +91,28 @@ function parsedEstimate(v: string): number | undefined {
 // a big order may need more than one truck instead of hitting
 // CARGO_EXCEEDS_FLEET at submit.
 const LARGEST_TRUCK_PALLETS = 16;
+
+// A loaded API cargo line → the outgoing shape, preserving every field so a
+// legacy line re-appends verbatim on save.
+function toOutgoingCargo(l: {
+  pallet_type: string;
+  quantity: number;
+  cartons?: number | null;
+  custom_size?: string | null;
+  width_ft?: number | null;
+  length_ft?: number | null;
+  estimated_pallets?: number | null;
+}): OutgoingCargoLine {
+  return {
+    pallet_type: l.pallet_type,
+    quantity: l.quantity,
+    cartons: l.cartons ?? undefined,
+    custom_size: l.custom_size ?? undefined,
+    width_ft: l.width_ft ?? undefined,
+    length_ft: l.length_ft ?? undefined,
+    estimated_pallets: l.estimated_pallets ?? undefined,
+  };
+}
 
 // Recent-consignee chips truncate long company names so they don't overflow the
 // chip; the full name still shows once the consignee is selected as a stop.
@@ -165,17 +186,27 @@ export function BookingFormScreen() {
   const [step, setStep] = useState(0);
   const [routeTypeId, setRouteTypeId] = useState<string | undefined>();
   const [stops, setStops] = useState<Consignee[]>([]);
-  const [cargoType, setCargoType] = useState<"pallet" | "carton" | "others">("pallet");
+  const [cargoType, setCargoType] = useState<"pallet" | "box" | "crate" | "rack" | "custom">("pallet");
   // Index-aligned with PALLET_SIZES — DERIVE the length, never hard-code it.
   // This was [0, 0, 0, 0, 0] when there were five sizes; item 2 took the list
   // to ten and left the array at five, so the five new sizes rendered blank,
   // their +/− did nothing (updateQty's .map can't grow an array), and
   // buildCargo dropped them silently because `undefined > 0` is false.
   const [palletQtys, setPalletQtys] = useState<number[]>(() => PALLET_SIZES.map(() => 0));
-  const [cartonQty, setCartonQty] = useState(0);
-  const [othersText, setOthersText] = useState("");
-  // Optional 4×4-pallet estimate for carton/Others cargo (blank → manual dispatch).
-  const [sizeEstimate, setSizeEstimate] = useState("");
+  // Deprecated (1×1/1×2) lines carried in from a historical booking on edit. They
+  // are NOT selectable/editable via the steppers — kept read-only and re-appended
+  // verbatim on save so an unrelated edit can never silently drop them. Removal is
+  // possible only via a deliberate per-row action (see the legacy list render).
+  // Legacy cargo carried in from a historical booking on edit (deprecated 1×1/1×2,
+  // legacy carton, and legacy free-text custom). Read-only; preserved VERBATIM
+  // (full line) and re-appended on save so an unrelated edit never drops/rewrites it.
+  const [legacyCargo, setLegacyCargo] = useState<OutgoingCargoLine[]>([]);
+  // Q10: Box is a count only (no dimensions). Crate/Rack/Custom carry structured
+  // width_ft × length_ft (feet) + a count.
+  const [boxQty, setBoxQty] = useState(0);
+  const [dimW, setDimW] = useState("");
+  const [dimL, setDimL] = useState("");
+  const [dimQty, setDimQty] = useState(1);
   const [remarks, setRemarks] = useState("");
 
   // Date/time chosen from quick pickers (no native datepicker dependency).
@@ -192,6 +223,10 @@ export function BookingFormScreen() {
   // trip is created (see onNext).
   const [docs, setDocs] = useState<PickedPhoto[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  // DG-T7 idempotency key for the create below. A ref, not state: it must
+  // survive the re-render that re-arms Submit after a timeout WITHOUT itself
+  // triggering one, and it must be the SAME value on the retry.
+  const requestKey = useRef<string | null>(null);
 
   // Saved booking templates (device-local "save function"). Loaded once; the
   // name dialog is driven from here so it can be reached from the Confirm step.
@@ -233,19 +268,28 @@ export function BookingFormScreen() {
     []
   );
 
-  const totalPallets = palletQtys.reduce((a, b) => a + b, 0);
+  const legacyPallets = legacyCargo.reduce((a, c) => a + c.quantity, 0);
+  // totalPallets counts the preserved legacy lines too, so a legacy-only edit is
+  // "set" and the Confirm summary/count include them.
+  const totalPallets = palletQtys.reduce((a, b) => a + b, 0) + legacyPallets;
   // Capacity is judged in 4×4-equivalents (mirrors the server): 6× 5×10 is
   // 18.75 slots (warn!), 16× 2×2 only 4 (don't).
-  const totalEquivalents = palletEquivalents(
-    PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] }))
-  );
+  const totalEquivalents = palletEquivalents([
+    ...PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] })),
+    ...legacyCargo, // legacy lines still occupy real slots on the server
+  ]);
 
   const isLastStep = step === STEPS.length - 1;
+
+  // Q10 structured dimensions (feet) for crate/rack/custom.
+  const dimWNum = Number(dimW);
+  const dimLNum = Number(dimL);
+  const dimsOk = isValidDimension(dimWNum) && isValidDimension(dimLNum) && dimQty > 0;
 
   // Running cargo summary — shown on the Confirm step AND (on PC) in the
   // always-visible summary rail. `cargoIsSet` gates the rail's placeholder.
   const cargoIsSet =
-    cargoType === "pallet" ? totalPallets > 0 : cargoType === "carton" ? cartonQty > 0 : othersText.trim().length > 0;
+    cargoType === "pallet" ? totalPallets > 0 : cargoType === "box" ? boxQty > 0 : dimsOk;
   // A template is only worth saving once it's a complete, submittable booking —
   // this guarantees a loaded template never drops the requestor onto Confirm
   // with empty cargo the server would reject.
@@ -253,9 +297,11 @@ export function BookingFormScreen() {
   const cargoSummaryText =
     cargoType === "pallet"
       ? `${totalPallets} ${t("booking.pallet")}`
-      : cargoType === "carton"
-        ? `${cartonQty} ${t("booking.carton")}`
-        : othersText;
+      : cargoType === "box"
+        ? `${boxQty} ${t("booking.box")}`
+        : dimsOk
+          ? `${dimQty} × ${canonicalCargoSize(dimWNum, dimLNum)}`
+          : t(`booking.${cargoType}`);
 
   const resetForm = () => {
     setStep(0);
@@ -263,9 +309,11 @@ export function BookingFormScreen() {
     setStops([]);
     setCargoType("pallet");
     setPalletQtys(PALLET_SIZES.map(() => 0));
-    setCartonQty(0);
-    setOthersText("");
-    setSizeEstimate("");
+    setLegacyCargo([]);
+    setBoxQty(0);
+    setDimW("");
+    setDimL("");
+    setDimQty(1);
     setRemarks("");
     const slot = nextBookableSlot();
     setDayOffset(slot.dayOffset);
@@ -295,19 +343,24 @@ export function BookingFormScreen() {
     setStops((tr.stops ?? []).map((s) => s.consignee).filter((c): c is Consignee => Boolean(c)));
 
     const lines = tr.cargo_details ?? [];
-    const custom = lines.find((l) => l.pallet_type === "custom");
-    const carton = lines.find((l) => l.pallet_type === "carton");
-    const estLine = custom ?? carton;
-    setSizeEstimate(estLine?.estimated_pallets != null ? String(estLine.estimated_pallets) : "");
-    if (custom) {
-      setCargoType("others");
-      setOthersText(custom.custom_size ?? "");
-    } else if (carton) {
-      setCargoType("carton");
-      setCartonQty(carton.cartons ?? carton.quantity ?? 0);
+    // Preserve deprecated (1×1/1×2), legacy carton, and legacy free-text custom
+    // as read-only lines (full record) — the new form edits only pallets/box and
+    // structured crate/rack/custom; everything else is re-appended verbatim.
+    const { bookable, legacy } = partitionEditableCargo(lines);
+    setLegacyCargo(legacy.map(toOutgoingCargo));
+    const box = bookable.find((l) => l.pallet_type === "box");
+    const dimLine = bookable.find((l) => l.pallet_type === "crate" || l.pallet_type === "rack" || l.pallet_type === "custom");
+    if (box) {
+      setCargoType("box");
+      setBoxQty(box.quantity ?? 0);
+    } else if (dimLine) {
+      setCargoType(dimLine.pallet_type as "crate" | "rack" | "custom");
+      setDimW(dimLine.width_ft != null ? String(dimLine.width_ft) : "");
+      setDimL(dimLine.length_ft != null ? String(dimLine.length_ft) : "");
+      setDimQty(dimLine.quantity ?? 1);
     } else {
       setCargoType("pallet");
-      setPalletQtys(PALLET_SIZES.map((size) => lines.find((l) => l.pallet_type === size)?.quantity ?? 0));
+      setPalletQtys(PALLET_SIZES.map((size) => bookable.find((l) => l.pallet_type === size)?.quantity ?? 0));
     }
     setStep(STEPS.length - 1); // jump to Confirm
   };
@@ -319,11 +372,15 @@ export function BookingFormScreen() {
     setError(null);
     if (tpl.routeTypeId) setRouteTypeId(tpl.routeTypeId);
     setStops(tpl.stops ?? []);
-    setCargoType(tpl.cargoType);
     setPalletQtys(palletQtysFor(tpl, PALLET_SIZES));
-    setCartonQty(tpl.cartonQty ?? 0);
-    setOthersText(tpl.othersText ?? "");
-    setSizeEstimate(tpl.sizeEstimate ?? "");
+    setLegacyCargo([]); // templates only carry current bookable sizes
+    setBoxQty(tpl.boxQty ?? tpl.cartonQty ?? 0);
+    setDimW(tpl.dimW ?? "");
+    setDimL(tpl.dimL ?? "");
+    setDimQty(tpl.dimQty ?? 1);
+    // Map a legacy on-disk cargoType (carton/others) onto the new tabs.
+    const ct = tpl.cargoType;
+    setCargoType(ct === "carton" ? "box" : ct === "others" ? "custom" : ct);
     setRemarks(tpl.remarks ?? "");
     setStep(STEPS.length - 1); // jump to Confirm — review before submit
   };
@@ -337,9 +394,10 @@ export function BookingFormScreen() {
       stops,
       cargoType,
       pallets: palletsMap(PALLET_SIZES, palletQtys),
-      cartonQty,
-      othersText,
-      sizeEstimate,
+      boxQty,
+      dimW,
+      dimL,
+      dimQty,
       remarks,
     };
     const next = upsertTemplate(templates, tpl);
@@ -381,23 +439,33 @@ export function BookingFormScreen() {
     }
     if (step === 1) {
       if (cargoType === "pallet" && totalPallets === 0) return t("booking.addCargo");
-      if (cargoType === "carton" && cartonQty === 0) return t("booking.addCargo");
-      if (cargoType === "others" && !othersText.trim()) return t("booking.addCargo");
+      if (cargoType === "box" && boxQty === 0) return t("booking.addCargo");
+      if ((cargoType === "crate" || cargoType === "rack" || cargoType === "custom") && !dimsOk) return t("booking.addCargoDims");
     }
     return null;
   };
 
   const buildCargo = () => {
-    const estimate = parsedEstimate(sizeEstimate);
-    if (cargoType === "carton") {
-      return [{ pallet_type: "carton", quantity: cartonQty, cartons: cartonQty, estimated_pallets: estimate, remark: remarks || undefined }];
+    // Each branch builds ONLY its current lines; finalizeCargoPayload is the one
+    // shared step that appends the preserved legacy cargo — so no cargo type can
+    // bypass it and silently drop legacy lines on an edit.
+    let current: OutgoingCargoLine[];
+    if (cargoType === "box") {
+      // Q10: Box is a count only — no dimensions, always manual assignment.
+      current = [{ pallet_type: "box", quantity: boxQty }];
+    } else if (cargoType === "crate" || cargoType === "rack" || cargoType === "custom") {
+      // Q10: structured dimensions in feet + a canonical stored size.
+      current = [{
+        pallet_type: cargoType,
+        quantity: dimQty,
+        width_ft: dimWNum,
+        length_ft: dimLNum,
+        custom_size: canonicalCargoSize(dimWNum, dimLNum),
+      }];
+    } else {
+      current = PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] })).filter((c) => c.quantity > 0);
     }
-    if (cargoType === "others") {
-      return [{ pallet_type: "custom", quantity: 1, custom_size: othersText.trim(), estimated_pallets: estimate, remark: remarks || undefined }];
-    }
-    return PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] }))
-      .filter((c) => c.quantity > 0)
-      .map((c, idx) => (idx === 0 && remarks ? { ...c, remark: remarks } : c));
+    return finalizeCargoPayload(current, legacyCargo, remarks || undefined);
   };
 
   const onNext = async () => {
@@ -438,7 +506,19 @@ export function BookingFormScreen() {
         return;
       }
 
-      const trip = await createTrip.mutateAsync(payload);
+      // DG-T7: one idempotency key per BOOKING, deliberately NOT per attempt.
+      // The 15s timeout below is shorter than a slow-but-successful create, so
+      // Submit re-arms (see the `finally`) while the first request may already
+      // have committed. Reusing the key makes the server return that original
+      // booking instead of creating a second one — which auto-dispatch would
+      // answer with a second truck. Regenerated only after a success, so a
+      // genuine re-booking of the same cargo still gets its own key.
+      if (!requestKey.current) requestKey.current = uuidv4();
+      const trip = await createTrip.mutateAsync({
+        ...payload,
+        client_request_id: requestKey.current,
+      });
+      requestKey.current = null;
       // Upload any documents attached on the review screen against the new trip.
       // A failed upload must not hide the (already created) booking — flag it and
       // let the requestor add it later from the booking details.
@@ -526,12 +606,16 @@ export function BookingFormScreen() {
           setCargoType={setCargoType}
           palletQtys={palletQtys}
           setPalletQtys={setPalletQtys}
-          cartonQty={cartonQty}
-          setCartonQty={setCartonQty}
-          othersText={othersText}
-          setOthersText={setOthersText}
-          sizeEstimate={sizeEstimate}
-          setSizeEstimate={setSizeEstimate}
+          boxQty={boxQty}
+          setBoxQty={setBoxQty}
+          dimW={dimW}
+          setDimW={setDimW}
+          dimL={dimL}
+          setDimL={setDimL}
+          dimQty={dimQty}
+          setDimQty={setDimQty}
+          legacyCargo={legacyCargo}
+          setLegacyCargo={setLegacyCargo}
           totalPallets={totalPallets}
           totalEquivalents={totalEquivalents}
         />
@@ -924,25 +1008,33 @@ function StepWhat({
   setCargoType,
   palletQtys,
   setPalletQtys,
-  cartonQty,
-  setCartonQty,
-  othersText,
-  setOthersText,
-  sizeEstimate,
-  setSizeEstimate,
+  boxQty,
+  setBoxQty,
+  dimW,
+  setDimW,
+  dimL,
+  setDimL,
+  dimQty,
+  setDimQty,
+  legacyCargo,
+  setLegacyCargo,
   totalPallets,
   totalEquivalents,
 }: {
-  cargoType: "pallet" | "carton" | "others";
-  setCargoType: (v: "pallet" | "carton" | "others") => void;
+  cargoType: "pallet" | "box" | "crate" | "rack" | "custom";
+  setCargoType: (v: "pallet" | "box" | "crate" | "rack" | "custom") => void;
   palletQtys: number[];
   setPalletQtys: React.Dispatch<React.SetStateAction<number[]>>;
-  cartonQty: number;
-  setCartonQty: React.Dispatch<React.SetStateAction<number>>;
-  othersText: string;
-  setOthersText: (v: string) => void;
-  sizeEstimate: string;
-  setSizeEstimate: (v: string) => void;
+  boxQty: number;
+  setBoxQty: React.Dispatch<React.SetStateAction<number>>;
+  dimW: string;
+  setDimW: (v: string) => void;
+  dimL: string;
+  setDimL: (v: string) => void;
+  dimQty: number;
+  setDimQty: React.Dispatch<React.SetStateAction<number>>;
+  legacyCargo: OutgoingCargoLine[];
+  setLegacyCargo: React.Dispatch<React.SetStateAction<OutgoingCargoLine[]>>;
   totalPallets: number;
   totalEquivalents: number;
 }) {
@@ -968,7 +1060,7 @@ function StepWhat({
     <View>
       <FieldLabel>{t("booking.cargoType")}</FieldLabel>
       <View style={styles.cargoTabs}>
-        {(["pallet", "carton", "others"] as const).map((type) => {
+        {(["pallet", "box", "crate", "rack", "custom"] as const).map((type) => {
           const active = cargoType === type;
           return (
             <TouchableOpacity
@@ -986,11 +1078,12 @@ function StepWhat({
 
       {cargoType === "pallet" && (
         <>
-          <FieldLabel>{t("booking.palletSizeQty")}</FieldLabel>
+          <FieldLabel>{t("booking.cargoSizeQty")}</FieldLabel>
+          <Text style={styles.cargoSizeHint}>{t("booking.cargoSizeFeetHint")}</Text>
           <View style={styles.palletList}>
             {PALLET_SIZES.map((size, i) => (
               <View key={size} style={[styles.palletRow, i < PALLET_SIZES.length - 1 && styles.palletDivider]}>
-                <Text style={styles.palletSize}>Pallet {size}</Text>
+                <Text style={styles.palletSize}>{t("booking.cargoSizeRow", { size })}</Text>
                 <View style={styles.stepper}>
                   <TouchableOpacity style={styles.stepBtnMinus} onPress={() => updateQty(i, -1)}>
                     <Text style={styles.stepBtnMinusText}>−</Text>
@@ -1003,6 +1096,30 @@ function StepWhat({
               </View>
             ))}
           </View>
+
+          {/* Preserved legacy cargo (deprecated 1×1/1×2 from a historical booking).
+              Read-only — no steppers, so quantities cannot be changed and cannot be
+              dropped accidentally; removal is a deliberate per-row action. */}
+          {legacyCargo.length > 0 && (
+            <>
+              <Text style={styles.legacyLabel}>{t("booking.legacyCargoLabel")}</Text>
+              <View style={styles.palletList}>
+                {legacyCargo.map((line, i) => (
+                  <View key={`${line.pallet_type}-${i}`} style={[styles.palletRow, i < legacyCargo.length - 1 && styles.palletDivider]}>
+                    <Text style={styles.palletSize}>{t("booking.legacyCargoRow", { size: line.pallet_type, qty: line.quantity })}</Text>
+                    <TouchableOpacity
+                      style={styles.legacyRemoveBtn}
+                      accessibilityLabel={t("booking.legacyCargoRemove", { size: line.pallet_type })}
+                      onPress={() => oncePerTap(() => setLegacyCargo((prev) => prev.filter((_, idx) => idx !== i)))}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#b91c1c" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+
           <View style={styles.totalPill}>
             <Ionicons name="cube" size={16} color={colors.blue} />
             <Text style={styles.totalPillText}>{t("booking.totalPallets", { count: totalPallets })}</Text>
@@ -1018,52 +1135,62 @@ function StepWhat({
         </>
       )}
 
-      {cargoType === "carton" && (
+      {cargoType === "box" && (
         <>
-          <FieldLabel>{t("booking.numCartons")}</FieldLabel>
+          <FieldLabel>{t("booking.numBoxes")}</FieldLabel>
           <View style={[styles.palletRow, { backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md }]}>
-            <Text style={styles.palletSize}>{t("booking.carton")}</Text>
+            <Text style={styles.palletSize}>{t("booking.box")}</Text>
             <View style={styles.stepper}>
-              <TouchableOpacity style={styles.stepBtnMinus} onPress={() => oncePerTap(() => setCartonQty((q) => Math.max(0, q - 1)))}>
+              <TouchableOpacity style={styles.stepBtnMinus} onPress={() => oncePerTap(() => setBoxQty((q) => Math.max(0, q - 1)))}>
                 <Text style={styles.stepBtnMinusText}>−</Text>
               </TouchableOpacity>
-              <Text style={styles.stepVal}>{cartonQty}</Text>
-              <TouchableOpacity style={styles.stepBtnPlus} onPress={() => oncePerTap(() => setCartonQty((q) => q + 1))}>
+              <Text style={styles.stepVal}>{boxQty}</Text>
+              <TouchableOpacity style={styles.stepBtnPlus} onPress={() => oncePerTap(() => setBoxQty((q) => q + 1))}>
                 <Text style={styles.stepBtnPlusText}>+</Text>
               </TouchableOpacity>
             </View>
           </View>
+          <Text style={styles.estimateHint}>{t("booking.boxManualHint")}</Text>
         </>
       )}
 
-      {cargoType === "others" && (
+      {(cargoType === "crate" || cargoType === "rack" || cargoType === "custom") && (
         <>
-          <FieldLabel>{t("booking.describeCargo")}</FieldLabel>
-          <TextInput
-            value={othersText}
-            onChangeText={setOthersText}
-            placeholder={t("booking.cargoPlaceholder")}
-            placeholderTextColor={colors.textFaint}
-            multiline
-            style={styles.textarea}
-          />
-        </>
-      )}
-
-      {/* Optional size estimate for carton/Others — lets auto-dispatch size the
-          truck. Blank is fine: the booking then goes to manual admin assignment. */}
-      {(cargoType === "carton" || cargoType === "others") && (
-        <>
-          <FieldLabel>{t("booking.estimatedPallets")}</FieldLabel>
-          <TextInput
-            value={sizeEstimate}
-            onChangeText={(v) => setSizeEstimate(v.replace(/[^0-9]/g, ""))}
-            keyboardType="number-pad"
-            placeholder={t("booking.estimatedPalletsPlaceholder")}
-            placeholderTextColor={colors.textFaint}
-            style={styles.estimateInput}
-          />
-          <Text style={styles.estimateHint}>{t("booking.estimatedPalletsHint")}</Text>
+          <FieldLabel>{t("booking.dimensionsFt")}</FieldLabel>
+          <View style={styles.dimRow}>
+            <TextInput
+              value={dimW}
+              onChangeText={(v) => setDimW(v.replace(/[^0-9.]/g, ""))}
+              keyboardType="decimal-pad"
+              placeholder={t("booking.widthFt")}
+              placeholderTextColor={colors.textFaint}
+              style={[styles.estimateInput, styles.dimInput]}
+            />
+            <Text style={styles.dimTimes}>×</Text>
+            <TextInput
+              value={dimL}
+              onChangeText={(v) => setDimL(v.replace(/[^0-9.]/g, ""))}
+              keyboardType="decimal-pad"
+              placeholder={t("booking.lengthFt")}
+              placeholderTextColor={colors.textFaint}
+              style={[styles.estimateInput, styles.dimInput]}
+            />
+            <Text style={styles.dimFt}>{t("booking.ft")}</Text>
+          </View>
+          <FieldLabel>{t("booking.quantity")}</FieldLabel>
+          <View style={[styles.palletRow, { backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md }]}>
+            <Text style={styles.palletSize}>{t(`booking.${cargoType}`)}</Text>
+            <View style={styles.stepper}>
+              <TouchableOpacity style={styles.stepBtnMinus} onPress={() => oncePerTap(() => setDimQty((q) => Math.max(1, q - 1)))}>
+                <Text style={styles.stepBtnMinusText}>−</Text>
+              </TouchableOpacity>
+              <Text style={styles.stepVal}>{dimQty}</Text>
+              <TouchableOpacity style={styles.stepBtnPlus} onPress={() => oncePerTap(() => setDimQty((q) => q + 1))}>
+                <Text style={styles.stepBtnPlusText}>+</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <Text style={styles.estimateHint}>{t("booking.dimensionsManualHint")}</Text>
         </>
       )}
 
@@ -1350,6 +1477,9 @@ const styles = StyleSheet.create({
   cargoTab: { flex: 1, height: 44, borderRadius: radius.md, borderWidth: 2, borderColor: colors.border, backgroundColor: colors.white, alignItems: "center", justifyContent: "center" },
   cargoTabActive: { borderColor: colors.yellow, backgroundColor: colors.yellow },
   cargoTabText: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
+  cargoSizeHint: { fontSize: 13, color: colors.textMuted, lineHeight: 17, marginBottom: 8 },
+  legacyLabel: { fontSize: 12, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 14, marginBottom: 6 },
+  legacyRemoveBtn: { padding: 8, borderRadius: radius.sm },
   palletList: { backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, overflow: "hidden" },
   palletRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14 },
   palletDivider: { borderBottomWidth: 1, borderBottomColor: colors.bg },
@@ -1369,6 +1499,10 @@ const styles = StyleSheet.create({
   textarea: { minHeight: 90, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, padding: 14, fontSize: 14, color: colors.navy, backgroundColor: colors.white, textAlignVertical: "top" },
   estimateInput: { borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.navy, backgroundColor: colors.white },
   estimateHint: { fontSize: 12, color: colors.textFaint, marginTop: 6 },
+  dimRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  dimInput: { flex: 1, textAlign: "center" },
+  dimTimes: { fontSize: 18, color: colors.textMuted, fontWeight: "700" },
+  dimFt: { fontSize: 14, color: colors.textMuted, fontWeight: "600" },
 
   confirmCard: { backgroundColor: colors.white, borderRadius: radius.md, padding: 16, marginBottom: 12, borderWidth: 1.5, borderColor: colors.borderLight },
   confirmHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },

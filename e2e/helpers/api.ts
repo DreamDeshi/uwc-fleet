@@ -205,6 +205,121 @@ export async function uploadPod(
   return data as Trip;
 }
 
+/**
+ * Upload the Borang K2 customs document for a stop (multipart, field "photo" —
+ * the same request the driver app sends from the ActiveTrip K2 button). Sets
+ * k2_photo server-side, which the K2-zone delivery gate keys on (R1 Q6: an
+ * uploaded document, not a tick).
+ */
+export async function uploadK2(
+  driverToken: string,
+  id: string,
+  stopId: string,
+  file: { name: string; mimeType: string; buffer: Buffer }
+): Promise<Trip> {
+  const form = new FormData();
+  form.append("photo", new Blob([new Uint8Array(file.buffer)], { type: file.mimeType }), file.name);
+  const res = await fetch(`${API_BASE}/trips/${id}/stops/${stopId}/k2`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${driverToken}` },
+    body: form,
+  });
+  const text = await res.text();
+  let data: any;
+  try {
+    data = text ? JSON.parse(text) : undefined;
+  } catch {
+    data = text;
+  }
+  if (!res.ok) {
+    const code = data?.error?.code ?? res.status;
+    const msg = data?.error?.message ?? text;
+    throw new Error(`API POST /trips/${id}/stops/${stopId}/k2 → ${res.status} ${code}: ${msg}`);
+  }
+  return data as Trip;
+}
+
+// ── Exceptions (Phase 1, feature-flagged: FEATURE_EXCEPTIONS=true) ──────
+export interface ExceptionPayload {
+  id: string;
+  category: string;
+  current_state: string;
+  reason?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Driver reports an exception (multipart: photo + category + reason + the three
+ * client idempotency UUIDs the offline outbox normally generates). Mirrors the
+ * ReportExceptionSheet request — used to seed past the in-browser camera
+ * capture, which headless Chromium cannot drive (same limitation as POD).
+ */
+export async function reportException(
+  driverToken: string,
+  tripId: string,
+  opts: {
+    category: string;
+    reason: string;
+    tripStopId?: string;
+    file: { name: string; mimeType: string; buffer: Buffer };
+  }
+): Promise<ExceptionPayload> {
+  const form = new FormData();
+  form.append("category", opts.category);
+  form.append("reason", opts.reason);
+  form.append("client_occurrence_id", crypto.randomUUID());
+  form.append("client_action_id", crypto.randomUUID());
+  form.append("client_evidence_id", crypto.randomUUID());
+  if (opts.tripStopId) form.append("trip_stop_id", opts.tripStopId);
+  form.append(
+    "photo",
+    new Blob([new Uint8Array(opts.file.buffer)], { type: opts.file.mimeType }),
+    opts.file.name
+  );
+  const res = await fetch(`${API_BASE}/trips/${tripId}/exception`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${driverToken}` },
+    body: form,
+  });
+  const text = await res.text();
+  let data: any;
+  try {
+    data = text ? JSON.parse(text) : undefined;
+  } catch {
+    data = text;
+  }
+  if (!res.ok) {
+    const code = data?.error?.code ?? res.status;
+    const msg = data?.error?.message ?? text;
+    throw new Error(`API POST /trips/${tripId}/exception → ${res.status} ${code}: ${msg}`);
+  }
+  return (data as { exception: ExceptionPayload }).exception;
+}
+
+/** Admin: all open exceptions (the Exceptions lane's data source). */
+export function getOpenExceptions(
+  adminToken: string
+): Promise<{ exceptions: { id: string; trip_id: string; current_state: string }[] }> {
+  return req(adminToken, "GET", "/trips/exceptions/open");
+}
+
+/**
+ * Admin: RESUME an exception — the one Phase-1 action that closes it from any
+ * open state (reported/more_evidence/verified) while the trip stays
+ * in_progress. (`resolve` is Phase-1-gated to `retry` and rejects other
+ * resolutions, so resume is the cleanup path.)
+ */
+export function resumeException(
+  adminToken: string,
+  tripId: string,
+  exId: string
+): Promise<unknown> {
+  return req(adminToken, "POST", `/trips/${tripId}/exception/${exId}/resume`, {
+    client_action_id: crypto.randomUUID(),
+    note: "e2e reset — clearing the open exception",
+  });
+}
+
 // ── Truck rates (admin) ─────────────────────────────────────────────────
 export interface TruckRate {
   plate: string;

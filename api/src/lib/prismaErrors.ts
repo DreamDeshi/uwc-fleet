@@ -26,3 +26,24 @@ export function isUniqueViolation(err: unknown, field?: string): boolean {
   // No target metadata — treat as a match rather than crash the retry loop.
   return true;
 }
+
+/**
+ * Like `isUniqueViolation`, but requires the driver to NAME the column: with no
+ * target metadata this returns FALSE where `isUniqueViolation` returns true.
+ *
+ * Use it when two different unique constraints on the same table are handled
+ * differently and guessing wrong changes the outcome. The booking-create path is
+ * exactly that case: `ticket_number` collisions must be RETRIED, while
+ * `client_request_id` collisions must return the existing trip. Letting the
+ * permissive fallback answer there would turn a retryable ticket collision into
+ * a spurious idempotency conflict.
+ */
+export function isUniqueViolationOnField(err: unknown, field: string): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== "P2002") {
+    return false;
+  }
+  const target = (err.meta as { target?: string[] | string } | undefined)?.target;
+  if (Array.isArray(target)) return target.includes(field);
+  if (typeof target === "string") return target.includes(field);
+  return false;
+}

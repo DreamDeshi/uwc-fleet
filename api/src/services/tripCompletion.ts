@@ -172,7 +172,7 @@ export function payAttributionInstant(trip: {
 export interface TripFinalizeClient {
   trip: {
     updateMany(args: {
-      where: { id: string; status: "in_progress" | "pending_approval"; incentive_earned?: null };
+      where: { id: string; status: "in_progress" | "pending_approval"; incentive_earned?: null; open_exception_id?: null };
       data: Record<string, unknown>;
     }): Promise<{ count: number }>;
   };
@@ -205,7 +205,11 @@ export async function proposeTripIncentiveOnce(
   breakdown: FinalizeBreakdown
 ): Promise<boolean> {
   const res = await client.trip.updateMany({
-    where: { id: tripId, status: "in_progress", incentive_earned: null },
+    // open_exception_id: null — an OPEN exception atomically blocks finalization:
+    // no incentive proposal / pending_approval may occur while one is open
+    // (lifecycle isolation, Phase 1 hardening). A trip with an open exception
+    // stays in_progress until the exception is resolved.
+    where: { id: tripId, status: "in_progress", incentive_earned: null, open_exception_id: null },
     data: {
       status: "pending_approval",
       incentive_earned: incentiveThisTrip,

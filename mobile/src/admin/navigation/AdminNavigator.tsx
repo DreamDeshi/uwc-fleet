@@ -36,6 +36,8 @@ import { AdminSettingsScreen } from "../screens/AdminSettingsScreen";
 import { AuditLogScreen } from "../screens/AuditLogScreen";
 import { AdminSearchScreen } from "../screens/AdminSearchScreen";
 import { CalendarScreen } from "../screens/CalendarScreen";
+import { ExceptionsScreen } from "../screens/ExceptionsScreen";
+import { exceptionsEnabled } from "../../lib/featureFlags";
 import { AdminSearchButton } from "../components/AdminSearchButton";
 import { AdminAlertsBell } from "../components/AdminAlertsBell";
 import { BrandLogo } from "../../components/BrandLogo";
@@ -62,6 +64,12 @@ const NAV_GROUPS: { headingKey: string; items: NavItem[] }[] = [
     headingKey: "admin.navGroups.operations",
     items: [
       { route: "AdminTrips", labelKey: "admin.nav.trips", icon: "flash-outline" },
+      // Failed-delivery / exception lane (feature-gated — hidden while the flag
+      // is off). Without this the WIDE shell had no path to the lane at all;
+      // the phone home reaches it via its nav grid (AdminTabs stack).
+      ...(exceptionsEnabled()
+        ? [{ route: "AdminExceptions", labelKey: "exception.laneTitle", icon: "warning-outline" as IoniconName }]
+        : []),
       { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline" },
       { route: "AdminDrivers", labelKey: "admin.nav.drivers", icon: "person-outline" },
       { route: "AdminTrucks", labelKey: "admin.nav.trucks", icon: "bus-outline" },
@@ -453,6 +461,11 @@ function AdminDrawerWide() {
         name="AdminSearch"
         component={AdminSearchScreen}
         options={{ title: t("admin.search.title") }}
+      />
+      <Drawer.Screen
+        name="AdminExceptions"
+        component={ExceptionsScreen}
+        options={{ title: t("exception.laneTitle") }}
       />
       <Drawer.Screen
         name="AdminCalendar"

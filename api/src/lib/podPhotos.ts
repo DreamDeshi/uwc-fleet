@@ -80,15 +80,18 @@ export function documentAssetFromUrl(
 // until the backfill secures them. Fail-safe: a missed asset just shows no
 // image (the stored authenticated URL 401s) — never a public leak.
 
-type StopLike = { pod_public_id?: string | null; pod_photo?: string | null } & Record<string, unknown>;
+type StopLike = { pod_public_id?: string | null; pod_photo?: string | null; k2_public_id?: string | null; k2_photo?: string | null } & Record<string, unknown>;
 type DocLike = { public_id?: string | null; resource_type?: string | null; format?: string | null; file_url?: string | null } & Record<string, unknown>;
 type TripLike = { stops?: unknown; documents?: unknown } & Record<string, unknown>;
 
 function signStop(stop: StopLike): StopLike {
-  if (stop && typeof stop === "object" && stop.pod_public_id) {
-    return { ...stop, pod_photo: signedPodUrl(stop.pod_public_id) };
-  }
-  return stop;
+  if (!stop || typeof stop !== "object") return stop;
+  let out = stop;
+  // POD photo and the K2 (Borang K2) document are both private authenticated
+  // assets — serve each as a freshly-signed URL when its public_id is stored.
+  if (stop.pod_public_id) out = { ...out, pod_photo: signedPodUrl(stop.pod_public_id) };
+  if (stop.k2_public_id) out = { ...out, k2_photo: signedPodUrl(stop.k2_public_id) };
+  return out;
 }
 
 function signDocument(doc: DocLike): DocLike {

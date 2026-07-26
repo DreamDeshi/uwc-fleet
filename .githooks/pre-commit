@@ -1,0 +1,30 @@
+#!/bin/sh
+# Guard the PARKED Prisma schema.
+#
+# api/prisma/schema.prisma must never enter a commit incidentally (e.g. picked up
+# by `git add -A` / `git add .`): schema changes ship as hand-written ADDITIVE
+# migrations, and the on-disk schema is frequently "parked" with models that are
+# not yet meant to deploy. Since main deploys on push (Railway auto-migrates), a
+# stray schema.prisma commit is a real prod-drift footgun.
+#
+# This hook HARD-BLOCKS any commit that stages it. Committing a schema change on
+# purpose (together with its migration) is a deliberate, one-word override:
+#
+#     git commit --no-verify
+#
+# Verify in isolation:  stage the file and run `sh .githooks/pre-commit`.
+
+if git diff --cached --name-only --diff-filter=ACM | grep -qx "api/prisma/schema.prisma"; then
+  echo "" >&2
+  echo "ERROR pre-commit: api/prisma/schema.prisma is staged - refusing to commit." >&2
+  echo "" >&2
+  echo "  The Prisma schema is PARKED. Schema changes ship as hand-written additive" >&2
+  echo "  migrations, never an incidental schema.prisma commit (main deploys on push)." >&2
+  echo "" >&2
+  echo "  Unstage it:      git restore --staged api/prisma/schema.prisma" >&2
+  echo "  Deliberate change (with its migration), bypass once:  git commit --no-verify" >&2
+  echo "" >&2
+  exit 1
+fi
+
+exit 0

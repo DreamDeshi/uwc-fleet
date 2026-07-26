@@ -87,16 +87,20 @@ function FitToPoints({ points }: { points: LatLng[] }) {
 export function LiveTripMap({
   tripId,
   destZone,
+  destCoord,
   live = true,
   height = 200,
 }: {
   tripId: string;
   destZone?: string | null;
+  /** The consignee's geocoded position when it has one (see consigneeDestination).
+   *  Falls back to the zone centroid so a caller can still pass only destZone. */
+  destCoord?: LatLng | null;
   live?: boolean; // poll the truck's position — true only while in transit
   height?: number;
 }) {
   const { t } = useTranslation();
-  const dest = zoneCoord(destZone);
+  const dest = destCoord ?? zoneCoord(destZone);
   const { data: pos } = useTripLatestLocation(tripId, live);
 
   const truck: LatLng | null =

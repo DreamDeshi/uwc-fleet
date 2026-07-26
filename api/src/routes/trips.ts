@@ -3,7 +3,11 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
-import { isSerializationConflict, isUniqueViolation } from "../lib/prismaErrors";
+import {
+  isSerializationConflict,
+  isUniqueViolation,
+  isUniqueViolationOnField,
+} from "../lib/prismaErrors";
 import {
   claimPendingTripOrThrow,
   releaseAssignedTrip,
@@ -58,13 +62,36 @@ import { getRoute } from "../services/routeLegs";
 import { loadHolidaySet } from "../lib/holidays";
 import { upload } from "../lib/upload";
 import { uploadBuffer } from "../lib/cloudinary";
+import { lockTripRow } from "../lib/tripLock";
+import { testHook } from "../lib/testHooks";
 import { signTripResponse } from "../lib/podPhotos";
 import { resolveFleetFix } from "../lib/gpsPosition";
 import { sendPushNotifications } from "../lib/pushNotifications";
 import { signTrackingToken } from "../lib/trackingToken";
 import { getDispatchMode } from "../lib/settings";
 import { autoDispatchTrip } from "../services/dispatchEngine";
-import { palletEquivalents, CARGO_PALLET_TYPES, normalizePalletType } from "../lib/pallets";
+import {
+  palletEquivalents,
+  BOOKABLE_CARGO_TYPES,
+  CARGO_PALLET_TYPES,
+  DEPRECATED_PALLET_SIZES,
+  normalizePalletType,
+  canonicalCargoSize,
+  isValidDimension,
+} from "../lib/pallets";
+
+// Q10: canonicalise a cargo line's stored size. A crate/rack/custom line with
+// structured dimensions gets its `custom_size` set to the canonical "W × L ft"
+// (derived from width_ft/length_ft). A legacy free-text custom line (no dims) is
+// left untouched, so an unrelated edit never rewrites it.
+function withCanonicalCargoSize<
+  T extends { width_ft?: number | null; length_ft?: number | null; custom_size?: string | null }
+>(line: T): T {
+  if (isValidDimension(line.width_ft) && isValidDimension(line.length_ft)) {
+    return { ...line, custom_size: canonicalCargoSize(line.width_ft, line.length_ft) };
+  }
+  return line;
+}
 import { recordTripEvent } from "../lib/tripHistory";
 import { buildTripTimeline } from "../lib/tripTimeline";
 import {
@@ -175,7 +202,66 @@ export const bookableConsigneesWhere = (ids: string[]) => ({
 });
 
 // Exported for unit tests (tests/tripValidation.test.ts).
+/**
+ * One cargo line, parameterised by the accepted pallet_type VOCABULARY. Normalise
+ * the SPELLING first (ASCII "5x10"/"5 x 10" → "5×10", the workbook's own
+ * notation), THEN enum — so the spec's spelling round-trips and stores canonical.
+ *
+ * NEW bookings pass BOOKABLE_CARGO_TYPES (Q1, R1 2026-07-24: 1×1/1×2 removed —
+ * they are boxes, not pallets). EDITS of historical bookings pass the full
+ * CARGO_PALLET_TYPES so an existing 1×1/1×2 line still PARSES; a separate runtime
+ * guard (deprecatedCargoViolations) then blocks introducing or increasing a
+ * deprecated size on an edit. Either way the factor/capacity math is unchanged.
+ */
+export function cargoLineSchema(
+  types: readonly [string, ...string[]],
+  opts: { allowLegacyCustom?: boolean } = {}
+) {
+  const allowLegacyCustom = opts.allowLegacyCustom ?? false;
+  return z
+    .object({
+      pallet_type: z.preprocess(
+        (v) => (typeof v === "string" ? normalizePalletType(v) : v),
+        z.enum(types)
+      ),
+      quantity: z.number().int().min(1),
+      cartons: z.number().int().min(0).optional(),
+      custom_size: z.string().optional(),
+      // Q10 structured dimensions (feet) for crate/rack/custom. Positive + finite
+      // rejects 0, negative, NaN and ±Infinity at the schema level.
+      width_ft: z.number().finite().positive().optional(),
+      length_ft: z.number().finite().positive().optional(),
+      // Optional requestor estimate of 4×4-pallet space for a carton line (its
+      // estimate may size auto-dispatch). box/crate/rack/custom ALWAYS route to
+      // manual assignment, so an estimate never lets them auto-dispatch.
+      estimated_pallets: z.number().int().min(1).optional(),
+      remark: z.string().optional(),
+    })
+    .superRefine((line, ctx) => {
+      const type = line.pallet_type;
+      const hasDims = line.width_ft != null && line.length_ft != null;
+      // Both dimensions must be present together.
+      if ((line.width_ft != null) !== (line.length_ft != null)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["length_ft"], message: "Both width_ft and length_ft are required." });
+      }
+      if (type === "crate" || type === "rack") {
+        if (!hasDims) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["width_ft"], message: "Crate and Rack require width_ft and length_ft in feet." });
+      } else if (type === "custom") {
+        // NEW custom requires structured dims; EDIT may keep a legacy free-text size.
+        const hasLegacy = allowLegacyCustom && typeof line.custom_size === "string" && line.custom_size.trim().length > 0;
+        if (!hasDims && !hasLegacy) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["width_ft"], message: "Custom cargo requires width_ft and length_ft in feet." });
+      } else if (type === "box") {
+        if (line.width_ft != null || line.length_ft != null) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["width_ft"], message: "Box has no dimensions — use a count only." });
+      }
+    });
+}
+
 export const createTripSchema = z.object({
+  // DG-T7 idempotency key. Optional so an older client keeps working unchanged
+  // (an unkeyed booking is simply not deduplicated). Bounded and non-empty so a
+  // junk value can't bloat the unique index; any opaque string is accepted
+  // rather than strict UUID, since it is only ever compared for equality.
+  client_request_id: z.string().min(8).max(128).optional(),
   route_type_id: z.string().min(1),
   pickup_datetime: z.coerce
     .date()
@@ -191,30 +277,7 @@ export const createTripSchema = z.object({
       })
     )
     .min(1, "At least one stop is required."),
-  cargo_details: z
-    .array(
-      z.object({
-        // Closed vocabulary (workbook REQUESTOR INTERFACE): the five pallet
-        // footprints plus carton/"Others". Normalise the SPELLING first (ASCII
-        // "5x10"/"5 x 10" → "5×10", the workbook's own notation), THEN enum the
-        // VOCABULARY — so the spec's spelling round-trips and stores canonical,
-        // while a genuinely unknown footprint ("6x6") still 400s instead of
-        // silently under-counting a 3.125-slot pallet into an overloaded truck.
-        pallet_type: z.preprocess(
-          (v) => (typeof v === "string" ? normalizePalletType(v) : v),
-          z.enum(CARGO_PALLET_TYPES)
-        ),
-        quantity: z.number().int().min(1),
-        cartons: z.number().int().min(0).optional(),
-        custom_size: z.string().optional(),
-        // Optional requestor estimate of 4×4-pallet space for carton/"Others"
-        // cargo (which has no footprint by conversion). Given → auto-dispatch
-        // sizes on it; blank → the booking routes to manual assignment.
-        estimated_pallets: z.number().int().min(1).optional(),
-        remark: z.string().optional(),
-      })
-    )
-    .min(1, "At least one cargo line is required."),
+  cargo_details: z.array(cargoLineSchema(BOOKABLE_CARGO_TYPES)).min(1, "At least one cargo line is required."),
 });
 
 router.post(
@@ -223,7 +286,28 @@ router.post(
   validateBody(createTripSchema),
   async (req, res, next) => {
     try {
-      const { route_type_id, pickup_datetime, is_external, stops, cargo_details } = req.body;
+      const { client_request_id, route_type_id, pickup_datetime, is_external, stops, cargo_details } =
+        req.body;
+
+      // ── DG-T7 idempotency, fast path ──────────────────────────────────────
+      // The form reuses one key for every retry of the SAME booking, so a
+      // submit that timed out but actually committed lands here and returns the
+      // ORIGINAL trip. Without this the retry created a second booking and, in
+      // `auto` mode, immediately dispatched a second truck.
+      //
+      // Scoped by requestor: the key alone must never be able to surface
+      // somebody else's booking. This is only the fast path — the unique index
+      // below is what actually closes the concurrent race.
+      if (client_request_id) {
+        const existing = await prisma.trip.findFirst({
+          where: { requestor_id: req.user!.id, client_request_id },
+          include: tripInclude,
+        });
+        if (existing) {
+          res.status(201).json(existing);
+          return;
+        }
+      }
 
       const routeType = await prisma.routeType.findUnique({ where: { id: route_type_id } });
       if (!routeType) {
@@ -269,6 +353,7 @@ router.post(
           trip = await prisma.trip.create({
             data: {
               ticket_number,
+              client_request_id,
               requestor_id: req.user!.id,
               route_type_id,
               pickup_datetime,
@@ -279,12 +364,42 @@ router.post(
                   sequence: s.sequence ?? idx + 1,
                 })),
               },
-              cargo_details: { create: cargo_details },
+              cargo_details: { create: cargo_details.map(withCanonicalCargoSize) },
             },
             include: tripInclude,
           });
           break;
         } catch (err) {
+          // ── DG-T7 idempotency, race path ────────────────────────────────
+          // Two retries in flight at once: the fast path above found nothing
+          // for either, and the loser now trips the unique index. Return the
+          // WINNER's trip — the caller cannot tell which request created it,
+          // which is exactly the point.
+          //
+          // Checked BEFORE the ticket branch, and with the STRICT matcher: the
+          // permissive isUniqueViolation answers `true` when Prisma reports no
+          // target metadata, which would send ticket collisions down this path
+          // and turn a retryable one into a spurious conflict. Named-column
+          // match only — an unnamed violation falls through to the ticket
+          // retry, preserving the existing behaviour exactly.
+          if (client_request_id && isUniqueViolationOnField(err, "client_request_id")) {
+            const winner = await prisma.trip.findFirst({
+              where: { requestor_id: req.user!.id, client_request_id },
+              include: tripInclude,
+            });
+            if (winner) {
+              res.status(201).json(winner);
+              return;
+            }
+            // The constraint fired but the row isn't readable (it lost its own
+            // transaction, or a rollback beat this read). Fall through: this is
+            // a genuine conflict, not a settled duplicate.
+            throw new ApiError(
+              409,
+              "BOOKING_IN_FLIGHT",
+              "This booking is still being submitted — please check your bookings before trying again."
+            );
+          }
           if (!isUniqueViolation(err, "ticket_number")) {
             throw err;
           }
@@ -346,10 +461,74 @@ export const updateTripSchema = z.object({
   route_type_id: z.string().min(1),
   pickup_datetime: z.coerce.date(),
   stops: createTripSchema.shape.stops,
-  cargo_details: createTripSchema.shape.cargo_details,
+  // Full/legacy vocabulary so a historical 1×1/1×2 line still PARSES on edit (the
+  // create schema's BOOKABLE enum would 400 the whole update). Optional: when the
+  // client omits cargo_details entirely, the handler preserves existing cargo
+  // unchanged. Introducing/increasing a deprecated size is blocked at runtime by
+  // deprecatedCargoViolations, not by the parser.
+  cargo_details: z
+    // allowLegacyCustom: a historical `custom` line carrying only a free-text
+    // custom_size (no structured dims) must still PARSE on edit and be preserved.
+    .array(cargoLineSchema(CARGO_PALLET_TYPES, { allowLegacyCustom: true }))
+    .min(1, "At least one cargo line is required.")
+    .optional(),
 });
 
 type UpdateTripInput = z.infer<typeof updateTripSchema>;
+
+/**
+ * A trip-edit's cargo, in the plain shape summarizeTripChanges compares (cargo is
+ * always resolved to a concrete array by the handler — either the submitted lines
+ * or, when omitted, the existing ones).
+ */
+export interface TripEditInput {
+  route_type_id: string;
+  pickup_datetime: Date;
+  stops: { sequence?: number | null; consignee_id: string }[];
+  cargo_details: {
+    pallet_type: string;
+    quantity: number;
+    cartons?: number | null;
+    custom_size?: string | null;
+    width_ft?: number | null;
+    length_ft?: number | null;
+    estimated_pallets?: number | null;
+    remark?: string | null;
+  }[];
+}
+
+/**
+ * Deprecated-size edit guard (Q1 legacy-edit fix). A deprecated footprint (1×1 /
+ * 1×2) may only be PRESERVED, REDUCED or REMOVED on an edit — never introduced or
+ * increased. Compares NORMALISED aggregate quantities (so "1x1"/"1×1" collapse,
+ * and multiple lines of the same size sum) between the stored booking and the
+ * submitted cargo, and returns every deprecated size whose total went UP (a new
+ * type is existing 0 → next > 0; an increase is next > existing). Empty = allowed.
+ * Pure — unit-tested; the handler throws a 400 when it returns anything.
+ */
+export function deprecatedCargoViolations(
+  existing: { pallet_type: string; quantity: number }[],
+  next: { pallet_type: string; quantity: number }[]
+): { pallet_type: string; existing: number; next: number }[] {
+  const deprecated = new Set<string>(DEPRECATED_PALLET_SIZES as readonly string[]);
+  const aggregate = (lines: { pallet_type: string; quantity: number }[]) => {
+    const totals = new Map<string, number>();
+    for (const l of lines) {
+      const key = normalizePalletType(l.pallet_type);
+      if (!deprecated.has(key)) continue;
+      totals.set(key, (totals.get(key) ?? 0) + l.quantity);
+    }
+    return totals;
+  };
+  const existingTotals = aggregate(existing);
+  const nextTotals = aggregate(next);
+  const violations: { pallet_type: string; existing: number; next: number }[] = [];
+  for (const [size, nextQty] of nextTotals) {
+    const existingQty = existingTotals.get(size) ?? 0;
+    if (nextQty > existingQty) violations.push({ pallet_type: size, existing: existingQty, next: nextQty });
+  }
+  return violations;
+}
 
 // Existing-trip slice summarizeTripChanges compares against (plain shape so the
 // helper stays pure and unit-testable without a DB).
@@ -362,6 +541,8 @@ export interface TripEditSnapshot {
     quantity: number;
     cartons: number | null;
     custom_size: string | null;
+    width_ft: number | null;
+    length_ft: number | null;
     estimated_pallets: number | null;
     remark: string | null;
   }[];
@@ -375,7 +556,7 @@ export interface TripEditSnapshot {
  * (cargo-line remarks) are called out separately from real cargo changes
  * because that's how the requestor thinks of them. Exported for unit tests.
  */
-export function summarizeTripChanges(existing: TripEditSnapshot, next: UpdateTripInput): string | null {
+export function summarizeTripChanges(existing: TripEditSnapshot, next: TripEditInput): string | null {
   const changed: string[] = [];
 
   if (existing.route_type_id !== next.route_type_id) changed.push("route type");
@@ -391,8 +572,8 @@ export function summarizeTripChanges(existing: TripEditSnapshot, next: UpdateTri
 
   // Cargo compared line-by-line in order; remark-only differences report as
   // "notes", anything else as "cargo".
-  const cargoLine = (c: UpdateTripInput["cargo_details"][number] | TripEditSnapshot["cargo_details"][number]) =>
-    [c.pallet_type, c.quantity, c.cartons ?? "", c.custom_size ?? "", c.estimated_pallets ?? ""].join("|");
+  const cargoLine = (c: TripEditInput["cargo_details"][number] | TripEditSnapshot["cargo_details"][number]) =>
+    [c.pallet_type, c.quantity, c.cartons ?? "", c.custom_size ?? "", c.width_ft ?? "", c.length_ft ?? "", c.estimated_pallets ?? ""].join("|");
   const remarkLine = (c: { remark?: string | null }) => c.remark ?? "";
   const sameCargo =
     existing.cargo_details.length === next.cargo_details.length &&
@@ -433,6 +614,37 @@ router.patch(
         );
       }
 
+      // Cargo is OPTIONAL on edit: when omitted, preserve the existing cargo
+      // unchanged (resolved from the stored rows). When present, it replaces the
+      // cargo — but only after the deprecated-size guard below.
+      const cargoProvided = cargo_details !== undefined;
+      const existingCargoInput = existing.cargo_details.map((c) => ({
+        pallet_type: c.pallet_type,
+        quantity: c.quantity,
+        cartons: c.cartons ?? undefined,
+        custom_size: c.custom_size ?? undefined,
+        width_ft: c.width_ft ?? undefined,
+        length_ft: c.length_ft ?? undefined,
+        estimated_pallets: c.estimated_pallets ?? undefined,
+        remark: c.remark ?? undefined,
+      }));
+      const effectiveCargo = cargoProvided ? cargo_details! : existingCargoInput;
+
+      // A deprecated footprint (1×1/1×2) may only be preserved/reduced/removed on
+      // an edit — never introduced or increased. Runs AFTER authorization (owner
+      // + pending) and BEFORE any write, comparing normalized aggregates.
+      if (cargoProvided) {
+        const violations = deprecatedCargoViolations(existing.cargo_details, cargo_details!);
+        if (violations.length > 0) {
+          const sizes = violations.map((v) => v.pallet_type).join(", ");
+          throw new ApiError(
+            400,
+            "DEPRECATED_CARGO_ADDED",
+            `${sizes} is no longer a bookable cargo size and cannot be added or increased. Existing quantities may only be kept or reduced.`
+          );
+        }
+      }
+
       // Same checks as create, against the NEW values.
       if (pickup_datetime.getTime() !== existing.pickup_datetime.getTime()) {
         if (pickup_datetime.getTime() < Date.now() - PICKUP_GRACE_MS) {
@@ -455,7 +667,7 @@ router.patch(
         );
       }
       if (!existing.is_external) {
-        const orderPallets = palletEquivalents(cargo_details);
+        const orderPallets = palletEquivalents(effectiveCargo);
         const largest = await prisma.truck.aggregate({ _max: { max_pallets: true } });
         const fleetMax = largest._max.max_pallets;
         if (fleetMax !== null && orderPallets > fleetMax) {
@@ -471,7 +683,7 @@ router.patch(
         route_type_id,
         pickup_datetime,
         stops,
-        cargo_details,
+        cargo_details: effectiveCargo,
       });
       if (changeNote === null) {
         // Nothing changed — don't write, don't audit, don't poke dispatch.
@@ -516,10 +728,16 @@ router.patch(
             sequence: s.sequence ?? idx + 1,
           })),
         });
-        await tx.cargoDetail.deleteMany({ where: { trip_id: id } });
-        await tx.cargoDetail.createMany({
-          data: cargo_details.map((c) => ({ ...c, trip_id: id })),
-        });
+        // Only rewrite cargo when the client actually submitted it; an omitted
+        // cargo_details preserves the existing rows untouched.
+        if (cargoProvided) {
+          await tx.cargoDetail.deleteMany({ where: { trip_id: id } });
+          await tx.cargoDetail.createMany({
+            // Canonicalise structured dims; a legacy free-text custom_size (no
+            // dims) is preserved verbatim (withCanonicalCargoSize is a no-op on it).
+            data: cargo_details!.map((c) => ({ ...withCanonicalCargoSize(c), trip_id: id })),
+          });
+        }
         await tx.auditLog.create({
           data: { user_id: req.user!.id, action: "trip.updated", table_name: "Trip", record_id: id },
         });
@@ -1630,7 +1848,7 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
 
     const trip = await prisma.trip.findUnique({
       where: { id },
-      select: { id: true, status: true },
+      select: { id: true, status: true, open_exception_id: true },
     });
     if (!trip) {
       throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
@@ -1641,6 +1859,12 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
         "INVALID_STATUS",
         "Only an in-progress trip can be aborted. Use unassign or reassign for a scheduled trip, or cancel for one not yet assigned."
       );
+    }
+    // Lifecycle isolation (Phase 1 hardening): an OPEN exception blocks abort /
+    // capacity release. The abortActiveTrip CAS also carries open_exception_id =
+    // null; this is the friendly up-front error.
+    if (trip.open_exception_id) {
+      throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before aborting this trip.");
     }
 
     // Status-guarded CAS: aborts ONLY while still in_progress. If the last stop
@@ -1813,6 +2037,56 @@ router.post(
   }
 );
 
+// ── POST /trips/:id/stops/:stopId/k2 — driver uploads the Borang K2 document ──
+//
+// Mr. Teh R1 Q6: for a K2-zone stop the driver must UPLOAD the actual customs
+// form (not a tick); the admin validates it at the existing POD/incentive
+// approval. Same authenticated-Cloudinary pipeline + finalize-lock as the POD
+// upload. Sets k2_photo/k2_public_id, which the K2 delivery gate keys on.
+router.post(
+  "/:id/stops/:stopId/k2",
+  requireRole("driver"),
+  upload.single("photo"),
+  async (req, res, next) => {
+    try {
+      const { id, stopId } = req.params;
+      if (!req.file) {
+        throw new ApiError(400, "NO_FILE", "A file is required (field name 'photo').");
+      }
+      const trip = await prisma.trip.findUnique({ where: { id }, include: { stops: true } });
+      if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      if (trip.driver_id !== req.user!.id) {
+        throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+      }
+      const stop = trip.stops.find((s) => s.id === stopId);
+      if (!stop) throw new ApiError(400, "STOP_NOT_FOUND", "That stop is not part of this trip.");
+
+      // Finalize-lock — same as POD: once the trip is proposed/paid/cancelled its
+      // approved documents are frozen.
+      if (trip.status === "pending_approval" || trip.status === "completed" || trip.status === "cancelled") {
+        throw new ApiError(409, "POD_LOCKED", "This trip is finalized — its documents can no longer be changed.");
+      }
+
+      const { url, publicId } = await uploadBuffer(req.file.buffer, "uwc/k2", {
+        type: "authenticated",
+        publicId: `${trip.ticket_number}-stop-${stop.sequence}-k2`,
+      });
+      await prisma.tripStop.update({
+        where: { id: stopId },
+        data: { k2_photo: url, k2_public_id: publicId },
+      });
+      await prisma.auditLog.create({
+        data: { user_id: req.user!.id, action: "stop.k2_uploaded", table_name: "TripStop", record_id: stopId },
+      });
+
+      const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
+      res.status(201).json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // ── POST /trips/:id/documents — requestor/admin uploads a DO or invoice ──
 //
 // Multipart upload (field name "file") plus a "type" field. Accepts images or
@@ -1969,22 +2243,25 @@ router.patch(
       }
 
       if (action === "arrived") {
-        // Pure guard (services/tripCompletion.ts): stop-status check FIRST,
-        // then trip-status — the ordering the offline outbox depends on. Same
-        // checks that used to live inline here; see the function's doc.
-        assertStopArrivable(trip, stop);
-        await prisma.tripStop.update({
-          where: { id: stop.id },
-          data: { status: "arrived", arrived_at: new Date() },
-        });
-        await prisma.auditLog.create({
-          data: { user_id: req.user!.id, action: "stop.arrived", table_name: "TripStop", record_id: stop.id },
-        });
-        await recordTripEvent(prisma, {
-          tripId: id,
-          event: "stop_arrived",
-          stopId: stop.id,
-          actorId: req.user!.id,
+        // Serialize with exception-open (lib/tripLock): lock the Trip row, then
+        // RE-READ status / driver / open_exception_id / stop status under the lock
+        // (never the preloaded values). Stop mutation + audit + timeline commit in
+        // ONE transaction, so a report can never interleave into an inconsistent
+        // state. An OPEN exception freezes Arrived (GPS tracking continues — the
+        // trip stays in_progress).
+        await prisma.$transaction(async (tx) => {
+          await lockTripRow(tx, id);
+          const t2 = await tx.trip.findUnique({ where: { id }, select: { status: true, driver_id: true, open_exception_id: true } });
+          if (!t2) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+          if (t2.driver_id !== req.user!.id) throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+          if (t2.open_exception_id) throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before continuing this trip.");
+          const stop2 = await tx.tripStop.findUnique({ where: { id: stop.id }, select: { status: true } });
+          if (!stop2) throw new ApiError(400, "STOP_NOT_FOUND", "That stop is not part of this trip.");
+          assertStopArrivable({ status: t2.status }, stop2);
+          await tx.tripStop.update({ where: { id: stop.id }, data: { status: "arrived", arrived_at: new Date() } });
+          await tx.auditLog.create({ data: { user_id: req.user!.id, action: "stop.arrived", table_name: "TripStop", record_id: stop.id } });
+          await recordTripEvent(tx, { tripId: id, event: "stop_arrived", stopId: stop.id, actorId: req.user!.id });
+          await testHook("arrived.beforeCommit");
         });
         const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
         res.json(updated);
@@ -1992,224 +2269,126 @@ router.patch(
       }
 
       // action === "delivered"
-      // A stop can be delivered only while the trip is out, and only once —
-      // re-posting "delivered" on a completed trip would otherwise re-run the
-      // finalization below and overwrite incentive_earned at whatever the
-      // rates/day-ledger are NOW (the audit's re-finalization pay hole).
-      assertStopDeliverable(trip, stop);
-      const consigneeForGate = await prisma.consignee.findUnique({ where: { id: stop.consignee_id } });
-      if (!consigneeForGate) {
-        throw new ApiError(400, "CONSIGNEE_NOT_FOUND", "Consignee for this stop no longer exists.");
-      }
-      if (!isDocumentationComplete(stop, consigneeForGate.zone_code)) {
-        throw new ApiError(
-          400,
-          "DOCUMENTATION_INCOMPLETE",
-          "DO photo (and K2 form ack for K2 destinations) must be completed before marking delivered."
-        );
-      }
+      // Serialize with exception-open (lib/tripLock): the stop mutation AND — for
+      // the last stop — the incentive proposal + pending_approval flip run in ONE
+      // locked transaction, so there is NO gap where the stop is committed
+      // delivered but an exception can open before finalization. Every value is
+      // RE-READ under the lock (never the preloaded trip/stop). The incentive math
+      // is byte-for-byte unchanged — only the transaction boundary + lock are new.
+      const finalizedTrip = await prisma.$transaction(async (tx) => {
+        await lockTripRow(tx, id);
+        const t2 = await tx.trip.findUnique({ where: { id }, include: { truck: true } });
+        if (!t2) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+        if (t2.driver_id !== req.user!.id) throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+        // An OPEN exception blocks delivery + finalization: no final delivery,
+        // incentive proposal or pending_approval may occur while one is open.
+        if (t2.open_exception_id) throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before delivering this stop.");
+        const stop2 = await tx.tripStop.findUnique({ where: { id: stop.id } });
+        if (!stop2) throw new ApiError(400, "STOP_NOT_FOUND", "That stop is not part of this trip.");
+        // A stop can be delivered only while the trip is out, and only once.
+        assertStopDeliverable({ status: t2.status }, stop2);
+        const consigneeForGate = await tx.consignee.findUnique({ where: { id: stop2.consignee_id } });
+        if (!consigneeForGate) throw new ApiError(400, "CONSIGNEE_NOT_FOUND", "Consignee for this stop no longer exists.");
+        if (!isDocumentationComplete(stop2, consigneeForGate.zone_code)) {
+          throw new ApiError(400, "DOCUMENTATION_INCOMPLETE", "DO photo (and K2 form ack for K2 destinations) must be completed before marking delivered.");
+        }
 
-      await prisma.tripStop.update({
-        where: { id: stop.id },
-        data: { status: "delivered", delivered_at: new Date() },
-      });
-      await prisma.auditLog.create({
-        data: { user_id: req.user!.id, action: "stop.delivered", table_name: "TripStop", record_id: stop.id },
-      });
-      await recordTripEvent(prisma, {
-        tripId: id,
-        event: "stop_delivered",
-        stopId: stop.id,
-        actorId: req.user!.id,
-      });
+        await tx.tripStop.update({ where: { id: stop.id }, data: { status: "delivered", delivered_at: new Date() } });
+        await tx.auditLog.create({ data: { user_id: req.user!.id, action: "stop.delivered", table_name: "TripStop", record_id: stop.id } });
+        await recordTripEvent(tx, { tripId: id, event: "stop_delivered", stopId: stop.id, actorId: req.user!.id });
 
-      const remainingStops = await prisma.tripStop.count({
-        where: { trip_id: id, status: { not: "delivered" } },
-      });
+        const remainingStops = await tx.tripStop.count({ where: { trip_id: id, status: { not: "delivered" } } });
+        if (remainingStops > 0) {
+          // More stops to go — no money moves. (Barrier: a report may still open
+          // against the remaining trip after this NON-final delivery commits.)
+          await testHook("delivered.beforeCommit");
+          return false;
+        }
 
-      if (remainingStops > 0) {
-        // More stops to go — the trip stays in_progress and no money moves yet.
-        const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
-        res.json(updated);
-        return;
-      }
+        // Last stop delivered — finalize IN THE SAME transaction.
+        if (!t2.truck) throw new ApiError(400, "TRUCK_NOT_ASSIGNED", "This trip has no truck assigned.");
 
-      // Last stop delivered — finalize the trip and run the incentive engine.
-      if (!trip.truck) {
-        throw new ApiError(400, "TRUCK_NOT_ASSIGNED", "This trip has no truck assigned.");
-      }
-
-      // This trip's delivered drops, in delivered order, each with its zone's
-      // full destination points. Scored stop-by-stop (per-zone-per-day), summed.
-      const thisTripStops = await prisma.tripStop.findMany({
-        where: { trip_id: id },
-        orderBy: { delivered_at: "asc" },
-        include: { consignee: { select: { zone_code: true } } },
-      });
-      // Rate lock: points, claim rates AND the zone identity come from the
-      // ASSIGNMENT-time snapshot (TripStop.zone_points + zone_code / the
-      // trip's rate fields); the live lookups below are only the fallback for
-      // trips assigned before the snapshots existed or rows seeded directly
-      // into `assigned`. Scoring against the snapshotted zone_code keeps the
-      // ledger key and the persisted evidence consistent with the snapshotted
-      // points even if an admin corrects the consignee's zone mid-flight
-      // (audit #4). The fallback also respects the next-day cutoff: points
-      // effective NOW, not a staged edit.
-      const zoneCodes = [...new Set(thisTripStops.map((s) => dropZoneCode(s, s.consignee.zone_code)))];
-      const rateRows = await prisma.destinationRate.findMany({
-        where: { zone_code: { in: zoneCodes } },
-        select: {
-          zone_code: true,
-          location_name: true,
-          points: true,
-          pending_points: true,
-          pending_points_effective: true,
-        },
-      });
-      const pointsByZone = buildPointsByZone(
-        rateRows.map((r) => ({ ...r, points: effectiveZonePoints(r, new Date()) }))
-      );
-
-      // The incentive day keys on DELIVERY confirm time, not pickup (client
-      // rule, Mr. Teh 3 Jul 2026: "points calculate on delivery confirm time;
-      // after 12am points refresh for next day"). A trip picked up 23:30 and
-      // delivered 00:30 counts for the DELIVERY day's ledger and deduction.
-      // Stops are grouped per MYT delivery day (normally one group; a trip
-      // straddling midnight splits, and each day scores against its own
-      // ledger with its own deduction + confirm-time rate tier).
-      const dayGroups = groupStopsByDeliveryDay(thisTripStops, new Date());
-      // Admin-managed calendar (PublicHoliday table) — loaded here so the
-      // engine stays pure. The weekday/off-peak decision runs exactly once,
-      // at this finalization; later calendar edits never touch stored pay
-      // (write-once finalizeTripOnce below).
-      const publicHolidays = await loadHolidaySet();
-      const truckRates = finalizationRateParams({
-        entitled_claim_weekday: trip.entitled_claim_weekday,
-        entitled_claim_offpeak: trip.entitled_claim_offpeak,
-        daily_deduction_points: trip.daily_deduction_points,
-        // The live fallback (pre-snapshot legacy trips only) also respects the
-        // next-day cutoff: pay at the rates effective NOW, not a staged edit.
-        truck: effectiveTruckRates(trip.truck, new Date()),
-      });
-
-      let incentiveThisTrip = 0;
-      // Each group's stops + the engine's own outputs, kept index-aligned so
-      // the per-drop breakdown can be persisted verbatim (no recomputation).
-      const finalizedGroups: FinalizedGroup[] = [];
-      for (const group of dayGroups) {
-        // Per-day ledger: drops this driver already DELIVERED on this group's
-        // MYT day BEFORE this group's first confirm, on OTHER trips that are
-        // in_progress OR completed — regardless of when those trips were
-        // picked up. A stop whose zone is already on the ledger scores 1 point;
-        // their summed points (priorPointsToday) fold the daily deduction in at
-        // the day-total level. Counting in_progress siblings + bounding by
-        // delivered-time order keeps the money right even if trips overlap (see
-        // dayLedger.ts — the RM88-instead-of-RM55 double-first-drop hole).
-        const priorStopsToday = await prisma.tripStop.findMany({
-          where: priorDeliveredDropsWhere({
-            driverId: req.user!.id,
-            excludeTripId: id,
-            dayStart: group.dayStart,
-            anchor: group.anchor,
-          }),
-          // IN DELIVERED ORDER so the prior drops can be scored per-zone-per-day
-          // (first-in-zone full, repeat 1pt) to get the day's cumulative points
-          // BEFORE this group. Prior drops carry their own scored zone identity +
-          // points: snapshotted at assignment (in_progress siblings) or stamped at
-          // finalization (completed trips) — prefer it over the live consignee zone
-          // so the whole day keys on the zones/points the drops were PAID under.
+        // This trip's delivered drops, in delivered order, each with its zone's
+        // full destination points. Scored stop-by-stop (per-zone-per-day), summed.
+        const thisTripStops = await tx.tripStop.findMany({
+          where: { trip_id: id },
           orderBy: { delivered_at: "asc" },
-          select: { zone_code: true, zone_points: true, consignee: { select: { zone_code: true } } },
+          include: { consignee: { select: { zone_code: true } } },
         });
-        const priorDrops = priorStopsToday.map((s) => {
-          const zone = dropZoneCode(s, s.consignee.zone_code);
-          return { zoneCode: zone, zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone) };
+        const zoneCodes = [...new Set(thisTripStops.map((s) => dropZoneCode(s, s.consignee.zone_code)))];
+        const rateRows = await tx.destinationRate.findMany({
+          where: { zone_code: { in: zoneCodes } },
+          select: { zone_code: true, location_name: true, points: true, pending_points: true, pending_points_effective: true },
         });
-        const zonesDeliveredEarlierToday = priorDrops.map((d) => d.zoneCode);
-        // The driver's cumulative SCORED points delivered earlier today (0 iff this
-        // group holds the day's first drop). Folds the daily deduction in at the
-        // day-total level, telescoping the per-trip marginals (see the engine doc).
-        const priorPointsToday = scoreDrops(priorDrops).reduce((a, b) => a + b, 0);
+        const pointsByZone = buildPointsByZone(rateRows.map((r) => ({ ...r, points: effectiveZonePoints(r, new Date()) })));
 
-        const drops = group.stops.map((s) => {
-          const zone = dropZoneCode(s, s.consignee.zone_code);
-          return {
-            zoneCode: zone,
-            zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone),
-          };
+        // Incentive day keys on DELIVERY confirm time (client rule 3 Jul 2026).
+        const dayGroups = groupStopsByDeliveryDay(thisTripStops, new Date());
+        const publicHolidays = await loadHolidaySet();
+        const truckRates = finalizationRateParams({
+          entitled_claim_weekday: t2.entitled_claim_weekday,
+          entitled_claim_offpeak: t2.entitled_claim_offpeak,
+          daily_deduction_points: t2.daily_deduction_points,
+          truck: effectiveTruckRates(t2.truck, new Date()),
         });
 
-        const incentive = calculateDeliveryIncentive({
-          rateDateTime: group.anchor,
-          drops,
-          zonesDeliveredEarlierToday,
-          priorPointsToday,
-          publicHolidays,
-          truck: truckRates,
-        });
-        incentiveThisTrip += incentive.incentiveThisTrip;
-        finalizedGroups.push({
-          stops: group.stops.map((s) => ({ id: s.id, zoneCode: dropZoneCode(s, s.consignee.zone_code) })),
-          result: incentive,
-        });
-      }
-      // Guard against float dust from summing per-group marginals.
-      incentiveThisTrip = Math.round(incentiveThisTrip * 100) / 100;
+        let incentiveThisTrip = 0;
+        const finalizedGroups: FinalizedGroup[] = [];
+        for (const group of dayGroups) {
+          // Per-day ledger: drops this driver already DELIVERED earlier today on
+          // OTHER in_progress/completed trips (see dayLedger.ts).
+          const priorStopsToday = await tx.tripStop.findMany({
+            where: priorDeliveredDropsWhere({ driverId: req.user!.id, excludeTripId: id, dayStart: group.dayStart, anchor: group.anchor }),
+            orderBy: { delivered_at: "asc" },
+            select: { zone_code: true, zone_points: true, consignee: { select: { zone_code: true } } },
+          });
+          const priorDrops = priorStopsToday.map((s) => {
+            const zone = dropZoneCode(s, s.consignee.zone_code);
+            return { zoneCode: zone, zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone) };
+          });
+          const zonesDeliveredEarlierToday = priorDrops.map((d) => d.zoneCode);
+          const priorPointsToday = scoreDrops(priorDrops).reduce((a, b) => a + b, 0);
+          const drops = group.stops.map((s) => {
+            const zone = dropZoneCode(s, s.consignee.zone_code);
+            return { zoneCode: zone, zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone) };
+          });
+          const incentive = calculateDeliveryIncentive({ rateDateTime: group.anchor, drops, zonesDeliveredEarlierToday, priorPointsToday, publicHolidays, truck: truckRates });
+          incentiveThisTrip += incentive.incentiveThisTrip;
+          finalizedGroups.push({ stops: group.stops.map((s) => ({ id: s.id, zoneCode: dropZoneCode(s, s.consignee.zone_code) })), result: incentive });
+        }
+        incentiveThisTrip = Math.round(incentiveThisTrip * 100) / 100;
 
-      // Store the MARGINAL (per-trip) incentive as the PROPOSAL, and move the
-      // trip to `pending_approval` — the amount is frozen (this day's ledger +
-      // snapshot rates) but NOT paid until an admin approves the POD (Mr. Teh
-      // 16 Jul 2026). Write-once compare-and-set: a concurrent/repeated delivery
-      // loses the guard and never overwrites the stored proposal. The per-drop
-      // breakdown commits atomically in the same transaction.
-      const breakdown = collectFinalizeBreakdown(finalizedGroups);
-      const proposed = await prisma.$transaction((tx) =>
-        proposeTripIncentiveOnce(tx, id, incentiveThisTrip, breakdown)
-      );
-      if (!proposed) {
-        throw new ApiError(
-          409,
-          "TRIP_ALREADY_FINALIZED",
-          "This trip has already been delivered and its incentive proposed."
-        );
-      }
+        // Write-once CAS (status in_progress + incentive_earned null +
+        // open_exception_id null) — under the lock this is fully atomic.
+        const breakdown = collectFinalizeBreakdown(finalizedGroups);
+        const proposed = await proposeTripIncentiveOnce(tx, id, incentiveThisTrip, breakdown);
+        if (!proposed) throw new ApiError(409, "TRIP_ALREADY_FINALIZED", "This trip has already been delivered and its incentive proposed.");
+        await tx.auditLog.create({ data: { user_id: req.user!.id, action: "trip.delivered_pending_approval", table_name: "Trip", record_id: id } });
+        await testHook("delivered.beforeCommit");
+        return true;
+      });
+
       const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
 
-      // The trip is delivered + awaiting approval, NOT completed. The `completed`
-      // audit + timeline event now fire at approval (PATCH /trips/:id/approve-incentive).
-      await prisma.auditLog.create({
-        data: { user_id: req.user!.id, action: "trip.delivered_pending_approval", table_name: "Trip", record_id: id },
-      });
-
-      // Notify admins there's a POD to approve (money is held until they do).
-      const adminsToNotify = await prisma.user.findMany({
-        where: { role: "admin", status: "active", expo_push_token: { not: null } },
-        select: { expo_push_token: true },
-      });
-      await sendPushNotifications(
-        adminsToNotify.map((a) => a.expo_push_token),
-        {
+      // Notifications (best-effort, OUTSIDE the tx) — only when the trip finalized.
+      if (finalizedTrip) {
+        const adminsToNotify = await prisma.user.findMany({
+          where: { role: "admin", status: "active", expo_push_token: { not: null } },
+          select: { expo_push_token: true },
+        });
+        await sendPushNotifications(adminsToNotify.map((a) => a.expo_push_token), {
           title: "Trip awaiting approval",
           body: `Trip ${updated?.ticket_number ?? ""} was delivered — approve the POD to release the incentive`,
           data: { type: "pending_approval", tripId: id },
+        });
+        if (updated) {
+          const requestorDevice = await prisma.user.findUnique({ where: { id: updated.requestor_id }, select: { expo_push_token: true } });
+          await sendPushNotifications([requestorDevice?.expo_push_token], {
+            title: "Delivery complete",
+            body: `Your booking ${updated.ticket_number} has been delivered`,
+            data: { type: "trip_delivered", tripId: id },
+          });
         }
-      );
-
-      // Notify the REQUESTOR their delivery is complete — the goods have arrived.
-      // (The admin POD approval that follows is an internal money step the
-      // requestor never sees, so "delivered" is the right moment to tell them.)
-      // Best-effort, like every other push; the requestor's token isn't in
-      // tripInclude, so fetch it the same way the assign path does.
-      if (updated) {
-        const requestorDevice = await prisma.user.findUnique({
-          where: { id: updated.requestor_id },
-          select: { expo_push_token: true },
-        });
-        await sendPushNotifications([requestorDevice?.expo_push_token], {
-          title: "Delivery complete",
-          body: `Your booking ${updated.ticket_number} has been delivered`,
-          data: { type: "trip_delivered", tripId: id },
-        });
       }
 
       res.json(updated);

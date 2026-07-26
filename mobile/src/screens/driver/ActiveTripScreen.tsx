@@ -14,6 +14,7 @@ import {
   useUpdateStopDocs,
   useTripRoute,
   useUploadPod,
+  useUploadK2,
 } from "../../hooks/queries";
 import { capturePodPhoto, toDurablePhotoUri } from "../../lib/photo";
 import { useTripLocation, TripLocationState } from "../../hooks/useTripLocation";
@@ -28,10 +29,14 @@ import { WebRefreshButton } from "../../components/WebRefreshButton";
 import { colors, radius, shadow } from "../../theme";
 import { Button } from "../../components/Button";
 import { LoadingState, ErrorState } from "../../components/States";
-import { PLANT_ORIGIN, regionFor, zoneCoord, haversineKm } from "../../lib/geo";
+import { PLANT_ORIGIN, regionFor, consigneeDestination, haversineKm } from "../../lib/geo";
 import { ActiveTripMap } from "../../components/ActiveTripMap";
-import { tripDestination, tripDestZone } from "../../lib/trip";
+import { tripDestination, tripDestZone, consigneeAddress } from "../../lib/trip";
 import { formatMoney, formatDateTime } from "../../lib/format";
+import { exceptionsEnabled } from "../../lib/featureFlags";
+import { ReportExceptionSheet } from "../../components/ReportExceptionSheet";
+import { ExceptionStatusCard } from "../../components/ExceptionStatusCard";
+import { useExceptionOutboxFlush } from "../../hooks/useExceptionOutbox";
 import { TripStop } from "../../types";
 
 type Nav = NativeStackNavigationProp<TripsStackParamList, "ActiveTrip">;
@@ -57,6 +62,10 @@ export function ActiveTripScreen() {
   const toast = useToast();
   const { params } = useRoute<Rt>();
   const { data: trip, isLoading, isError, refetch, isRefetching } = useTrip(params.tripId);
+  // Failed-delivery / exception workflow (feature-gated). Flush the offline
+  // report outbox while the driver is on the active-trip surface.
+  useExceptionOutboxFlush();
+  const [showReport, setShowReport] = useState(false);
 
   // GPS consent (per device): the driver must agree to the active-trip-only,
   // foreground-only explainer before we request the OS location permission.
@@ -133,6 +142,7 @@ export function ActiveTripScreen() {
   const updateStatus = useUpdateTripStatus();
   const updateDocs = useUpdateStopDocs();
   const uploadPod = useUploadPod();
+  const uploadK2 = useUploadK2();
   // POD offline outbox: deliveries saved on dead signal live here until the
   // background flush (usePodOutboxFlush in DriverTabs) replays them. The
   // per-stop queued item drives the "waiting for signal" UI below.
@@ -165,9 +175,6 @@ export function ActiveTripScreen() {
   if (isLoading) return <View style={styles.fill}><LoadingState /></View>;
   if (isError || !trip) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
 
-  const dest = zoneCoord(tripDestZone(trip));
-  const region = regionFor(PLANT_ORIGIN, dest);
-  const distance = haversineKm(PLANT_ORIGIN, dest);
   // Active (not-yet-delivered) stops float to the top so the stop the driver is
   // working on — and its action button — is the first thing in the sheet.
   const stops = (trip.stops ?? []).slice().sort((a, b) => {
@@ -177,7 +184,21 @@ export function ActiveTripScreen() {
     return a.sequence - b.sequence;
   });
 
+  // Navigate to the stop the driver is actually working on (stops[0] after the
+  // sort above), not permanently to stop 1 — on a multi-stop run the target
+  // used to stay pinned to the first consignee even after it was delivered.
+  // Falls back to the trip's first stop once everything is delivered.
+  const activeStop = stops.find((s) => s.status !== "delivered") ?? stops[0];
+  const destination = consigneeDestination(
+    activeStop?.consignee ?? { zone_code: tripDestZone(trip) }
+  );
+  const dest = destination.coord;
+  const region = regionFor(PLANT_ORIGIN, dest);
+  const distance = haversineKm(PLANT_ORIGIN, dest);
+
   // Hand off to Google Maps for real turn-by-turn (drivers won't use in-app nav).
+  // With a geocoded consignee this is now the building; without one it is still
+  // the zone centroid, and the badge under the heading says so.
   const openInMaps = () => {
     Linking.openURL(
       `https://www.google.com/maps/dir/?api=1&destination=${dest.latitude},${dest.longitude}&travelmode=driving`
@@ -249,6 +270,25 @@ export function ActiveTripScreen() {
   // call rejects ("Different image picking in progress") into a spurious
   // "Something went wrong" toast mid-capture. Holding the guard across the
   // picker also stops a Delivered tap landing while the camera is open.
+  // K2 (Borang K2) document upload for a K2-zone stop (Q6). The delivery gate
+  // requires the uploaded document (not a tick). Online-only for now: on a dead
+  // signal the driver is told to reconnect (the K2 zone has usable coverage).
+  const onCaptureK2 = (stop: TripStop) =>
+    oncePerAction(async () => {
+      setError(null);
+      try {
+        const photo = await capturePodPhoto();
+        if (photo === "permission_denied") { const m = t("trip.cameraBlocked"); setError(m); toast(m, "error"); return; }
+        if (!photo) return;
+        await uploadK2.mutateAsync({ tripId: trip.id, stopId: stop.id, photo });
+        toast(t("trip.k2Uploaded"), "success");
+      } catch (err) {
+        if (apiErrorCode(err) === "POD_LOCKED") { await reconcile(); return; }
+        if (isNetworkError(err)) { toast(t("trip.k2NeedsConnection"), "error"); return; }
+        const msg = apiErrorMessage(err); setError(msg); toast(msg, "error");
+      }
+    });
+
   const onCapturePod = (stop: TripStop) =>
     oncePerAction(async () => {
     setError(null);
@@ -382,10 +422,19 @@ export function ActiveTripScreen() {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headingLabel}>{t("trip.headingTo")}</Text>
-          <Text style={styles.headingDest} numberOfLines={1}>{tripDestination(trip)}</Text>
+          {/* Names the stop Navigate actually targets — on a multi-stop run this
+              must follow the active stop, not stay on stop 1. */}
+          <Text style={styles.headingDest} numberOfLines={1}>
+            {activeStop?.consignee?.company_name || tripDestination(trip)}
+          </Text>
           <Text style={styles.headingSub}>
             ≈ {distance} {t("common.km")} · {trip.truck_plate ?? ""}
           </Text>
+          {/* Honesty about the pin: without a geocode this is the zone centre,
+              so the driver knows to read the address rather than trust the map. */}
+          {!destination.precise ? (
+            <Text style={styles.headingApprox}>{t("trip.approxLocation")}</Text>
+          ) : null}
           {trip.status === "in_progress" ? (
             <TrackingBadge tracking={tracking} onReEnable={() => setShowGpsConsent(true)} />
           ) : null}
@@ -413,6 +462,16 @@ export function ActiveTripScreen() {
             <Text style={styles.sheetTicket}>{trip.ticket_number}</Text>
           </View>
 
+          {exceptionsEnabled() && trip.status === "in_progress" && (
+            <>
+              <ExceptionStatusCard tripId={trip.id} />
+              <TouchableOpacity style={styles.reportExceptionBtn} onPress={() => setShowReport(true)}>
+                <Ionicons name="warning-outline" size={18} color={colors.red} />
+                <Text style={styles.reportExceptionText}>{t("exception.reportButton")}</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
           {stops.map((stop, idx) => (
             <StopCard
               key={stop.id}
@@ -420,10 +479,12 @@ export function ActiveTripScreen() {
               index={idx}
               busy={updateStatus.isPending || updateDocs.isPending}
               uploadingPod={uploadPod.isPending}
+              uploadingK2={uploadK2.isPending}
               queued={findOutboxItem(outbox, stop.id)}
               onArrived={() => onArrived(stop)}
               onToggleDoc={(f, v) => toggleDoc(stop, f, v)}
               onCapturePod={() => onCapturePod(stop)}
+              onCaptureK2={() => onCaptureK2(stop)}
               onDelivered={() => onDelivered(stop)}
             />
           ))}
@@ -462,6 +523,15 @@ export function ActiveTripScreen() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </BottomSheetScrollView>
       </BottomSheet>
+
+      {exceptionsEnabled() && (
+        <ReportExceptionSheet
+          visible={showReport}
+          tripId={trip.id}
+          stops={stops.map((s) => ({ id: s.id, label: t("exception.stopN", { n: s.sequence, name: s.consignee?.company_name ?? "" }) }))}
+          onClose={() => setShowReport(false)}
+        />
+      )}
 
       {/* Completion modal */}
       <Modal visible={earned !== null} transparent animationType="fade">
@@ -579,20 +649,24 @@ function StopCard({
   index,
   busy,
   uploadingPod,
+  uploadingK2,
   queued,
   onArrived,
   onToggleDoc,
   onCapturePod,
+  onCaptureK2,
   onDelivered,
 }: {
   stop: TripStop;
   index: number;
   busy: boolean;
   uploadingPod: boolean;
+  uploadingK2: boolean;
   queued?: PodOutboxItem;
   onArrived: () => void;
   onToggleDoc: (field: "do_uploaded" | "k2_form_ack", value: boolean) => void;
   onCapturePod: () => void;
+  onCaptureK2: () => void;
   onDelivered: () => void;
 }) {
   const { t } = useTranslation();
@@ -608,8 +682,13 @@ function StopCard({
   // Delivered already queued → the stop is done as far as the driver is
   // concerned; show the waiting-for-signal state instead of buttons.
   const deliveryQueued = queued?.confirmDelivered === true && stop.status !== "delivered";
-  // do_uploaded is now driven by the POD photo upload, not a checkbox.
-  const docsComplete = (stop.do_uploaded || queuedPhoto) && (!isK2 || stop.k2_form_ack || queuedAck);
+  // do_uploaded is driven by the POD photo upload. The ACTIVE K2 gate is the
+  // UPLOADED Borang K2 document ONLY (Q6) — the legacy `k2_form_ack` tick (and its
+  // queued form) must NEVER authorize a new delivery, matching the server gate
+  // (isDocumentationComplete keys on k2_photo). A historical completed record may
+  // still show the old ack, but it cannot satisfy this active gate.
+  const k2Done = !isK2 || !!stop.k2_photo;
+  const docsComplete = (stop.do_uploaded || queuedPhoto) && k2Done;
   // Translated stop-status label (was a raw, untranslated enum like "ARRIVED").
   const statusLabel: Record<string, string> = {
     pending: t("trip.stopPending"),
@@ -641,8 +720,12 @@ function StopCard({
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.stopName}>{stop.consignee?.company_name ?? t("trip.stop", { n: index + 1 })}</Text>
-          <Text style={styles.stopArea}>
-            {[stop.consignee?.area, stop.consignee?.state].filter(Boolean).join(", ") || "—"}
+          {/* The delivery address — the driver's primary cue for WHERE this is.
+              Falls back to area/state for a row with no street address. */}
+          <Text style={styles.stopArea} numberOfLines={3}>
+            {consigneeAddress(stop.consignee) ||
+              [stop.consignee?.area, stop.consignee?.state].filter(Boolean).join(", ") ||
+              "—"}
           </Text>
         </View>
         {stop.status === "delivered" ? (
@@ -730,11 +813,25 @@ function StopCard({
           )}
 
           {isK2 ? (
-            <DocCheckbox
-              label={t("trip.k2Form")}
-              checked={stop.k2_form_ack || queuedAck}
-              onToggle={(v) => onToggleDoc("k2_form_ack", v)}
-            />
+            stop.k2_photo ? (
+              <View style={styles.podDoneRow}>
+                <Ionicons name="checkmark-circle" size={16} color={colors.green} />
+                <Text style={styles.podDoneText}>{t("trip.k2Uploaded")}</Text>
+                <TouchableOpacity onPress={onCaptureK2} hitSlop={8} disabled={uploadingK2}>
+                  <Text style={styles.podRetake}>{t("trip.podRetake")}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <Button
+                title={t("trip.k2Capture")}
+                onPress={onCaptureK2}
+                loading={uploadingK2}
+                variant="outline"
+                size="xl"
+                style={{ marginTop: 8 }}
+                icon={<Ionicons name="document-attach" size={20} color={colors.blue} />}
+              />
+            )
           ) : null}
           <Button
             title={t("trip.markDelivered")}
@@ -777,6 +874,8 @@ function DocCheckbox({
 }
 
 const styles = StyleSheet.create({
+  reportExceptionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.red, marginBottom: 12 },
+  reportExceptionText: { color: colors.red, fontWeight: "700" },
   fill: { flex: 1, backgroundColor: colors.bg },
   topCard: {
     position: "absolute",
@@ -802,6 +901,8 @@ const styles = StyleSheet.create({
   headingLabel: { fontSize: 12, fontWeight: "700", color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.6 },
   headingDest: { fontSize: 20, fontWeight: "800", color: colors.navy, marginTop: 2 },
   headingSub: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
+  // Muted, not orange: orange is reserved for offline states (owner ruling).
+  headingApprox: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
 
   navBtn: {
     backgroundColor: colors.blue,

@@ -1,11 +1,21 @@
 import { describe, it, expect } from "vitest";
+import { z } from "zod";
 import {
   palletFactor,
   palletEquivalents,
   isUnsizedForDispatch,
+  isDeprecatedPalletSize,
   normalizePalletType,
   CARGO_PALLET_TYPES,
+  BOOKABLE_CARGO_TYPES,
+  BOOKABLE_PALLET_SIZES,
+  DEPRECATED_PALLET_SIZES,
   PALLET_SIZES,
+  ALWAYS_MANUAL_TYPES,
+  DIMENSIONED_CARGO_TYPES,
+  isAlwaysManualType,
+  canonicalCargoSize,
+  isValidDimension,
 } from "../src/lib/pallets";
 
 describe("normalizePalletType — spelling only, not vocabulary", () => {
@@ -74,8 +84,67 @@ describe("palletFactor", () => {
   });
 });
 
-describe("CARGO_PALLET_TYPES (the route's enum)", () => {
-  it("is exactly the closed vocabulary: 10 pallet sizes + carton/Others", () => {
+// ── Q1 (CLIENT_ANSWERS_R1_2026-07-24): 1×1/1×2 removed from bookable sizes ────
+describe("Q1 — 1×1 and 1×2 deprecated as bookable footprints", () => {
+  it("DEPRECATED_PALLET_SIZES is exactly the two boxes Mr. Teh removed", () => {
+    expect([...DEPRECATED_PALLET_SIZES]).toEqual(["1×1", "1×2"]);
+    expect(isDeprecatedPalletSize("1×1")).toBe(true);
+    expect(isDeprecatedPalletSize("1×2")).toBe(true);
+    expect(isDeprecatedPalletSize("4×4")).toBe(false);
+  });
+
+  it("BOOKABLE sizes are PALLET_SIZES minus the deprecated boxes (drift guard)", () => {
+    const expected = PALLET_SIZES.filter((s) => !(DEPRECATED_PALLET_SIZES as readonly string[]).includes(s));
+    expect([...BOOKABLE_PALLET_SIZES]).toEqual(expected);
+    expect(BOOKABLE_PALLET_SIZES).not.toContain("1×1");
+    expect(BOOKABLE_PALLET_SIZES).not.toContain("1×2");
+  });
+
+  it("the NEW-booking vocabulary excludes 1×1/1×2 and includes the Q10 non-pallet types", () => {
+    expect([...BOOKABLE_CARGO_TYPES]).toEqual([
+      "2×2", "2×3", "3×3", "3×4", "4×4", "4×8", "5×5", "5×10", "carton", "custom", "box", "crate", "rack",
+    ]);
+  });
+
+  it("the booking-route enum (z.enum on BOOKABLE_CARGO_TYPES) rejects a new 1×1/1×2 but accepts the rest", () => {
+    // Mirrors the route schema, proving frontend/backend agree on what is bookable.
+    const enumSchema = z.enum(BOOKABLE_CARGO_TYPES);
+    expect(enumSchema.safeParse("1×1").success).toBe(false);
+    expect(enumSchema.safeParse("1×2").success).toBe(false);
+    for (const ok of ["2×2", "4×4", "5×5", "5×10", "carton", "custom", "box", "crate", "rack"]) {
+      expect(enumSchema.safeParse(ok).success, ok).toBe(true);
+    }
+  });
+});
+
+describe("legacy display compatibility — historical 1×1/1×2 rows still resolve", () => {
+  it("keeps the deprecated factors so an existing record converts unchanged", () => {
+    // A historical CargoDetail row with 1×1/1×2 must NOT become unpriced/zeroed.
+    expect(palletFactor("1×1")).toBe(0.0625);
+    expect(palletFactor("1×2")).toBe(0.125);
+  });
+
+  it("palletEquivalents on a legacy 1×1/1×2 line is unchanged (money logic untouched)", () => {
+    expect(palletEquivalents([{ pallet_type: "1×1", quantity: 256 }])).toBe(16);
+    expect(palletEquivalents([{ pallet_type: "1×2", quantity: 4 }])).toBe(0.5);
+  });
+
+  it("the deprecated sizes remain in the full legacy vocabulary CARGO_PALLET_TYPES", () => {
+    expect(CARGO_PALLET_TYPES).toContain("1×1");
+    expect(CARGO_PALLET_TYPES).toContain("1×2");
+  });
+});
+
+describe("Q1 — confirmed footprint factors (5×5 / 3×3 / 2×3)", () => {
+  it("matches the values Mr. Teh confirmed correct", () => {
+    expect(palletFactor("5×5")).toBe(1.5625);
+    expect(palletFactor("3×3")).toBe(0.5625);
+    expect(palletFactor("2×3")).toBe(0.375);
+  });
+});
+
+describe("CARGO_PALLET_TYPES (full/legacy vocabulary — kept for historical rows)", () => {
+  it("is exactly the closed vocabulary: 10 pallet sizes + the 5 non-pallet types", () => {
     expect([...CARGO_PALLET_TYPES]).toEqual([
       "1×1",
       "1×2",
@@ -89,6 +158,9 @@ describe("CARGO_PALLET_TYPES (the route's enum)", () => {
       "5×10",
       "carton",
       "custom",
+      "box",
+      "crate",
+      "rack",
     ]);
   });
 
@@ -200,11 +272,11 @@ describe("isUnsizedForDispatch — unsized carton/Others route to manual assignm
     expect(isUnsizedForDispatch([{ pallet_type: "carton", quantity: 50 }])).toBe(true);
   });
 
-  it("custom WITH an estimate is sized → auto-dispatches on the estimate", () => {
-    expect(isUnsizedForDispatch([{ pallet_type: "custom", quantity: 1, estimated_pallets: 4 }])).toBe(false);
+  it("Q10: custom is ALWAYS manual — an estimate can NOT make it auto-dispatch", () => {
+    expect(isUnsizedForDispatch([{ pallet_type: "custom", quantity: 1, estimated_pallets: 4 }])).toBe(true);
   });
 
-  it("carton WITH an estimate is sized → auto-dispatches on the estimate", () => {
+  it("carton (LEGACY) WITH an estimate still auto-dispatches on the estimate (unchanged)", () => {
     expect(isUnsizedForDispatch([{ pallet_type: "carton", quantity: 50, estimated_pallets: 3 }])).toBe(false);
   });
 
@@ -225,5 +297,56 @@ describe("isUnsizedForDispatch — unsized carton/Others route to manual assignm
         { pallet_type: "custom", quantity: 1 }, // no estimate
       ])
     ).toBe(true);
+  });
+});
+
+describe("Q10 — Box/Crate/Rack/Custom always route to manual assignment", () => {
+  it("ALWAYS_MANUAL_TYPES is box/crate/rack/custom (carton excluded — legacy)", () => {
+    expect([...ALWAYS_MANUAL_TYPES]).toEqual(["box", "crate", "rack", "custom"]);
+    expect(isAlwaysManualType("carton")).toBe(false);
+    for (const t of ["box", "crate", "rack", "custom"]) expect(isAlwaysManualType(t)).toBe(true);
+  });
+
+  it("Box ALWAYS forces manual assignment — even with an estimate", () => {
+    expect(isUnsizedForDispatch([{ pallet_type: "box", quantity: 5 }])).toBe(true);
+    expect(isUnsizedForDispatch([{ pallet_type: "box", quantity: 5, estimated_pallets: 4 }])).toBe(true);
+  });
+
+  it("Crate and Rack ALWAYS force manual assignment (dims are display-only, not packed)", () => {
+    expect(isUnsizedForDispatch([{ pallet_type: "crate", quantity: 1, width_ft: 4, length_ft: 3 }])).toBe(true);
+    expect(isUnsizedForDispatch([{ pallet_type: "rack", quantity: 2, width_ft: 5, length_ft: 5, estimated_pallets: 2 }])).toBe(true);
+  });
+
+  it("Box/Crate/Rack contribute 0 to the pallet-equivalent load (no invented area-summing)", () => {
+    expect(palletEquivalents([{ pallet_type: "box", quantity: 9 }])).toBe(0);
+    expect(palletEquivalents([{ pallet_type: "crate", quantity: 1, width_ft: 4, length_ft: 3 }])).toBe(0);
+    expect(palletEquivalents([{ pallet_type: "rack", quantity: 2, width_ft: 5, length_ft: 5 }])).toBe(0);
+  });
+
+  it("a Box line makes a mixed pallet order need manual assignment", () => {
+    expect(
+      isUnsizedForDispatch([
+        { pallet_type: "4×4", quantity: 2 },
+        { pallet_type: "box", quantity: 3 },
+      ])
+    ).toBe(true);
+  });
+
+  it("DIMENSIONED_CARGO_TYPES is crate/rack/custom", () => {
+    expect([...DIMENSIONED_CARGO_TYPES]).toEqual(["crate", "rack", "custom"]);
+  });
+
+  it("canonicalCargoSize renders W × L ft, trimming trailing zeros", () => {
+    expect(canonicalCargoSize(4, 3)).toBe("4 × 3 ft");
+    expect(canonicalCargoSize(4.5, 3)).toBe("4.5 × 3 ft");
+    expect(canonicalCargoSize(4.0, 3.0)).toBe("4 × 3 ft");
+  });
+
+  it("isValidDimension rejects 0, negative, NaN and infinities", () => {
+    expect(isValidDimension(4)).toBe(true);
+    expect(isValidDimension(0.5)).toBe(true);
+    for (const bad of [0, -1, NaN, Infinity, -Infinity, "4", null, undefined]) {
+      expect(isValidDimension(bad)).toBe(false);
+    }
   });
 });

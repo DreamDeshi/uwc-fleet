@@ -160,30 +160,33 @@ describe("scoreDrops — per-zone-per-day-per-driver points (client-confirmed)",
 describe("isDocumentationComplete — the documentation gate", () => {
   const POD = "https://res.cloudinary.com/demo/pod.jpg";
 
+  const K2DOC = "https://res.cloudinary.com/demo/k2.jpg";
+
   it("blocks when the DO photo is missing", () => {
     expect(
-      isDocumentationComplete({ do_uploaded: false, k2_form_ack: true, pod_photo: null }, "P1")
+      isDocumentationComplete({ do_uploaded: false, k2_photo: K2DOC, pod_photo: null }, "P1")
     ).toBe(false);
   });
 
   it("blocks when do_uploaded is set but no POD photo exists (self-attested flag)", () => {
     expect(
-      isDocumentationComplete({ do_uploaded: true, k2_form_ack: true, pod_photo: null }, "P1")
+      isDocumentationComplete({ do_uploaded: true, k2_photo: K2DOC, pod_photo: null }, "P1")
     ).toBe(false);
   });
 
   it("passes for non-K2 zones once the POD photo is uploaded", () => {
     expect(
-      isDocumentationComplete({ do_uploaded: true, k2_form_ack: false, pod_photo: POD }, "P1")
+      isDocumentationComplete({ do_uploaded: true, k2_photo: null, pod_photo: POD }, "P1")
     ).toBe(true);
   });
 
-  it("requires the K2 form ack only when destination zone is K2", () => {
+  it("requires the UPLOADED K2 document only when destination zone is K2 (Q6)", () => {
+    // A tick is no longer enough — the actual document must be uploaded.
     expect(
-      isDocumentationComplete({ do_uploaded: true, k2_form_ack: false, pod_photo: POD }, "K2")
+      isDocumentationComplete({ do_uploaded: true, k2_photo: null, pod_photo: POD }, "K2")
     ).toBe(false);
     expect(
-      isDocumentationComplete({ do_uploaded: true, k2_form_ack: true, pod_photo: POD }, "K2")
+      isDocumentationComplete({ do_uploaded: true, k2_photo: K2DOC, pod_photo: POD }, "K2")
     ).toBe(true);
   });
 });

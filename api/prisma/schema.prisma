@@ -47,6 +47,60 @@ enum StopStatus {
   delivered
 }
 
+// ── Failed-delivery / exception workflow enums (Phase 1) ─────────────────
+// Mr. Teh's Q2 diagram: driver "Report Exception" with a category → admin
+// review/decision. These are the FIVE categories he listed (A–E). Kept separate
+// from any per-stop reason code (there is none in Phase 1 — a stop-level failure
+// is a `customer_site`/`cargo` exception with free-text reason + photo evidence).
+enum ExceptionCategory {
+  customer_site // A. Customer / Site Problem (closed / nobody to receive) — Q2(a)
+  truck // B. Truck Problem (breakdown, etc.)
+  cargo // C. Cargo Problem (goods rejected / damaged)
+  external // D. External Problem (flood, weather, security)
+  documentation // E. Documentation Problem (missing/wrong POD, customs rejected)
+}
+
+// Admin decision after an exception (Teh's button set). `return_cargo` is a
+// RESOLUTION value, not a TripStatus. Phase 1 EXECUTES only `resume` and `retry`
+// (both keep the trip in_progress and change no pay/capacity); the others are
+// recorded-as-choices only in a later phase — the route refuses them for now so
+// no frozen capacity/cancellation/reschedule path is crossed.
+enum ExceptionResolution {
+  resume
+  retry
+  reschedule
+  reassign_lorry
+  reassign_driver
+  return_cargo
+  cancel
+}
+
+// DERIVED header projection of the latest action (source of truth = the
+// append-only ExceptionAction log). `resolved`/`rejected` are terminal (closed).
+enum ExceptionState {
+  reported
+  more_evidence
+  verified
+  rejected
+  resolved
+}
+
+// The append-only action log's discriminator.
+enum ExceptionActionType {
+  report
+  request_more_evidence
+  verify
+  reject
+  resume
+  resolve
+  evidence_added // driver resubmitted evidence (append-only; never reopens a closed exception)
+}
+
+// Evidence media type (photo for Phase 1; extensible).
+enum ExceptionEvidenceKind {
+  photo
+}
+
 // Immutable trip-lifecycle milestones. One row is appended per transition; rows
 // are never updated or deleted, so the table doubles as audit evidence and backs
 // the status timeline shown to admin / requestor / driver. Stop-scoped events
@@ -232,26 +286,26 @@ model DestinationRate {
 // gives the day total), and the three nullable rate columns are the
 // assignment-time snapshot (rate lock) that finalization pays at.
 model Trip {
-  id                        String     @id @default(cuid())
-  ticket_number             String     @unique // TKT-YYYYMMDD-NNN
+  id                        String         @id @default(cuid())
+  ticket_number             String         @unique // TKT-YYYYMMDD-NNN
   requestor_id              String
-  requestor                 User       @relation("RequestorTrips", fields: [requestor_id], references: [id])
+  requestor                 User           @relation("RequestorTrips", fields: [requestor_id], references: [id])
   driver_id                 String?
-  driver                    User?      @relation("DriverTrips", fields: [driver_id], references: [id])
+  driver                    User?          @relation("DriverTrips", fields: [driver_id], references: [id])
   truck_plate               String?
-  truck                     Truck?     @relation(fields: [truck_plate], references: [plate])
+  truck                     Truck?         @relation(fields: [truck_plate], references: [plate])
   route_type_id             String
-  route_type                RouteType  @relation(fields: [route_type_id], references: [id])
-  status                    TripStatus @default(pending)
+  route_type                RouteType      @relation(fields: [route_type_id], references: [id])
+  status                    TripStatus     @default(pending)
   pickup_datetime           DateTime
-  incentive_earned          Decimal?   @db.Decimal(10, 2)
+  incentive_earned          Decimal?       @db.Decimal(10, 2)
   // Finalize-time pay EVIDENCE (written once, atomically with
   // incentive_earned; the engine's own outputs — display/verification only,
   // never read by any calculation). NULL on trips completed before this
   // feature ("breakdown not recorded"). rate_used/off_peak are also NULL on
   // the rare midnight-straddling trip whose delivery-day groups used
   // different tiers — the per-stop rows stay exact; deduction_applied sums.
-  rate_used                 Decimal?   @db.Decimal(10, 2) // RM/point actually paid
+  rate_used                 Decimal?       @db.Decimal(10, 2) // RM/point actually paid
   off_peak                  Boolean? // which tier picked rate_used
   deduction_applied         Int? // deduction points actually subtracted (may be < the truck's figure when floored at 0)
   // POD-approval gate (Mr. Teh 16 Jul 2026): `incentive_earned` above is the
@@ -262,7 +316,7 @@ model Trip {
   // forever). Payroll pays COALESCE(incentive_final, incentive_earned) for
   // `completed` trips: trips completed BEFORE this feature keep incentive_final
   // NULL and are paid at their engine amount (grandfathered, no data migration).
-  incentive_final           Decimal?   @db.Decimal(10, 2) // admin-confirmed pay (may differ from the proposal)
+  incentive_final           Decimal?       @db.Decimal(10, 2) // admin-confirmed pay (may differ from the proposal)
   incentive_override_reason String? // required iff incentive_final != incentive_earned
   incentive_approved_at     DateTime?
   incentive_approved_by     String? // admin User id
@@ -271,22 +325,22 @@ model Trip {
   // dispatched under — a later admin rate edit affects future assignments only.
   // Null on trips assigned before the rate-lock migration; the finalization
   // path falls back to the live truck values for those.
-  entitled_claim_weekday    Decimal?   @db.Decimal(10, 2)
-  entitled_claim_offpeak    Decimal?   @db.Decimal(10, 2)
+  entitled_claim_weekday    Decimal?       @db.Decimal(10, 2)
+  entitled_claim_offpeak    Decimal?       @db.Decimal(10, 2)
   daily_deduction_points    Int?
-  is_external               Boolean    @default(false)
+  is_external               Boolean        @default(false)
   // Admin's reason when a booking is rejected — shown to the requestor.
   rejection_reason          String?
   // Set once admins have been pinged about a 15-min-old pending order, so the
   // background alert job notifies them exactly once per trip.
-  pending_alert_sent        Boolean    @default(false)
+  pending_alert_sent        Boolean        @default(false)
   // Set true when an auto-dispatch attempt (create-time OR the 60s sweep) finds
   // no eligible driver/truck for this booking (or, per Phase 3, the route would
   // finish past the operating window). Self-clearing: reset to false the moment
   // the trip leaves pending (assigned by a later sweep/adjacency or manually, or
   // cancelled/rejected), so the admin "needs attention" signal is never sticky.
   // Displayed state = (status == pending AND auto_dispatch_failed == true).
-  auto_dispatch_failed      Boolean    @default(false)
+  auto_dispatch_failed      Boolean        @default(false)
   // WHY auto-dispatch couldn't place it (operating window / no capacity /
   // missing zone rate) — written and cleared in exactly the same places as
   // auto_dispatch_failed so it inherits the self-clearing lifecycle.
@@ -298,8 +352,30 @@ model Trip {
   // (admin reject or manual re-assign). Cleared on any pending → assigned claim
   // (claimPendingTrip), so it strictly means "this pending trip is here because
   // an admin pulled the driver, and must not be auto-re-dispatched."
-  auto_dispatch_paused      Boolean    @default(false)
-  created_at                DateTime   @default(now())
+  auto_dispatch_paused      Boolean        @default(false)
+  // Client-supplied idempotency key for POST /trips (DG-T7). The booking form
+  // holds ONE key per booking attempt and reuses it on every retry, so a submit
+  // that timed out but actually succeeded returns the ORIGINAL trip instead of
+  // creating a second one — which, in `auto` dispatch mode, would immediately
+  // claim a second truck. Additive and NULLABLE: every existing trip, and any
+  // client too old to send a key, keeps working exactly as before (a NULL never
+  // collides in Postgres, so unkeyed bookings are simply not deduplicated).
+  //
+  // Scoped to the requestor, NOT globally unique: a global key would let one
+  // requestor's (guessed or replayed) key return ANOTHER requestor's booking.
+  // Composite means a replay can only ever return your own trip.
+  client_request_id         String?
+  // Failed-delivery / exception workflow (Phase 1, feature-flagged). A trip's
+  // exception state is DERIVED, not stored: Trip.status stays `in_progress` while
+  // an exception is open. `open_exception_id` is a CACHE/pointer (cheap "has an
+  // open exception" flag for the board + the report CAS), NOT the canonical
+  // invariant — the partial unique index on TripException(trip_id) WHERE
+  // closed_at IS NULL is (see the TripException model note). Kept transactionally
+  // consistent: set null→id when an exception opens, cleared when it closes. All
+  // additive/nullable; a trip with open_exception_id = null is a normal trip.
+  open_exception_id         String?        @unique
+  open_exception            TripException? @relation("TripOpenException", fields: [open_exception_id], references: [id])
+  created_at                DateTime       @default(now())
 
   stops              TripStop[]
   cargo_details      CargoDetail[]
@@ -307,12 +383,17 @@ model Trip {
   location_logs      LocationLog[]
   external_forwarder ExternalForwarder?
   status_history     TripStatusHistory[]
+  exceptions         TripException[]     @relation("TripExceptions")
 
   // Keyset scan for the paged trip list (lib/tripCursor): the list orders by
   // (created_at DESC, id DESC) — same-direction columns, so this one ASC
   // composite serves it via a backward index scan. Also covers the legacy
   // newest-N limit window the other admin pages still use.
   @@index([created_at, id])
+  // The idempotency constraint itself (DG-T7). This is what makes a concurrent
+  // double-submit safe: the second INSERT loses on the unique index rather than
+  // racing the pre-check, and the handler then returns the winner's trip.
+  @@unique([requestor_id, client_request_id])
 }
 
 // ── 8. TripStop ──────────────────────────────────────────────────────
@@ -320,13 +401,13 @@ model Trip {
 // This is where the proof-of-delivery lives (pod_photo) and where the driver's
 // per-stop Arrived/Delivered taps land.
 model TripStop {
-  id             String     @id @default(cuid())
+  id             String          @id @default(cuid())
   trip_id        String
-  trip           Trip       @relation(fields: [trip_id], references: [id])
+  trip           Trip            @relation(fields: [trip_id], references: [id])
   sequence       Int
   consignee_id   String
-  consignee      Consignee  @relation(fields: [consignee_id], references: [id])
-  status         StopStatus @default(pending)
+  consignee      Consignee       @relation(fields: [consignee_id], references: [id])
+  status         StopStatus      @default(pending)
   arrived_at     DateTime?
   delivered_at   DateTime?
   pod_photo      String? // Cloudinary delivery URL (legacy rows: public; new rows: the private/authenticated URL, not directly accessible)
@@ -335,8 +416,18 @@ model TripStop {
   // (lib/podPhotos.ts); NULL → legacy public pod_photo, until the backfill
   // (prisma/secure-existing-pods.ts) flips + records it. Additive, nullable.
   pod_public_id  String?
-  do_uploaded    Boolean    @default(false)
-  k2_form_ack    Boolean    @default(false) // required only when destination zone is K2
+  do_uploaded    Boolean         @default(false)
+  // K2 customs form (Borang K2). Mr. Teh, R1 2026-07-24 Q6: "Prefer they need
+  // upload the form … we need admin to final validate and approve, only they can
+  // get pay." So for a K2-zone stop the driver must UPLOAD the actual document
+  // (k2_photo/_public_id, same authenticated-Cloudinary pipeline as pod_photo) —
+  // the tick-box `k2_form_ack` below is now LEGACY (kept for grandfathered rows;
+  // the delivery gate keys on the uploaded document). The upload is visible to
+  // the admin at the existing POD/incentive approval (that IS "admin validate +
+  // approve, only then pay"). All additive/nullable.
+  k2_photo       String?
+  k2_public_id   String?
+  k2_form_ack    Boolean         @default(false) // LEGACY tick (grandfathered rows only)
   // This stop's destination-zone points, snapshotted at assignment (rate lock —
   // same rationale as the Trip claim-rate snapshot). Null = pre-migration stop;
   // finalization falls back to the live DestinationRate points.
@@ -355,6 +446,132 @@ model TripStop {
   // cleared with zone_points on unassign. NULL = assigned pre-snapshot →
   // finalization falls back to the consignee's live zone.
   zone_code      String?
+  // Stop-scoped exceptions (Q2(a) "can't deliver"). A per-stop failure is a
+  // TripException with trip_stop_id set; evidence lives in ExceptionEvidence.
+  exceptions     TripException[]
+}
+
+// ── 8a. TripException / ExceptionAction / ExceptionEvidence ──────────────
+// Failed-delivery / exception workflow (Phase 1, feature-flagged, MONEY-FREE).
+//
+// The exception is a small append-only AGGREGATE:
+//   • TripException    — the header: immutable facts of ONE occurrence.
+//   • ExceptionAction  — one row per driver/admin step (report/verify/reject/
+//                        request_more_evidence/resume/resolve). NEVER updated.
+//   • ExceptionEvidence— one row per uploaded photo (own Cloudinary public_id,
+//                        served as a signed URL, SEPARATE from POD).
+//
+// The header's `current_state`/`resolution` are a DERIVED projection of the
+// latest action, maintained transactionally on each write (source of truth = the
+// actions). Idempotency: a device-generated UUID at every level
+// (client_occurrence_id / client_action_id / client_evidence_id), each @@unique,
+// so offline replay never duplicates a row. Optimistic concurrency via `version`.
+// NO money/pay/amount columns anywhere — pay stays a deferred finalization-time
+// decision. NOTE: append-only rows do NOT prevent orphaned Cloudinary assets — an
+// upload whose request never commits still needs the standard 7-day unattached-
+// asset cleanup (out of scope here; tracked separately).
+//
+// ⚠ ONE-OPEN-PER-TRIP is enforced by a PARTIAL UNIQUE INDEX in
+// prisma/migrations/20260725130000_exception_hardening (UNIQUE ON (trip_id)
+// WHERE closed_at IS NULL) — that DB index, NOT Trip.open_exception_id, is the
+// CANONICAL invariant. Prisma cannot express partial indexes in this schema, so
+// it is added by raw SQL and is intentionally NOT represented here (a future
+// `prisma migrate dev` will surface it as drift — keep it). Trip.open_exception_id
+// is a CACHE/pointer for cheap board queries + the report CAS, kept transactionally
+// consistent with the header's closed_at.
+model TripException {
+  id                   String               @id @default(cuid())
+  trip_id              String
+  trip                 Trip                 @relation("TripExceptions", fields: [trip_id], references: [id])
+  // Back-side of Trip.open_exception (the one-open-per-trip pointer/guard). Set
+  // only while this exception is the trip's open one; cleared when it closes.
+  open_for_trip        Trip?                @relation("TripOpenException")
+  trip_stop_id         String? // Q2(a): the stop the driver could not deliver
+  trip_stop            TripStop?            @relation(fields: [trip_stop_id], references: [id])
+  client_occurrence_id String // device UUID → dedup on offline replay
+  // SERVER-computed SHA-256 over the NORMALIZED report inputs (trip/stop, category,
+  // reason, actor, client_action_id, client_evidence_id, GPS, client timestamps)
+  // + the uploaded photo's byte digest. A reused client_occurrence_id whose
+  // recomputed fingerprint differs is a payload change → 409 IDEMPOTENCY_KEY_REUSED;
+  // an identical replay matches and returns the original committed result. Never
+  // client-supplied. Nullable only for pre-feature rows (every write sets it).
+  request_fingerprint  String?
+  category             ExceptionCategory
+  reason               String // driver's free-text at report
+  reported_by          String // driver User id (no FK — matches TripStatusHistory.actor_id)
+  reported_at          DateTime             @default(now()) // SERVER receipt — immutable
+  client_reported_at   DateTime? // device capture time (offline gap)
+  current_state        ExceptionState       @default(reported) // derived projection
+  resolution           ExceptionResolution?
+  resolved_at          DateTime?
+  closed_at            DateTime? // set when terminal (resolved/rejected); null = OPEN
+  version              Int                  @default(0) // optimistic concurrency
+  created_at           DateTime             @default(now())
+  actions              ExceptionAction[]
+  evidence             ExceptionEvidence[]
+
+  @@unique([trip_id, client_occurrence_id])
+  @@index([trip_id, created_at])
+}
+
+model ExceptionAction {
+  id               String               @id @default(cuid())
+  exception_id     String
+  exception        TripException        @relation(fields: [exception_id], references: [id])
+  client_action_id String // device UUID → idempotent replay
+  type             ExceptionActionType
+  resolution       ExceptionResolution? // set only when type = resolve
+  actor_id         String // User id (no FK — matches the append-only history pattern)
+  actor_role       Role
+  note             String? // required on reject / request_more_evidence / resolve
+  // Driver-side provenance (nullable; admin actions leave null) — captured only
+  // within the active-trip consent/foreground tracking gate. No off-trip capture.
+  lat              Float?
+  lng              Float?
+  accuracy_m       Float?
+  client_at        DateTime? // device capture time
+  created_at       DateTime             @default(now()) // SERVER receipt — immutable
+  evidence         ExceptionEvidence[] // evidence supplied by this action
+
+  @@unique([exception_id, client_action_id])
+  // Backs the composite FK on ExceptionEvidence(action_id, exception_id) that
+  // enforces evidence + action belong to the SAME exception (added by raw SQL in
+  // the hardening migration; id is already the PK, so this is a cheap superset).
+  @@unique([id, exception_id])
+  @@index([exception_id, created_at])
+}
+
+model ExceptionEvidence {
+  id                 String                @id @default(cuid())
+  exception_id       String
+  exception          TripException         @relation(fields: [exception_id], references: [id])
+  // The action that supplied this evidence (report / evidence_added). A REAL
+  // relation now (was a bare String). Nullable is retained for a possible future
+  // pre-action upload-session flow, but every current write sets it. A raw
+  // COMPOSITE FK (action_id, exception_id) → ExceptionAction(id, exception_id) in
+  // the hardening migration additionally guarantees the action belongs to the
+  // SAME exception — Prisma can't express a composite FK that shares exception_id
+  // with the `exception` relation above, so it is added by raw SQL (and will show
+  // as drift on a future `prisma migrate dev` — keep it).
+  // Restrict: actions are append-only and NEVER deleted, so SET NULL (which would
+  // also try to null the NOT NULL exception_id via the composite FK) must never
+  // fire — RESTRICT makes that explicit and consistent across both FKs.
+  action_id          String?
+  action             ExceptionAction?      @relation(fields: [action_id], references: [id], onDelete: Restrict)
+  client_evidence_id String // device UUID → idempotent upload replay
+  // SERVER-computed SHA-256 of the uploaded photo BYTES — the stable content
+  // identity used (with uploader + capture time + kind) to distinguish a genuine
+  // idempotent evidence replay from a reused UUID carrying a different photo.
+  content_sha256     String?
+  kind               ExceptionEvidenceKind @default(photo)
+  url                String // Cloudinary authenticated URL (not directly accessible)
+  public_id          String // signed per-read (lib/exceptionEvidence.ts) — SEPARATE from POD
+  captured_client_at DateTime?
+  uploaded_by        String // User id
+  created_at         DateTime              @default(now())
+
+  @@unique([exception_id, client_evidence_id])
+  @@index([exception_id])
 }
 
 // ── 8b. PublicHoliday ────────────────────────────────────────────────
@@ -376,21 +593,21 @@ model PublicHoliday {
 // delivery address into the dispatch + incentive zone model. Requestors can
 // self-add a missing company; created_by records who.
 model Consignee {
-  id              String  @id @default(cuid())
-  company_name    String
-  vendor_code     String?
-  contact_person  String?
-  phone           String?
-  address_1       String?
-  address_2       String?
-  area            String?
-  state           String?
-  postal_code     String?
-  zone_code       String
-  zone            Zone    @relation(fields: [zone_code], references: [code])
-  is_active       Boolean @default(true)
-  created_by      String? // requestor can self-add
-  created_by_user User?   @relation("ConsigneeCreatedBy", fields: [created_by], references: [id])
+  id                 String  @id @default(cuid())
+  company_name       String
+  vendor_code        String?
+  contact_person     String?
+  phone              String?
+  address_1          String?
+  address_2          String?
+  area               String?
+  state              String?
+  postal_code        String?
+  zone_code          String
+  zone               Zone    @relation(fields: [zone_code], references: [code])
+  is_active          Boolean @default(true)
+  created_by         String? // requestor can self-add
+  created_by_user    User?   @relation("ConsigneeCreatedBy", fields: [created_by], references: [id])
   // ── Geocoded position (scripts/geocode-consignees.ts, Geoapify) ──────
   // All THREE are nullable and additive: a consignee with no geocode must behave
   // exactly as before (destination = its zone centroid). Populated offline, never
@@ -425,9 +642,15 @@ model CargoDetail {
   id                String  @id @default(cuid())
   trip_id           String
   trip              Trip    @relation(fields: [trip_id], references: [id])
-  pallet_type       String // e.g. "4x4"
+  pallet_type       String // e.g. "4x4"; or a non-pallet type: carton/box/crate/rack/custom
   quantity          Int
   cartons           Int?
+  // Q10 structured dimensions (feet) for crate/rack/custom cargo. `custom_size`
+  // holds the canonical "W × L ft" display string (derived from these); a LEGACY
+  // custom row may carry a free-text `custom_size` with these null — preserved
+  // as-is on unrelated edits. Additive/nullable.
+  width_ft          Float?
+  length_ft         Float?
   custom_size       String?
   // Requestor's OPTIONAL estimated 4×4-pallet-equivalent for a "carton"/"custom"
   // (Others) line — those types carry no pallet footprint by conversion (factor

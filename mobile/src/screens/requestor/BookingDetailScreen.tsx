@@ -19,6 +19,8 @@ import { Header } from "../../components/Header";
 import { RouteLine } from "../../components/RouteLine";
 import { LiveTripMap } from "../../components/LiveTripMap";
 import { StatusTimeline } from "../../components/StatusTimeline";
+import { exceptionsEnabled } from "../../lib/featureFlags";
+import { RequestorExceptionBanner } from "../../components/RequestorExceptionBanner";
 import { LoadingState, ErrorState } from "../../components/States";
 import { tripDestination, tripConsigneeName, cargoSummary, tripDestZone, ORIGIN_LABEL } from "../../lib/trip";
 import { bannerFor } from "../../lib/bookingBanner";
@@ -226,6 +228,7 @@ export function BookingDetailScreen() {
       >
         {pendingNotice}
         {rejectNotice}
+        {exceptionsEnabled() && <RequestorExceptionBanner tripId={params.tripId} />}
 
         {wide ? (
           // ── Wide (PC) — details + tracking on the left, docs + timeline right ──

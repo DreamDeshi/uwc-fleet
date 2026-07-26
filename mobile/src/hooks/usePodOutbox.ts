@@ -4,6 +4,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, apiErrorCode, isNetworkError } from "../services/api";
+import { statusRequestBody } from "../lib/statusRequest";
 import { useToast } from "../components/Toast";
 import { appendPhoto, UPLOAD_HEADERS } from "./queries";
 import {
@@ -22,7 +23,7 @@ import {
 // K2 flag PATCH, and the write-once delivered confirm.
 const realApi: PodOutboxApi = {
   async markArrived(item: PodOutboxItem) {
-    await api.patch(`/trips/${item.tripId}/status`, { action: "arrived", stop_id: item.stopId });
+    await api.patch(`/trips/${item.tripId}/status`, statusRequestBody("arrived", item.stopId));
   },
   async uploadPod(item: PodOutboxItem) {
     const form = new FormData();
@@ -36,7 +37,7 @@ const realApi: PodOutboxApi = {
     await api.patch(`/trips/${item.tripId}/stops/${item.stopId}/docs`, { k2_form_ack: true });
   },
   async confirmDelivered(item: PodOutboxItem) {
-    await api.patch(`/trips/${item.tripId}/status`, { action: "delivered", stop_id: item.stopId });
+    await api.patch(`/trips/${item.tripId}/status`, statusRequestBody("delivered", item.stopId));
   },
   errorCode: apiErrorCode,
   isNetworkError,

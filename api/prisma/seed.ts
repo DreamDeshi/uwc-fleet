@@ -234,7 +234,16 @@ async function seedTrucks() {
     await prisma.truck.upsert({
       where: { plate: t.plate },
       update: syncFields, // keep rates/expiries in sync with the spec on re-seed
-      create: { plate: t.plate, priority_zones: t.priority_zones, ...syncFields },
+      // Mr. Teh R1 Q6/Q9: the "4 Wheel" is a real UWC-owned lorry currently UNDER
+      // REPAIR, kept as a backup — seed it unavailable so it is never auto-assigned
+      // (it also has no driver). is_available is set only on CREATE, so an admin who
+      // later returns it to service isn't overridden on re-seed.
+      create: {
+        plate: t.plate,
+        priority_zones: t.priority_zones,
+        ...(t.plate === "4 Wheel" ? { is_available: false } : {}),
+        ...syncFields,
+      },
     });
   }
   console.log(`Seeded ${spec.trucks.length} trucks.`);

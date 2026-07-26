@@ -62,10 +62,27 @@ export interface Consignee {
   vendor_code?: string | null;
   contact_person?: string | null;
   phone?: string | null;
+  address_1?: string | null;
+  address_2?: string | null;
+  postal_code?: string | null;
   area?: string | null;
   state?: string | null;
   zone_code: string;
   zone?: { code: string; name: string } | null;
+  // Geocoded building position. The API has always shipped these (tripInclude
+  // sends the whole consignee row) — they were simply never declared here, so
+  // the driver's Navigate button fell back to a zone centroid.
+  //
+  // NULL IS THE GATE. The geocode scripts apply the precision gate at WRITE
+  // time (geocode-google.ts: only ROOFTOP/RANGE_INTERPOLATED survive, and
+  // duplicate-coordinate rows are demoted) and store NULL coordinates for
+  // anything coarse. So a non-null pair is a real building; null means fall
+  // back to the zone. Readers must NOT re-derive this from geocode_match_type:
+  // that column holds two different vocabularies (Geoapify's `full_match`…,
+  // Google's `ROOFTOP`…) depending on which script last wrote the row.
+  latitude?: number | null;
+  longitude?: number | null;
+  geocode_match_type?: string | null;
 }
 
 export interface CargoDetail {
@@ -74,6 +91,10 @@ export interface CargoDetail {
   quantity: number;
   cartons?: number | null;
   custom_size?: string | null;
+  // Q10 structured dimensions in feet for crate/rack/custom (canonical string in
+  // custom_size). Legacy custom rows carry a free-text custom_size with these null.
+  width_ft?: number | null;
+  length_ft?: number | null;
   estimated_pallets?: number | null;
   remark?: string | null;
 }
@@ -88,6 +109,10 @@ export interface TripStop {
   delivered_at: string | null;
   pod_photo: string | null;
   do_uploaded: boolean;
+  // K2 (Borang K2) customs document — uploaded for K2-zone stops (Q6). The
+  // signed URL is set when the driver has uploaded it; `k2_form_ack` is the
+  // legacy tick (grandfathered rows only).
+  k2_photo: string | null;
   k2_form_ack: boolean;
   consignee?: Consignee;
 }

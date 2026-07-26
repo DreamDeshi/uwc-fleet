@@ -1,9 +1,15 @@
 name: CI
 
-# Gate every push and PR to main on the API unit suite (677 tests, including the
-# money-path incentive/dispatch conformance suite). Pure-logic tests only — no
-# Docker, no database connection — so this stays fast and self-contained. The
-# integration + e2e tiers need the Docker test DB and are run separately.
+# This repo deploys on push to main (Railway auto-migrates on preDeploy), so CI is
+# the last safety net before prod. Two jobs:
+#
+#   checks       Fast, self-contained (no database): both typechecks + both unit
+#                suites, including the money-path incentive/dispatch conformance
+#                tests. This is the gate that must always be green.
+#   integration  DB-backed: spins up a throwaway Postgres, applies the committed
+#                migrations, checks for migration/checksum drift, seeds, and runs
+#                the in-process (supertest) integration tier. Isolated in its own
+#                job so a DB hiccup never masks the fast checks.
 on:
   push:
     branches: [main]
@@ -15,8 +21,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  api-tests:
-    name: API unit tests (incl. money-path conformance)
+  checks:
+    name: Typecheck + unit tests (API + mobile)
     runs-on: ubuntu-latest
     env:
       # prisma generate needs the datasource env to resolve; it does NOT connect,
@@ -36,5 +42,67 @@ jobs:
       - name: Generate Prisma client
         run: npm run prisma:generate --workspace api
 
-      - name: Run API unit suite
+      - name: API typecheck
+        run: npm run typecheck --workspace api
+
+      - name: API unit suite (incl. money-path conformance)
         run: npm test --workspace api
+
+      - name: Mobile typecheck
+        run: npm run typecheck --workspace mobile
+
+      - name: Mobile unit suite
+        run: npm test --workspace mobile
+
+  integration:
+    name: Integration tier (Postgres) + migration drift
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: uwc
+          POSTGRES_PASSWORD: uwc
+          POSTGRES_DB: uwc_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U uwc -d uwc_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # The integration harness (tests-integration/setup.ts) reads TEST_DATABASE_URL
+      # and HARD-REFUSES any non-localhost host — the service is on localhost, so it
+      # passes that safety gate. migrate deploy / seed / migrate status use
+      # DATABASE_URL. No Cloudinary secrets are needed: the suite mocks uploadBuffer
+      # (see exceptionWorkflow.test.ts) and runs with CLOUDINARY_* unset by design.
+      DATABASE_URL: postgresql://uwc:uwc@localhost:5432/uwc_test?schema=public
+      TEST_DATABASE_URL: postgresql://uwc:uwc@localhost:5432/uwc_test?schema=public
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate --workspace api
+
+      - name: Apply migrations (deploy — committed migrations only)
+        run: npm run migrate:deploy --workspace api
+
+      - name: Verify no migration / checksum drift
+        run: npx prisma migrate status --schema api/prisma/schema.prisma
+
+      - name: Seed master data + test fixtures
+        run: |
+          npm run seed --workspace api
+          npm run seed:test --workspace api
+
+      - name: Integration suite (supertest, in-process)
+        run: npm run test:integration --workspace api

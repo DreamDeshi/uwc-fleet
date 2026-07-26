@@ -6,6 +6,7 @@ import {
   approveTrip,
   startTrip,
   arriveRaw,
+  statusRaw,
   arriveAndDeliver,
   userIdByPhone,
   DRIVERS,
@@ -85,6 +86,76 @@ describe("ARRIVED-GUARD integration", () => {
     const again = await arriveRaw(driver, trip.id, trip.stops[0].id);
     expect(again.status).toBe(400);
     expect(again.body.error.code).toBe("INVALID_STATUS");
+  });
+
+  // ── Server-time capture (Mr. Teh, WhatsApp 23 Jul 2026) ────────────────────
+  it("captures SERVER time on arrival and IGNORES a client-supplied arrived_at", async () => {
+    const { requestor, admin, driver, rt, plx } = await setup();
+    const trip = await bookTrip(requestor, ["P1"], rt);
+    await approveTrip(admin, trip.id, plx, PLX_PLATE);
+    await startTrip(driver, trip.id);
+
+    const before = Date.now();
+    // Client tries to dictate the arrival time — a year in the past.
+    const clientTime = new Date("2000-01-01T00:00:00.000Z");
+    const res = await statusRaw(driver, trip.id, {
+      action: "arrived",
+      stop_id: trip.stops[0].id,
+      arrived_at: clientTime.toISOString(),
+    });
+    const after = Date.now();
+    expect(res.status).toBe(200);
+
+    const stop = (await prisma.tripStop.findUnique({ where: { id: trip.stops[0].id } }))!;
+    expect(stop.status).toBe("arrived");
+    expect(stop.arrived_at).not.toBeNull();
+    const stored = stop.arrived_at!.getTime();
+    // Stored time is the SERVER clock at the request, NOT the client's value.
+    expect(stored).toBeGreaterThanOrEqual(before - 1000);
+    expect(stored).toBeLessThanOrEqual(after + 1000);
+    expect(Math.abs(stored - clientTime.getTime())).toBeGreaterThan(60_000);
+  });
+
+  it("repeated Arrived presses PRESERVE the first (original) timestamp", async () => {
+    const { requestor, admin, driver, rt, plx } = await setup();
+    const trip = await bookTrip(requestor, ["P1"], rt);
+    await approveTrip(admin, trip.id, plx, PLX_PLATE);
+    await startTrip(driver, trip.id);
+
+    expect((await arriveRaw(driver, trip.id, trip.stops[0].id)).status).toBe(200);
+    const first = (await prisma.tripStop.findUnique({ where: { id: trip.stops[0].id } }))!.arrived_at!;
+    expect(first).not.toBeNull();
+
+    // A second press (even one carrying a client time) is rejected and never
+    // silently replaces the original arrival timestamp.
+    const again = await statusRaw(driver, trip.id, {
+      action: "arrived",
+      stop_id: trip.stops[0].id,
+      arrived_at: new Date("2030-01-01T00:00:00.000Z").toISOString(),
+    });
+    expect(again.status).toBe(400);
+    expect(again.body.error.code).toBe("INVALID_STATUS");
+
+    const afterSecond = (await prisma.tripStop.findUnique({ where: { id: trip.stops[0].id } }))!.arrived_at!;
+    expect(afterSecond.getTime()).toBe(first.getTime()); // unchanged
+  });
+
+  it("an UNASSIGNED driver cannot mark the stop arrived → 403 FORBIDDEN", async () => {
+    const { requestor, admin, driver, rt, plx } = await setup();
+    const trip = await bookTrip(requestor, ["P1"], rt);
+    await approveTrip(admin, trip.id, plx, PLX_PLATE); // assigned to PLX (the DRIVER token)
+    await startTrip(driver, trip.id);
+
+    // A different, unassigned driver (PND) tries to mark this trip's stop arrived.
+    const otherDriver = await loginAs({ phone: DRIVERS.PND.phone, password: "Password123" });
+    const res = await arriveRaw(otherDriver, trip.id, trip.stops[0].id);
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("FORBIDDEN");
+
+    // …and the stop is untouched by the unauthorized attempt (still pending).
+    const stop = (await prisma.tripStop.findUnique({ where: { id: trip.stops[0].id } }))!;
+    expect(stop.status).toBe("pending");
+    expect(stop.arrived_at).toBeNull();
   });
 
   it("ORDERING: a non-pending stop on a NO-LONGER-in_progress trip → INVALID_STATUS, not TRIP_NOT_STARTED", async () => {

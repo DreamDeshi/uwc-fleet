@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Platform } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
+import { statusRequestBody } from "../lib/statusRequest";
 import {
   Consignee,
   Department,
@@ -187,6 +188,13 @@ export function useMyAnalytics() {
 
 // ── Mutations ────────────────────────────────────────────────────────────
 export interface CreateTripInput {
+  /**
+   * DG-T7 idempotency key — CREATE only (the edit path never sets it, and the
+   * PATCH schema ignores it). Re-sent unchanged on a retry so a submit that
+   * timed out but committed returns the original booking instead of creating a
+   * duplicate that auto-dispatch answers with a second truck.
+   */
+  client_request_id?: string;
   route_type_id: string;
   pickup_datetime: string; // ISO
   stops: { consignee_id: string }[];
@@ -233,7 +241,7 @@ export function useUpdateTripStatus() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ tripId, action, stop_id }: StatusInput) =>
-      (await api.patch<Trip>(`/trips/${tripId}/status`, { action, stop_id })).data,
+      (await api.patch<Trip>(`/trips/${tripId}/status`, statusRequestBody(action, stop_id))).data,
     // Invalidate on SETTLED, not just success: on bad signal a status write
     // can commit server-side while the response is lost — the driver's retry
     // then 409s, and without an error-path refetch the screen keeps showing
@@ -336,6 +344,26 @@ export function useUploadPod() {
     },
     // Settled, not success — a POD upload can also commit while its response
     // is lost; refetching shows the stored photo instead of an empty slot.
+    onSettled: (_trip, _err, vars) => {
+      qc.invalidateQueries({ queryKey: ["trip", vars.tripId] });
+      qc.invalidateQueries({ queryKey: ["trips"] });
+    },
+  });
+}
+
+// K2 (Borang K2) customs document for a K2-zone stop (Q6). Uploads the actual
+// document; the API stores k2_photo/k2_public_id, which the K2 delivery gate
+// keys on. Same shape as useUploadPod.
+export function useUploadK2() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tripId, stopId, photo }: { tripId: string; stopId: string; photo: PickedPhoto }) => {
+      const form = new FormData();
+      await appendPhoto(form, "photo", photo);
+      return (
+        await api.post<Trip>(`/trips/${tripId}/stops/${stopId}/k2`, form, { headers: UPLOAD_HEADERS, timeout: 60_000 })
+      ).data;
+    },
     onSettled: (_trip, _err, vars) => {
       qc.invalidateQueries({ queryKey: ["trip", vars.tripId] });
       qc.invalidateQueries({ queryKey: ["trips"] });
