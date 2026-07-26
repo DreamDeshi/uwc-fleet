@@ -81,7 +81,9 @@ test.describe("Requestor (mobile web)", () => {
     await page.getByText("Next", { exact: true }).click();
 
     // ── Step 2: What ── add one 4×4 pallet via the first stepper's "+".
-    await expect(page.getByText("Pallet Size & Quantity")).toBeVisible();
+    // (Label renamed "Pallet Size & Quantity" → "Cargo Size & Quantity" by the
+    // Q1/Q10 structured-cargo change; the default tab is still the pallet grid.)
+    await expect(page.getByText("Cargo Size & Quantity")).toBeVisible();
     await page.getByText("+", { exact: true }).first().click();
     await expect(page.getByText("Total: 1 pallets")).toBeVisible();
     await page.getByText("Next", { exact: true }).click();
@@ -89,9 +91,11 @@ test.describe("Requestor (mobile web)", () => {
     // ── Step 3: Confirm ── submit.
     await page.getByText("Submit Booking", { exact: true }).click();
 
-    // Success modal with the new ticket number.
+    // Success modal with the new ticket number. Anchored: hidden inactive
+    // scenes can hold "TKT-… · <date>" composites of OLDER tickets, and an
+    // unanchored .first() can read one of those instead of the modal's.
     await expect(page.getByText("Booking Submitted!")).toBeVisible();
-    const ticket = await page.getByText(/TKT-\d{8}-\d{3}/).first().textContent();
+    const ticket = await page.getByText(/^TKT-\d{8}-\d{3}$/).last().textContent();
     expect(ticket, "a ticket number should be shown on the success modal").toBeTruthy();
     const ticketNo = ticket!.trim();
 

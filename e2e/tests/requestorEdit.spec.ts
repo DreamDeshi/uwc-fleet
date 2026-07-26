@@ -59,7 +59,8 @@ test.describe("Requestor booking edit (mobile web)", () => {
 
     // Cargo section's "Edit" link (Route=first, What=second) → bump to 2 pallets.
     await page.getByText("Edit", { exact: true }).nth(1).click();
-    await expect(page.getByText("Pallet Size & Quantity")).toBeVisible();
+    // Label renamed by the Q1/Q10 structured-cargo change.
+    await expect(page.getByText("Cargo Size & Quantity")).toBeVisible();
     await page.getByText("+", { exact: true }).first().click();
     await expect(page.getByText("Total: 2 pallets")).toBeVisible();
     await page.getByText("Next", { exact: true }).click();

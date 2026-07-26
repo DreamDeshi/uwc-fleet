@@ -18,10 +18,13 @@
 import {
   cancelTrip,
   driverStatus,
+  getOpenExceptions,
   getTrips,
   login,
   markStopDocs,
+  resumeException,
   setDispatchMode,
+  uploadK2,
   uploadPod,
 } from "./api";
 import { ADMIN, DRIVER } from "./accounts";
@@ -45,11 +48,38 @@ export async function freeDriver(): Promise<void> {
       // REAL photo upload (sets pod_photo and flips do_uploaded server-side —
       // the flag can no longer be self-attested, 400 POD_PHOTO_REQUIRED), plus
       // the K2 customs ack, which is still a legitimate checkbox on its own.
+      // A K2-ZONE stop additionally requires the UPLOADED Borang K2 document
+      // (R1 Q6 — the ack alone no longer satisfies the delivery gate).
       // Delivering the last stop completes the trip.
       await uploadPod(accessToken, trip.id, stop.id, POD_FILE);
+      if (stop.consignee?.zone_code === "K2") {
+        await uploadK2(accessToken, trip.id, stop.id, POD_FILE);
+      }
       await markStopDocs(accessToken, trip.id, stop.id, { k2_form_ack: true });
       await driverStatus(accessToken, trip.id, "delivered", stop.id);
     }
+  }
+}
+
+/**
+ * Close every open exception (admin, via RESUME — the Phase-1 action legal
+ * from any open state). An open exception blocks `delivered` on its trip
+ * (409 EXCEPTION_OPEN), which would wedge freeDriver — so this runs FIRST in
+ * the reset. No-op while the feature flag is off (the routes 404 and the
+ * catch swallows it).
+ */
+export async function resolveOpenExceptions(adminToken: string): Promise<void> {
+  try {
+    const { exceptions } = await getOpenExceptions(adminToken);
+    for (const exc of exceptions) {
+      try {
+        await resumeException(adminToken, exc.trip_id, exc.id);
+      } catch {
+        // Best-effort: a concurrent transition must not fail the reset.
+      }
+    }
+  } catch {
+    // FEATURE_EXCEPTIONS off → the endpoint 404s; nothing to clean.
   }
 }
 
@@ -71,6 +101,7 @@ export async function cancelOpenTrips(adminToken: string): Promise<void> {
 export async function resetState(): Promise<{ adminToken: string }> {
   const admin = await login(ADMIN);
   await setDispatchMode(admin.accessToken, "manual");
+  await resolveOpenExceptions(admin.accessToken);
   await freeDriver();
   await cancelOpenTrips(admin.accessToken);
   return { adminToken: admin.accessToken };
