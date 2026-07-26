@@ -329,6 +329,13 @@ async function main() {
   }
 }
 
-main()
-  .catch((e) => { console.error(`\n✖ ${e.message ?? e}`); process.exit(1); })
-  .finally(() => prisma.$disconnect());
+// Only run when executed directly, so the pure exports import cleanly in tests.
+// Without this, importing buildQuery/isCareOf/isUsable also RAN main() — which
+// opens a Prisma connection to whatever DATABASE_URL happens to be set and, on a
+// machine with no reachable DB, exits the test process (see self-heal-coords.ts,
+// which already guards the same way).
+if (require.main === module) {
+  main()
+    .catch((e) => { console.error(`\n✖ ${e.message ?? e}`); process.exit(1); })
+    .finally(() => prisma.$disconnect());
+}
