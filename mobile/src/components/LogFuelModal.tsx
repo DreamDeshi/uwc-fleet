@@ -12,6 +12,7 @@ import { Button } from "./Button";
 import { TextField } from "./Field";
 import { useToast } from "./Toast";
 import { useLogFuel, useMyTruckFuel } from "../hooks/queries";
+import { monthFuelTotals } from "../lib/fuelStats";
 import { apiErrorMessage } from "../services/api";
 import { formatDate, formatMoney } from "../lib/format";
 
@@ -75,6 +76,22 @@ export function LogFuelModal({
             <MaterialCommunityIcons name="truck" size={16} color={colors.blue} />
             <Text style={styles.truckBoxText}>{truckLabel ?? t("fuel.noTruck")}</Text>
           </View>
+
+          {/* Month rollup — the driver enters every fill; give them something
+              back (lib/fuelStats, pure + tested). Hidden until a first fill. */}
+          {(() => {
+            const totals = monthFuelTotals(fuel.data?.logs ?? [], new Date());
+            if (totals.fills === 0) return null;
+            return (
+              <Text style={styles.monthLine}>
+                {t("fuel.monthSummary", {
+                  fills: totals.fills,
+                  litres: totals.litres,
+                  cost: totals.costRm.toFixed(2),
+                })}
+              </Text>
+            );
+          })()}
 
           <View style={{ marginTop: 16 }}>
             <TextField
@@ -145,6 +162,7 @@ const styles = StyleSheet.create({
   modal: { backgroundColor: colors.white, borderRadius: 20, padding: 24, width: "100%" },
   modalTitle: { fontSize: 17, fontWeight: "800", color: colors.navy, textAlign: "center" },
   truckBox: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 16, backgroundColor: colors.tintBlue, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12 },
+  monthLine: { fontSize: 12, color: colors.textMuted, marginTop: 8 },
   truckBoxText: { color: colors.blue, fontSize: 14, fontWeight: "700" },
 
   history: { marginTop: 18, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 14 },
