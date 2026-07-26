@@ -242,6 +242,55 @@ Do not implement behaviour derived solely from AI-generated workbook advice.
 
 
 
+\## UI and design work
+
+These constraints bind ANY agent editing the mobile app's UI (including
+external design tools with repository access). They are invisible in a plain
+read of the diff and violating them breaks the deployed app.
+
+Platform:
+
+\- The app is React Native (Expo SDK 54) rendered with react-native-web.
+&#x20; Use RN primitives only — no raw HTML elements, no CSS files, no
+&#x20; DOM-only libraries. Styling goes through `StyleSheet` / the shared
+&#x20; theme tokens in `mobile/src/theme`.
+\- Do NOT add `react-native-svg` (repeatedly rejected; crashes our build).
+&#x20; Icons come from `@expo/vector-icons` (Ionicons).
+\- Do NOT touch native dependency pins (`expo-font` is deliberately pinned;
+&#x20; changing it reintroduces a known APK launch-crash).
+\- Code runs on Hermes — no dynamic `import()` tricks, no `Intl` beyond what
+&#x20; Hermes provides.
+
+Text and layout:
+
+\- EVERY user-visible string goes through i18n. A new string must be added to
+&#x20; ALL THREE files: `mobile/src/i18n/en.json`, `ms.json`, `zh.json`.
+&#x20; Hard-coded literals in JSX are a defect.
+\- The app has TWO layouts: the phone layout (primary, bottom tabs) and the
+&#x20; desktop shell at ≥1024px (`useWide`, sidebar). A UI change must be checked
+&#x20; in both; do not break one to restyle the other.
+\- Small utilities are embedded as widgets on existing screens, never given
+&#x20; their own navigation tab or screen.
+
+Standing owner design rulings (do not revert):
+
+\- Headers use the WHITE mark-only logo crop (`uwc-mark-white.png` via
+&#x20; `BrandLogo mark`), placed LEFT of the title; the login screen keeps the
+&#x20; full colour logo. No avatar/name blocks in headers.
+\- No yellow underline accents on mobile headers.
+\- Requestor home keeps the navy/dashed card style.
+\- Orange is reserved for offline/queued states only — never as a general
+&#x20; accent colour.
+\- One design language app-wide: flat blue headers; tables collapse to cards
+&#x20; on narrow widths.
+
+Process for design changes:
+
+\- Branch + pull request only. `main` is branch-protected (required PR + green
+&#x20; CI, admins included); merging deploys to the live trial.
+\- Run `npm run typecheck` and `npm test` in `mobile/` before proposing.
+\- Do not modify money, dispatch, or API code as part of a visual pass.
+
 \## Two-agent collaboration
 
 
