@@ -23,6 +23,9 @@ type AuthStatus = "loading" | "authed" | "guest";
 interface AuthContextValue {
   status: AuthStatus;
   user: Me | null;
+  /** True while running on the cached identity (bootstrap fetch failed);
+   *  the self-heal effect is retrying. Drives the reconnecting banner. */
+  degraded: boolean;
   login: (phone: string, password: string) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
@@ -209,7 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ status, user, login, register, logout, refreshMe, setLanguage }}
+      value={{ status, user, degraded, login, register, logout, refreshMe, setLanguage }}
     >
       {children}
     </AuthContext.Provider>

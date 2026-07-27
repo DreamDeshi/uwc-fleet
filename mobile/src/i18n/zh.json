@@ -17,6 +17,7 @@
     "min": "分钟",
     "errorGeneric": "出了点问题。",
     "errorNetwork": "无法连接。请检查您的网络以及 API 是否正在运行。",
+    "reconnecting": "正在重新连接…",
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
     "noData": "这里还没有内容。"

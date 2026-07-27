@@ -17,6 +17,7 @@
     "min": "min",
     "errorGeneric": "Sesuatu telah berlaku.",
     "errorNetwork": "Tidak dapat menyambung. Semak internet anda dan pastikan API berjalan.",
+    "reconnecting": "Menyambung semula…",
     "showPassword": "Tunjukkan kata laluan",
     "hidePassword": "Sembunyikan kata laluan",
     "noData": "Belum ada apa-apa di sini."

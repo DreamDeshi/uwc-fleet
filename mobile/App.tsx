@@ -10,6 +10,7 @@ import { queryClient } from "./src/lib/queryClient";
 import { AuthProvider } from "./src/context/AuthContext";
 import { ToastProvider } from "./src/components/Toast";
 import { RootNavigator } from "./src/navigation/RootNavigator";
+import { ReconnectingBanner } from "./src/components/ReconnectingBanner";
 import { installWebFocusRing } from "./src/lib/webFocusRing";
 import { wireReactQueryNative } from "./src/lib/reactQueryNative";
 
@@ -28,6 +29,7 @@ export default function App() {
             <ToastProvider>
               <StatusBar style="light" />
               <RootNavigator />
+              <ReconnectingBanner />
             </ToastProvider>
           </AuthProvider>
         </QueryClientProvider>
