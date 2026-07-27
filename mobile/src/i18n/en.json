@@ -647,6 +647,8 @@
       "loadError": "Could not load consignees.",
       "searchPlaceholder": "Search company, area, state…",
       "includeDeactivated": "Include deactivated",
+      "coverageMissing": "{{count}} of {{total}} active consignees have no map coordinates yet — a geocode run would fill them",
+      "coveragePartial": "{{count}} with half-missing coordinates (data anomaly)",
       "showing": "Showing {{count}} results (max 10 — refine the search)",
       "noMatch": "No consignees match this search.",
       "deactivated": "Deactivated",

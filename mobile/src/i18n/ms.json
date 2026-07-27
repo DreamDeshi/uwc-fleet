@@ -642,6 +642,8 @@
       "loadError": "Tidak dapat memuatkan penerima barang.",
       "searchPlaceholder": "Cari syarikat, kawasan, negeri…",
       "includeDeactivated": "Termasuk yang dinyahaktif",
+      "coverageMissing": "{{count}} daripada {{total}} penerima aktif belum ada koordinat peta — larian geocode akan mengisinya",
+      "coveragePartial": "{{count}} dengan koordinat separa hilang (anomali data)",
       "showing": "Menunjukkan {{count}} hasil (maks 10 — perhalusi carian)",
       "noMatch": "Tiada penerima sepadan dengan carian ini.",
       "deactivated": "Dinyahaktifkan",

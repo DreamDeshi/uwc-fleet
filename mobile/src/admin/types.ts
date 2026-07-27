@@ -367,6 +367,14 @@ export interface AttentionReport {
   early_tap_delivery?: EarlyTapTrip[];
 }
 
+// Geocode coverage counts (GET /consignees/coverage) — read-only signal for
+// when a manual geocode/self-heal run is worth doing.
+export interface ConsigneeCoverage {
+  total_active: number;
+  missing_coords: number;
+  partial_coords: number;
+}
+
 // One driver-leave entry (GET /leaves) — admin-managed dispatch availability.
 export interface DriverLeaveEntry {
   id: string;
