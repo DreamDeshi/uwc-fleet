@@ -902,6 +902,9 @@
       "savingsMeta_one": "{{count}} trip guna lori lebih kecil · ≈ {{co2}} kg CO₂e dielakkan",
       "savingsMeta_other": "{{count}} trip guna lori lebih kecil · ≈ {{co2}} kg CO₂e dielakkan",
       "savingsNone": "Belum ada trip saiz tepat bulan ini.",
+      "exportFills": "Eksport CSV isian minyak",
+      "exportSummary": "Eksport CSV ringkasan bulanan",
+      "exportFailed": "Eksport gagal — cuba lagi.",
       "disclosure": "CO₂e dan penjimatan adalah anggaran daripada isian direkodkan dan faktor boleh laras — tidak pernah digunakan untuk gaji atau penghantaran."
     },
     "trucks": {

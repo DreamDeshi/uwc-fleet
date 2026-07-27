@@ -902,6 +902,9 @@
       "savingsMeta_one": "{{count}} 趟行程使用较小货车 · 约避免 {{co2}} kg CO₂e",
       "savingsMeta_other": "{{count}} 趟行程使用较小货车 · 约避免 {{co2}} kg CO₂e",
       "savingsNone": "本月暂无使用较小货车的行程。",
+      "exportFills": "导出加油记录 CSV",
+      "exportSummary": "导出月度汇总 CSV",
+      "exportFailed": "导出失败 — 请重试。",
       "disclosure": "CO₂e 与节省量为基于已记录加油和可调参数的估算 — 绝不用于工资或调度。"
     },
     "trucks": {

@@ -12,15 +12,19 @@
 // Empty vs broken are DISTINCT states: a fetch failure shows ErrorState with
 // retry; zero logged fill-ups shows the friendly empty card (that is why the
 // figures read "—" on a fresh deployment — prod has no fuel logs yet).
-import React from "react";
-import { RefreshControl, ScrollView, Text, View } from "react-native";
+import React, { useState } from "react";
+import { Platform, RefreshControl, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { useConsolidationSavings, useFuelSummary } from "../hooks/queries";
 import { colors, font, radius } from "../theme";
-import { Card, ErrorState, Loading, SectionTitle } from "../components/ui";
+import { Button, Card, ErrorState, Loading, SectionTitle } from "../components/ui";
 import { formatNumber } from "../lib/format";
 import { fleetFuelRollup } from "../lib/fleetFuel";
+import { buildFuelLogsCsv, buildFuelSummaryCsv, type FuelLogExportRow } from "../lib/fuelCsv";
+import { CSV_BOM } from "../lib/csv";
+import { shareCsv } from "../platform/csvShare";
+import { api } from "../services/api";
 import { FuelPanel } from "../components/FuelPanel";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 
@@ -30,6 +34,34 @@ export function SustainabilityScreen() {
   const wide = mode === "wide";
   const summary = useFuelSummary();
   const consolidation = useConsolidationSavings();
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(false);
+
+  // CSV exports — SEPARATE single-purpose files (owner direction, 27 Jul):
+  // a fills ledger and a per-truck monthly summary, both Excel-first
+  // (BOM + injection-guarded cells, lib/fuelCsv). Web-only, like the
+  // payroll export (the native shareCsv path is a deliberate stub).
+  const exportSummary = async () => {
+    setExportError(false);
+    try {
+      const month = new Date().toISOString().slice(0, 7);
+      await shareCsv(`uwc-fuel-summary-${month}.csv`, CSV_BOM + buildFuelSummaryCsv(summary.data ?? []));
+    } catch {
+      setExportError(true);
+    }
+  };
+  const exportFills = async () => {
+    setExportError(false);
+    setExporting(true);
+    try {
+      const res = await api.get<{ month: string; logs: FuelLogExportRow[] }>("/trucks/fuel/logs");
+      await shareCsv(`uwc-fuel-fills-${res.data.month}.csv`, CSV_BOM + buildFuelLogsCsv(res.data.logs));
+    } catch {
+      setExportError(true);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (summary.isLoading) return <Loading />;
   if (summary.isError) {
@@ -65,7 +97,24 @@ export function SustainabilityScreen() {
           label={t("admin.sustainability.fleetL100")}
         />
       </View>
-      <Text style={{ fontSize: font.xs, color: colors.textFaint, marginTop: -8 }}>{t("admin.sustainability.heroCaption")}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 10, marginTop: -8 }}>
+        <Text style={{ flex: 1, fontSize: font.xs, color: colors.textFaint, minWidth: 80 }}>
+          {t("admin.sustainability.heroCaption")}
+        </Text>
+        {Platform.OS === "web" && (
+          <>
+            <Button size="sm" variant="outline" onPress={exportFills} disabled={exporting}>
+              {t("admin.sustainability.exportFills")}
+            </Button>
+            <Button size="sm" variant="outline" onPress={exportSummary}>
+              {t("admin.sustainability.exportSummary")}
+            </Button>
+          </>
+        )}
+      </View>
+      {exportError ? (
+        <Text style={{ fontSize: font.sm, color: colors.red, marginTop: -8 }}>{t("admin.sustainability.exportFailed")}</Text>
+      ) : null}
 
       {/* Why the dashes: no fill-ups yet is EMPTY, not broken. */}
       {!fleet.hasData && (

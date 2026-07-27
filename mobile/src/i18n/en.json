@@ -911,6 +911,9 @@
       "savingsMeta_one": "{{count}} trip on a smaller truck · ≈ {{co2}} kg CO₂e avoided",
       "savingsMeta_other": "{{count}} trips on smaller trucks · ≈ {{co2}} kg CO₂e avoided",
       "savingsNone": "No right-sized trips yet this month.",
+      "exportFills": "Export fill-ups CSV",
+      "exportSummary": "Export monthly summary CSV",
+      "exportFailed": "Export failed — try again.",
       "disclosure": "CO₂e and savings are estimates from logged fill-ups and tunable factors — never used in pay or dispatch."
     },
     "trucks": {
