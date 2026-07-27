@@ -6,9 +6,9 @@
 // Same props and same treatment on both platforms — keep the two files in step.
 // Zone catchment circles removed 2026-07-20 (never real boundaries, one
 // hardcoded 9km radius for every zone) — see map.web.tsx header for the detail.
-// NOTE: the Android Google-Maps key is a known-open item — until it's set,
-// Android renders a blank map (same as the driver/requestor maps).
-import React from "react";
+// (The Android Google-Maps key is configured in app.json since 22 Jul 2026 —
+// the old "blank map until the key is set" caveat no longer applies.)
+import React, { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import MapView, { Callout, Marker } from "react-native-maps";
 import { useTranslation } from "react-i18next";
@@ -48,6 +48,25 @@ const REGION = {
 };
 void MAP_ZOOM; // parity note: web uses the zoom directly
 
+// Android + custom-view Markers: with tracksViewChanges={false} Google Maps
+// rasterizes the marker view ONCE — and it can snapshot BEFORE React Native
+// has laid the view out, leaving an INVISIBLE marker. That is exactly the
+// APK bug where the UWC PLANT pin (and the zone labels) never appeared even
+// though the code below always rendered them. Fix: keep tracking ON just
+// long enough for the first real paint, then freeze for battery/perf. Re-arm
+// whenever the live-fix data changes so a truck pill that flips live↔stale
+// (dashed border / green dot) re-rasterizes its new look.
+const MARKER_FREEZE_DELAY_MS = 700;
+function useMarkerFreeze(dep: unknown): boolean {
+  const [tracking, setTracking] = useState(true);
+  useEffect(() => {
+    setTracking(true);
+    const t = setTimeout(() => setTracking(false), MARKER_FREEZE_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [dep]);
+  return tracking;
+}
+
 export function AdminFleetMap({
   trucks,
   live = [],
@@ -63,6 +82,7 @@ export function AdminFleetMap({
 }) {
   const { t } = useTranslation();
   const isWide = useWide();
+  const tracksViewChanges = useMarkerFreeze(live);
   const liveByPlate = new Map(live.map((p) => [p.plate, p]));
   // A truck gets a map marker ONLY when it has a real fix (live or stale). Every
   // other truck has no live position and must never be drawn at a fake
@@ -86,14 +106,14 @@ export function AdminFleetMap({
               key={z.code}
               coordinate={{ latitude: z.lat, longitude: z.lng }}
               anchor={{ x: 0.5, y: 0.5 }}
-              tracksViewChanges={false}
+              tracksViewChanges={tracksViewChanges}
             >
               <Text style={{ color: z.color, fontWeight: "800", fontSize: font.sm, opacity: 0.75 }}>{z.code}</Text>
             </Marker>
           ))}
 
           {/* Plant origin */}
-          <Marker coordinate={{ latitude: PLANT_ORIGIN.lat, longitude: PLANT_ORIGIN.lng }} tracksViewChanges={false}>
+          <Marker coordinate={{ latitude: PLANT_ORIGIN.lat, longitude: PLANT_ORIGIN.lng }} tracksViewChanges={tracksViewChanges}>
             <View style={{ alignItems: "center" }}>
               <View style={{ backgroundColor: colors.navy, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2, marginBottom: 3 }}>
                 <Text style={{ color: colors.yellow, fontSize: 10, fontWeight: "700" }}>UWC PLANT</Text>
@@ -112,7 +132,7 @@ export function AdminFleetMap({
               <Marker
                 key={tr.plate}
                 coordinate={{ latitude: fix.latitude, longitude: fix.longitude }}
-                tracksViewChanges={false}
+                tracksViewChanges={tracksViewChanges}
                 zIndex={2}
               >
                 <View style={{ alignItems: "center" }}>
