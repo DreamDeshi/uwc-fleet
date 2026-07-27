@@ -784,7 +784,13 @@
       "openTripBoard": "Open trip board →",
       "viewAll": "View All →",
       "mapSubLive_one": "Zone overlays · {{count}} truck live on GPS",
-      "mapSubLive_other": "Zone overlays · {{count}} trucks live on GPS"
+      "mapSubLive_other": "Zone overlays · {{count}} trucks live on GPS",
+      "sustainTitle": "Sustainability",
+      "sustainSub": "Fleet fuel & carbon this month",
+      "sustainFuel": "Fuel used",
+      "sustainCo2": "Est. CO₂e",
+      "sustainDistance": "Distance",
+      "sustainHint": "Estimated from logged fill-ups"
     },
     "drivers": {
       "loadError": "Could not load drivers.",

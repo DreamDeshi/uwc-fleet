@@ -23,6 +23,7 @@ import { BrandLogo } from "../../components/BrandLogo";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { AttentionPanel, attentionHasRows } from "../components/AttentionPanel";
 import { AdminSearchButton } from "../components/AdminSearchButton";
+import { SustainabilityCard } from "../components/SustainabilityCard";
 import { exceptionsEnabled } from "../../lib/featureFlags";
 import { AdminFleetMap } from "../platform/map";
 import { DashboardWide } from "./DashboardWide";
@@ -178,6 +179,12 @@ export function AdminHomeScreen() {
             <AttentionPanel report={attention.data} onOpenBoard={() => navigation.navigate("AdminTrips")} />
           </View>
         )}
+
+        {/* Sustainability — fleet fuel/CO₂e/distance (SDG visibility). Taps
+            through to the Fleet tab where the Fuel panel lives. */}
+        <View style={styles.section}>
+          <SustainabilityCard onPress={() => navigation.navigate("AdminFleet")} />
+        </View>
 
         {/* Fleet map — the Phase-3 map, now on the phone home too. */}
         <View style={styles.section}>

@@ -777,7 +777,13 @@
       "mapApprox": "大致位置（尚无 GPS）",
       "mapNoDriver": "无司机",
       "openTripBoard": "打开行程看板 →",
-      "viewAll": "查看全部 →"
+      "viewAll": "查看全部 →",
+      "sustainTitle": "可持续发展",
+      "sustainSub": "本月车队燃油与碳排放",
+      "sustainFuel": "已用燃油",
+      "sustainCo2": "估算 CO₂e",
+      "sustainDistance": "里程",
+      "sustainHint": "根据已记录的加油估算"
     },
     "drivers": {
       "loadError": "无法加载司机。",

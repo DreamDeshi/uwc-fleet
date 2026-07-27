@@ -13,6 +13,7 @@ import { DateField } from "../platform/datePicker";
 import { apiErrorMessage } from "../services/api";
 import { formatDate, formatMoney, formatNumber } from "../lib/format";
 import { useLayoutMode } from "../hooks/useLayoutMode";
+import { fleetFuelRollup } from "../lib/fleetFuel";
 import { OptionsModal } from "../../components/OptionsModal";
 import type { TruckFuelSummary } from "../types";
 
@@ -28,21 +29,9 @@ export function FuelPanel() {
     [summary.data]
   );
 
-  // Fleet carbon + efficiency rollup (the dashboard headline): total CO2e this
-  // month, distance, and a DISTANCE-WEIGHTED fleet L/100km (fleet litres ÷ fleet
-  // km × 100 — not an average of per-truck rates, which would misweight).
-  const fleet = useMemo(() => {
-    const r = summary.data ?? [];
-    const litres = r.reduce((s, x) => s + x.total_litres, 0);
-    const km = r.reduce((s, x) => s + x.total_km_covered, 0);
-    const co2e = r.reduce((s, x) => s + x.co2e_kg, 0);
-    return {
-      co2e: Math.round(co2e * 10) / 10,
-      km,
-      lp100: km > 0 ? Math.round((litres / km) * 100 * 10) / 10 : null,
-      hasData: r.some((x) => x.log_count > 0),
-    };
-  }, [summary.data]);
+  // Fleet carbon + efficiency rollup — shared with the dashboard
+  // sustainability tile (fleetFuelRollup) so both show identical numbers.
+  const fleet = useMemo(() => fleetFuelRollup(summary.data ?? []), [summary.data]);
 
   if (summary.isLoading) return <Loading />;
   if (summary.isError) return <ErrorState message={t("admin.trucks.fuelLoadError")} onRetry={() => summary.refetch()} />;

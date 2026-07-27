@@ -777,7 +777,13 @@
       "mapApprox": "Kedudukan anggaran (belum ada GPS)",
       "mapNoDriver": "Tiada pemandu",
       "openTripBoard": "Buka papan trip →",
-      "viewAll": "Lihat Semua →"
+      "viewAll": "Lihat Semua →",
+      "sustainTitle": "Kelestarian",
+      "sustainSub": "Bahan api & karbon armada bulan ini",
+      "sustainFuel": "Bahan api digunakan",
+      "sustainCo2": "Anggaran CO₂e",
+      "sustainDistance": "Jarak",
+      "sustainHint": "Anggaran daripada isian minyak yang direkodkan"
     },
     "drivers": {
       "loadError": "Tidak dapat memuatkan pemandu.",
