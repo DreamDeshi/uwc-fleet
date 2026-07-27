@@ -204,7 +204,8 @@
     "km": "km",
     "noChartData": "No earnings logged this week yet.",
     "awaitingApproval": "Awaiting approval",
-    "awaitingTotal": "{{amount}} awaiting approval ({{count}} trips)"
+    "awaitingTotal": "{{amount}} awaiting approval ({{count}} trips)",
+    "fairPayNote": "Every payment is backed by delivery evidence"
   },
   "myPerformance": {
     "title": "My Performance",

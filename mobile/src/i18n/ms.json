@@ -201,7 +201,8 @@
     "km": "km",
     "noChartData": "Tiada pendapatan direkodkan minggu ini lagi.",
     "awaitingApproval": "Menunggu kelulusan",
-    "awaitingTotal": "{{amount}} menunggu kelulusan ({{count}} perjalanan)"
+    "awaitingTotal": "{{amount}} menunggu kelulusan ({{count}} perjalanan)",
+    "fairPayNote": "Setiap bayaran disokong bukti penghantaran"
   },
   "myPerformance": {
     "title": "Prestasi Saya",
