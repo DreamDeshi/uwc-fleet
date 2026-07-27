@@ -9,7 +9,7 @@ import { Pressable, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { colors, font } from "../theme";
 import { Card, SectionTitle } from "./ui";
-import type { AttentionReport, AttentionTrip } from "../types";
+import type { AttentionReport, AttentionTrip, EarlyTapTrip } from "../types";
 
 // Whether the panel will actually render — lets hosts skip wrapper spacing.
 export function attentionHasRows(report?: AttentionReport): boolean {
@@ -18,14 +18,22 @@ export function attentionHasRows(report?: AttentionReport): boolean {
     report.stale_in_progress.length > 0 ||
     report.overdue_assigned.length > 0 ||
     report.completed_null_incentive.length > 0 ||
-    (report.assigned_driver_on_leave ?? []).length > 0
+    (report.assigned_driver_on_leave ?? []).length > 0 ||
+    (report.early_tap_delivery ?? []).length > 0
   );
 }
 
 export function AttentionPanel({ report, onOpenBoard }: { report?: AttentionReport; onOpenBoard?: () => void }) {
   const { t } = useTranslation();
   if (!report) return null;
-  const groups: { title: string; hint: string; rows: AttentionTrip[] }[] = [
+  // Default row meta: driver · plate · hours since/until pickup. The
+  // early-tap group swaps in its own line (consignee + distance) instead.
+  const defaultMeta = (tr: AttentionTrip) =>
+    `${tr.driver?.name ?? "—"}${tr.truck_plate ? ` · ${tr.truck_plate}` : ""} · ${t(
+      tr.hours_since_pickup >= 0 ? "admin.dashboard.sincePickup" : "admin.dashboard.untilPickup",
+      { h: Math.abs(Math.round(tr.hours_since_pickup)) }
+    )}`;
+  const groups: { title: string; hint: string; rows: AttentionTrip[]; meta?: (tr: AttentionTrip) => string }[] = [
     {
       title: t("admin.dashboard.attStale"),
       hint: t("admin.dashboard.attStaleHint", { h: report.thresholds.staleInProgressHours }),
@@ -45,6 +53,20 @@ export function AttentionPanel({ report, onOpenBoard }: { report?: AttentionRepo
       title: t("admin.dashboard.attOnLeave"),
       hint: t("admin.dashboard.attOnLeaveHint"),
       rows: report.assigned_driver_on_leave ?? [],
+    },
+    {
+      // Early-tap review (detection only — the flag never blocked anything).
+      title: t("admin.dashboard.attEarlyTap"),
+      hint: t("admin.dashboard.attEarlyTapHint", { m: report.thresholds.earlyTapRadiusM ?? 500 }),
+      rows: (report.early_tap_delivery ?? []) as AttentionTrip[],
+      meta: (tr: AttentionTrip) => {
+        const et = tr as EarlyTapTrip;
+        return t("admin.dashboard.attEarlyTapMeta", {
+          driver: et.driver?.name ?? "—",
+          consignee: et.consignee_name,
+          m: et.distance_m,
+        });
+      },
     },
   ].filter((g) => g.rows.length > 0);
   if (groups.length === 0) return null;
@@ -79,15 +101,10 @@ export function AttentionPanel({ report, onOpenBoard }: { report?: AttentionRepo
               <Text style={{ fontWeight: "500", color: colors.textFaint }}> ({g.hint})</Text>
             </Text>
             {g.rows.slice(0, 5).map((tr) => (
-              <View key={tr.id} style={{ flexDirection: "row", gap: 8, paddingVertical: 3, flexWrap: "wrap" }}>
+              <View key={(tr as EarlyTapTrip).stop_id ?? tr.id} style={{ flexDirection: "row", gap: 8, paddingVertical: 3, flexWrap: "wrap" }}>
                 <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.text }}>{tr.ticket_number}</Text>
                 <Text style={{ fontSize: font.sm, color: colors.textMuted, flexShrink: 1 }}>
-                  {tr.driver?.name ?? "—"}
-                  {tr.truck_plate ? ` · ${tr.truck_plate}` : ""} ·{" "}
-                  {t(
-                    tr.hours_since_pickup >= 0 ? "admin.dashboard.sincePickup" : "admin.dashboard.untilPickup",
-                    { h: Math.abs(Math.round(tr.hours_since_pickup)) }
-                  )}
+                  {(g.meta ?? defaultMeta)(tr)}
                 </Text>
               </View>
             ))}
