@@ -26,6 +26,11 @@
  */
 import { prisma } from "../src/lib/prisma";
 import { dbHostOf, isLocalDbHost, isProdDbHost } from "../src/lib/dbGuard";
+// The query builder, precision gate and Google call live in src/lib so the
+// batch script and creation-time geocoding (routes/consignees.ts) can never
+// drift apart. This script keeps what is batch-only: pacing, --out/--from
+// dumps, the duplicate-coordinate demotion backstop, and the summary.
+import { buildQuery, googleGeocode, isCareOf, isUsable } from "../src/lib/geocodeConsignee";
 
 const KEY = process.env.GOOGLE_MAPS_KEY ?? process.env.GOOGLE_MAPS_API_KEY ?? "";
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -37,47 +42,6 @@ const GAP_MS = Number(process.env.GEOCODE_GAP_MS ?? 70);
 
 const nz = (s: string | null | undefined) => (s ?? "").trim();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** True when address_1 is a "care of" line, i.e. a company, not a street. */
-export function isCareOf(address1: string | null | undefined): boolean {
-  return /^\s*c\s*\/\s*o\b/i.test(nz(address1));
-}
-
-/** The geocoder query for one consignee. address_2 appended ONLY for C/O rows. */
-export function buildQuery(c: {
-  address_1: string | null; address_2: string | null;
-  area: string | null; state: string | null; postal_code: string | null;
-}): string {
-  const parts = [nz(c.address_1).replace(/,+\s*$/, "")];
-  if (isCareOf(c.address_1) && nz(c.address_2)) parts.push(nz(c.address_2).replace(/,+\s*$/, ""));
-  parts.push(nz(c.area), nz(c.postal_code), nz(c.state), "Malaysia");
-  return parts.filter(Boolean).join(", ");
-}
-
-/** location_types that represent a REAL position. Anything else is not a geocode. */
-export const USABLE_TYPES = ["ROOFTOP", "RANGE_INTERPOLATED"];
-export function isUsable(locationType: string | null | undefined): boolean {
-  return USABLE_TYPES.includes(nz(locationType));
-}
-
-interface GeoResult { lat: number | null; lng: number | null; locationType: string }
-
-async function googleGeocode(q: string): Promise<GeoResult> {
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(q)}&components=country:MY&key=${KEY}`;
-  for (let i = 0; i < 6; i++) {
-    let j: any;
-    try { j = await (await fetch(url)).json(); } catch { await sleep(1500); continue; }
-    if (j.status === "OK" && j.results?.[0]) {
-      const g = j.results[0];
-      return { lat: g.geometry.location.lat, lng: g.geometry.location.lng, locationType: g.geometry.location_type };
-    }
-    if (j.status === "ZERO_RESULTS") return { lat: null, lng: null, locationType: "ZERO_RESULTS" };
-    // OVER_QUERY_LIMIT / UNKNOWN_ERROR / (freshly-enabled) REQUEST_DENIED → back off and retry
-    if (["OVER_QUERY_LIMIT", "UNKNOWN_ERROR", "REQUEST_DENIED"].includes(j.status)) { await sleep(2000 * (i + 1)); continue; }
-    return { lat: null, lng: null, locationType: j.status || "ERROR" };
-  }
-  return { lat: null, lng: null, locationType: "RETRY_EXHAUSTED" };
-}
 
 async function main() {
   // Safety: this WRITES, so it must not point at production by accident.
@@ -119,7 +83,7 @@ async function main() {
     for (let i = 0; i < rows.length; i++) {
       const c = rows[i];
       const q = buildQuery(c);
-      const g = await googleGeocode(q);
+      const g = await googleGeocode(q, KEY);
       await sleep(GAP_MS);
       const usable = isUsable(g.locationType);
       perRow.push({
@@ -187,6 +151,11 @@ async function main() {
   }
 }
 
-main()
-  .catch((e) => { console.error(`\n✖ ${e.message ?? e}`); process.exit(1); })
-  .finally(() => prisma.$disconnect());
+// Run only when executed directly (npx tsx scripts/geocode-google.ts) — an
+// import of this module must never fire a geocoding run (same guard as
+// geocode-consignees.ts / self-heal-coords.ts).
+if (require.main === module) {
+  main()
+    .catch((e) => { console.error(`\n✖ ${e.message ?? e}`); process.exit(1); })
+    .finally(() => prisma.$disconnect());
+}

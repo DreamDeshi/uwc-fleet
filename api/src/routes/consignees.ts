@@ -8,6 +8,7 @@ import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { activeBookingsForConsigneeWhere, updateConsignee } from "../services/consigneeUpdate";
 import { parseConsigneeCsv } from "../lib/consigneeCsv";
+import { geocodeNewConsignee } from "../lib/geocodeConsignee";
 
 const router = Router();
 router.use(requireAuth);
@@ -280,6 +281,19 @@ router.post(
           table_name: "Consignee",
           record_id: consignee.id,
         },
+      });
+
+      // Creation-time geocode — FIRE-AND-FORGET, never awaited on the request
+      // path: a geocoding failure or missing GOOGLE_MAPS_KEY must not break
+      // creation (the row simply stays on the zone fallback, exactly as
+      // before). Same precision gate as the batch script (lib/geocodeConsignee).
+      void geocodeNewConsignee({
+        id: consignee.id,
+        address_1: data.address_1 ?? null,
+        address_2: data.address_2 ?? null,
+        area: data.area ?? null,
+        state: data.state ?? null,
+        postal_code: data.postal_code ?? null,
       });
 
       res.status(201).json(consignee);
