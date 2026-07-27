@@ -17,6 +17,7 @@ import { buildPayrollRows } from "../services/payroll";
 import { firstDeliveredAt, payAttributionInstant, payableIncentive } from "../services/tripCompletion";
 import { attentionConfig, hoursSince } from "../services/attention";
 import { consolidationSavings } from "../lib/consolidationSavings";
+import { rightSizingSavings } from "../lib/rightSizingSavings";
 
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
@@ -482,16 +483,41 @@ router.get("/payroll", async (req, res, next) => {
   }
 });
 
-// GET /reports/consolidation — sustainability KPI. Deliveries consolidated into
-// shared trips is EXACT (drops − trips); the fuel/CO2 figures are estimates from
-// tunable averages (see lib/consolidationSavings) and are labelled so in the UI.
+// GET /reports/consolidation — sustainability KPIs. Deliveries consolidated
+// into shared trips is EXACT (drops − trips); the fuel/CO2 figures are
+// estimates from tunable averages (see lib/consolidationSavings) and are
+// labelled so in the UI. rightSizing adds the smallest-fit dispatch savings
+// for the current MYT month (lib/rightSizingSavings — also estimate-labelled).
 router.get("/consolidation", async (_req, res, next) => {
   try {
-    const trips = await prisma.trip.findMany({
-      where: { status: "completed" },
-      select: { _count: { select: { stops: true } } },
+    const bounds = currentMytMonthBounds(new Date());
+    const [trips, monthTrips, largest] = await Promise.all([
+      prisma.trip.findMany({
+        where: { status: "completed" },
+        select: { _count: { select: { stops: true } } },
+      }),
+      prisma.trip.findMany({
+        where: {
+          status: "completed",
+          is_external: false,
+          truck_plate: { not: null },
+          pickup_datetime: { gte: bounds.start, lt: bounds.end },
+        },
+        select: { truck: { select: { type: true } } },
+      }),
+      prisma.truck.findFirst({
+        where: { retired_at: null },
+        orderBy: { max_pallets: "desc" },
+        select: { type: true },
+      }),
+    ]);
+    res.json({
+      ...consolidationSavings(trips.map((t) => t._count.stops)),
+      rightSizing: rightSizingSavings(
+        monthTrips.map((t) => t.truck?.type ?? null),
+        largest?.type ?? null
+      ),
     });
-    res.json(consolidationSavings(trips.map((t) => t._count.stops)));
   } catch (err) {
     next(err);
   }

@@ -783,7 +783,9 @@
       "sustainFuel": "Bahan api digunakan",
       "sustainCo2": "Anggaran CO₂e",
       "sustainDistance": "Jarak",
-      "sustainHint": "Anggaran daripada isian minyak yang direkodkan"
+      "sustainSavings_one": "≈ {{litres}} L bahan api dijimatkan — {{count}} trip guna lori lebih kecil bulan ini",
+      "sustainSavings_other": "≈ {{litres}} L bahan api dijimatkan — {{count}} trip guna lori lebih kecil bulan ini",
+      "sustainHint": "Angka bahan api daripada isian direkodkan · penjimatan adalah anggaran"
     },
     "drivers": {
       "loadError": "Tidak dapat memuatkan pemandu.",

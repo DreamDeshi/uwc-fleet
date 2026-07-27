@@ -790,7 +790,9 @@
       "sustainFuel": "Fuel used",
       "sustainCo2": "Est. CO₂e",
       "sustainDistance": "Distance",
-      "sustainHint": "Estimated from logged fill-ups"
+      "sustainSavings_one": "≈ {{litres}} L fuel saved — {{count}} trip right-sized to a smaller truck this month",
+      "sustainSavings_other": "≈ {{litres}} L fuel saved — {{count}} trips right-sized to smaller trucks this month",
+      "sustainHint": "Fuel figures from logged fill-ups · savings are estimates"
     },
     "drivers": {
       "loadError": "Could not load drivers.",
