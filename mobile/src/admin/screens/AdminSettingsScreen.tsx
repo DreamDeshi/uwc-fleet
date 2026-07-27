@@ -18,6 +18,7 @@ import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
 import { colors, font, radius } from "../theme";
 import { Avatar, Button, Card, ConfirmDialog, SectionTitle } from "../components/ui";
+import { api } from "../services/api";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { AppLanguage } from "../../types";
 import { EditProfileModal, ChangePasswordModal } from "../../components/AccountModals";
@@ -206,6 +207,25 @@ function AppUpdatesCard() {
   const { t } = useTranslation();
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // System status: one /health ping on mount — reachability + latency. A
+  // trial run by a non-technical owner deserves a visible "is the server
+  // fine" answer instead of guessing from failed screens.
+  const [apiStatus, setApiStatus] = useState<{ ok: boolean; ms: number } | null>(null);
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const started = Date.now();
+      try {
+        await api.get("/health", { timeout: 8000 });
+        if (mounted) setApiStatus({ ok: true, ms: Date.now() - started });
+      } catch {
+        if (mounted) setApiStatus({ ok: false, ms: Date.now() - started });
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const updatesUsable = Updates.isEnabled && Platform.OS !== "web";
   const running =
@@ -240,6 +260,15 @@ function AppUpdatesCard() {
   };
 
   const rows: { label: string; value: string }[] = [
+    {
+      label: t("admin.settings.apiRow"),
+      value:
+        apiStatus === null
+          ? "…"
+          : apiStatus.ok
+            ? t("admin.settings.apiOk", { ms: apiStatus.ms })
+            : t("admin.settings.apiDown"),
+    },
     { label: t("admin.settings.appVersion"), value: (Constants.expoConfig?.version as string) ?? "—" },
     {
       label: t("admin.settings.runtime"),
