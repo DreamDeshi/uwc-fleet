@@ -559,7 +559,21 @@
     },
     "settings": {
       "languageSection": "语言",
-      "languageHint": "应用于所有屏幕；保存到您的账户。"
+      "languageHint": "应用于所有屏幕；保存到您的账户。",
+      "aboutTitle": "应用与更新",
+      "appVersion": "应用版本",
+      "runtime": "Runtime",
+      "channel": "渠道",
+      "updateRow": "当前更新",
+      "updEmbedded": "内置包 — 尚未应用任何 OTA 更新",
+      "updDisabled": "此构建中更新已禁用（开发/网页）。",
+      "updPublishedAt": "发布于 {{when}}",
+      "updCheckBtn": "检查更新",
+      "updChecking": "检查中…",
+      "updUpToDate": "已是最新 — 正在运行最新更新。",
+      "updDownloading": "正在下载更新…",
+      "updRestarting": "正在使用新更新重启…",
+      "updError": "检查更新失败：{{msg}}"
     },
     "roleLabel": "车队管理员",
     "comingSoon": "此页面将在后续阶段推出。",

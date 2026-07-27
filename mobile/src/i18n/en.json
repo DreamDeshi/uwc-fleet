@@ -562,7 +562,21 @@
     },
     "settings": {
       "languageSection": "Language",
-      "languageHint": "Applies across all screens; saved to your account."
+      "languageHint": "Applies across all screens; saved to your account.",
+      "aboutTitle": "App & updates",
+      "appVersion": "App version",
+      "runtime": "Runtime",
+      "channel": "Channel",
+      "updateRow": "Active update",
+      "updEmbedded": "Embedded bundle — no over-the-air update applied yet",
+      "updDisabled": "Updates are disabled in this build (dev/web).",
+      "updPublishedAt": "published {{when}}",
+      "updCheckBtn": "Check for updates",
+      "updChecking": "Checking…",
+      "updUpToDate": "Up to date — already running the latest update.",
+      "updDownloading": "Downloading update…",
+      "updRestarting": "Restarting with the new update…",
+      "updError": "Update check failed: {{msg}}"
     },
     "roleLabel": "Fleet Administrator",
     "comingSoon": "This screen arrives in a later phase.",
