@@ -274,7 +274,10 @@
     "recentTitle": "Isian terkini",
     "efficiency": "{{l}} L / 100 km",
     "litresShort": "{{n}} L",
-    "lastFillShort": "Terakhir: {{when}} · {{litres}} L"
+    "lastFillShort": "Terakhir: {{when}} · {{litres}} L",
+    "staleNudge_one": "{{count}} hari sejak isian terakhir — log minyak?",
+    "staleNudge_other": "{{count}} hari sejak isian terakhir — log minyak?",
+    "neverLogged": "belum ada isian direkodkan — log minyak?"
   },
   "requestor": {
     "greeting": "Hai, {{name}}",

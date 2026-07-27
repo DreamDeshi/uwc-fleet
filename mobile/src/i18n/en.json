@@ -277,7 +277,10 @@
     "recentTitle": "Recent fills",
     "efficiency": "{{l}} L / 100 km",
     "litresShort": "{{n}} L",
-    "lastFillShort": "Last: {{when}} · {{litres}} L"
+    "lastFillShort": "Last: {{when}} · {{litres}} L",
+    "staleNudge_one": "{{count}} day since last fill — log fuel?",
+    "staleNudge_other": "{{count}} days since last fill — log fuel?",
+    "neverLogged": "no fills logged yet — log fuel?"
   },
   "requestor": {
     "greeting": "Hi, {{name}}",

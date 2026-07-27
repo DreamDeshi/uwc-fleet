@@ -274,7 +274,10 @@
     "recentTitle": "最近加油",
     "efficiency": "{{l}} L / 100 km",
     "litresShort": "{{n}} L",
-    "lastFillShort": "最近：{{when}} · {{litres}} L"
+    "lastFillShort": "最近：{{when}} · {{litres}} L",
+    "staleNudge_one": "距上次加油已 {{count}} 天 — 记录加油？",
+    "staleNudge_other": "距上次加油已 {{count}} 天 — 记录加油？",
+    "neverLogged": "尚未记录加油 — 记录加油？"
   },
   "requestor": {
     "greeting": "你好，{{name}}",
