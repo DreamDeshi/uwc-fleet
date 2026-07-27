@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "../context/AuthContext";
 import { colors, radius } from "../theme";
 import { Button } from "./Button";
-import { TextField, PressableField } from "./Field";
+import { PasswordField, PressableField, TextField } from "./Field";
 import { OptionsModal } from "./OptionsModal";
 import { useDepartments, useUpdateProfile, useChangePassword } from "../hooks/queries";
 import { apiErrorMessage } from "../services/api";
@@ -165,29 +165,22 @@ export function ChangePasswordModal({ visible, onClose }: { visible: boolean; on
         <View style={styles.modal}>
           <Text style={styles.title}>{t("account.changePassword")}</Text>
           <ScrollView keyboardShouldPersistTaps="handled" style={{ marginTop: 16 }}>
-            <TextField
+            <PasswordField
               label={t("account.currentPassword")}
               value={current}
               onChangeText={setCurrent}
-              secureTextEntry
-              leftIcon="lock-closed-outline"
-              autoCapitalize="none"
             />
-            <TextField
+            <PasswordField
               label={t("account.newPassword")}
               value={next}
               onChangeText={setNext}
-              secureTextEntry
               leftIcon="key-outline"
-              autoCapitalize="none"
             />
-            <TextField
+            <PasswordField
               label={t("account.confirmPassword")}
               value={confirm}
               onChangeText={setConfirm}
-              secureTextEntry
               leftIcon="key-outline"
-              autoCapitalize="none"
             />
             <ErrorLine message={error} />
           </ScrollView>

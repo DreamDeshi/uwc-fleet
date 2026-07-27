@@ -17,6 +17,8 @@
     "min": "min",
     "errorGeneric": "Something went wrong.",
     "errorNetwork": "Could not connect. Check your internet and that the API is running.",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
     "noData": "Nothing here yet."
   },
   "login": {
