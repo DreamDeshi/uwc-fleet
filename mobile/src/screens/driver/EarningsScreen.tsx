@@ -109,6 +109,13 @@ export function EarningsScreen({ embedded = false }: { embedded?: boolean } = {}
                 </Text>
               </View>
             ) : null}
+            {/* Fair-pay framing (copy only): the transparency features already
+                exist (per-drop breakdown, POD gate, adjustment reasons) — this
+                line just says so where the money is read. */}
+            <View style={styles.fairPayRow}>
+              <Ionicons name="shield-checkmark-outline" size={12} color={colors.white} />
+              <Text style={styles.fairPayText}>{t("earnings.fairPayNote")}</Text>
+            </View>
           </LinearGradient>
 
           {/* Weekly chart */}
@@ -281,4 +288,16 @@ const styles = StyleSheet.create({
   pendingChipText: { fontSize: 11, fontWeight: "700", color: colors.textMuted },
   awaitingRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 8 },
   awaitingText: { fontSize: 12, fontWeight: "600", color: colors.white, opacity: 0.9 },
+  fairPayRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    alignSelf: "flex-start",
+    marginTop: 10,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: radius.pill,
+    backgroundColor: "rgba(255,255,255,0.14)",
+  },
+  fairPayText: { fontSize: 11, fontWeight: "700", color: colors.white, opacity: 0.95 },
 });

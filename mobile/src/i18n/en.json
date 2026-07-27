@@ -204,7 +204,8 @@
     "km": "km",
     "noChartData": "No earnings logged this week yet.",
     "awaitingApproval": "Awaiting approval",
-    "awaitingTotal": "{{amount}} awaiting approval ({{count}} trips)"
+    "awaitingTotal": "{{amount}} awaiting approval ({{count}} trips)",
+    "fairPayNote": "Every payment is backed by delivery evidence"
   },
   "myPerformance": {
     "title": "My Performance",
@@ -784,7 +785,15 @@
       "openTripBoard": "Open trip board →",
       "viewAll": "View All →",
       "mapSubLive_one": "Zone overlays · {{count}} truck live on GPS",
-      "mapSubLive_other": "Zone overlays · {{count}} trucks live on GPS"
+      "mapSubLive_other": "Zone overlays · {{count}} trucks live on GPS",
+      "sustainTitle": "Sustainability",
+      "sustainSub": "Fleet fuel & carbon this month",
+      "sustainFuel": "Fuel used",
+      "sustainCo2": "Est. CO₂e",
+      "sustainDistance": "Distance",
+      "sustainSavings_one": "≈ {{litres}} L fuel saved — {{count}} trip right-sized to a smaller truck this month",
+      "sustainSavings_other": "≈ {{litres}} L fuel saved — {{count}} trips right-sized to smaller trucks this month",
+      "sustainHint": "Fuel figures from logged fill-ups · savings are estimates"
     },
     "drivers": {
       "loadError": "Could not load drivers.",

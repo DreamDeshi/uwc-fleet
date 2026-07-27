@@ -201,7 +201,8 @@
     "km": "公里",
     "noChartData": "本周尚无收入记录。",
     "awaitingApproval": "等待审批",
-    "awaitingTotal": "{{amount}} 等待审批（{{count}} 个行程）"
+    "awaitingTotal": "{{amount}} 等待审批（{{count}} 个行程）",
+    "fairPayNote": "每笔款项都有送货凭证支持"
   },
   "myPerformance": {
     "title": "我的表现",
@@ -777,7 +778,15 @@
       "mapApprox": "大致位置（尚无 GPS）",
       "mapNoDriver": "无司机",
       "openTripBoard": "打开行程看板 →",
-      "viewAll": "查看全部 →"
+      "viewAll": "查看全部 →",
+      "sustainTitle": "可持续发展",
+      "sustainSub": "本月车队燃油与碳排放",
+      "sustainFuel": "已用燃油",
+      "sustainCo2": "估算 CO₂e",
+      "sustainDistance": "里程",
+      "sustainSavings_one": "≈ 节省燃油 {{litres}} L — 本月 {{count}} 趟行程使用较小货车",
+      "sustainSavings_other": "≈ 节省燃油 {{litres}} L — 本月 {{count}} 趟行程使用较小货车",
+      "sustainHint": "燃油数据来自已记录的加油 · 节省量为估算值"
     },
     "drivers": {
       "loadError": "无法加载司机。",

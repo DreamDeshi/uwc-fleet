@@ -421,6 +421,16 @@ export interface ConsolidationSavings {
   estKmSaved: number;
   estLitresSaved: number;
   estCo2eKgSaved: number;
+  // Smallest-fit dispatch savings, current MYT month. Optional so the app
+  // tolerates an API that predates the field.
+  rightSizing?: RightSizingSavings;
+}
+
+export interface RightSizingSavings {
+  trips: number;
+  tripsRightSized: number;
+  estLitresSaved: number;
+  estCo2eKgSaved: number;
 }
 
 export interface AuditEntry {

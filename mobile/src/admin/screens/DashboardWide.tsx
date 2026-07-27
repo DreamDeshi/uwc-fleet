@@ -33,6 +33,7 @@ import {
   TripStatusBadge,
 } from "../components/ui";
 import { DispatchToggle } from "../components/DispatchToggle";
+import { SustainabilityCard } from "../components/SustainabilityCard";
 import { exceptionsEnabled } from "../../lib/featureFlags";
 import { LoadCapacityBar } from "../components/LoadCapacityBar";
 import { AttentionPanel } from "../components/AttentionPanel";
@@ -183,6 +184,10 @@ export function DashboardWide() {
           />
         </View>
       </View>
+
+      {/* Sustainability strip — fleet fuel/CO₂e/distance (SDG visibility).
+          Same rollup as Trucks → Fuel; taps through to it. */}
+      <SustainabilityCard onPress={() => navigation.navigate("AdminTrucks")} />
 
       {/* Map + right rail */}
       <View style={{ flexDirection: "row", gap: 16, alignItems: "stretch" }}>
