@@ -51,26 +51,58 @@ export function ConsigneesScreen() {
     >
       <Card pad={12} style={{ gap: 12 }}>
         <SearchInput value={q} onChange={setQ} placeholder={t("admin.consignees.searchPlaceholder")} style={{ minWidth: 0 }} />
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Switch
-              value={includeInactive}
-              onValueChange={setIncludeInactive}
-              trackColor={{ true: colors.blue, false: colors.border }}
-              thumbColor="#fff"
-            />
-            <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.consignees.includeDeactivated")}</Text>
+        {/* Header controls. On WIDE everything fits one row (toggle · hint ·
+            buttons). On NARROW that row crushed the results hint into a
+            one-character-per-line sliver between the toggle and the buttons
+            (APK bug, 27 Jul 2026) — so the phone layout stacks instead:
+            toggle+hint line, then the buttons on their own row. */}
+        {mode === "wide" ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Switch
+                value={includeInactive}
+                onValueChange={setIncludeInactive}
+                trackColor={{ true: colors.blue, false: colors.border }}
+                thumbColor="#fff"
+              />
+              <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.consignees.includeDeactivated")}</Text>
+            </View>
+            <Text style={{ fontSize: font.sm, color: colors.textFaint, flex: 1, textAlign: "right" }}>
+              {t("admin.consignees.showing", { count: rows.length })}
+            </Text>
+            <Button size="sm" variant="outline" onPress={() => setImporting(true)}>
+              {t("admin.consignees.importBtn")}
+            </Button>
+            <Button size="sm" variant="primary" onPress={() => setAdding(true)}>
+              {t("admin.consignees.add")}
+            </Button>
           </View>
-          <Text style={{ fontSize: font.sm, color: colors.textFaint, flex: 1, textAlign: "right" }}>
-            {t("admin.consignees.showing", { count: rows.length })}
-          </Text>
-          <Button size="sm" variant="outline" onPress={() => setImporting(true)}>
-            {t("admin.consignees.importBtn")}
-          </Button>
-          <Button size="sm" variant="primary" onPress={() => setAdding(true)}>
-            {t("admin.consignees.add")}
-          </Button>
-        </View>
+        ) : (
+          <>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Switch
+                value={includeInactive}
+                onValueChange={setIncludeInactive}
+                trackColor={{ true: colors.blue, false: colors.border }}
+                thumbColor="#fff"
+              />
+              <Text numberOfLines={2} style={{ fontSize: font.sm, color: colors.textMuted, flexShrink: 1 }}>
+                {t("admin.consignees.includeDeactivated")}
+              </Text>
+            </View>
+            <Text style={{ fontSize: font.sm, color: colors.textFaint }}>
+              {t("admin.consignees.showing", { count: rows.length })}
+            </Text>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <Button size="sm" variant="outline" onPress={() => setImporting(true)}>
+                {t("admin.consignees.importBtn")}
+              </Button>
+              <Button size="sm" variant="primary" onPress={() => setAdding(true)}>
+                {t("admin.consignees.add")}
+              </Button>
+            </View>
+          </>
+        )}
         {/* Geocode-coverage hint (read-only): when this grows, a manual
             geocode/self-heal run is worth doing. Hidden at zero. */}
         {coverage.data && coverage.data.missing_coords > 0 && (
