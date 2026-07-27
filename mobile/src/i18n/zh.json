@@ -17,6 +17,7 @@
     "min": "分钟",
     "errorGeneric": "出了点问题。",
     "errorNetwork": "无法连接。请检查您的网络以及 API 是否正在运行。",
+    "reconnecting": "正在重新连接…",
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
     "noData": "这里还没有内容。"
@@ -137,6 +138,7 @@
     "payAdjustedTitle": "审批时薪酬已调整",
     "payAdjustedAmounts": "拟定 RM {{proposed}} → 最终 RM {{final}}",
     "payAdjustedNoReason": "未记录原因——请询问管理员。",
+    "co2Estimate": "≈ {{kg}} kg CO₂e · 往返约 {{km}} 公里（估算）",
     "podGateHint": "标记送达前请先拍摄送达凭证照片。",
     "podCapture": "拍摄送达凭证",
     "podUploaded": "送达凭证照片已上传",
@@ -273,7 +275,10 @@
     "recentTitle": "最近加油",
     "efficiency": "{{l}} L / 100 km",
     "litresShort": "{{n}} L",
-    "lastFillShort": "最近：{{when}} · {{litres}} L"
+    "lastFillShort": "最近：{{when}} · {{litres}} L",
+    "staleNudge_one": "距上次加油已 {{count}} 天 — 记录加油？",
+    "staleNudge_other": "距上次加油已 {{count}} 天 — 记录加油？",
+    "neverLogged": "尚未记录加油 — 记录加油？"
   },
   "requestor": {
     "greeting": "你好，{{name}}",
@@ -561,6 +566,9 @@
       "languageSection": "语言",
       "languageHint": "应用于所有屏幕；保存到您的账户。",
       "aboutTitle": "应用与更新",
+      "apiRow": "API 服务器",
+      "apiOk": "正常 · {{ms}} 毫秒",
+      "apiDown": "无法连接 — 请检查网络或服务器",
       "appVersion": "应用版本",
       "runtime": "Runtime",
       "channel": "渠道",
@@ -894,6 +902,9 @@
       "savingsMeta_one": "{{count}} 趟行程使用较小货车 · 约避免 {{co2}} kg CO₂e",
       "savingsMeta_other": "{{count}} 趟行程使用较小货车 · 约避免 {{co2}} kg CO₂e",
       "savingsNone": "本月暂无使用较小货车的行程。",
+      "exportFills": "导出加油记录 CSV",
+      "exportSummary": "导出月度汇总 CSV",
+      "exportFailed": "导出失败 — 请重试。",
       "disclosure": "CO₂e 与节省量为基于已记录加油和可调参数的估算 — 绝不用于工资或调度。"
     },
     "trucks": {

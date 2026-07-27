@@ -17,6 +17,7 @@
     "min": "min",
     "errorGeneric": "Something went wrong.",
     "errorNetwork": "Could not connect. Check your internet and that the API is running.",
+    "reconnecting": "Reconnecting…",
     "showPassword": "Show password",
     "hidePassword": "Hide password",
     "noData": "Nothing here yet."
@@ -140,6 +141,7 @@
     "payAdjustedTitle": "Pay adjusted at approval",
     "payAdjustedAmounts": "Proposed RM {{proposed}} → Final RM {{final}}",
     "payAdjustedNoReason": "No reason was recorded — ask the admin.",
+    "co2Estimate": "≈ {{kg}} kg CO₂e · ~{{km}} km round trip (estimate)",
     "podGateHint": "Add a POD photo before marking delivered.",
     "podCapture": "Take POD Photo",
     "podUploaded": "POD photo uploaded",
@@ -276,7 +278,10 @@
     "recentTitle": "Recent fills",
     "efficiency": "{{l}} L / 100 km",
     "litresShort": "{{n}} L",
-    "lastFillShort": "Last: {{when}} · {{litres}} L"
+    "lastFillShort": "Last: {{when}} · {{litres}} L",
+    "staleNudge_one": "{{count}} day since last fill — log fuel?",
+    "staleNudge_other": "{{count}} days since last fill — log fuel?",
+    "neverLogged": "no fills logged yet — log fuel?"
   },
   "requestor": {
     "greeting": "Hi, {{name}}",
@@ -564,6 +569,9 @@
       "languageSection": "Language",
       "languageHint": "Applies across all screens; saved to your account.",
       "aboutTitle": "App & updates",
+      "apiRow": "API server",
+      "apiOk": "OK · {{ms}} ms",
+      "apiDown": "Unreachable — check your connection or the server",
       "appVersion": "App version",
       "runtime": "Runtime",
       "channel": "Channel",
@@ -903,6 +911,9 @@
       "savingsMeta_one": "{{count}} trip on a smaller truck · ≈ {{co2}} kg CO₂e avoided",
       "savingsMeta_other": "{{count}} trips on smaller trucks · ≈ {{co2}} kg CO₂e avoided",
       "savingsNone": "No right-sized trips yet this month.",
+      "exportFills": "Export fill-ups CSV",
+      "exportSummary": "Export monthly summary CSV",
+      "exportFailed": "Export failed — try again.",
       "disclosure": "CO₂e and savings are estimates from logged fill-ups and tunable factors — never used in pay or dispatch."
     },
     "trucks": {

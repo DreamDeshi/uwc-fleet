@@ -10,15 +10,19 @@ import { queryClient } from "./src/lib/queryClient";
 import { AuthProvider } from "./src/context/AuthContext";
 import { ToastProvider } from "./src/components/Toast";
 import { RootNavigator } from "./src/navigation/RootNavigator";
+import { ReconnectingBanner } from "./src/components/ReconnectingBanner";
 import { installWebFocusRing } from "./src/lib/webFocusRing";
 import { wireReactQueryNative } from "./src/lib/reactQueryNative";
+import { installGlobalErrorReporting } from "./src/lib/errorReporting";
 
 export default function App() {
   // Keyboard-only (:focus-visible) navy focus ring on web; no-op on native.
   // NetInfo/AppState → react-query wiring on native; no-op on web.
+  // Global error reporting → POST /client-errors (owner ask, 27 Jul).
   React.useEffect(() => {
     installWebFocusRing();
     wireReactQueryNative();
+    installGlobalErrorReporting();
   }, []);
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -28,6 +32,7 @@ export default function App() {
             <ToastProvider>
               <StatusBar style="light" />
               <RootNavigator />
+              <ReconnectingBanner />
             </ToastProvider>
           </AuthProvider>
         </QueryClientProvider>

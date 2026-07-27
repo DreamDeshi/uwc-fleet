@@ -28,6 +28,8 @@ import { WebRefreshButton } from "../../components/WebRefreshButton";
 import { formatMoney, formatDate, formatTime } from "../../lib/format";
 import { incentiveAdjustment, tripMoneyState } from "../../lib/earnings";
 import { buildPayBreakdown } from "../../lib/payBreakdown";
+import { DELIVERED_STATUSES } from "../../lib/tripStatus";
+import { estimateTripCo2 } from "../../lib/tripCo2";
 import { consigneeDestination } from "../../lib/geo";
 import {
   tripDestination,
@@ -323,6 +325,23 @@ export function TripDetailsScreen() {
             );
           })()}
 
+          {/* Per-trip CO₂e ESTIMATE (SDG visibility) — completed trips only,
+              labelled as an estimate; lib/tripCo2 mirrors the api's
+              display-only constants. Never pay-related. */}
+          {(() => {
+            if (!DELIVERED_STATUSES.includes(trip.status)) return null;
+            const co2 = estimateTripCo2(trip.stops ?? []);
+            if (!co2) return null;
+            return (
+              <View style={styles.co2Row}>
+                <Ionicons name="leaf-outline" size={14} color="#16A34A" />
+                <Text style={styles.co2Text}>
+                  {t("trip.co2Estimate", { km: co2.km, kg: co2.co2Kg })}
+                </Text>
+              </View>
+            );
+          })()}
+
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>
       </ScrollView>
@@ -429,6 +448,8 @@ const styles = StyleSheet.create({
   // (green = paid-as-proposed elsewhere).
   adjustAmounts: { fontSize: 14, fontWeight: "800", color: colors.navy },
   adjustReason: { fontSize: 13, color: colors.textMuted, marginTop: 6, lineHeight: 18 },
+  co2Row: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12, paddingHorizontal: 2 },
+  co2Text: { fontSize: 12, color: colors.textMuted, flexShrink: 1 },
   // Muted, matching TripCard's awaiting treatment — never orange (offline-only
   // colour, owner ruling) and never green (green = paid).
   breakdownCaveat: { fontSize: 12, fontWeight: "700", color: colors.textMuted, marginTop: 4 },

@@ -15,6 +15,7 @@ import { TripCard } from "../../components/TripCard";
 import { LoadingState, ErrorState } from "../../components/States";
 import { LogFuelModal } from "../../components/LogFuelModal";
 import { formatMoney, formatDate, formatTime } from "../../lib/format";
+import { daysSinceFill, fuelLogNudge } from "../../lib/fuelStats";
 import { tripDestination, cargoSummary, estimateIncentive, ORIGIN_LABEL } from "../../lib/trip";
 import { DELIVERED_STATUSES } from "../../lib/tripStatus";
 import { Trip } from "../../types";
@@ -29,6 +30,13 @@ export function DriverDashboardScreen() {
   const [fuelOpen, setFuelOpen] = useState(false);
   const fuel = useMyTruckFuel(user?.assigned_truck?.plate);
   const lastFill = fuel.data?.logs?.[0];
+  // Gentle reminder accent on the Log Fuel card when the last fill is old
+  // (lib/fuelStats — our own 5-day threshold, never a nag, never blocks).
+  // Only once the history has actually LOADED: an amber dot on cold start
+  // before data arrives would flash a false reminder at every launch.
+  const fuelNudge =
+    Boolean(user?.assigned_truck) && fuel.data !== undefined && fuelLogNudge(lastFill?.logged_at ?? null, new Date());
+  const fuelDays = daysSinceFill(lastFill?.logged_at ?? null, new Date());
   const { data: trips, isLoading, isError, refetch, isRefetching } = useTrips();
 
   const { active, assigned, recentCompleted, assignedToday } = useMemo(() => {
@@ -93,14 +101,19 @@ export function DriverDashboardScreen() {
         <TouchableOpacity style={styles.fuelBtn} onPress={() => setFuelOpen(true)} activeOpacity={0.85}>
           <View style={styles.fuelIcon}>
             <MaterialCommunityIcons name="gas-station" size={20} color={colors.blue} />
+            {fuelNudge ? <View style={styles.fuelNudgeDot} /> : null}
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.fuelTitle}>{t("profile.logFuel")}</Text>
-            <Text style={styles.fuelSub} numberOfLines={1}>
+            <Text style={[styles.fuelSub, fuelNudge && styles.fuelSubNudge]} numberOfLines={1}>
               {user?.assigned_truck
                 ? lastFill
-                  ? `${user.assigned_truck.plate} · ${t("fuel.lastFillShort", { when: formatDate(lastFill.logged_at), litres: lastFill.liters })}`
-                  : user.assigned_truck.plate
+                  ? fuelNudge && fuelDays !== null
+                    ? `${user.assigned_truck.plate} · ${t("fuel.staleNudge", { count: fuelDays })}`
+                    : `${user.assigned_truck.plate} · ${t("fuel.lastFillShort", { when: formatDate(lastFill.logged_at), litres: lastFill.liters })}`
+                  : fuelNudge
+                    ? `${user.assigned_truck.plate} · ${t("fuel.neverLogged")}`
+                    : user.assigned_truck.plate
                 : t("fuel.noTruck")}
             </Text>
           </View>
@@ -357,4 +370,18 @@ const styles = StyleSheet.create({
   fuelIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
   fuelTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
   fuelSub: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  // Reminder accent — amber (pending semantics), deliberately NOT orange
+  // (the 7 Jul ruling reserves orange for offline/queued states).
+  fuelNudgeDot: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#d97706",
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
+  fuelSubNudge: { color: "#d97706", fontWeight: "600" },
 });

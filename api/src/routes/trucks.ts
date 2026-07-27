@@ -13,7 +13,7 @@ import { planRateReset } from "../services/rateReset";
 import { summariseFuel } from "../lib/fuelSummary";
 import { odometerViolation } from "../lib/fuelOdometer";
 import { effectiveTruckRates, nextMytDayKey } from "../services/pendingRates";
-import { currentMytMonthBounds } from "../lib/myt";
+import { currentMytMonthBounds, mytMonthKey } from "../lib/myt";
 
 const router = Router();
 router.use(requireAuth);
@@ -197,6 +197,43 @@ router.get("/fuel/summary", async (_req, res, next) => {
     res.json(
       trucks.map((t) => ({ plate: t.plate, type: t.type, ...summariseFuel(t.fuel_logs) }))
     );
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /trucks/fuel/logs — current-month (MYT) fill-ups across the WHOLE
+// fleet, oldest first, for the Sustainability screen's fills CSV export.
+// Declared before "/:plate/fuel" for the same :plate-capture reason as
+// /fuel/summary. Read-only; the month key rides along so the client can
+// name the file without re-deriving MYT boundaries.
+router.get("/fuel/logs", async (_req, res, next) => {
+  try {
+    const now = new Date();
+    const { start, end } = currentMytMonthBounds(now);
+    const logs = await prisma.fuelLog.findMany({
+      where: { logged_at: { gte: start, lt: end } },
+      orderBy: { logged_at: "asc" },
+      select: {
+        logged_at: true,
+        truck_plate: true,
+        liters: true,
+        cost: true,
+        odometer: true,
+        driver: { select: { name: true } },
+      },
+    });
+    res.json({
+      month: mytMonthKey(now),
+      logs: logs.map((l) => ({
+        logged_at: l.logged_at,
+        truck_plate: l.truck_plate,
+        driver_name: l.driver?.name ?? null,
+        liters: Number(l.liters),
+        cost: Number(l.cost),
+        odometer: l.odometer,
+      })),
+    });
   } catch (err) {
     next(err);
   }

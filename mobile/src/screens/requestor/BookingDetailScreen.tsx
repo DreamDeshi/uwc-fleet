@@ -23,6 +23,8 @@ import { exceptionsEnabled } from "../../lib/featureFlags";
 import { RequestorExceptionBanner } from "../../components/RequestorExceptionBanner";
 import { LoadingState, ErrorState } from "../../components/States";
 import { tripDestination, tripConsigneeName, cargoSummary, tripDestZone, ORIGIN_LABEL } from "../../lib/trip";
+import { DELIVERED_STATUSES } from "../../lib/tripStatus";
+import { estimateTripCo2 } from "../../lib/tripCo2";
 import { bannerFor } from "../../lib/bookingBanner";
 import { formatDateTime, initials as nameInitials } from "../../lib/format";
 
@@ -169,6 +171,19 @@ export function BookingDetailScreen() {
         <Detail k={t("bookingDetail.cargo")} v={cargoSummary(trip)} />
         <Detail k={t("bookingDetail.consignee")} v={tripDestination(trip)} />
       </View>
+      {/* Per-trip CO₂e ESTIMATE (SDG visibility) — delivered trips only,
+          labelled as an estimate (lib/tripCo2). */}
+      {DELIVERED_STATUSES.includes(trip.status)
+        ? (() => {
+            const co2 = estimateTripCo2(trip.stops ?? []);
+            return co2 ? (
+              <View style={styles.co2Row}>
+                <Ionicons name="leaf-outline" size={14} color="#16A34A" />
+                <Text style={styles.co2Text}>{t("trip.co2Estimate", { km: co2.km, kg: co2.co2Kg })}</Text>
+              </View>
+            ) : null;
+          })()
+        : null}
     </Card>
   );
 
@@ -432,6 +447,8 @@ const styles = StyleSheet.create({
   uploadBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.tintBlue, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill },
   uploadBtnText: { color: colors.blue, fontSize: 13, fontWeight: "700" },
   docEmpty: { fontSize: 14, color: colors.textFaint, marginTop: 10 },
+  co2Row: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12 },
+  co2Text: { fontSize: 12, color: colors.textMuted, flexShrink: 1 },
   docRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: colors.bg, borderRadius: radius.md, padding: 10 },
   docThumb: { width: 44, height: 44, borderRadius: radius.sm, backgroundColor: colors.tintBlue },
   docIcon: { alignItems: "center", justifyContent: "center" },

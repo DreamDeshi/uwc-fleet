@@ -17,6 +17,7 @@
     "min": "min",
     "errorGeneric": "Sesuatu telah berlaku.",
     "errorNetwork": "Tidak dapat menyambung. Semak internet anda dan pastikan API berjalan.",
+    "reconnecting": "Menyambung semula…",
     "showPassword": "Tunjukkan kata laluan",
     "hidePassword": "Sembunyikan kata laluan",
     "noData": "Belum ada apa-apa di sini."
@@ -137,6 +138,7 @@
     "payAdjustedTitle": "Bayaran diselaraskan semasa kelulusan",
     "payAdjustedAmounts": "Dicadangkan RM {{proposed}} → Muktamad RM {{final}}",
     "payAdjustedNoReason": "Tiada sebab direkodkan — sila tanya admin.",
+    "co2Estimate": "≈ {{kg}} kg CO₂e · pergi balik ~{{km}} km (anggaran)",
     "podGateHint": "Tambah foto POD sebelum menanda telah dihantar.",
     "podCapture": "Ambil Foto Bukti",
     "podUploaded": "Foto bukti dimuat naik",
@@ -273,7 +275,10 @@
     "recentTitle": "Isian terkini",
     "efficiency": "{{l}} L / 100 km",
     "litresShort": "{{n}} L",
-    "lastFillShort": "Terakhir: {{when}} · {{litres}} L"
+    "lastFillShort": "Terakhir: {{when}} · {{litres}} L",
+    "staleNudge_one": "{{count}} hari sejak isian terakhir — log minyak?",
+    "staleNudge_other": "{{count}} hari sejak isian terakhir — log minyak?",
+    "neverLogged": "belum ada isian direkodkan — log minyak?"
   },
   "requestor": {
     "greeting": "Hai, {{name}}",
@@ -561,6 +566,9 @@
       "languageSection": "Bahasa",
       "languageHint": "Digunakan di semua skrin; disimpan ke akaun anda.",
       "aboutTitle": "Aplikasi & kemas kini",
+      "apiRow": "Pelayan API",
+      "apiOk": "OK · {{ms}} ms",
+      "apiDown": "Tidak dapat dihubungi — semak sambungan atau pelayan",
       "appVersion": "Versi aplikasi",
       "runtime": "Runtime",
       "channel": "Saluran",
@@ -894,6 +902,9 @@
       "savingsMeta_one": "{{count}} trip guna lori lebih kecil · ≈ {{co2}} kg CO₂e dielakkan",
       "savingsMeta_other": "{{count}} trip guna lori lebih kecil · ≈ {{co2}} kg CO₂e dielakkan",
       "savingsNone": "Belum ada trip saiz tepat bulan ini.",
+      "exportFills": "Eksport CSV isian minyak",
+      "exportSummary": "Eksport CSV ringkasan bulanan",
+      "exportFailed": "Eksport gagal — cuba lagi.",
       "disclosure": "CO₂e dan penjimatan adalah anggaran daripada isian direkodkan dan faktor boleh laras — tidak pernah digunakan untuk gaji atau penghantaran."
     },
     "trucks": {
