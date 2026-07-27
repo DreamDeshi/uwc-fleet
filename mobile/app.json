@@ -18,6 +18,10 @@
     "assetBundlePatterns": [
       "**/*"
     ],
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/6cb19185-a273-4dad-9993-bc3ef859cc17"
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "my.uwc.fleet"
