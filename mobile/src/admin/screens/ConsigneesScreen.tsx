@@ -9,7 +9,7 @@ import React, { useEffect, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Switch, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
-import { useConsignees, useCreateConsignee, useImportConsignees, useUpdateConsignee, type ConsigneeImportResult } from "../hooks/queries";
+import { useConsigneeCoverage, useConsignees, useCreateConsignee, useImportConsignees, useUpdateConsignee, type ConsigneeImportResult } from "../hooks/queries";
 import { colors, font, radius } from "../theme";
 import { Button, Card, EmptyState, ErrorState, Input, Loading, Modal, Pill, SearchInput } from "../components/ui";
 import { apiErrorCode, apiErrorMessage } from "../services/api";
@@ -34,6 +34,7 @@ export function ConsigneesScreen() {
   }, [q]);
 
   const consignees = useConsignees(debouncedQ, includeInactive);
+  const coverage = useConsigneeCoverage();
 
   if (consignees.isLoading) return <Loading />;
   if (consignees.isError)
@@ -70,6 +71,22 @@ export function ConsigneesScreen() {
             {t("admin.consignees.add")}
           </Button>
         </View>
+        {/* Geocode-coverage hint (read-only): when this grows, a manual
+            geocode/self-heal run is worth doing. Hidden at zero. */}
+        {coverage.data && coverage.data.missing_coords > 0 && (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Ionicons name="location-outline" size={13} color={colors.textMuted} />
+            <Text style={{ fontSize: font.sm, color: colors.textMuted, flexShrink: 1 }}>
+              {t("admin.consignees.coverageMissing", {
+                count: coverage.data.missing_coords,
+                total: coverage.data.total_active,
+              })}
+              {coverage.data.partial_coords > 0
+                ? ` · ${t("admin.consignees.coveragePartial", { count: coverage.data.partial_coords })}`
+                : ""}
+            </Text>
+          </View>
+        )}
       </Card>
 
       <Card pad={0}>

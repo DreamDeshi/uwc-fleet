@@ -12,6 +12,7 @@ import type {
   AuditFilterOptions,
   AuditPage,
   Consignee,
+  ConsigneeCoverage,
   ConsolidationSavings,
   GlobalSearchResults,
   DashboardKpis,
@@ -159,6 +160,16 @@ export function useConsolidationSavings() {
   return useQuery({
     queryKey: ["reports", "consolidation"],
     queryFn: async () => (await api.get<ConsolidationSavings>("/reports/consolidation")).data,
+    staleTime: 5 * 60_000,
+  });
+}
+
+// Consignee geocode coverage — how many active consignees still lack map
+// coordinates (signals when a manual geocode/self-heal run is worth doing).
+export function useConsigneeCoverage() {
+  return useQuery({
+    queryKey: ["consignees", "coverage"],
+    queryFn: async () => (await api.get<ConsigneeCoverage>("/consignees/coverage")).data,
     staleTime: 5 * 60_000,
   });
 }

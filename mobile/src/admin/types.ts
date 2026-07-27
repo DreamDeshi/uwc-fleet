@@ -342,14 +342,37 @@ export interface AttentionTrip {
   driver: { name: string; phone: string } | null;
   hours_since_pickup: number;
 }
+// Delivery confirmed far from the consignee's stored coordinate — a
+// REVIEW-ONLY flag (never blocks, never touches pay). Optional fields keep
+// the app tolerant of an API that predates the check.
+export interface EarlyTapTrip extends AttentionTrip {
+  stop_id: string;
+  consignee_name: string;
+  delivered_at: string;
+  distance_m: number;
+}
 export interface AttentionReport {
-  thresholds: { staleInProgressHours: number; overdueAssignedHours: number };
+  thresholds: {
+    staleInProgressHours: number;
+    overdueAssignedHours: number;
+    earlyTapRadiusM?: number;
+    earlyTapWindowMin?: number;
+  };
   stale_in_progress: AttentionTrip[];
   overdue_assigned: AttentionTrip[];
   completed_null_incentive: AttentionTrip[];
   // Assigned trips whose driver has since been put on leave covering the
   // pickup date (client Q3) — reassign or unassign these. Self-clearing.
   assigned_driver_on_leave: AttentionTrip[];
+  early_tap_delivery?: EarlyTapTrip[];
+}
+
+// Geocode coverage counts (GET /consignees/coverage) — read-only signal for
+// when a manual geocode/self-heal run is worth doing.
+export interface ConsigneeCoverage {
+  total_active: number;
+  missing_coords: number;
+  partial_coords: number;
 }
 
 // One driver-leave entry (GET /leaves) — admin-managed dispatch availability.

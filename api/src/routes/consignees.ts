@@ -8,6 +8,7 @@ import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { activeBookingsForConsigneeWhere, updateConsignee } from "../services/consigneeUpdate";
 import { parseConsigneeCsv } from "../lib/consigneeCsv";
+import { geocodeNewConsignee } from "../lib/geocodeConsignee";
 
 const router = Router();
 router.use(requireAuth);
@@ -213,6 +214,29 @@ async function similarActiveConsignees(
   return pickSimilarCandidates(rows, companyName, excludeId);
 }
 
+// ── GET /consignees/coverage — geocode-coverage counts (admin, read-only) ──
+// Discoverability for the manual coord tooling: how many ACTIVE consignees
+// still lack map coordinates (worth a scripts/geocode-google.ts or
+// self-heal-coords.ts run when this grows). Mirrors the self-heal script's
+// semantics: healable = BOTH coords null; exactly-one-null is a data anomaly
+// surfaced separately, never healed. Counts only — no write, no automation.
+router.get("/coverage", requireRole("admin"), async (_req, res, next) => {
+  try {
+    const [totalActive, missingBoth, missingAny] = await Promise.all([
+      prisma.consignee.count({ where: { is_active: true } }),
+      prisma.consignee.count({ where: { is_active: true, latitude: null, longitude: null } }),
+      prisma.consignee.count({ where: { is_active: true, OR: [{ latitude: null }, { longitude: null }] } }),
+    ]);
+    res.json({
+      total_active: totalActive,
+      missing_coords: missingBoth,
+      partial_coords: missingAny - missingBoth,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── POST /consignees — requestor self-adds a consignee not in the list ──
 const createConsigneeSchema = z.object({
   company_name: z.string().min(1, "Company name is required."),
@@ -280,6 +304,19 @@ router.post(
           table_name: "Consignee",
           record_id: consignee.id,
         },
+      });
+
+      // Creation-time geocode — FIRE-AND-FORGET, never awaited on the request
+      // path: a geocoding failure or missing GOOGLE_MAPS_KEY must not break
+      // creation (the row simply stays on the zone fallback, exactly as
+      // before). Same precision gate as the batch script (lib/geocodeConsignee).
+      void geocodeNewConsignee({
+        id: consignee.id,
+        address_1: data.address_1 ?? null,
+        address_2: data.address_2 ?? null,
+        area: data.area ?? null,
+        state: data.state ?? null,
+        postal_code: data.postal_code ?? null,
       });
 
       res.status(201).json(consignee);

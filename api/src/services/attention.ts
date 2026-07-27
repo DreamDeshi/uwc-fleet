@@ -17,9 +17,18 @@ export interface AttentionConfig {
   staleInProgressHours: number;
   /** assigned (never started) trips whose pickup is more than this many hours ago. */
   overdueAssignedHours: number;
+  /**
+   * Early-tap review flag (lib/earlyTap): a delivery confirm whose nearest
+   * GPS fix is beyond this many metres from the consignee's stored coordinate.
+   * Detection only — never blocks, never pays. ⚠ OUR OWN default, not a
+   * client rule (see lib/earlyTap.ts docblock).
+   */
+  earlyTapRadiusM: number;
+  /** Only fixes within this many minutes of delivered_at can evaluate a tap. */
+  earlyTapWindowMin: number;
 }
 
-function hoursFromEnv(name: string, fallback: number): number {
+function numFromEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === "") return fallback;
   const n = Number(raw);
@@ -28,8 +37,10 @@ function hoursFromEnv(name: string, fallback: number): number {
 
 export function attentionConfig(): AttentionConfig {
   return {
-    staleInProgressHours: hoursFromEnv("ATTENTION_STALE_INPROGRESS_HOURS", 8),
-    overdueAssignedHours: hoursFromEnv("ATTENTION_OVERDUE_ASSIGNED_HOURS", 2),
+    staleInProgressHours: numFromEnv("ATTENTION_STALE_INPROGRESS_HOURS", 8),
+    overdueAssignedHours: numFromEnv("ATTENTION_OVERDUE_ASSIGNED_HOURS", 2),
+    earlyTapRadiusM: numFromEnv("ATTENTION_EARLY_TAP_RADIUS_M", 500),
+    earlyTapWindowMin: numFromEnv("ATTENTION_EARLY_TAP_WINDOW_MIN", 10),
   };
 }
 

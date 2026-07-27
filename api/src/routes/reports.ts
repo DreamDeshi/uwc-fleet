@@ -16,6 +16,7 @@ import { ApiError } from "../lib/apiError";
 import { buildPayrollRows } from "../services/payroll";
 import { firstDeliveredAt, payAttributionInstant, payableIncentive } from "../services/tripCompletion";
 import { attentionConfig, hoursSince } from "../services/attention";
+import { earlyTapDistanceM, isEarlyTap } from "../lib/earlyTap";
 import { consolidationSavings } from "../lib/consolidationSavings";
 import { rightSizingSavings } from "../lib/rightSizingSavings";
 
@@ -329,12 +330,75 @@ router.get("/attention", async (_req, res, next) => {
         driver: driver ? { name: driver.name, phone: driver.phone } : null,
       }));
 
+    // Early-tap review flags (lib/earlyTap): deliveries confirmed far from the
+    // consignee's stored coordinate. DETECTION ONLY — computed at read time
+    // from LocationLog, no stored flag, so it can never block a delivery,
+    // alter pay, or gate finalization. Consignees without coords never appear
+    // (coord presence is the gate — geocode_match_type is never read). Scope:
+    // last 7 days, so the review list self-expires. Two indexed findFirsts per
+    // candidate stop ((trip_id, recorded_at) index) — trial-scale volumes.
+    const EARLY_TAP_LOOKBACK_DAYS = 7;
+    const deliveredCutoff = new Date(now.getTime() - EARLY_TAP_LOOKBACK_DAYS * DAY_MS);
+    const candidateStops = await prisma.tripStop.findMany({
+      where: {
+        delivered_at: { gte: deliveredCutoff },
+        consignee: { latitude: { not: null }, longitude: { not: null } },
+        trip: { driver_id: { not: null } },
+      },
+      select: {
+        id: true,
+        delivered_at: true,
+        consignee: { select: { company_name: true, latitude: true, longitude: true } },
+        trip: { select: shape },
+      },
+      orderBy: { delivered_at: "desc" },
+    });
+    const earlyTapDelivery: object[] = [];
+    for (const stop of candidateStops) {
+      if (!stop.delivered_at) continue;
+      const [before, after] = await Promise.all([
+        prisma.locationLog.findFirst({
+          where: { trip_id: stop.trip.id, recorded_at: { lte: stop.delivered_at } },
+          orderBy: { recorded_at: "desc" },
+          select: { latitude: true, longitude: true, recorded_at: true },
+        }),
+        prisma.locationLog.findFirst({
+          where: { trip_id: stop.trip.id, recorded_at: { gte: stop.delivered_at } },
+          orderBy: { recorded_at: "asc" },
+          select: { latitude: true, longitude: true, recorded_at: true },
+        }),
+      ]);
+      const fixes = [before, after]
+        .filter((f): f is NonNullable<typeof f> => f !== null)
+        .map((f) => ({
+          latitude: Number(f.latitude),
+          longitude: Number(f.longitude),
+          recorded_at: f.recorded_at,
+        }));
+      const distanceM = earlyTapDistanceM(
+        stop.delivered_at,
+        fixes,
+        stop.consignee,
+        cfg.earlyTapWindowMin
+      );
+      if (isEarlyTap(distanceM, cfg.earlyTapRadiusM)) {
+        earlyTapDelivery.push({
+          ...withAge(stop.trip),
+          stop_id: stop.id,
+          consignee_name: stop.consignee.company_name,
+          delivered_at: stop.delivered_at,
+          distance_m: distanceM,
+        });
+      }
+    }
+
     res.json({
       thresholds: cfg,
       stale_in_progress: staleInProgress.map(withAge),
       overdue_assigned: overdueAssigned.map(withAge),
       completed_null_incentive: completedNullIncentive.map(withAge),
       assigned_driver_on_leave: assignedDriverOnLeave.map(withAge),
+      early_tap_delivery: earlyTapDelivery,
     });
   } catch (err) {
     next(err);
