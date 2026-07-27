@@ -101,15 +101,18 @@ export function AdminFleetMap({
       <View style={isWide ? { flex: 1, borderRadius: 12, overflow: "hidden" } : { height, borderRadius: 12, overflow: "hidden" }}>
         <MapView style={StyleSheet.absoluteFill} initialRegion={REGION}>
           {/* Zone code labels only — no catchment circles.
-              Android marker-view sizing rules (27 Jul 2026, the clipped
-              UWC PLANT label): the snapshot is taken at the view's UNSCALED
-              measured size, so (a) allowFontScaling={false} on every marker
-              Text — OS font scaling otherwise inflates the text past the
-              rasterized bitmap and clips it (web parity: Leaflet's divIcons
-              use fixed px type, immune to OS scale); (b) collapsable={false}
-              on the child root so Android view-flattening can't hand the
-              snapshotter a partial subtree (the stray offset fragment);
-              (c) explicit anchors, matching the web iconAnchor values. */}
+              DETERMINISTIC MARKER GEOMETRY (27 Jul 2026, third and final
+              layer of the plant-pin saga — device-screenshot diagnosis):
+              Android allocates the marker's bitmap at the child view's FIRST
+              measure and never grows it when async text layout widens the
+              view. The canvas is top-left anchored, so the label clipped at
+              the right (left rounded corner intact) and the centered square
+              below fell outside it entirely except its navy border sliver.
+              Rule: every marker child's ROOT has EXPLICIT width/height —
+              first measure == final size, no async text measure in the
+              critical path. Inner content hugs freely inside the fixed box.
+              Sizes mirror the web divIcon iconSize boxes; type stays fixed
+              10px unscaled (allowFontScaling={false}) so it always fits. */}
           {ZONES.map((z) => (
             <Marker
               key={z.code}
@@ -117,7 +120,7 @@ export function AdminFleetMap({
               anchor={{ x: 0.5, y: 0.5 }}
               tracksViewChanges={tracksViewChanges}
             >
-              <View collapsable={false}>
+              <View collapsable={false} style={{ width: 44, height: 18, alignItems: "center", justifyContent: "center" }}>
                 <Text
                   allowFontScaling={false}
                   numberOfLines={1}
@@ -136,13 +139,33 @@ export function AdminFleetMap({
             anchor={{ x: 0.5, y: 1 }}
             tracksViewChanges={tracksViewChanges}
           >
-            <View collapsable={false} style={{ alignItems: "center" }}>
-              <View style={{ backgroundColor: colors.navy, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2, marginBottom: 3 }}>
+            <View collapsable={false} style={{ width: 88, height: 42, alignItems: "center" }}>
+              <View
+                style={{
+                  height: 20,
+                  maxWidth: 88,
+                  backgroundColor: colors.navy,
+                  borderRadius: 6,
+                  paddingHorizontal: 7,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
                 <Text allowFontScaling={false} numberOfLines={1} style={{ color: colors.yellow, fontSize: 10, fontWeight: "700" }}>
                   UWC PLANT
                 </Text>
               </View>
-              <View style={{ width: 16, height: 16, backgroundColor: colors.yellow, borderWidth: 3, borderColor: colors.navy, borderRadius: 3 }} />
+              <View
+                style={{
+                  width: 16,
+                  height: 16,
+                  marginTop: 3,
+                  backgroundColor: colors.yellow,
+                  borderWidth: 3,
+                  borderColor: colors.navy,
+                  borderRadius: 3,
+                }}
+              />
             </View>
           </Marker>
 
@@ -160,18 +183,19 @@ export function AdminFleetMap({
                 tracksViewChanges={tracksViewChanges}
                 zIndex={2}
               >
-                <View collapsable={false} style={{ alignItems: "center" }}>
+                <View collapsable={false} style={{ width: 104, height: 46, alignItems: "center" }}>
                   <View
                     style={{
                       flexDirection: "row",
                       alignItems: "center",
+                      height: 20,
+                      maxWidth: 104,
                       backgroundColor: "#fff",
                       borderWidth: 1.5,
                       borderColor: color,
                       borderStyle: isLive ? "solid" : "dashed",
                       borderRadius: 6,
                       paddingHorizontal: 6,
-                      paddingVertical: 1,
                       marginBottom: 3,
                     }}
                   >
