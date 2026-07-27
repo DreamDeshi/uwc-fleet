@@ -18,7 +18,7 @@ import { useDepartments } from "../../hooks/queries";
 import { apiErrorMessage } from "../../services/api";
 import { colors, layout, radius } from "../../theme";
 import { Button } from "../../components/Button";
-import { TextField, PressableField } from "../../components/Field";
+import { PasswordField, PressableField, TextField } from "../../components/Field";
 import { OptionsModal } from "../../components/OptionsModal";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Register">;
@@ -184,21 +184,17 @@ export function RegisterScreen({ navigation }: Props) {
           </>
         ) : (
           <>
-            <TextField
+            <PasswordField
               label={t("register.password")}
-              leftIcon="lock-closed-outline"
               value={password}
               onChangeText={setPassword}
               placeholder={t("register.passwordPlaceholder")}
-              secureTextEntry
             />
-            <TextField
+            <PasswordField
               label={t("register.confirmPassword")}
-              leftIcon="lock-closed-outline"
               value={confirm}
               onChangeText={setConfirm}
               placeholder={t("register.confirmPlaceholder")}
-              secureTextEntry
             />
 
             {/* Summary */}

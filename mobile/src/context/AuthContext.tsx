@@ -1,4 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { AppState } from "react-native";
+import { queryClient } from "../lib/queryClient";
 import {
   api,
   clearTokens,
@@ -33,6 +35,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [user, setUser] = useState<Me | null>(null);
+  // True when the session came from the CACHED identity (bootstrap fetchMe
+  // failed with a connectivity error). The re-validation effect below heals it.
+  const [degraded, setDegraded] = useState(false);
 
   const fetchMe = async () => {
     const res = await api.get<Me>("/users/me");
@@ -83,6 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (cached) {
               setUser(cached);
               setStatus("authed");
+              setDegraded(true);
             } else {
               // No cached identity to route with — can't enter the app, but keep
               // the tokens (don't wipe) so the next online launch just works.
@@ -104,6 +110,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Self-heal for the degraded (cached-identity) session. The old code entered
+  // authed from cache and then NOTHING ever re-validated — the comment above
+  // promised "re-validate once signal returns" but no listener existed, so a
+  // transient cold-start transport failure (the native cold-reopen bug,
+  // 27 Jul 2026) froze the whole app: every tab errored once and stayed
+  // errored. Now: retry /users/me immediately, on every foreground, and every
+  // 20 s until it succeeds — then refetch every query so the frozen error
+  // states unfreeze without the user doing anything. A real auth rejection
+  // during these retries still flows through the interceptor's refresh →
+  // auth-failure path (clean logout), unchanged.
+  useEffect(() => {
+    if (!degraded) return;
+    let cancelled = false;
+    const attempt = async () => {
+      try {
+        await fetchMe();
+        if (cancelled) return;
+        setDegraded(false);
+        queryClient.invalidateQueries();
+        syncPushToken();
+      } catch {
+        /* still unreachable — the interval/foreground listener tries again */
+      }
+    };
+    const interval = setInterval(attempt, 20_000);
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") attempt();
+    });
+    attempt();
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      sub.remove();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [degraded]);
+
   // A failed token refresh (expired/rotated) forces a clean logout. This fires
   // only on a genuine server rejection (doRefresh keeps the session on a network
   // error), so dropping the cached identity here is correct.
@@ -111,6 +154,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthFailureHandler(() => {
       clearCachedMe();
       setUser(null);
+      setDegraded(false);
       setStatus("guest");
     });
   }, []);
@@ -119,6 +163,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const data = await loginRequest(phone, password);
     await setTokens(data.accessToken, data.refreshToken);
     await fetchMe();
+    setDegraded(false);
     setStatus("authed");
     syncPushToken();
   };
@@ -140,6 +185,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await clearTokens();
     await clearCachedMe();
     setUser(null);
+    setDegraded(false);
     setStatus("guest");
   };
 

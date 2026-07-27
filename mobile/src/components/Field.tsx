@@ -8,6 +8,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useTranslation } from "react-i18next";
 import { colors, radius } from "../theme";
 
 export function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -58,6 +59,44 @@ export function TextField({
         {rightElement}
       </View>
     </View>
+  );
+}
+
+// Password input with the same show/hide eye the login screen has. Typing a
+// password blind — twice, for confirm fields — is error-prone for non-technical
+// users (owner, 27 Jul 2026), so every password field shares this toggle.
+export function PasswordField({
+  label,
+  leftIcon = "lock-closed-outline",
+  ...rest
+}: TextInputProps & {
+  label?: string;
+  leftIcon?: keyof typeof Ionicons.glyphMap;
+}) {
+  const { t } = useTranslation();
+  const [visible, setVisible] = React.useState(false);
+  return (
+    <TextField
+      label={label}
+      leftIcon={leftIcon}
+      autoCapitalize="none"
+      {...rest}
+      secureTextEntry={!visible}
+      rightElement={
+        <TouchableOpacity
+          onPress={() => setVisible((v) => !v)}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel={t(visible ? "common.hidePassword" : "common.showPassword")}
+        >
+          <Ionicons
+            name={visible ? "eye-off-outline" : "eye-outline"}
+            size={20}
+            color={colors.textMuted}
+          />
+        </TouchableOpacity>
+      }
+    />
   );
 }
 
