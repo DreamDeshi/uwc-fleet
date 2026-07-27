@@ -559,7 +559,21 @@
     },
     "settings": {
       "languageSection": "Bahasa",
-      "languageHint": "Digunakan di semua skrin; disimpan ke akaun anda."
+      "languageHint": "Digunakan di semua skrin; disimpan ke akaun anda.",
+      "aboutTitle": "Aplikasi & kemas kini",
+      "appVersion": "Versi aplikasi",
+      "runtime": "Runtime",
+      "channel": "Saluran",
+      "updateRow": "Kemas kini aktif",
+      "updEmbedded": "Bundle terbenam — belum ada kemas kini OTA digunakan",
+      "updDisabled": "Kemas kini dimatikan dalam binaan ini (dev/web).",
+      "updPublishedAt": "diterbitkan {{when}}",
+      "updCheckBtn": "Semak kemas kini",
+      "updChecking": "Menyemak…",
+      "updUpToDate": "Terkini — sudah menjalankan kemas kini terbaharu.",
+      "updDownloading": "Memuat turun kemas kini…",
+      "updRestarting": "Memulakan semula dengan kemas kini baharu…",
+      "updError": "Semakan kemas kini gagal: {{msg}}"
     },
     "roleLabel": "Pentadbir Armada",
     "comingSoon": "Skrin ini akan tiba dalam fasa akan datang.",
