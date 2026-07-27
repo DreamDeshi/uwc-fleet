@@ -186,27 +186,15 @@ export function AdminFleetMap({
                 tracksViewChanges={tracksViewChanges}
                 zIndex={2}
               >
-                <View collapsable={false} style={{ width: 104, height: 46, alignItems: "center" }}>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      height: 20,
-                      maxWidth: 104,
-                      backgroundColor: "#fff",
-                      borderWidth: 1.5,
-                      borderColor: color,
-                      borderStyle: isLive ? "solid" : "dashed",
-                      borderRadius: 6,
-                      paddingHorizontal: 6,
-                      marginBottom: 3,
-                    }}
-                  >
-                    {isLive && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.green, marginRight: 4 }} />}
-                    <Text allowFontScaling={false} numberOfLines={1} style={{ color: colors.navy, fontSize: 10, fontWeight: "700" }}>
-                      {tr.plate}
-                    </Text>
-                  </View>
+                {/* INTERIM truck marker (owner decision, 27 Jul 2026): a plain
+                    colored dot small enough to fit the Fabric bug's constant
+                    ~36dp canvas — better a simple dot that works than a
+                    broken plate pill. Live = full-strength ring; stale =
+                    faded. The plate and every detail stay in the tap
+                    callout, and the idle side list still names plates.
+                    RESTORE the full plate pill when the react-native-maps
+                    upgrade ships in the next APK (native, runtime bump). */}
+                <View collapsable={false} style={{ width: 28, height: 28, alignItems: "center", justifyContent: "center" }}>
                   <View
                     style={{
                       width: 22,
@@ -215,11 +203,12 @@ export function AdminFleetMap({
                       backgroundColor: color,
                       borderWidth: 2,
                       borderColor: "#fff",
+                      opacity: isLive ? 1 : 0.45,
                       alignItems: "center",
                       justifyContent: "center",
                     }}
                   >
-                    <Text allowFontScaling={false} style={{ color: "#fff", fontSize: 10 }}>🚚</Text>
+                    {isLive ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: "#fff" }} /> : null}
                   </View>
                 </View>
                 <Callout tooltip={false}>
