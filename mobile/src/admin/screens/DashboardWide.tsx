@@ -186,8 +186,8 @@ export function DashboardWide() {
       </View>
 
       {/* Sustainability strip — fleet fuel/CO₂e/distance (SDG visibility).
-          Same rollup as Trucks → Fuel; taps through to it. */}
-      <SustainabilityCard onPress={() => navigation.navigate("AdminTrucks")} />
+          Same rollup as the Sustainability screen; taps through to it. */}
+      <SustainabilityCard onPress={() => navigation.navigate("AdminSustainability")} />
 
       {/* Map + right rail */}
       <View style={{ flexDirection: "row", gap: 16, alignItems: "stretch" }}>

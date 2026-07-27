@@ -74,6 +74,7 @@ export function AdminHomeScreen() {
     { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline", count: approvalCount },
     { route: "AdminIncentives", labelKey: "admin.nav.incentives", icon: "cash-outline" },
     { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline" },
+    { route: "AdminSustainability", labelKey: "admin.nav.sustainability", icon: "leaf-outline" },
     { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline" },
     { route: "AdminUsers", labelKey: "admin.users.title", icon: "people-outline", count: pendingCount },
     { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },
@@ -181,9 +182,11 @@ export function AdminHomeScreen() {
         )}
 
         {/* Sustainability — fleet fuel/CO₂e/distance (SDG visibility). Taps
-            through to the Fleet tab where the Fuel panel lives. */}
+            through to the dedicated Sustainability screen. */}
         <View style={styles.section}>
-          <SustainabilityCard onPress={() => navigation.navigate("AdminFleet")} />
+          <SustainabilityCard
+            onPress={() => navigation.navigate("AdminMore", { screen: "AdminSustainability", initial: false })}
+          />
         </View>
 
         {/* Fleet map — the Phase-3 map, now on the phone home too. */}

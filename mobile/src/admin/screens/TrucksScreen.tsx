@@ -6,6 +6,7 @@
 import React, { useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
 import { useTranslation } from "react-i18next";
 import {
   useCreateTruck,
@@ -18,7 +19,6 @@ import {
 import { colors, font, radius } from "../theme";
 import { Avatar, Button, Card, ConfirmDialog, EmptyState, ErrorState, FilterHeader, Input, Loading, Modal, Pill, SearchInput, SegmentedFilter } from "../components/ui";
 import { LoadCapacityBar } from "../components/LoadCapacityBar";
-import { FuelPanel } from "../components/FuelPanel";
 import { DateField } from "../platform/datePicker";
 import { useToast } from "../../components/Toast";
 import { apiErrorMessage } from "../services/api";
@@ -34,7 +34,6 @@ const STATUS_META: Record<string, { labelKey: string; bg: string; fg: string; do
 };
 
 type Filter = "all" | "active" | "idle" | "maintenance" | "retired";
-export type TruckTab = "fleet" | "fuel";
 
 /** Shift a "YYYY-MM-DD" MYT key by whole days, staying in MYT. */
 function shiftDateKey(key: string, days: number): string {
@@ -42,23 +41,15 @@ function shiftDateKey(key: string, days: number): string {
   return mytDateKey(new Date(Date.UTC(y, m - 1, d + days, 12))); // noon: never trips a boundary
 }
 
-export function TrucksScreen({
-  tab: tabProp,
-  onTabChange,
-}: { tab?: TruckTab; onTabChange?: (v: TruckTab) => void } = {}) {
+export function TrucksScreen() {
   const { t } = useTranslation();
   const mode = useLayoutMode();
+  const navigation = useNavigation<any>();
   // Which MYT day's capacity is on screen (item 7b). Opens on TODAY — same
   // default as the Trips board, per Mr. Teh 16 Jul: "always show today date
   // everyday we sign in".
   const [date, setDate] = useState(() => mytDateKey(new Date()));
   const trucks = useTrucks(date);
-  // Fleet/Fuel tab is CONTROLLED when FleetScreen owns it (narrow — the toggle
-  // sits in the blue header) and uncontrolled when standalone (wide sidebar).
-  const [tabState, setTabState] = useState<TruckTab>("fleet");
-  const tab = tabProp ?? tabState;
-  const setTab = onTabChange ?? setTabState;
-  const controlled = tabProp !== undefined;
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
@@ -92,31 +83,31 @@ export function TrucksScreen({
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={trucks.isRefetching} onRefresh={() => trucks.refetch()} />}
     >
-      {/* Fleet / Fuel tabs — rendered in-content ONLY when this screen owns the
-          tab (wide/standalone via the sidebar). On narrow FleetScreen lifts the
-          toggle into the blue header, so it's hidden here. On WIDE "+ Add Truck"
-          sits inline on the right. */}
-      {!controlled && (
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-          <SegmentedFilter<TruckTab>
-            value={tab}
-            onChange={setTab}
-            options={[
-              { value: "fleet", label: t("admin.trucks.tabFleet") },
-              { value: "fuel", label: t("admin.trucks.tabFuel") },
-            ]}
-          />
-          {wide && tab === "fleet" && !trucks.isLoading && !trucks.isError && (
-            <Button variant="primary" size="sm" onPress={() => setAdding(true)}>
-              {`+ ${t("admin.trucks.addTruck")}`}
-            </Button>
-          )}
-        </View>
-      )}
+      {/* The Fuel tab moved to the top-level Sustainability screen (27 Jul
+          2026) — this screen is fleet management only. The thin link keeps
+          the old location discoverable; wide keeps "+ Add Truck" inline. */}
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <Pressable
+          onPress={() =>
+            wide
+              ? navigation.navigate("AdminSustainability")
+              : navigation.navigate("AdminMore", { screen: "AdminSustainability", initial: false })
+          }
+          hitSlop={8}
+          style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+        >
+          <Ionicons name="leaf-outline" size={15} color="#16A34A" />
+          <Text style={{ fontSize: font.sm, fontWeight: "600", color: colors.blue }}>{t("admin.trucks.fuelMovedLink")}</Text>
+          <Ionicons name="chevron-forward" size={13} color={colors.blue} />
+        </Pressable>
+        {wide && !trucks.isLoading && !trucks.isError && (
+          <Button variant="primary" size="sm" onPress={() => setAdding(true)}>
+            {`+ ${t("admin.trucks.addTruck")}`}
+          </Button>
+        )}
+      </View>
 
-      {tab === "fuel" ? (
-        <FuelPanel />
-      ) : trucks.isLoading ? (
+      {trucks.isLoading ? (
         <Loading />
       ) : trucks.isError ? (
         <ErrorState message={t("admin.trucks.loadError")} onRetry={() => trucks.refetch()} />
