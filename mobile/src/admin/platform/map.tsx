@@ -9,7 +9,7 @@
 // (The Android Google-Maps key is configured in app.json since 22 Jul 2026 —
 // the old "blank map until the key is set" caveat no longer applies.)
 import React, { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ImageRequireSource, ScrollView, StyleSheet, Text, View } from "react-native";
 import MapView, { Callout, Marker } from "react-native-maps";
 import { useTranslation } from "react-i18next";
 import { useWide } from "../../hooks/useWide";
@@ -47,6 +47,26 @@ const REGION = {
   longitudeDelta: 2.0,
 };
 void MAP_ZOOM; // parity note: web uses the zoom directly
+
+// STATIC markers are pre-rendered PNGs (e2e/tools/gen-map-marker-assets.mjs
+// renders the exact web divIcon CSS → pixel parity by construction). WHY:
+// react-native-maps 1.20 under the new architecture allocates a custom-view
+// Marker's bitmap at a constant default size regardless of layout — the
+// plant-pin saga's real root cause (device-verified, 27 Jul 2026). The
+// `image` prop bypasses the view-snapshot path entirely. Dynamic truck
+// pills can't be static images; they need the react-native-maps upgrade
+// that ships with the NEXT APK (native change).
+const PLANT_PIN_IMAGE = require("../../../assets/map/plant-pin.png");
+const ZONE_LABEL_IMAGES: Record<string, ImageRequireSource> = {
+  P1: require("../../../assets/map/zone-P1.png"),
+  P2: require("../../../assets/map/zone-P2.png"),
+  P3: require("../../../assets/map/zone-P3.png"),
+  K1: require("../../../assets/map/zone-K1.png"),
+  K2: require("../../../assets/map/zone-K2.png"),
+  A1: require("../../../assets/map/zone-A1.png"),
+  A2: require("../../../assets/map/zone-A2.png"),
+  KL: require("../../../assets/map/zone-KL.png"),
+};
 
 // Android + custom-view Markers: with tracksViewChanges={false} Google Maps
 // rasterizes the marker view ONCE — and it can snapshot BEFORE React Native
@@ -113,61 +133,44 @@ export function AdminFleetMap({
               critical path. Inner content hugs freely inside the fixed box.
               Sizes mirror the web divIcon iconSize boxes; type stays fixed
               10px unscaled (allowFontScaling={false}) so it always fits. */}
-          {ZONES.map((z) => (
-            <Marker
-              key={z.code}
-              coordinate={{ latitude: z.lat, longitude: z.lng }}
-              anchor={{ x: 0.5, y: 0.5 }}
-              tracksViewChanges={tracksViewChanges}
-            >
-              <View collapsable={false} style={{ width: 44, height: 18, alignItems: "center", justifyContent: "center" }}>
-                <Text
-                  allowFontScaling={false}
-                  numberOfLines={1}
-                  style={{ color: z.color, fontWeight: "800", fontSize: font.sm, opacity: 0.75 }}
-                >
-                  {z.code}
-                </Text>
-              </View>
-            </Marker>
-          ))}
+          {ZONES.map((z) => {
+            const img = ZONE_LABEL_IMAGES[z.code];
+            return img ? (
+              <Marker
+                key={z.code}
+                coordinate={{ latitude: z.lat, longitude: z.lng }}
+                anchor={{ x: 0.5, y: 0.5 }}
+                image={img}
+              />
+            ) : (
+              // Fallback for a zone code without a generated asset (should not
+              // happen — regenerate via e2e/tools/gen-map-marker-assets.mjs).
+              <Marker
+                key={z.code}
+                coordinate={{ latitude: z.lat, longitude: z.lng }}
+                anchor={{ x: 0.5, y: 0.5 }}
+                tracksViewChanges={tracksViewChanges}
+              >
+                <View collapsable={false} style={{ width: 44, height: 18, alignItems: "center", justifyContent: "center" }}>
+                  <Text
+                    allowFontScaling={false}
+                    numberOfLines={1}
+                    style={{ color: z.color, fontWeight: "800", fontSize: font.sm, opacity: 0.75 }}
+                  >
+                    {z.code}
+                  </Text>
+                </View>
+              </Marker>
+            );
+          })}
 
-          {/* Plant origin — bottom-center anchored like the web icon ([8,28]
-              of 16×34 ≈ the yellow square's base sits on the coordinate). */}
+          {/* Plant origin — pre-rendered image, bottom-center anchored (the
+              yellow square's base sits on the coordinate, like the web icon). */}
           <Marker
             coordinate={{ latitude: PLANT_ORIGIN.lat, longitude: PLANT_ORIGIN.lng }}
             anchor={{ x: 0.5, y: 1 }}
-            tracksViewChanges={tracksViewChanges}
-          >
-            <View collapsable={false} style={{ width: 88, height: 42, alignItems: "center" }}>
-              <View
-                style={{
-                  height: 20,
-                  maxWidth: 88,
-                  backgroundColor: colors.navy,
-                  borderRadius: 6,
-                  paddingHorizontal: 7,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Text allowFontScaling={false} numberOfLines={1} style={{ color: colors.yellow, fontSize: 10, fontWeight: "700" }}>
-                  UWC PLANT
-                </Text>
-              </View>
-              <View
-                style={{
-                  width: 16,
-                  height: 16,
-                  marginTop: 3,
-                  backgroundColor: colors.yellow,
-                  borderWidth: 3,
-                  borderColor: colors.navy,
-                  borderRadius: 3,
-                }}
-              />
-            </View>
-          </Marker>
+            image={PLANT_PIN_IMAGE}
+          />
 
           {/* Active trucks — every one sits on a real GPS fix (live or stale) */}
           {active.map((tr) => {
