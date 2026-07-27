@@ -22,6 +22,7 @@ import { TripsScreen } from "../screens/TripsScreen";
 import { FleetScreen } from "../screens/FleetScreen";
 import { IncentivesScreen } from "../screens/IncentivesScreen";
 import { ReportsScreen } from "../screens/ReportsScreen";
+import { SustainabilityScreen } from "../screens/SustainabilityScreen";
 import { ConsigneesScreen } from "../screens/ConsigneesScreen";
 import { UserManagementScreen } from "../screens/UserManagementScreen";
 import { PerformanceScreen } from "../screens/PerformanceScreen";
@@ -64,6 +65,7 @@ function MoreStack() {
       <Stack.Screen name="AdminIncentiveApprovals" component={IncentiveApprovalsScreen} options={{ title: t("admin.titles.incentiveApprovals") }} />
       <Stack.Screen name="AdminIncentives" component={IncentivesScreen} options={{ title: t("admin.titles.incentives") }} />
       <Stack.Screen name="AdminReports" component={ReportsScreen} options={{ title: t("admin.titles.reports") }} />
+      <Stack.Screen name="AdminSustainability" component={SustainabilityScreen} options={{ title: t("admin.titles.sustainability") }} />
       <Stack.Screen name="AdminConsignees" component={ConsigneesScreen} options={{ title: t("admin.titles.consignees") }} />
       <Stack.Screen name="AdminUsers" component={UserManagementScreen} options={{ title: t("admin.users.title") }} />
       <Stack.Screen name="AdminPerformance" component={PerformanceScreen} options={{ title: t("admin.titles.performance") }} />

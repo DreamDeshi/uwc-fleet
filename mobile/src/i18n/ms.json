@@ -509,6 +509,7 @@
       "approvals": "Kelulusan Pengguna",
       "consignees": "Penerima Barang",
       "reports": "Laporan",
+      "sustainability": "Kelestarian",
       "settings": "Tetapan"
     },
     "navGroups": {
@@ -865,9 +866,26 @@
       "statusRetiredNote": "Akaun ini dilumpuhkan — pemandu tidak boleh log masuk.",
       "activeTripBlock": "Pemandu ini ada trip aktif. Selesaikan atau tetapkan semula dahulu."
     },
+    "sustainability": {
+      "loadError": "Tidak dapat memuatkan ringkasan bahan api.",
+      "heroCaption": "Bulan ini",
+      "fuelUsed": "Bahan api digunakan",
+      "estCo2e": "Anggaran CO₂e",
+      "distance": "Jarak",
+      "fleetL100": "L/100km armada",
+      "emptyTitle": "Belum ada isian minyak direkodkan",
+      "emptyBody": "Angka akan muncul selepas log minyak pertama — pemandu log isian dari skrin Utama; admin guna Log Minyak di bawah.",
+      "savingsTitle": "Penjimatan penghantaran saiz tepat",
+      "savingsSub": "Lori terkecil yang muat berbanding terbesar — bulan berjalan",
+      "savingsMeta_one": "{{count}} trip guna lori lebih kecil · ≈ {{co2}} kg CO₂e dielakkan",
+      "savingsMeta_other": "{{count}} trip guna lori lebih kecil · ≈ {{co2}} kg CO₂e dielakkan",
+      "savingsNone": "Belum ada trip saiz tepat bulan ini.",
+      "disclosure": "CO₂e dan penjimatan adalah anggaran daripada isian direkodkan dan faktor boleh laras — tidak pernah digunakan untuk gaji atau penghantaran."
+    },
     "trucks": {
       "tabFleet": "Armada",
       "tabFuel": "Minyak",
+      "fuelMovedLink": "Bahan api & CO₂e → Kelestarian",
       "loadError": "Tidak dapat memuatkan lori.",
       "searchPlaceholder": "Cari lori…",
       "filterAll": "Semua",
@@ -992,6 +1010,7 @@
       "approvals": "Pendaftaran akaun baharu",
       "consignees": "Betulkan zon, namakan semula, nyahaktif",
       "reports": "Trip, insentif & penggunaan",
+      "sustainability": "Bahan api, karbon & penjimatan armada",
       "settings": "Bahasa & keutamaan"
     },
     "reports": {
@@ -1049,6 +1068,7 @@
       "approvals": "Barisan Kelulusan Pengguna",
       "consignees": "Direktori Penerima",
       "reports": "Laporan & Analitik",
+      "sustainability": "Kelestarian",
       "settings": "Tetapan"
     },
     "incentives": {

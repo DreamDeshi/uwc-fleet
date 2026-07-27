@@ -29,6 +29,7 @@ import { PerformanceScreen } from "../screens/PerformanceScreen";
 import { DriversScreen } from "../screens/DriversScreen";
 import { TrucksScreen } from "../screens/TrucksScreen";
 import { ReportsScreen } from "../screens/ReportsScreen";
+import { SustainabilityScreen } from "../screens/SustainabilityScreen";
 import { IncentivesScreen } from "../screens/IncentivesScreen";
 import { IncentiveApprovalsScreen } from "../screens/IncentiveApprovalsScreen";
 import { TripsScreen } from "../screens/TripsScreen";
@@ -84,6 +85,7 @@ const NAV_GROUPS: { headingKey: string; items: NavItem[] }[] = [
       { route: "AdminUsers", labelKey: "admin.users.title", icon: "people-outline" },
       { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline" },
       { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline" },
+      { route: "AdminSustainability", labelKey: "admin.nav.sustainability", icon: "leaf-outline" },
     ],
   },
   {
@@ -267,6 +269,7 @@ const SUBTITLE_KEYS: Record<string, string> = {
   AdminUsers: "admin.users.subtitle",
   AdminConsignees: "admin.subtitles.consignees",
   AdminReports: "admin.subtitles.reports",
+  AdminSustainability: "admin.subtitles.sustainability",
   AdminSearch: "admin.search.subtitle",
   AdminCalendar: "admin.subtitles.calendar",
   AdminAudit: "admin.audit.subtitle",
@@ -441,6 +444,11 @@ function AdminDrawerWide() {
         name="AdminReports"
         component={ReportsScreen}
         options={{ title: t("admin.titles.reports") }}
+      />
+      <Drawer.Screen
+        name="AdminSustainability"
+        component={SustainabilityScreen}
+        options={{ title: t("admin.titles.sustainability") }}
       />
       <Drawer.Screen
         name="AdminIncentives"

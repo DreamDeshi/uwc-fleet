@@ -509,6 +509,7 @@
       "approvals": "用户审批",
       "consignees": "收货方",
       "reports": "报表",
+      "sustainability": "可持续发展",
       "settings": "设置"
     },
     "navGroups": {
@@ -865,9 +866,26 @@
       "statusRetiredNote": "此账户已禁用——司机无法登录。",
       "activeTripBlock": "该司机有进行中的行程。请先完成或重新分配。"
     },
+    "sustainability": {
+      "loadError": "无法加载燃油汇总。",
+      "heroCaption": "本月",
+      "fuelUsed": "已用燃油",
+      "estCo2e": "估算 CO₂e",
+      "distance": "里程",
+      "fleetL100": "车队 L/100km",
+      "emptyTitle": "尚未记录加油",
+      "emptyBody": "记录第一笔加油后即显示数据 — 司机可在首页记录加油；管理员可使用下方的记录加油。",
+      "savingsTitle": "合理调度节省",
+      "savingsSub": "最小可装载货车对比最大货车 — 本月累计",
+      "savingsMeta_one": "{{count}} 趟行程使用较小货车 · 约避免 {{co2}} kg CO₂e",
+      "savingsMeta_other": "{{count}} 趟行程使用较小货车 · 约避免 {{co2}} kg CO₂e",
+      "savingsNone": "本月暂无使用较小货车的行程。",
+      "disclosure": "CO₂e 与节省量为基于已记录加油和可调参数的估算 — 绝不用于工资或调度。"
+    },
     "trucks": {
       "tabFleet": "车队",
       "tabFuel": "燃油",
+      "fuelMovedLink": "燃油与 CO₂e → 可持续发展",
       "loadError": "无法加载罗里。",
       "searchPlaceholder": "搜索罗里…",
       "filterAll": "全部",
@@ -992,6 +1010,7 @@
       "approvals": "新账户注册",
       "consignees": "修正区域、重命名、停用",
       "reports": "行程、激励与利用率",
+      "sustainability": "车队燃油、碳排放与节省",
       "settings": "语言与偏好"
     },
     "reports": {
@@ -1049,6 +1068,7 @@
       "approvals": "用户审批队列",
       "consignees": "收货方目录",
       "reports": "报表与分析",
+      "sustainability": "可持续发展",
       "settings": "设置"
     },
     "incentives": {

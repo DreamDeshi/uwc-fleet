@@ -512,6 +512,7 @@
       "approvals": "User Approvals",
       "consignees": "Consignees",
       "reports": "Reports",
+      "sustainability": "Sustainability",
       "settings": "Settings"
     },
     "navGroups": {
@@ -874,9 +875,26 @@
       "statusRetiredNote": "This account is disabled — the driver cannot log in.",
       "activeTripBlock": "This driver has an active trip. Complete or reassign it first."
     },
+    "sustainability": {
+      "loadError": "Could not load the fuel summary.",
+      "heroCaption": "This month",
+      "fuelUsed": "Fuel used",
+      "estCo2e": "Est. CO₂e",
+      "distance": "Distance",
+      "fleetL100": "Fleet L/100km",
+      "emptyTitle": "No fill-ups logged yet",
+      "emptyBody": "Figures appear after the first fuel log — drivers log fills from their Home screen; admins use Log Fuel below.",
+      "savingsTitle": "Right-size dispatch savings",
+      "savingsSub": "Smallest truck that fits vs the largest — running month",
+      "savingsMeta_one": "{{count}} trip on a smaller truck · ≈ {{co2}} kg CO₂e avoided",
+      "savingsMeta_other": "{{count}} trips on smaller trucks · ≈ {{co2}} kg CO₂e avoided",
+      "savingsNone": "No right-sized trips yet this month.",
+      "disclosure": "CO₂e and savings are estimates from logged fill-ups and tunable factors — never used in pay or dispatch."
+    },
     "trucks": {
       "tabFleet": "Fleet",
       "tabFuel": "Fuel",
+      "fuelMovedLink": "Fuel & CO₂e → Sustainability",
       "loadError": "Could not load trucks.",
       "searchPlaceholder": "Search trucks…",
       "filterAll": "All",
@@ -1007,6 +1025,7 @@
       "approvals": "New account registrations",
       "consignees": "Fix zones, rename, deactivate",
       "reports": "Trips, incentives & utilisation",
+      "sustainability": "Fleet fuel, carbon & savings",
       "settings": "Language & preferences"
     },
     "reports": {
@@ -1064,6 +1083,7 @@
       "approvals": "User Approval Queue",
       "consignees": "Consignee Directory",
       "reports": "Reports & Analytics",
+      "sustainability": "Sustainability",
       "settings": "Settings"
     },
     "incentives": {

@@ -13,7 +13,6 @@ import { DateField } from "../platform/datePicker";
 import { apiErrorMessage } from "../services/api";
 import { formatDate, formatMoney, formatNumber } from "../lib/format";
 import { useLayoutMode } from "../hooks/useLayoutMode";
-import { fleetFuelRollup } from "../lib/fleetFuel";
 import { OptionsModal } from "../../components/OptionsModal";
 import type { TruckFuelSummary } from "../types";
 
@@ -28,10 +27,6 @@ export function FuelPanel() {
     () => (summary.data ?? []).reduce((s, r) => s + r.total_cost_rm, 0),
     [summary.data]
   );
-
-  // Fleet carbon + efficiency rollup — shared with the dashboard
-  // sustainability tile (fleetFuelRollup) so both show identical numbers.
-  const fleet = useMemo(() => fleetFuelRollup(summary.data ?? []), [summary.data]);
 
   if (summary.isLoading) return <Loading />;
   if (summary.isError) return <ErrorState message={t("admin.trucks.fuelLoadError")} onRetry={() => summary.refetch()} />;
@@ -54,26 +49,9 @@ export function FuelPanel() {
           </Button>
         </View>
 
-        {fleet.hasData && (
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 14, paddingVertical: 12, paddingHorizontal: 16, backgroundColor: "#F0FDF4", borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1, minWidth: 150 }}>
-              <Ionicons name="leaf" size={18} color="#16A34A" />
-              <View>
-                <Text style={{ fontSize: 18, fontWeight: "800", color: colors.text }}>{`${formatNumber(fleet.co2e)} kg`}</Text>
-                <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trucks.co2eThisMonth")}</Text>
-              </View>
-            </View>
-            <View style={{ flex: 1, minWidth: 110 }}>
-              <Text style={{ fontSize: 18, fontWeight: "800", color: colors.text }}>{fleet.lp100 != null ? formatNumber(fleet.lp100) : "—"}</Text>
-              <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trucks.fleetEfficiency")}</Text>
-            </View>
-            <View style={{ flex: 1, minWidth: 100 }}>
-              <Text style={{ fontSize: 18, fontWeight: "800", color: colors.text }}>{fleet.km > 0 ? `${formatNumber(fleet.km)} km` : "—"}</Text>
-              <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trucks.distanceThisMonth")}</Text>
-            </View>
-          </View>
-        )}
-
+        {/* The fleet-level headline strip that used to sit here moved to the
+            Sustainability screen's hero (27 Jul 2026) — this panel is now the
+            per-truck breakdown only, and that screen is its one consumer. */}
         {rows.length === 0 ? (
           <EmptyState message={t("admin.trucks.noFuel")} />
         ) : wide ? (
