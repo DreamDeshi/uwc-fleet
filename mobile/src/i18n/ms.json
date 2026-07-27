@@ -138,6 +138,7 @@
     "payAdjustedTitle": "Bayaran diselaraskan semasa kelulusan",
     "payAdjustedAmounts": "Dicadangkan RM {{proposed}} → Muktamad RM {{final}}",
     "payAdjustedNoReason": "Tiada sebab direkodkan — sila tanya admin.",
+    "co2Estimate": "≈ {{kg}} kg CO₂e · pergi balik ~{{km}} km (anggaran)",
     "podGateHint": "Tambah foto POD sebelum menanda telah dihantar.",
     "podCapture": "Ambil Foto Bukti",
     "podUploaded": "Foto bukti dimuat naik",

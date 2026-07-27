@@ -141,6 +141,7 @@
     "payAdjustedTitle": "Pay adjusted at approval",
     "payAdjustedAmounts": "Proposed RM {{proposed}} → Final RM {{final}}",
     "payAdjustedNoReason": "No reason was recorded — ask the admin.",
+    "co2Estimate": "≈ {{kg}} kg CO₂e · ~{{km}} km round trip (estimate)",
     "podGateHint": "Add a POD photo before marking delivered.",
     "podCapture": "Take POD Photo",
     "podUploaded": "POD photo uploaded",

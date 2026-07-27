@@ -138,6 +138,7 @@
     "payAdjustedTitle": "审批时薪酬已调整",
     "payAdjustedAmounts": "拟定 RM {{proposed}} → 最终 RM {{final}}",
     "payAdjustedNoReason": "未记录原因——请询问管理员。",
+    "co2Estimate": "≈ {{kg}} kg CO₂e · 往返约 {{km}} 公里（估算）",
     "podGateHint": "标记送达前请先拍摄送达凭证照片。",
     "podCapture": "拍摄送达凭证",
     "podUploaded": "送达凭证照片已上传",
