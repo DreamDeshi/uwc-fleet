@@ -100,7 +100,16 @@ export function AdminFleetMap({
     >
       <View style={isWide ? { flex: 1, borderRadius: 12, overflow: "hidden" } : { height, borderRadius: 12, overflow: "hidden" }}>
         <MapView style={StyleSheet.absoluteFill} initialRegion={REGION}>
-          {/* Zone code labels only — no catchment circles */}
+          {/* Zone code labels only — no catchment circles.
+              Android marker-view sizing rules (27 Jul 2026, the clipped
+              UWC PLANT label): the snapshot is taken at the view's UNSCALED
+              measured size, so (a) allowFontScaling={false} on every marker
+              Text — OS font scaling otherwise inflates the text past the
+              rasterized bitmap and clips it (web parity: Leaflet's divIcons
+              use fixed px type, immune to OS scale); (b) collapsable={false}
+              on the child root so Android view-flattening can't hand the
+              snapshotter a partial subtree (the stray offset fragment);
+              (c) explicit anchors, matching the web iconAnchor values. */}
           {ZONES.map((z) => (
             <Marker
               key={z.code}
@@ -108,15 +117,30 @@ export function AdminFleetMap({
               anchor={{ x: 0.5, y: 0.5 }}
               tracksViewChanges={tracksViewChanges}
             >
-              <Text style={{ color: z.color, fontWeight: "800", fontSize: font.sm, opacity: 0.75 }}>{z.code}</Text>
+              <View collapsable={false}>
+                <Text
+                  allowFontScaling={false}
+                  numberOfLines={1}
+                  style={{ color: z.color, fontWeight: "800", fontSize: font.sm, opacity: 0.75 }}
+                >
+                  {z.code}
+                </Text>
+              </View>
             </Marker>
           ))}
 
-          {/* Plant origin */}
-          <Marker coordinate={{ latitude: PLANT_ORIGIN.lat, longitude: PLANT_ORIGIN.lng }} tracksViewChanges={tracksViewChanges}>
-            <View style={{ alignItems: "center" }}>
+          {/* Plant origin — bottom-center anchored like the web icon ([8,28]
+              of 16×34 ≈ the yellow square's base sits on the coordinate). */}
+          <Marker
+            coordinate={{ latitude: PLANT_ORIGIN.lat, longitude: PLANT_ORIGIN.lng }}
+            anchor={{ x: 0.5, y: 1 }}
+            tracksViewChanges={tracksViewChanges}
+          >
+            <View collapsable={false} style={{ alignItems: "center" }}>
               <View style={{ backgroundColor: colors.navy, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2, marginBottom: 3 }}>
-                <Text style={{ color: colors.yellow, fontSize: 10, fontWeight: "700" }}>UWC PLANT</Text>
+                <Text allowFontScaling={false} numberOfLines={1} style={{ color: colors.yellow, fontSize: 10, fontWeight: "700" }}>
+                  UWC PLANT
+                </Text>
               </View>
               <View style={{ width: 16, height: 16, backgroundColor: colors.yellow, borderWidth: 3, borderColor: colors.navy, borderRadius: 3 }} />
             </View>
@@ -132,10 +156,11 @@ export function AdminFleetMap({
               <Marker
                 key={tr.plate}
                 coordinate={{ latitude: fix.latitude, longitude: fix.longitude }}
+                anchor={{ x: 0.5, y: 1 }}
                 tracksViewChanges={tracksViewChanges}
                 zIndex={2}
               >
-                <View style={{ alignItems: "center" }}>
+                <View collapsable={false} style={{ alignItems: "center" }}>
                   <View
                     style={{
                       flexDirection: "row",
@@ -151,7 +176,9 @@ export function AdminFleetMap({
                     }}
                   >
                     {isLive && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.green, marginRight: 4 }} />}
-                    <Text style={{ color: colors.navy, fontSize: 10, fontWeight: "700" }}>{tr.plate}</Text>
+                    <Text allowFontScaling={false} numberOfLines={1} style={{ color: colors.navy, fontSize: 10, fontWeight: "700" }}>
+                      {tr.plate}
+                    </Text>
                   </View>
                   <View
                     style={{
@@ -165,7 +192,7 @@ export function AdminFleetMap({
                       justifyContent: "center",
                     }}
                   >
-                    <Text style={{ color: "#fff", fontSize: 10 }}>🚚</Text>
+                    <Text allowFontScaling={false} style={{ color: "#fff", fontSize: 10 }}>🚚</Text>
                   </View>
                 </View>
                 <Callout tooltip={false}>
