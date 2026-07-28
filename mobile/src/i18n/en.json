@@ -937,6 +937,15 @@
       "exportFailed": "Export failed — try again.",
       "disclosure": "CO₂e and savings are estimates from logged fill-ups and tunable factors — never used in pay or dispatch."
     },
+    "fleetGroups": {
+      "customer": "Customer / Supplier",
+      "interplant": "Interplant",
+      "interplantSub": "Batu Kawan",
+      "countActive": "{{n}} active",
+      "countIdle": "{{n}} idle",
+      "countMaintenance": "{{n}} maintenance",
+      "countRetired": "{{n}} retired"
+    },
     "trucks": {
       "tabFleet": "Fleet",
       "tabFuel": "Fuel",

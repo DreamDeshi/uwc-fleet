@@ -928,6 +928,15 @@
       "exportFailed": "Eksport gagal — cuba lagi.",
       "disclosure": "CO₂e dan penjimatan adalah anggaran daripada isian direkodkan dan faktor boleh laras — tidak pernah digunakan untuk gaji atau penghantaran."
     },
+    "fleetGroups": {
+      "customer": "Pelanggan / Pembekal",
+      "interplant": "Antara Kilang",
+      "interplantSub": "Batu Kawan",
+      "countActive": "{{n}} aktif",
+      "countIdle": "{{n}} melahu",
+      "countMaintenance": "{{n}} penyelenggaraan",
+      "countRetired": "{{n}} bersara"
+    },
     "trucks": {
       "tabFleet": "Armada",
       "tabFuel": "Minyak",

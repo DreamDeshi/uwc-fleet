@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { useWide } from "../../hooks/useWide";
 import { MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES } from "../lib/zones";
 import { formatTime } from "../lib/format";
+import { groupFleet, type FleetGroup } from "../lib/fleetGroups";
 import { colors } from "../theme";
 import type { LivePosition, Truck } from "../types";
 
@@ -166,6 +167,78 @@ export function AdminFleetMap({
   // Idle trucks: no live position, so NOT on the map. A compact side list
   // (narrow column on wide, stacked below on phone). Hidden entirely when the
   // whole fleet is active, so the map takes the full width.
+  //
+  // Service-class grouping (28 Jul design) — NARROW ONLY, and only once the
+  // fleet has two classes (INTERPLANT_PLATES empty today → `grouped` false →
+  // the flat list renders exactly as before: the ship-early contract). Header
+  // count pills INCLUDE the class's on-map trucks, so class totals always
+  // reconcile to the whole fleet (pinned in lib/fleetGroups.test.ts).
+  const groups = groupFleet(trucks, (p) => liveByPlate.has(p));
+  const grouped = !isWide && groups.length > 1;
+  const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>({
+    customer: true, // the dispatch pool — open by default
+    interplant: false, // two dedicated shuttles — folded, counts still visible
+  });
+
+  const idleRow = (tr: Truck) => {
+    const tag = statusTag(tr.status);
+    return (
+      <div
+        key={tr.plate}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "7px 12px", borderBottom: `1px solid ${colors.divider}` }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: colors.navy, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tr.plate}</div>
+          <div style={{ fontSize: 11, color: colors.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {tr.type}
+            {tr.driver ? ` · ${tr.driver.name}` : ""}
+          </div>
+        </div>
+        <span style={{ flexShrink: 0, background: tag.bg, color: tag.fg, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, whiteSpace: "nowrap" }}>
+          {t(tag.labelKey)}
+        </span>
+      </div>
+    );
+  };
+
+  const countPill = (bg: string, fg: string, label: string) => (
+    <span key={label} style={{ flexShrink: 0, background: bg, color: fg, fontSize: 9.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, whiteSpace: "nowrap" }}>
+      {label}
+    </span>
+  );
+
+  const groupHeader = (g: FleetGroup, open: boolean) => (
+    <div
+      key={`${g.key}-head`}
+      role="button"
+      aria-expanded={open}
+      onClick={() => setOpenGroups((s) => ({ ...s, [g.key]: !open }))}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "9px 12px",
+        background: "#fafbfe",
+        borderBottom: `1px solid ${colors.border}`,
+        cursor: "pointer",
+        userSelect: "none",
+      }}
+    >
+      <span style={{ width: 12, fontSize: 11, fontWeight: 700, color: colors.textFaint }}>{open ? "▾" : "▸"}</span>
+      <span style={{ fontSize: 12, fontWeight: 800, color: colors.text }}>{t(`admin.fleetGroups.${g.key}`)}</span>
+      {g.key === "interplant" ? (
+        <span style={{ fontSize: 10, color: colors.textFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {t("admin.fleetGroups.interplantSub")}
+        </span>
+      ) : null}
+      <span style={{ flex: 1 }} />
+      {g.activeOnMap > 0 && countPill(colors.greenTint, colors.green, t("admin.fleetGroups.countActive", { n: g.activeOnMap }))}
+      {g.counts.idle > 0 && countPill(colors.blueTint, colors.blue, t("admin.fleetGroups.countIdle", { n: g.counts.idle }))}
+      {g.counts.maintenance > 0 && countPill(colors.orangeTint, colors.orange, t("admin.fleetGroups.countMaintenance", { n: g.counts.maintenance }))}
+      {g.counts.retired > 0 && countPill(colors.bg, colors.textMuted, t("admin.fleetGroups.countRetired", { n: g.counts.retired }))}
+    </div>
+  );
+
   const idlePanel = idle.length > 0 && (
     <div
       style={{
@@ -181,31 +254,25 @@ export function AdminFleetMap({
         // render in full on phones; the page scrolls.
       }}
     >
-      <div style={{ padding: "8px 12px", borderBottom: `1px solid ${colors.border}`, fontWeight: 700, fontSize: 12, color: colors.text }}>
-        {t("admin.trucks.statusIdle")} · {idle.length}
-      </div>
-      <div style={{ overflowY: "auto" }}>
-        {idle.map((tr) => {
-          const tag = statusTag(tr.status);
+      {grouped ? (
+        groups.map((g) => {
+          const open = openGroups[g.key] ?? false;
           return (
-            <div
-              key={tr.plate}
-              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "7px 12px", borderBottom: `1px solid ${colors.divider}` }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, color: colors.navy, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tr.plate}</div>
-                <div style={{ fontSize: 11, color: colors.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {tr.type}
-                  {tr.driver ? ` · ${tr.driver.name}` : ""}
-                </div>
-              </div>
-              <span style={{ flexShrink: 0, background: tag.bg, color: tag.fg, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, whiteSpace: "nowrap" }}>
-                {t(tag.labelKey)}
-              </span>
-            </div>
+            <React.Fragment key={g.key}>
+              {groupHeader(g, open)}
+              {open && g.rows.map(idleRow)}
+            </React.Fragment>
           );
-        })}
-      </div>
+        })
+      ) : (
+        // Single class (today's fleet) or the WIDE sidebar: flat, unchanged.
+        <>
+          <div style={{ padding: "8px 12px", borderBottom: `1px solid ${colors.border}`, fontWeight: 700, fontSize: 12, color: colors.text }}>
+            {t("admin.trucks.statusIdle")} · {idle.length}
+          </div>
+          <div style={{ overflowY: "auto" }}>{idle.map(idleRow)}</div>
+        </>
+      )}
     </div>
   );
 
