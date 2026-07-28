@@ -9,12 +9,13 @@
 // (The Android Google-Maps key is configured in app.json since 22 Jul 2026 —
 // the old "blank map until the key is set" caveat no longer applies.)
 import React, { useEffect, useState } from "react";
-import { ImageRequireSource, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ImageRequireSource, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import MapView, { Callout, Marker } from "react-native-maps";
 import { useTranslation } from "react-i18next";
 import { useWide } from "../../hooks/useWide";
 import { MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES } from "../lib/zones";
 import { formatTime } from "../lib/format";
+import { groupFleet, type FleetGroup } from "../lib/fleetGroups";
 import { colors, font } from "../theme";
 import type { LivePosition, Truck } from "../types";
 
@@ -37,6 +38,15 @@ function statusTag(status: string): { bg: string; fg: string; labelKey: string }
     default: // "idle"
       return { bg: colors.blueTint, fg: colors.blue, labelKey: "admin.trucks.statusIdle" };
   }
+}
+
+// Compact tinted count pill for the service-class group headers.
+function CountPill({ bg, fg, label }: { bg: string; fg: string; label: string }) {
+  return (
+    <View style={{ backgroundColor: bg, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 }}>
+      <Text style={{ color: fg, fontSize: 9.5, fontWeight: "700" }}>{label}</Text>
+    </View>
+  );
 }
 
 // Leaflet zoom 8 over the operating region ≈ a ~2° span.
@@ -109,6 +119,82 @@ export function AdminFleetMap({
   // coordinate: it goes to the Idle list instead.
   const active = trucks.filter((tr) => liveByPlate.has(tr.plate));
   const idle = trucks.filter((tr) => !liveByPlate.has(tr.plate));
+
+  // Service-class grouping (28 Jul design) — NARROW ONLY, and only once the
+  // fleet actually has two classes (INTERPLANT_PLATES is empty until the
+  // on-hold fleet update ships, so `grouped` is false today and the flat list
+  // below renders exactly as before — the ship-early contract).
+  const groups = groupFleet(trucks, (p) => liveByPlate.has(p));
+  const grouped = !isWide && groups.length > 1;
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    customer: true, // the dispatch pool — open by default
+    interplant: false, // two dedicated shuttles — folded, counts still visible
+  });
+
+  const renderIdleRow = (tr: Truck) => {
+    const tag = statusTag(tr.status);
+    return (
+      <View
+        key={tr.plate}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          paddingHorizontal: 12,
+          paddingVertical: 7,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.divider,
+        }}
+      >
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text numberOfLines={1} style={{ fontWeight: "700", fontSize: 13, color: colors.navy }}>{tr.plate}</Text>
+          <Text numberOfLines={1} style={{ fontSize: 11, color: colors.textMuted }}>
+            {tr.type}
+            {tr.driver ? ` · ${tr.driver.name}` : ""}
+          </Text>
+        </View>
+        <View style={{ backgroundColor: tag.bg, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 }}>
+          <Text style={{ color: tag.fg, fontSize: 10, fontWeight: "700" }}>{t(tag.labelKey)}</Text>
+        </View>
+      </View>
+    );
+  };
+
+  // Header count pills — RECONCILIATION RULE: activeOnMap counts trucks that
+  // are map markers (not rows), so every class header always totals the whole
+  // class (pinned in lib/fleetGroups.test.ts).
+  const renderGroupHeader = (g: FleetGroup, open: boolean) => (
+    <Pressable
+      key={`${g.key}-head`}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
+      onPress={() => setOpenGroups((s) => ({ ...s, [g.key]: !open }))}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 9,
+        backgroundColor: "#fafbfe",
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+      }}
+    >
+      <Text style={{ width: 12, fontSize: 11, fontWeight: "700", color: colors.textFaint }}>{open ? "▾" : "▸"}</Text>
+      <Text style={{ fontSize: 12, fontWeight: "800", color: colors.text }}>{t(`admin.fleetGroups.${g.key}`)}</Text>
+      {g.key === "interplant" ? (
+        <Text numberOfLines={1} style={{ fontSize: 10, color: colors.textFaint, flexShrink: 1 }}>
+          {t("admin.fleetGroups.interplantSub")}
+        </Text>
+      ) : null}
+      <View style={{ flex: 1 }} />
+      {g.activeOnMap > 0 && <CountPill bg={colors.greenTint} fg={colors.green} label={t("admin.fleetGroups.countActive", { n: g.activeOnMap })} />}
+      {g.counts.idle > 0 && <CountPill bg={colors.blueTint} fg={colors.blue} label={t("admin.fleetGroups.countIdle", { n: g.counts.idle })} />}
+      {g.counts.maintenance > 0 && <CountPill bg={colors.orangeTint} fg={colors.orange} label={t("admin.fleetGroups.countMaintenance", { n: g.counts.maintenance })} />}
+      {g.counts.retired > 0 && <CountPill bg={colors.bg} fg={colors.textMuted} label={t("admin.fleetGroups.countRetired", { n: g.counts.retired })} />}
+    </Pressable>
+  );
 
   return (
     <View
@@ -254,42 +340,30 @@ export function AdminFleetMap({
             overflow: "hidden",
           }}
         >
-          <View style={{ paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <Text style={{ fontWeight: "700", fontSize: 12, color: colors.text }}>
-              {t("admin.trucks.statusIdle")} · {idle.length}
-            </Text>
-          </View>
-          <ScrollView nestedScrollEnabled>
-            {idle.map((tr) => {
-              const tag = statusTag(tr.status);
+          {grouped ? (
+            // NARROW + two service classes: collapsible group headers whose
+            // count pills always total the whole class (map trucks included).
+            groups.map((g) => {
+              const open = openGroups[g.key] ?? false;
               return (
-                <View
-                  key={tr.plate}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 8,
-                    paddingHorizontal: 12,
-                    paddingVertical: 7,
-                    borderBottomWidth: 1,
-                    borderBottomColor: colors.divider,
-                  }}
-                >
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text numberOfLines={1} style={{ fontWeight: "700", fontSize: 13, color: colors.navy }}>{tr.plate}</Text>
-                    <Text numberOfLines={1} style={{ fontSize: 11, color: colors.textMuted }}>
-                      {tr.type}
-                      {tr.driver ? ` · ${tr.driver.name}` : ""}
-                    </Text>
-                  </View>
-                  <View style={{ backgroundColor: tag.bg, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 }}>
-                    <Text style={{ color: tag.fg, fontSize: 10, fontWeight: "700" }}>{t(tag.labelKey)}</Text>
-                  </View>
-                </View>
+                <React.Fragment key={g.key}>
+                  {renderGroupHeader(g, open)}
+                  {open && g.rows.map(renderIdleRow)}
+                </React.Fragment>
               );
-            })}
-          </ScrollView>
+            })
+          ) : (
+            // Single class (today's fleet) or the WIDE sidebar: the flat list,
+            // byte-identical to the pre-grouping behaviour.
+            <>
+              <View style={{ paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                <Text style={{ fontWeight: "700", fontSize: 12, color: colors.text }}>
+                  {t("admin.trucks.statusIdle")} · {idle.length}
+                </Text>
+              </View>
+              <ScrollView nestedScrollEnabled>{idle.map(renderIdleRow)}</ScrollView>
+            </>
+          )}
         </View>
       )}
     </View>
