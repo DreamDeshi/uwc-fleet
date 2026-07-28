@@ -164,6 +164,83 @@ describe("time boundaries", () => {
   });
 });
 
+describe("partial pay on admin abort (Mr. Teh, 28 Jul 2026: 'yes keep the pay for those 3')", () => {
+  // An admin abort with delivered stops pays the DELIVERED stops only. The
+  // division of proof:
+  //   - THE FILTER (route): proposeDeliveredStopsIncentive (routes/trips.ts)
+  //     queries `status: "delivered"` and feeds the engine nothing else —
+  //     pinned against real Postgres in tests-integration/abortPartialPay
+  //     (undelivered stop keeps points_awarded null, proposal = delivered
+  //     stops' value, zero-delivered abort stays a no-pay cancel).
+  //   - THE MONEY (this suite): what the engine MUST pay for the delivered
+  //     subset, hand-derived from the workbook rates — so if the engine or
+  //     the spec drifts, the RM here breaks loudly.
+
+  it("2-stop booking [A2 Ipoh, P1 Penang], only A2 delivered before the abort → (6−2)×11 = RM 44, NOT the full-trip RM 77", () => {
+    const partial = calculateDeliveryIncentive({
+      rateDateTime: D.monday(10),
+      drops: [drop("A2")], // ONLY the delivered stop — the undelivered P1 is never fed in
+      zonesDeliveredEarlierToday: [],
+      priorPointsToday: 0,
+      publicHolidays: NO_HOLIDAYS,
+      truck: incTruck("PLX 2406"),
+    });
+    expect(partial.incentiveThisTrip).toBe(44); // the workbook RM44 anchor, now the partial's pay
+
+    // Had both stops been delivered: (6 + 3 − 2) × 11 = RM 77. The RM 33
+    // difference is exactly the undelivered Penang stop's marginal pay —
+    // the driver keeps the 3 he did, never the stops that didn't happen.
+    const full = calculateDeliveryIncentive({
+      rateDateTime: D.monday(10),
+      drops: [drop("A2"), drop("P1")],
+      zonesDeliveredEarlierToday: [],
+      priorPointsToday: 0,
+      publicHolidays: NO_HOLIDAYS,
+      truck: incTruck("PLX 2406"),
+    });
+    expect(full.incentiveThisTrip).toBe(77);
+    expect(full.incentiveThisTrip - partial.incentiveThisTrip).toBe(3 * 11);
+  });
+
+  it("reverse partial (P1 delivered, A2 not) pays P1 alone: (3−2)×11 = RM 11 — order of delivery decides, not booking order", () => {
+    const partial = calculateDeliveryIncentive({
+      rateDateTime: D.monday(10),
+      drops: [drop("P1")],
+      zonesDeliveredEarlierToday: [],
+      priorPointsToday: 0,
+      publicHolidays: NO_HOLIDAYS,
+      truck: incTruck("PLX 2406"),
+    });
+    expect(partial.incentiveThisTrip).toBe(11);
+  });
+
+  it("off-peak partial (Monday 19:00): (6−2)×13 = RM 52 — the tier still keys on the delivery-confirm anchor", () => {
+    const partial = calculateDeliveryIncentive({
+      rateDateTime: D.monday(19),
+      drops: [drop("A2")],
+      zonesDeliveredEarlierToday: [],
+      priorPointsToday: 0,
+      publicHolidays: NO_HOLIDAYS,
+      truck: incTruck("PLX 2406"),
+    });
+    expect(partial.isOffPeak).toBe(true);
+    expect(partial.incentiveThisTrip).toBe(52);
+  });
+
+  it("day composition: the partially-paid A2 counts as a prior drop — a later same-day A2 run repeats at 1pt, deduction spent once", () => {
+    // Trip 1 = the aborted trip's delivered stop (RM 44). Trip 2 revisits A2
+    // (repeat, 1pt) and adds P1 (3): day points 6+1+3 = 10, deduction 2 once →
+    // day total (10 − 2) × 11 = RM 88. The abort must not reset the ledger or
+    // re-spend the deduction.
+    const day = simulateDriverDay("PLX 2406", [["A2"], ["A2", "P1"]], D.monday(10));
+    expect(day.perTrip[0].incentiveThisTrip).toBe(44);
+    expect(day.dayPoints).toBe(10);
+    expect(day.total).toBe(88);
+    const applied = day.perTrip.reduce((s, r) => s + r.deductionApplied, 0);
+    expect(applied).toBe(2);
+  });
+});
+
 describe("payroll golden — a full weekday across three drivers", () => {
   // Hand-computed expected day totals (Monday, peak, spec rates):
   //   PLX (ded2, RM11): A2, A2-repeat, P1 → (6+1+3−2)×11 = 88
