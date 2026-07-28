@@ -249,12 +249,18 @@ function FeedbackInboxCard() {
 
   return (
     <Card>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <SectionTitle title={t("admin.settings.feedbackTitle")} />
-        <Button variant="outline" size="sm" onPress={() => void load()} disabled={busy}>
-          {t("common.refresh")}
-        </Button>
-      </View>
+      {/* Refresh goes through SectionTitle's `right` SLOT — never a second
+          wrapper row. SectionTitle's root is itself a full-width row, so
+          nesting it beside a sibling pushed the button off the card edge on
+          native (the 28-Jul admin-mobile clipped-Refresh bug). */}
+      <SectionTitle
+        title={t("admin.settings.feedbackTitle")}
+        right={
+          <Button variant="outline" size="sm" onPress={() => void load()} disabled={busy}>
+            {t("common.refresh")}
+          </Button>
+        }
+      />
       {failed ? (
         <Text style={{ fontSize: font.sm, color: colors.red, marginTop: 8 }}>
           {t("admin.settings.feedbackLoadFailed")}
