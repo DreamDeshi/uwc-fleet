@@ -62,21 +62,18 @@ import { TripStop } from "../../types";
 type Nav = NativeStackNavigationProp<TripsStackParamList, "ActiveTrip">;
 type Rt = RouteProp<TripsStackParamList, "ActiveTrip">;
 
-// ⚠ DELIBERATE DIVERGENCE — owner ruling 29 Jul 2026, needs sign-off.
-// Violet is GONE from the driver's Active Trip surface: everywhere the design
-// previously used #6D28D9 (in-progress) or #EDE9FE (its tint) this uses
-// corporate blue / tintBlue — the "NOW · STOP n OF m" marker, the rail's
-// current segment, the arrived chip and the unfinished-stop banner.
+// The stop the driver is AT reads in-progress VIOLET — the same hue the
+// dispatcher board uses (theme.ts maps in_progress → violet, 7 Jul 2026
+// ruling). Owner ruling 29 Jul 2026: the shared status hues are deliberate, so
+// one trip reads the same colour on the driver's phone and on the admin board.
+// This drives the "NOW · STOP n OF m" marker, the rail's current segment and
+// the unfinished-stop banner; a stop that is merely NEXT / HEADING TO (not yet
+// arrived at) stays corporate blue.
 //
-// `mobile/src/theme.ts` still maps in_progress → violet to match the
-// dispatcher board (7 Jul 2026 ruling), so the driver app deliberately NO
-// LONGER colour-matches admin for that one state. theme.ts and every admin
-// screen are left untouched on purpose — this is scoped to the driver surface.
-//
-// The rest of the palette is unchanged: green delivered, grey upcoming,
-// orange offline-only, yellow only for Delivered.
-const CURRENT_STOP_HUE = colors.blue;
-const CURRENT_STOP_TINT = colors.tintBlue;
+// Rest of the palette unchanged: green delivered, grey upcoming, orange
+// offline-only, yellow only for Delivered.
+const CURRENT_STOP_HUE = colors.violet;
+const CURRENT_STOP_TINT = colors.tintViolet;
 
 // Upcoming-stop strip geometry (design): 150px cards, 10px gutters, 16px page
 // padding. Kept as constants because the styles AND the "is it scrollable?"
