@@ -260,6 +260,18 @@
     "confirmPassword": "确认新密码",
     "updatePassword": "更新密码"
   },
+  "feedback": {
+    "title": "报告问题或建议",
+    "hint": "程序错误、不满或功能建议——直接送达开发者。",
+    "categoryBug": "错误",
+    "categoryIdea": "建议",
+    "categoryOther": "其他",
+    "placeholder": "发生了什么，或您希望改进什么？",
+    "submit": "发送",
+    "sent": "谢谢——您的反馈已发送。",
+    "failed": "无法发送反馈。",
+    "tooShort": "请再多写几个字。"
+  },
   "fuel": {
     "title": "记录加油",
     "truck": "罗里",
@@ -568,6 +580,9 @@
     "settings": {
       "languageSection": "语言",
       "languageHint": "应用于所有屏幕；保存到您的账户。",
+      "feedbackTitle": "用户反馈",
+      "feedbackEmpty": "暂无反馈。",
+      "feedbackLoadFailed": "无法加载反馈。",
       "aboutTitle": "应用与更新",
       "apiRow": "API 服务器",
       "apiOk": "正常 · {{ms}} 毫秒",

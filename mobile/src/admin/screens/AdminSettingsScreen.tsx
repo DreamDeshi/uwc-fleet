@@ -22,6 +22,7 @@ import { api } from "../services/api";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { AppLanguage } from "../../types";
 import { EditProfileModal, ChangePasswordModal } from "../../components/AccountModals";
+import { FeedbackModal } from "../../components/FeedbackModal";
 
 // Language display names are the native endonyms (English / Bahasa Malaysia /
 // 简体中文) — identical in every locale — so they reuse the existing
@@ -39,6 +40,7 @@ export function AdminSettingsScreen() {
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
   const [editOpen, setEditOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [confirmOut, setConfirmOut] = useState(false);
   const narrow = mode !== "wide";
 
@@ -49,6 +51,7 @@ export function AdminSettingsScreen() {
   const accountRows: { key: string; labelKey: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }[] = [
     { key: "edit", labelKey: "account.editProfile", icon: "create-outline", onPress: () => setEditOpen(true) },
     { key: "password", labelKey: "account.changePassword", icon: "lock-closed-outline", onPress: () => setPwOpen(true) },
+    { key: "feedback", labelKey: "feedback.title", icon: "megaphone-outline", onPress: () => setFeedbackOpen(true) },
   ];
 
   return (
@@ -162,6 +165,12 @@ export function AdminSettingsScreen() {
           </View>
         </Card>
 
+        {/* User feedback inbox (28 Jul 2026) — what drivers / requestors /
+            admins submitted through "Report a problem or idea". This is the
+            owner's dev-planning inbox; embedded here per the no-new-screens
+            rule. */}
+        <FeedbackInboxCard />
+
         {/* App & updates — OTA ground truth (27 Jul 2026). Shows WHICH update
             this install is actually running (the platform update id, null on
             the embedded bundle) so "did the phone get the update?" is a fact,
@@ -185,6 +194,7 @@ export function AdminSettingsScreen() {
 
     <EditProfileModal visible={editOpen} onClose={() => setEditOpen(false)} />
     <ChangePasswordModal visible={pwOpen} onClose={() => setPwOpen(false)} />
+    <FeedbackModal visible={feedbackOpen} screen="admin-settings" onClose={() => setFeedbackOpen(false)} />
     {confirmOut ? (
       <ConfirmDialog
         title={t("admin.signOut")}
@@ -195,6 +205,102 @@ export function AdminSettingsScreen() {
       />
     ) : null}
     </>
+  );
+}
+
+// The owner's feedback inbox — everything submitted through "Report a
+// problem or idea" (any role), newest first. Reads GET /feedback (admin-only,
+// AuditLog-backed). Refresh is manual: feedback is a planning surface, not a
+// live feed, so no poll.
+function FeedbackInboxCard() {
+  const { t } = useTranslation();
+  const [rows, setRows] = useState<
+    { id: string; category: string; message: string; user_name: string; role: string; at: string }[] | null
+  >(null);
+  const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = React.useCallback(async () => {
+    setBusy(true);
+    try {
+      const res = await api.get("/feedback");
+      setRows(res.data.feedback ?? []);
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+
+  const catStyle: Record<string, { bg: string; fg: string }> = {
+    bug: { bg: colors.redTint, fg: colors.red },
+    idea: { bg: colors.blueTint, fg: colors.blue },
+    other: { bg: colors.bg, fg: colors.textMuted },
+  };
+  const catLabel: Record<string, string> = {
+    bug: t("feedback.categoryBug"),
+    idea: t("feedback.categoryIdea"),
+    other: t("feedback.categoryOther"),
+  };
+
+  return (
+    <Card>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <SectionTitle title={t("admin.settings.feedbackTitle")} />
+        <Button variant="outline" size="sm" onPress={() => void load()} disabled={busy}>
+          {t("common.refresh")}
+        </Button>
+      </View>
+      {failed ? (
+        <Text style={{ fontSize: font.sm, color: colors.red, marginTop: 8 }}>
+          {t("admin.settings.feedbackLoadFailed")}
+        </Text>
+      ) : rows === null ? (
+        <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 8 }}>{t("common.loading")}</Text>
+      ) : rows.length === 0 ? (
+        <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 8 }}>
+          {t("admin.settings.feedbackEmpty")}
+        </Text>
+      ) : (
+        <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, overflow: "hidden", marginTop: 8 }}>
+          {rows.slice(0, 50).map((r, i) => {
+            const cat = catStyle[r.category] ?? catStyle.other;
+            return (
+              <View
+                key={r.id}
+                style={{
+                  paddingVertical: 12,
+                  paddingHorizontal: 16,
+                  backgroundColor: colors.card,
+                  borderTopWidth: i === 0 ? 0 : 1,
+                  borderTopColor: colors.divider,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <View style={{ backgroundColor: cat.bg, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3 }}>
+                    <Text style={{ fontSize: font.xs, fontWeight: "800", color: cat.fg }}>
+                      {catLabel[r.category] ?? r.category}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: font.xs, fontWeight: "700", color: colors.text }}>
+                    {r.user_name} · {r.role}
+                  </Text>
+                  <Text style={{ fontSize: font.xs, color: colors.textFaint, marginLeft: "auto" }}>
+                    {new Date(r.at).toLocaleString()}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: font.sm, color: colors.text, marginTop: 6, lineHeight: 19 }}>{r.message}</Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </Card>
   );
 }
 
