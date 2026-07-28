@@ -235,12 +235,18 @@ export function AdminFleetMap({
 
       {/* Idle trucks: no live position → NOT on the map. Compact side list
           (narrow column on wide, stacked below on phone). Hidden when the whole
-          fleet is active, so the map takes the full width. */}
+          fleet is active, so the map takes the full width.
+          NARROW HAS NO HEIGHT CAP (28 Jul fix): the old maxHeight:190 showed
+          ~3 rows, and the nested vertical ScrollView cannot scroll inside the
+          page ScrollView on Android — trucks 4..N were unreachable on the APK
+          (web survived only because CSS overflow scrolls). The fleet is ≤8
+          rows, so on phones the list renders in full and the PAGE scrolls;
+          the wide sidebar keeps its own scroll (nestedScrollEnabled for the
+          Android case). */}
       {idle.length > 0 && (
         <View
           style={{
             width: isWide ? 190 : undefined,
-            maxHeight: isWide ? undefined : 190,
             backgroundColor: colors.card,
             borderWidth: 1,
             borderColor: colors.border,
@@ -253,7 +259,7 @@ export function AdminFleetMap({
               {t("admin.trucks.statusIdle")} · {idle.length}
             </Text>
           </View>
-          <ScrollView>
+          <ScrollView nestedScrollEnabled>
             {idle.map((tr) => {
               const tag = statusTag(tr.status);
               return (

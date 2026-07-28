@@ -11,6 +11,7 @@ import { initials } from "../../lib/format";
 import { AppLanguage } from "../../types";
 import { EditProfileModal, ChangePasswordModal } from "../../components/AccountModals";
 import { FeedbackModal } from "../../components/FeedbackModal";
+import { AppUpdatesCard } from "../../components/AppUpdatesCard";
 
 export function ProfileScreen() {
   const { t, i18n } = useTranslation();
@@ -117,6 +118,11 @@ export function ProfileScreen() {
             );
           })}
         </View>
+
+        {/* App & updates — OTA ground truth + manual update pull, for the
+            people actually holding phones in the field (28 Jul owner ask).
+            Same shared card the admin Settings screen renders. */}
+        <AppUpdatesCard style={{ marginTop: 24 }} />
 
         <Button
           title={t("profile.logout")}

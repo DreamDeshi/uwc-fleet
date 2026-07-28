@@ -23,7 +23,6 @@ import { BrandLogo } from "../../components/BrandLogo";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { AttentionPanel, attentionHasRows } from "../components/AttentionPanel";
 import { AdminSearchButton } from "../components/AdminSearchButton";
-import { SustainabilityCard } from "../components/SustainabilityCard";
 import { exceptionsEnabled } from "../../lib/featureFlags";
 import { AdminFleetMap } from "../platform/map";
 import { DashboardWide } from "./DashboardWide";
@@ -181,13 +180,9 @@ export function AdminHomeScreen() {
           </View>
         )}
 
-        {/* Sustainability — fleet fuel/CO₂e/distance (SDG visibility). Taps
-            through to the dedicated Sustainability screen. */}
-        <View style={styles.section}>
-          <SustainabilityCard
-            onPress={() => navigation.navigate("AdminMore", { screen: "AdminSustainability", initial: false })}
-          />
-        </View>
+        {/* Sustainability card removed on NARROW (owner, 28 Jul): the
+            quick-action grid tile above is the entry point, and the card only
+            showed dashes here. The card stays on WIDE (DashboardWide). */}
 
         {/* Fleet map — the Phase-3 map, now on the phone home too. */}
         <View style={styles.section}>

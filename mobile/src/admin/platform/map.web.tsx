@@ -177,7 +177,8 @@ export function AdminFleetMap({
         overflow: "hidden",
         flexShrink: 0,
         width: isWide ? 190 : "100%",
-        maxHeight: isWide ? undefined : 190,
+        // No narrow height cap (28 Jul, parity with map.tsx): all trucks
+        // render in full on phones; the page scrolls.
       }}
     >
       <div style={{ padding: "8px 12px", borderBottom: `1px solid ${colors.border}`, fontWeight: 700, fontSize: 12, color: colors.text }}>
