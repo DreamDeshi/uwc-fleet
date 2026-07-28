@@ -1845,15 +1845,108 @@ router.patch("/:id/cancel", async (req, res, next) => {
   }
 });
 
+/**
+ * Score THIS trip's DELIVERED stops and PROPOSE the incentive: the per-zone-
+ * per-day ledger, snapshot rates and write-once CAS (in_progress →
+ * pending_approval, via proposeTripIncentiveOnce) that used to live inline in
+ * the final-delivery branch, factored out so the abort path can reuse it
+ * verbatim. Two callers:
+ *   - the delivered branch, after the LAST stop's delivered write commits —
+ *     every stop is status "delivered" by then, so the status filter below
+ *     matches all of them (byte-identical to the pre-extraction inline block);
+ *   - the abort route, when an in_progress trip with ≥1 delivered stop is
+ *     aborted (partial-pay rule, Mr. Teh 28 Jul 2026: "yes keep the pay for
+ *     those 3" — delivered stops keep their pay; undelivered stops are never
+ *     scored, so they can't leak a fallback-dated group into the ledger).
+ * Caller must hold lockTripRow(tx, trip.id) and pass a trip row RE-READ under
+ * that lock. `driverId` is the TRIP's driver (the ledger owner) — for the
+ * abort caller that is trip.driver_id, never the acting admin.
+ * Returns the proposed RM, or null when the CAS lost (status moved on or an
+ * incentive already exists).
+ */
+async function proposeDeliveredStopsIncentive(
+  tx: Prisma.TransactionClient,
+  trip: Prisma.TripGetPayload<{ include: { truck: true } }>,
+  driverId: string
+): Promise<number | null> {
+  if (!trip.truck) throw new ApiError(400, "TRUCK_NOT_ASSIGNED", "This trip has no truck assigned.");
+
+  // This trip's delivered drops, in delivered order, each with its zone's
+  // full destination points. Scored stop-by-stop (per-zone-per-day), summed.
+  const thisTripStops = await tx.tripStop.findMany({
+    where: { trip_id: trip.id, status: "delivered" },
+    orderBy: { delivered_at: "asc" },
+    include: { consignee: { select: { zone_code: true } } },
+  });
+  const zoneCodes = [...new Set(thisTripStops.map((s) => dropZoneCode(s, s.consignee.zone_code)))];
+  const rateRows = await tx.destinationRate.findMany({
+    where: { zone_code: { in: zoneCodes } },
+    select: { zone_code: true, location_name: true, points: true, pending_points: true, pending_points_effective: true },
+  });
+  const pointsByZone = buildPointsByZone(rateRows.map((r) => ({ ...r, points: effectiveZonePoints(r, new Date()) })));
+
+  // Incentive day keys on DELIVERY confirm time (client rule 3 Jul 2026).
+  const dayGroups = groupStopsByDeliveryDay(thisTripStops, new Date());
+  const publicHolidays = await loadHolidaySet();
+  const truckRates = finalizationRateParams({
+    entitled_claim_weekday: trip.entitled_claim_weekday,
+    entitled_claim_offpeak: trip.entitled_claim_offpeak,
+    daily_deduction_points: trip.daily_deduction_points,
+    truck: effectiveTruckRates(trip.truck, new Date()),
+  });
+
+  let incentiveThisTrip = 0;
+  const finalizedGroups: FinalizedGroup[] = [];
+  for (const group of dayGroups) {
+    // Per-day ledger: drops this driver already DELIVERED earlier today on
+    // OTHER in_progress/completed trips (see dayLedger.ts).
+    const priorStopsToday = await tx.tripStop.findMany({
+      where: priorDeliveredDropsWhere({ driverId, excludeTripId: trip.id, dayStart: group.dayStart, anchor: group.anchor }),
+      orderBy: { delivered_at: "asc" },
+      select: { zone_code: true, zone_points: true, consignee: { select: { zone_code: true } } },
+    });
+    const priorDrops = priorStopsToday.map((s) => {
+      const zone = dropZoneCode(s, s.consignee.zone_code);
+      return { zoneCode: zone, zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone) };
+    });
+    const zonesDeliveredEarlierToday = priorDrops.map((d) => d.zoneCode);
+    const priorPointsToday = scoreDrops(priorDrops).reduce((a, b) => a + b, 0);
+    const drops = group.stops.map((s) => {
+      const zone = dropZoneCode(s, s.consignee.zone_code);
+      return { zoneCode: zone, zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone) };
+    });
+    const incentive = calculateDeliveryIncentive({ rateDateTime: group.anchor, drops, zonesDeliveredEarlierToday, priorPointsToday, publicHolidays, truck: truckRates });
+    incentiveThisTrip += incentive.incentiveThisTrip;
+    finalizedGroups.push({ stops: group.stops.map((s) => ({ id: s.id, zoneCode: dropZoneCode(s, s.consignee.zone_code) })), result: incentive });
+  }
+  incentiveThisTrip = Math.round(incentiveThisTrip * 100) / 100;
+
+  // Write-once CAS (status in_progress + incentive_earned null +
+  // open_exception_id null) — under the lock this is fully atomic.
+  const breakdown = collectFinalizeBreakdown(finalizedGroups);
+  const proposed = await proposeTripIncentiveOnce(tx, trip.id, incentiveThisTrip, breakdown);
+  return proposed ? incentiveThisTrip : null;
+}
+
 // ── PATCH /trips/:id/abort — admin aborts an IN-PROGRESS trip (de-orphan) ──
 // The only exit for an in_progress trip: unassign/reassign are `assigned`-only
 // and cancel is pending/approved-only, so a trip whose driver must be removed
 // (departed / incapacitated) is otherwise stranded in_progress forever — pay
 // never finalizes and the truck's capacity never frees. This is also what the
 // disable guard (PATCH /users/:id/approve → DRIVER_ON_ACTIVE_TRIP) points the
-// admin to. Abort → `cancelled` (frees the truck; excluded from every
-// candidate/occupancy query). NO incentive is finalized — an abandoned trip
-// doesn't pay, exactly like a cancel, so the money path is untouched. Admin-only.
+// admin to.
+//
+// Money (partial-pay rule, Mr. Teh 28 Jul 2026 — "yes keep the pay for those
+// 3"): stops already DELIVERED keep their pay. An abort with ≥1 delivered stop
+// therefore does NOT cancel outright — it proposes the incentive over the
+// delivered stops only and flips the trip in_progress → pending_approval, the
+// SAME approval lane a fully-delivered trip takes (admin validates the PODs,
+// may edit the amount with a reason, approval → completed sets the payable
+// incentive_final). Payroll and every earnings read stay keyed on `completed`
+// alone — no money-read surface widens. With ZERO delivered stops the old
+// behaviour stands: abort → `cancelled`, no pay (Q2b: breakdown → no pay for
+// unreached stops). Either way the truck frees (neither `cancelled` nor
+// `pending_approval` occupies capacity). Admin-only.
 const abortTripSchema = z.object({ reason: z.string().max(500).optional() });
 
 router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), async (req, res, next) => {
@@ -1882,13 +1975,64 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
       throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before aborting this trip.");
     }
 
-    // Status-guarded CAS: aborts ONLY while still in_progress. If the last stop
-    // was just delivered (trip → pending_approval, its incentive proposed) the
-    // abort loses with a 409 rather than cancelling an already-delivered trip —
-    // a delivered POD is resolved by admin approval, not by abort.
+    // Everything under the trip-row lock, with every value RE-READ under it —
+    // the delivered branch locks the same row, so an abort can never interleave
+    // with a driver's delivered write (the 0-delivered decision below would
+    // otherwise race a first delivery into an unpaid cancel).
     await prisma.$transaction(async (tx) => {
-      const aborted = await abortActiveTrip(tx, id);
-      if (!aborted) {
+      await lockTripRow(tx, id);
+      const t2 = await tx.trip.findUnique({ where: { id }, include: { truck: true } });
+      if (!t2) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      if (t2.status !== "in_progress") {
+        throw new ApiError(
+          409,
+          "TRIP_STATE_CHANGED",
+          "This trip just changed state (it may have completed). Refresh and try again."
+        );
+      }
+      if (t2.open_exception_id) {
+        throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before aborting this trip.");
+      }
+
+      const deliveredCount = await tx.tripStop.count({ where: { trip_id: id, status: "delivered" } });
+
+      if (deliveredCount === 0) {
+        // Nothing delivered → the original abort: cancelled, no pay (breakdown /
+        // never-reached stops don't pay — 16 Jul + R1-Q2b).
+        // Status-guarded CAS: under the lock this cannot lose to a delivery, but
+        // the guard stays as defence in depth.
+        const aborted = await abortActiveTrip(tx, id);
+        if (!aborted) {
+          throw new ApiError(
+            409,
+            "TRIP_STATE_CHANGED",
+            "This trip just changed state (it may have completed). Refresh and try again."
+          );
+        }
+        await tx.auditLog.create({
+          data: {
+            user_id: req.user!.id,
+            action: `trip.aborted${reason ? ` — ${reason}` : ""}`,
+            table_name: "Trip",
+            record_id: id,
+          },
+        });
+        await recordTripEvent(tx, { tripId: id, event: "cancelled", actorId: req.user!.id });
+        return;
+      }
+
+      // ≥1 delivered stop → partial pay (Mr. Teh 28 Jul 2026): score the
+      // DELIVERED stops exactly as a full delivery would (same engine, same
+      // ledger, same snapshots) and send the trip down the normal approval
+      // lane. The undelivered stops keep their pending/arrived status — the
+      // per-stop record stays truthful about what was and wasn't delivered.
+      if (!t2.driver_id) {
+        // An in_progress trip always has a driver; loud guard, never silent pay.
+        throw new ApiError(409, "TRIP_STATE_CHANGED", "This trip has no driver attached. Refresh and try again.");
+      }
+      const totalStops = await tx.tripStop.count({ where: { trip_id: id } });
+      const proposedAmount = await proposeDeliveredStopsIncentive(tx, t2, t2.driver_id);
+      if (proposedAmount === null) {
         throw new ApiError(
           409,
           "TRIP_STATE_CHANGED",
@@ -1898,12 +2042,17 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
       await tx.auditLog.create({
         data: {
           user_id: req.user!.id,
-          action: `trip.aborted${reason ? ` — ${reason}` : ""}`,
+          action: `trip.aborted_partial (${deliveredCount}/${totalStops} stops delivered — RM${proposedAmount} proposed for approval)${reason ? ` — ${reason}` : ""}`,
           table_name: "Trip",
           record_id: id,
         },
       });
-      await recordTripEvent(tx, { tripId: id, event: "cancelled", actorId: req.user!.id });
+      await recordTripEvent(tx, {
+        tripId: id,
+        event: "cancelled",
+        actorId: req.user!.id,
+        note: `Aborted after ${deliveredCount}/${totalStops} stops — pay for delivered stops awaiting approval`,
+      });
     });
 
     const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
@@ -2334,64 +2483,12 @@ router.patch(
           return false;
         }
 
-        // Last stop delivered — finalize IN THE SAME transaction.
-        if (!t2.truck) throw new ApiError(400, "TRUCK_NOT_ASSIGNED", "This trip has no truck assigned.");
-
-        // This trip's delivered drops, in delivered order, each with its zone's
-        // full destination points. Scored stop-by-stop (per-zone-per-day), summed.
-        const thisTripStops = await tx.tripStop.findMany({
-          where: { trip_id: id },
-          orderBy: { delivered_at: "asc" },
-          include: { consignee: { select: { zone_code: true } } },
-        });
-        const zoneCodes = [...new Set(thisTripStops.map((s) => dropZoneCode(s, s.consignee.zone_code)))];
-        const rateRows = await tx.destinationRate.findMany({
-          where: { zone_code: { in: zoneCodes } },
-          select: { zone_code: true, location_name: true, points: true, pending_points: true, pending_points_effective: true },
-        });
-        const pointsByZone = buildPointsByZone(rateRows.map((r) => ({ ...r, points: effectiveZonePoints(r, new Date()) })));
-
-        // Incentive day keys on DELIVERY confirm time (client rule 3 Jul 2026).
-        const dayGroups = groupStopsByDeliveryDay(thisTripStops, new Date());
-        const publicHolidays = await loadHolidaySet();
-        const truckRates = finalizationRateParams({
-          entitled_claim_weekday: t2.entitled_claim_weekday,
-          entitled_claim_offpeak: t2.entitled_claim_offpeak,
-          daily_deduction_points: t2.daily_deduction_points,
-          truck: effectiveTruckRates(t2.truck, new Date()),
-        });
-
-        let incentiveThisTrip = 0;
-        const finalizedGroups: FinalizedGroup[] = [];
-        for (const group of dayGroups) {
-          // Per-day ledger: drops this driver already DELIVERED earlier today on
-          // OTHER in_progress/completed trips (see dayLedger.ts).
-          const priorStopsToday = await tx.tripStop.findMany({
-            where: priorDeliveredDropsWhere({ driverId: req.user!.id, excludeTripId: id, dayStart: group.dayStart, anchor: group.anchor }),
-            orderBy: { delivered_at: "asc" },
-            select: { zone_code: true, zone_points: true, consignee: { select: { zone_code: true } } },
-          });
-          const priorDrops = priorStopsToday.map((s) => {
-            const zone = dropZoneCode(s, s.consignee.zone_code);
-            return { zoneCode: zone, zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone) };
-          });
-          const zonesDeliveredEarlierToday = priorDrops.map((d) => d.zoneCode);
-          const priorPointsToday = scoreDrops(priorDrops).reduce((a, b) => a + b, 0);
-          const drops = group.stops.map((s) => {
-            const zone = dropZoneCode(s, s.consignee.zone_code);
-            return { zoneCode: zone, zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone) };
-          });
-          const incentive = calculateDeliveryIncentive({ rateDateTime: group.anchor, drops, zonesDeliveredEarlierToday, priorPointsToday, publicHolidays, truck: truckRates });
-          incentiveThisTrip += incentive.incentiveThisTrip;
-          finalizedGroups.push({ stops: group.stops.map((s) => ({ id: s.id, zoneCode: dropZoneCode(s, s.consignee.zone_code) })), result: incentive });
-        }
-        incentiveThisTrip = Math.round(incentiveThisTrip * 100) / 100;
-
-        // Write-once CAS (status in_progress + incentive_earned null +
-        // open_exception_id null) — under the lock this is fully atomic.
-        const breakdown = collectFinalizeBreakdown(finalizedGroups);
-        const proposed = await proposeTripIncentiveOnce(tx, id, incentiveThisTrip, breakdown);
-        if (!proposed) throw new ApiError(409, "TRIP_ALREADY_FINALIZED", "This trip has already been delivered and its incentive proposed.");
+        // Last stop delivered — finalize IN THE SAME transaction. The scoring +
+        // write-once CAS live in proposeDeliveredStopsIncentive (shared with
+        // the abort partial-pay path); every stop is "delivered" at this point,
+        // so its delivered-only filter matches the whole trip.
+        const proposed = await proposeDeliveredStopsIncentive(tx, t2, req.user!.id);
+        if (proposed === null) throw new ApiError(409, "TRIP_ALREADY_FINALIZED", "This trip has already been delivered and its incentive proposed.");
         await tx.auditLog.create({ data: { user_id: req.user!.id, action: "trip.delivered_pending_approval", table_name: "Trip", record_id: id } });
         await testHook("delivered.beforeCommit");
         return true;

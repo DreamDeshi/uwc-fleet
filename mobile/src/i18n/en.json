@@ -1301,7 +1301,7 @@
       "cancelFailed": "Could not cancel trip.",
       "abort": "Abort trip",
       "abortTitle": "Abort this in-progress trip?",
-      "abortBody": "Abort trip {{ticket}}? Use this only when the driver can't finish it (e.g. they've departed). The trip is cancelled and the truck is freed for dispatch; the driver is not paid for it (an aborted trip doesn't finalize). Any remaining drops must be re-booked. This cannot be undone.",
+      "abortBody": "Abort trip {{ticket}}? Use this only when the driver can't finish it (e.g. they've departed). Stops already delivered keep their pay — the amount goes to incentive approval as usual. Stops not delivered are not paid and must be re-booked. If nothing was delivered yet, the trip is simply cancelled. Either way the truck is freed for dispatch. This cannot be undone.",
       "abortFailed": "Could not abort the trip.",
       "unassignTitle": "Unassign this trip?",
       "unassignBody": "Remove {{name}} from trip {{ticket}}? The trip returns to Pending and re-enters the dispatch flow (auto-dispatch may pick it up again). The driver will be notified.",

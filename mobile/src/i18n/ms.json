@@ -1280,7 +1280,7 @@
       "cancelFailed": "Tidak dapat membatalkan trip.",
       "abort": "Tamatkan trip",
       "abortTitle": "Tamatkan trip yang sedang berjalan?",
-      "abortBody": "Tamatkan trip {{ticket}}? Guna hanya apabila pemandu tidak dapat menyiapkannya (cth. telah pergi). Trip dibatalkan dan lori dibebaskan untuk penghantaran; pemandu tidak dibayar untuknya (trip yang ditamatkan tidak dimuktamadkan). Sebarang penghantaran yang tinggal perlu ditempah semula. Ini tidak boleh dibuat asal.",
+      "abortBody": "Tamatkan trip {{ticket}}? Guna hanya apabila pemandu tidak dapat menyiapkannya (cth. telah pergi). Hentian yang sudah dihantar kekal dibayar — jumlahnya masuk ke kelulusan insentif seperti biasa. Hentian yang belum dihantar tidak dibayar dan perlu ditempah semula. Jika tiada yang dihantar lagi, trip hanya dibatalkan. Dalam kedua-dua keadaan, lori dibebaskan untuk penghantaran. Ini tidak boleh dibuat asal.",
       "abortFailed": "Tidak dapat menamatkan trip.",
       "unassignTitle": "Nyahtugas trip ini?",
       "unassignBody": "Keluarkan {{name}} dari trip {{ticket}}? Trip kembali ke Menunggu dan memasuki semula aliran penghantaran (auto-penghantaran mungkin mengambilnya semula). Pemandu akan dimaklumkan.",
