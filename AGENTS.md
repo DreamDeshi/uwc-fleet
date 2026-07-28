@@ -22,15 +22,21 @@ Read in this order:
 
 3\. `CLIENT\_ANSWERS.md`
 
-4\. `UWC\_OPEN\_QUESTIONS.md`
+4\. `OPEN\_ITEMS.md`
 
-5\. `QUESTIONS\_FOR\_TEH\_R2.md`
+5\. `QUESTIONS\_FOR\_TEH\_R3.md`
 
 6\. `uwc-spec.private.json`
 
 7\. `TRUCK BOOKING SYSTEM (YS).xlsx`
 
 8\. `TRUCK BOOKING SYSTEM (YS) - 2026-07-16.xlsx`
+
+&#x20;  and `TRUCK BOOKING SYSTEM (YS) - 2026-07-28.xlsx` (the revised fleet /
+
+&#x20;  interplant workbook — every dated copy is authoritative for its era;
+
+&#x20;  the newest dated copy wins where they differ)
 
 9\. Repository file: `docs/uwc-spec.json`
 
@@ -158,7 +164,15 @@ Unless a latest written client answer explicitly resolves it, keep these frozen:
 
 \- Multiple-pickup sequencing where pickups and deliveries may be mixed.
 
-\- Items still listed in `QUESTIONS\_FOR\_TEH\_R2.md`.
+\- Items still listed in `QUESTIONS\_FOR\_TEH\_R3.md` (the successor to the
+
+&#x20; retired R2 doc).
+
+\- The 28 Jul 2026 fleet / interplant workbook changes (new trucks, driver
+
+&#x20; reassignments, A1/A2 primary move, interplant rates) — build ON HOLD until
+
+&#x20; Mr. Teh answers the R3 §A questions (per the owner, 28 Jul).
 
 \- Prisma schema changes and database migrations.
 
