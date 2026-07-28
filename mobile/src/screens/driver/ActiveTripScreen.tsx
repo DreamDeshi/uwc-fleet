@@ -66,6 +66,12 @@ export function ActiveTripScreen() {
   // report outbox while the driver is on the active-trip surface.
   useExceptionOutboxFlush();
   const [showReport, setShowReport] = useState(false);
+  // The stop the driver CHOSE to head to next ("Head here" on a stop card).
+  // Stop order is the driver's call (Mr. Teh, 28 Jul 2026: "he can choose his
+  // own stop, the order in booking is just for reference only") — the default
+  // target is still the first undelivered stop by sequence, this just lets the
+  // driver override it. Cleared implicitly when the chosen stop is delivered.
+  const [focusStopId, setFocusStopId] = useState<string | null>(null);
 
   // GPS consent (per device): the driver must agree to the active-trip-only,
   // foreground-only explainer before we request the OS location permission.
@@ -176,8 +182,13 @@ export function ActiveTripScreen() {
   if (isError || !trip) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
 
   // Active (not-yet-delivered) stops float to the top so the stop the driver is
-  // working on — and its action button — is the first thing in the sheet.
+  // working on — and its action button — is the first thing in the sheet. A
+  // driver-chosen target ("Head here") floats above even those, so the card the
+  // map is pointing at is always the first one in the sheet.
   const stops = (trip.stops ?? []).slice().sort((a, b) => {
+    const af = a.id === focusStopId && a.status !== "delivered" ? 0 : 1;
+    const bf = b.id === focusStopId && b.status !== "delivered" ? 0 : 1;
+    if (af !== bf) return af - bf;
     const ad = a.status === "delivered" ? 1 : 0;
     const bd = b.status === "delivered" ? 1 : 0;
     if (ad !== bd) return ad - bd;
@@ -185,10 +196,11 @@ export function ActiveTripScreen() {
   });
 
   // Navigate to the stop the driver is actually working on (stops[0] after the
-  // sort above), not permanently to stop 1 — on a multi-stop run the target
-  // used to stay pinned to the first consignee even after it was delivered.
-  // Falls back to the trip's first stop once everything is delivered.
+  // sort above — the driver's chosen target when set, else the first
+  // undelivered by sequence), not permanently to stop 1. Falls back to the
+  // trip's first stop once everything is delivered.
   const activeStop = stops.find((s) => s.status !== "delivered") ?? stops[0];
+  const multiStop = stops.length > 1;
   const destination = consigneeDestination(
     activeStop?.consignee ?? { zone_code: tripDestZone(trip) }
   );
@@ -472,11 +484,15 @@ export function ActiveTripScreen() {
             </>
           )}
 
-          {stops.map((stop, idx) => (
+          {/* Free stop order (28 Jul): the booking's sequence is a suggestion. */}
+          {multiStop ? <Text style={styles.orderHint}>{t("trip.stopOrderHint")}</Text> : null}
+
+          {stops.map((stop) => (
             <StopCard
               key={stop.id}
               stop={stop}
-              index={idx}
+              isTarget={stop.id === activeStop?.id && stop.status !== "delivered"}
+              canTarget={multiStop && stop.status !== "delivered" && stop.id !== activeStop?.id}
               busy={updateStatus.isPending || updateDocs.isPending}
               uploadingPod={uploadPod.isPending}
               uploadingK2={uploadK2.isPending}
@@ -486,6 +502,7 @@ export function ActiveTripScreen() {
               onCapturePod={() => onCapturePod(stop)}
               onCaptureK2={() => onCaptureK2(stop)}
               onDelivered={() => onDelivered(stop)}
+              onSetTarget={() => setFocusStopId(stop.id)}
             />
           ))}
 
@@ -646,7 +663,8 @@ function TrackingBadge({
 
 function StopCard({
   stop,
-  index,
+  isTarget,
+  canTarget,
   busy,
   uploadingPod,
   uploadingK2,
@@ -656,9 +674,11 @@ function StopCard({
   onCapturePod,
   onCaptureK2,
   onDelivered,
+  onSetTarget,
 }: {
   stop: TripStop;
-  index: number;
+  isTarget: boolean;
+  canTarget: boolean;
   busy: boolean;
   uploadingPod: boolean;
   uploadingK2: boolean;
@@ -668,6 +688,7 @@ function StopCard({
   onCapturePod: () => void;
   onCaptureK2: () => void;
   onDelivered: () => void;
+  onSetTarget: () => void;
 }) {
   const { t } = useTranslation();
   const isK2 = stop.consignee?.zone_code === "K2";
@@ -697,10 +718,12 @@ function StopCard({
   };
 
   // Visual state of this stop in the run: done (green ✓), current (violet —
-  // the in-progress family; active stops sort to the top so index 0 is the
-  // one being worked), or upcoming (muted).
+  // the map's target: the driver's chosen stop, else the first undelivered),
+  // or upcoming (muted). The badge shows the BOOKING sequence, not the sheet
+  // position — free stop order (28 Jul) means cards re-sort as the driver
+  // works, and a stop's number must not change under them.
   const isDone = stop.status === "delivered";
-  const isCurrent = !isDone && index === 0;
+  const isCurrent = isTarget;
 
   return (
     <View style={[styles.stopCard, isCurrent && styles.stopCardCurrent]}>
@@ -715,11 +738,11 @@ function StopCard({
           {isDone ? (
             <Ionicons name="checkmark" size={16} color={colors.white} />
           ) : (
-            <Text style={[styles.stopSeqText, !isCurrent && { color: colors.navy }]}>{index + 1}</Text>
+            <Text style={[styles.stopSeqText, !isCurrent && { color: colors.navy }]}>{stop.sequence}</Text>
           )}
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.stopName}>{stop.consignee?.company_name ?? t("trip.stop", { n: index + 1 })}</Text>
+          <Text style={styles.stopName}>{stop.consignee?.company_name ?? t("trip.stop", { n: stop.sequence })}</Text>
           {/* The delivery address — the driver's primary cue for WHERE this is.
               Falls back to area/state for a row with no street address. */}
           <Text style={styles.stopArea} numberOfLines={3}>
@@ -750,6 +773,30 @@ function StopCard({
           </Text>
         )}
       </View>
+
+      {/* Per-stop quick actions: call the consignee (every stop has its own
+          contact now, not just stop 1 — DG-D3), and "Head here" to point the
+          map + Navigate at THIS stop (free stop order, 28 Jul). */}
+      {!isDone && !deliveryQueued && (stop.consignee?.phone || canTarget) ? (
+        <View style={styles.stopActions}>
+          {stop.consignee?.phone ? (
+            <TouchableOpacity
+              style={styles.stopActionBtn}
+              activeOpacity={0.7}
+              onPress={() => Linking.openURL(`tel:${stop.consignee!.phone}`)}
+            >
+              <Ionicons name="call" size={16} color={colors.blue} />
+              <Text style={styles.stopActionText}>{t("trip.call")}</Text>
+            </TouchableOpacity>
+          ) : null}
+          {canTarget ? (
+            <TouchableOpacity style={styles.stopActionBtn} activeOpacity={0.7} onPress={onSetTarget}>
+              <Ionicons name="navigate-outline" size={16} color={colors.blue} />
+              <Text style={styles.stopActionText}>{t("trip.headHere")}</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
 
       {/* Delivered is saved on this phone — nothing left for the driver to do
           at this stop; the outbox completes it when signal returns. */}
@@ -929,6 +976,10 @@ const styles = StyleSheet.create({
 
   sheetContent: { paddingHorizontal: 16, paddingBottom: 40 },
   sheetHandleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
+  orderHint: { fontSize: 13, color: colors.textMuted, marginBottom: 10, lineHeight: 18 },
+  stopActions: { flexDirection: "row", gap: 8, marginTop: 10 },
+  stopActionBtn: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 40, paddingHorizontal: 14, borderRadius: radius.pill, borderWidth: 1.5, borderColor: colors.border },
+  stopActionText: { fontSize: 13, fontWeight: "700", color: colors.blue },
   sheetTitle: { fontSize: 16, fontWeight: "800", color: colors.navy },
   sheetTicket: { fontSize: 13, fontWeight: "700", color: colors.blue },
 
