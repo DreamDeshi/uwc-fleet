@@ -133,6 +133,44 @@ describe("Admin abort with delivered stops — partial pay (28 Jul 2026)", () =>
     expect(t.status).toBe("pending_approval");
   });
 
+  it("presentation pass (H1): /track says Partially delivered; completed-count KPI excludes the partial trip", async () => {
+    const { admin, requestor, driver, trip, stopA2 } = await startedTwoStopTrip();
+    await arriveAndDeliver(driver, trip.id, stopA2.id);
+    await api().patch(`/api/v1/trips/${trip.id}/abort`).set(auth(admin)).send({});
+    await approveIncentive(admin, trip.id); // → completed, 1/2 stops delivered
+
+    // The public tracking page must not claim "Delivered" for a booking whose
+    // second stop never happened — the recipient reads it to know what arrived.
+    const { url } = (
+      await api().get(`/api/v1/trips/${trip.id}/tracking-link`).set(auth(requestor))
+    ).body as { url: string };
+    const token = url.slice(url.lastIndexOf("/track/") + "/track/".length);
+    const page = await api().get(`/track/${token}`);
+    expect(page.status).toBe(200);
+    expect(page.text).toContain("Partially delivered");
+    expect(page.text).toContain("1 / 2");
+
+    // completed_today counts FULLY delivered trips only. Pull the trip into
+    // today's pickup window first (bookTrip books tomorrow) so the exclusion
+    // is real, not vacuous.
+    await prisma.trip.update({ where: { id: trip.id }, data: { pickup_datetime: new Date() } });
+    const before = await api().get("/api/v1/reports/dashboard").set(auth(admin));
+    expect(before.body.completed_today).toBe(0);
+
+    // A genuinely full delivery still counts.
+    const rt = await firstRouteTypeId(requestor);
+    const plx = await userIdByPhone(PLX.phone);
+    const full = await bookTrip(requestor, ["P1"], rt);
+    await approveTrip(admin, full.id, plx, PLX.plate);
+    await startTrip(driver, full.id);
+    await arriveAndDeliver(driver, full.id, stopsBySequence(full)[0].id);
+    await approveIncentive(admin, full.id);
+    await prisma.trip.update({ where: { id: full.id }, data: { pickup_datetime: new Date() } });
+
+    const after = await api().get("/api/v1/reports/dashboard").set(auth(admin));
+    expect(after.body.completed_today).toBe(1);
+  });
+
   it("the truck and driver free for dispatch after a partial abort (no capacity leak)", async () => {
     const { admin, driver, trip, stopA2 } = await startedTwoStopTrip();
     await arriveAndDeliver(driver, trip.id, stopA2.id);

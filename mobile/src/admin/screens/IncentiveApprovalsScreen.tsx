@@ -159,6 +159,21 @@ function ApprovalCard({ trip }: { trip: Trip }) {
               {t("admin.incentiveApprovals.deliveredAt", { at: formatDateTime(delivered) })}
             </Text>
           ) : null}
+          {/* Partial abort (28 Jul rule): undelivered stops are NOT missing
+              evidence — the trip was cut short and only the delivered stops
+              are being paid. Without this chip a partial trip is
+              indistinguishable from one with missing PODs. */}
+          {(() => {
+            const done = stops.filter((s) => s.status === "delivered").length;
+            if (done >= stops.length) return null;
+            return (
+              <View style={{ alignSelf: "flex-start", marginTop: 4 }}>
+                <Pill bg={colors.yellowTint} fg={colors.amber}>
+                  {t("admin.incentiveApprovals.partialTrip", { done, total: stops.length })}
+                </Pill>
+              </View>
+            );
+          })()}
         </View>
         {/* Proposed incentive — the amount pay defaults to. */}
         <View style={{ alignItems: "flex-end" }}>
@@ -239,6 +254,12 @@ function StopRow({ stop }: { stop: TripStop }) {
         <Pressable onPress={() => Linking.openURL(stop.pod_photo!)}>
           <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.blue }}>📷 POD ↗</Text>
         </Pressable>
+      ) : stop.status !== "delivered" ? (
+        // Cut short by a partial abort — not paid, not missing evidence. Muted
+        // on purpose: orange "no POD" would read as a problem to chase.
+        <Pill bg={colors.panel} fg={colors.textMuted}>
+          {t("admin.incentiveApprovals.notDelivered")}
+        </Pill>
       ) : (
         <Pill bg={colors.orangeTint} fg={colors.orange}>
           {t("admin.incentiveApprovals.noPod")}

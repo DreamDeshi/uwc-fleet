@@ -24,7 +24,8 @@ export type BannerIcon =
   | "checkmark-circle"
   | "navigate"
   | "checkmark-done"
-  | "close-circle";
+  | "close-circle"
+  | "alert-circle";
 
 export interface Banner {
   bg: string;
@@ -42,8 +43,18 @@ export interface Banner {
  * it, so `pending_approval` deliberately reads exactly like `completed` here —
  * "Delivered". Surfacing it to the customer would raise a question they cannot
  * answer about a process that does not concern them.
+ *
+ * `partiallyDelivered` (28 Jul 2026, partial-pay-on-abort): an admin abort
+ * with delivered stops sends the trip down the same pending_approval →
+ * completed lane, so status alone would say "Delivered" for a booking whose
+ * remaining stops never happened — and the requestor would have no idea to
+ * re-book them. When set, the delivered-family banner turns into an explicit
+ * "partially delivered, re-book the rest" notice instead.
  */
-export function bannerFor(status: TripStatus): Banner {
+export function bannerFor(
+  status: TripStatus,
+  opts?: { partiallyDelivered?: boolean }
+): Banner {
   switch (status) {
     case "pending":
     case "approved":
@@ -57,6 +68,11 @@ export function bannerFor(status: TripStatus): Banner {
     // and irrelevant for, the requestor.
     case "pending_approval":
     case "completed":
+      if (opts?.partiallyDelivered) {
+        // Yellow, not red (goods DID move; not a failure) and not green (the
+        // booking is NOT done — undelivered stops need re-booking).
+        return { bg: colors.yellow, fg: colors.navy, icon: "alert-circle", textKey: "bookingDetail.bannerPartiallyDelivered" };
+      }
       return { bg: colors.green, fg: colors.white, icon: "checkmark-done", textKey: "bookingDetail.bannerCompleted" };
     case "rejected":
       return { bg: colors.red, fg: colors.white, icon: "close-circle", textKey: "bookingDetail.bannerRejected" };

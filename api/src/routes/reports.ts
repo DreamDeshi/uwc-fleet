@@ -72,7 +72,14 @@ router.get("/dashboard", async (_req, res, next) => {
       prisma.trip.count({ where: { pickup_datetime: { gte: dayStart, lt: dayEnd } } }),
       prisma.trip.count({ where: { status: "in_progress" } }),
       prisma.trip.count({
-        where: { status: "completed", pickup_datetime: { gte: dayStart, lt: dayEnd } },
+        // FULLY delivered completions only: a partial abort (28 Jul rule) ends
+        // `completed` with undelivered stops, and counting it here would report
+        // a delivery that didn't fully happen.
+        where: {
+          status: "completed",
+          pickup_datetime: { gte: dayStart, lt: dayEnd },
+          stops: { every: { status: "delivered" } },
+        },
       }),
       prisma.user.count({ where: { status: "pending_approval" } }),
       prisma.trip.count({ where: { status: "pending" } }),
@@ -89,6 +96,10 @@ router.get("/dashboard", async (_req, res, next) => {
       prisma.trip.findMany({
         where: {
           status: "completed",
+          // Fully delivered only — a partially-delivered abort must not count
+          // toward the monthly completed KPI or the on-time rate derived from
+          // this set (its never-delivered stops would read as late/served).
+          stops: { every: { status: "delivered" } },
           OR: [
             { stops: { some: { delivered_at: { gte: monthStart, lt: monthEnd } } } },
             { pickup_datetime: { gte: monthStart, lt: monthEnd } },
