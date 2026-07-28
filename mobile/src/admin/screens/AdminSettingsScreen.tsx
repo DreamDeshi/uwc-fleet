@@ -8,10 +8,8 @@
 // across every screen via react-i18next) + PATCH /users/me (persisted per
 // account, re-applied on next login by AuthContext.fetchMe). No parallel i18n.
 import React, { useState } from "react";
-import { Platform, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import Constants from "expo-constants";
-import * as Updates from "expo-updates";
 import { useTranslation } from "react-i18next";
 import { useNavigation } from "@react-navigation/native";
 import type { NavigationProp, ParamListBase } from "@react-navigation/native";
@@ -23,6 +21,7 @@ import { useLayoutMode } from "../hooks/useLayoutMode";
 import { AppLanguage } from "../../types";
 import { EditProfileModal, ChangePasswordModal } from "../../components/AccountModals";
 import { FeedbackModal } from "../../components/FeedbackModal";
+import { AppUpdatesCard } from "../../components/AppUpdatesCard";
 
 // Language display names are the native endonyms (English / Bahasa Malaysia /
 // 简体中文) — identical in every locale — so they reuse the existing
@@ -300,132 +299,6 @@ function FeedbackInboxCard() {
           })}
         </View>
       )}
-    </Card>
-  );
-}
-
-// OTA ground truth + manual update pull. `Updates.updateId` is the
-// PLATFORM-specific update id (compare against the "Android update ID" line
-// of `eas update` output, not the group id); null/embedded means no OTA has
-// ever applied on this install. The button runs check → fetch → reload so a
-// tester never depends on the two-cold-launch background flow.
-function AppUpdatesCard() {
-  const { t } = useTranslation();
-  const [status, setStatus] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  // System status: one /health ping on mount — reachability + latency. A
-  // trial run by a non-technical owner deserves a visible "is the server
-  // fine" answer instead of guessing from failed screens.
-  const [apiStatus, setApiStatus] = useState<{ ok: boolean; ms: number } | null>(null);
-  React.useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const started = Date.now();
-      try {
-        await api.get("/health", { timeout: 8000 });
-        if (mounted) setApiStatus({ ok: true, ms: Date.now() - started });
-      } catch {
-        if (mounted) setApiStatus({ ok: false, ms: Date.now() - started });
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const updatesUsable = Updates.isEnabled && Platform.OS !== "web";
-  const running =
-    !Updates.isEnabled
-      ? t("admin.settings.updDisabled")
-      : Updates.isEmbeddedLaunch || !Updates.updateId
-        ? t("admin.settings.updEmbedded")
-        : Updates.updateId;
-  const publishedAt =
-    Updates.isEnabled && !Updates.isEmbeddedLaunch && Updates.createdAt
-      ? new Date(Updates.createdAt).toLocaleString()
-      : null;
-
-  const check = async () => {
-    setBusy(true);
-    try {
-      setStatus(t("admin.settings.updChecking"));
-      const res = await Updates.checkForUpdateAsync();
-      if (!res.isAvailable) {
-        setStatus(t("admin.settings.updUpToDate"));
-        return;
-      }
-      setStatus(t("admin.settings.updDownloading"));
-      await Updates.fetchUpdateAsync();
-      setStatus(t("admin.settings.updRestarting"));
-      await Updates.reloadAsync();
-    } catch (e) {
-      setStatus(t("admin.settings.updError", { msg: (e as Error)?.message ?? String(e) }));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const rows: { label: string; value: string }[] = [
-    {
-      label: t("admin.settings.apiRow"),
-      value:
-        apiStatus === null
-          ? "…"
-          : apiStatus.ok
-            ? t("admin.settings.apiOk", { ms: apiStatus.ms })
-            : t("admin.settings.apiDown"),
-    },
-    { label: t("admin.settings.appVersion"), value: (Constants.expoConfig?.version as string) ?? "—" },
-    {
-      label: t("admin.settings.runtime"),
-      value: Updates.runtimeVersion || ((Constants.expoConfig?.runtimeVersion as string) ?? "—"),
-    },
-    { label: t("admin.settings.channel"), value: Updates.channel ?? "—" },
-  ];
-
-  return (
-    <Card>
-      <SectionTitle title={t("admin.settings.aboutTitle")} />
-      <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, overflow: "hidden", marginTop: 4 }}>
-        {rows.map((r, i) => (
-          <View
-            key={r.label}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              paddingVertical: 12,
-              paddingHorizontal: 16,
-              backgroundColor: colors.card,
-              borderTopWidth: i === 0 ? 0 : 1,
-              borderTopColor: colors.divider,
-            }}
-          >
-            <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{r.label}</Text>
-            <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.text }}>{r.value}</Text>
-          </View>
-        ))}
-        <View style={{ paddingVertical: 12, paddingHorizontal: 16, backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.divider }}>
-          <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.settings.updateRow")}</Text>
-          <Text selectable style={{ fontSize: font.xs, fontWeight: "700", color: colors.text, marginTop: 3 }}>
-            {running}
-          </Text>
-          {publishedAt ? (
-            <Text style={{ fontSize: font.xs, color: colors.textFaint, marginTop: 2 }}>
-              {t("admin.settings.updPublishedAt", { when: publishedAt })}
-            </Text>
-          ) : null}
-        </View>
-      </View>
-      {updatesUsable ? (
-        <View style={{ marginTop: 12, gap: 8 }}>
-          <Button variant="outline" size="sm" onPress={check} disabled={busy}>
-            {t("admin.settings.updCheckBtn")}
-          </Button>
-          {status ? <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{status}</Text> : null}
-        </View>
-      ) : null}
     </Card>
   );
 }
