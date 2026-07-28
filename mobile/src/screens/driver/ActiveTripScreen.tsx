@@ -1,6 +1,24 @@
-import React, { useMemo, useRef, useState } from "react";
-import { Image, Linking, Modal, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
+// Driver active trip — rebuilt to the agreed design
+// (`design/active-trip/Driver Active Trip - Final Flow.dc.html`, screens 1–5
+// plus the K2 / offline / skipped-ahead states). Exact px + hex values are
+// read from that file, not guessed.
+//
+// Layout (top → bottom), replacing the old full-screen map + bottom sheet:
+//   1. 196px map band (back button, tracking badge)
+//   2. progress header + SEGMENTED rail — one flex segment per stop, so it
+//      reads the same at 2 stops or 12
+//   3. unfinished-stop banner (a POD uploaded but Delivered never tapped)
+//   4. scroll body: current-stop card · exception card · upcoming-stops strip
+//   5. pinned footer: exactly ONE primary action, above the thumb
+//
+// EVERY handler below (arrival, POD, K2, delivered, offline outbox, GPS
+// consent, reconcile-on-lost-response) is carried over unchanged — this is a
+// presentation rebuild. No money, dispatch or API code is touched. The one
+// behavioural addition is the POD REVIEW step: capture no longer uploads
+// straight away, it opens PodReviewModal and the upload runs on "Use photo".
+import React, { useRef, useState } from "react";
+import { Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
@@ -16,23 +34,25 @@ import {
   useUploadPod,
   useUploadK2,
 } from "../../hooks/queries";
-import { capturePodPhoto, toDurablePhotoUri } from "../../lib/photo";
+import { capturePodPhoto, toDurablePhotoUri, type PickedPhoto } from "../../lib/photo";
 import { useTripLocation, TripLocationState } from "../../hooks/useTripLocation";
 import { useBackgroundTracking } from "../../hooks/useBackgroundTracking";
 import { stopBackgroundTracking } from "../../lib/backgroundLocation";
 import { getGpsConsent, setGpsConsent, type GpsConsent } from "../../lib/gpsConsent";
 import { useToast } from "../../components/Toast";
 import { apiErrorCode, apiErrorMessage, isNetworkError } from "../../services/api";
-import { enqueuePodItem, removePodItem, noteDirectPodUpload, findOutboxItem, type PodOutboxItem } from "../../lib/podOutbox";
+import { enqueuePodItem, removePodItem, noteDirectPodUpload, findOutboxItem } from "../../lib/podOutbox";
 import { usePodOutboxItems } from "../../hooks/usePodOutbox";
 import { WebRefreshButton } from "../../components/WebRefreshButton";
-import { colors, radius, shadow } from "../../theme";
+import { colors, layout, radius, shadow, type as typeScale } from "../../theme";
 import { Button } from "../../components/Button";
+import { PodReviewModal } from "../../components/PodReviewModal";
+import { footerStage, waitingForDelivered, type StageFlags } from "../../lib/activeTripStage";
 import { LoadingState, ErrorState } from "../../components/States";
 import { PLANT_ORIGIN, regionFor, consigneeDestination, haversineKm } from "../../lib/geo";
 import { ActiveTripMap } from "../../components/ActiveTripMap";
 import { tripDestination, tripDestZone, consigneeAddress } from "../../lib/trip";
-import { formatMoney, formatDateTime } from "../../lib/format";
+import { formatMoney, formatDateTime, formatTime } from "../../lib/format";
 import { exceptionsEnabled } from "../../lib/featureFlags";
 import { ReportExceptionSheet } from "../../components/ReportExceptionSheet";
 import { ExceptionStatusCard } from "../../components/ExceptionStatusCard";
@@ -41,6 +61,39 @@ import { TripStop } from "../../types";
 
 type Nav = NativeStackNavigationProp<TripsStackParamList, "ActiveTrip">;
 type Rt = RouteProp<TripsStackParamList, "ActiveTrip">;
+
+// ⚠ DELIBERATE DIVERGENCE — owner ruling 29 Jul 2026, needs sign-off.
+// Violet is GONE from the driver's Active Trip surface: everywhere the design
+// previously used #6D28D9 (in-progress) or #EDE9FE (its tint) this uses
+// corporate blue / tintBlue — the "NOW · STOP n OF m" marker, the rail's
+// current segment, the arrived chip and the unfinished-stop banner.
+//
+// `mobile/src/theme.ts` still maps in_progress → violet to match the
+// dispatcher board (7 Jul 2026 ruling), so the driver app deliberately NO
+// LONGER colour-matches admin for that one state. theme.ts and every admin
+// screen are left untouched on purpose — this is scoped to the driver surface.
+//
+// The rest of the palette is unchanged: green delivered, grey upcoming,
+// orange offline-only, yellow only for Delivered.
+const CURRENT_STOP_HUE = colors.blue;
+const CURRENT_STOP_TINT = colors.tintBlue;
+
+// Upcoming-stop strip geometry (design): 150px cards, 10px gutters, 16px page
+// padding. Kept as constants because the styles AND the "is it scrollable?"
+// test both need them, and they must never drift apart.
+const STRIP_CARD_W = 150;
+const STRIP_GAP = 10;
+const STRIP_PAD = 16;
+
+// Amber for the completion screen's PENDING APPROVAL chip — dark enough for
+// AA contrast on tintYellow. A pending incentive must never read as paid, so
+// the figure beside it is navy, never green.
+const PENDING_AMBER_TEXT = "#8a6d00";
+
+// Darker green than colors.green for AA-contrast text on the tintGreen POD
+// line (same hue the theme already uses for actionShadow.green).
+const POD_GREEN_TEXT = "#2A7F24";
+const POD_GREEN_BORDER = "#b7dcb9";
 
 // Error codes that mean the server is ALREADY in (or past) the state the tap
 // was trying to reach — the committed-but-lost-response pattern on bad
@@ -55,6 +108,15 @@ const DELIVERED_ALREADY_CODES = [
   "TRIP_NOT_ACTIVE",
 ];
 
+// Zone tag shading on the upcoming-stop cards, by STATE (design rule):
+// Penang pale, Kedah solid blue, Perak navy. The current-stop card's own tag
+// is deliberately flat (fieldBg/navy) in every zone.
+function zoneTagColors(zone?: string | null): { bg: string; fg: string } {
+  if (zone === "P1" || zone === "P2" || zone === "P3") return { bg: colors.tintBlue, fg: colors.blue };
+  if (zone === "K1" || zone === "K2") return { bg: colors.blue, fg: colors.white };
+  return { bg: colors.navy, fg: colors.white }; // A1/A2 (Perak), KL, anything new
+}
+
 export function ActiveTripScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -66,15 +128,29 @@ export function ActiveTripScreen() {
   // report outbox while the driver is on the active-trip surface.
   useExceptionOutboxFlush();
   const [showReport, setShowReport] = useState(false);
-  // The stop the driver CHOSE to head to next ("Head here" on a stop card).
+  // The stop the driver CHOSE to head to next ("Go here" on a strip card).
   // Stop order is the driver's call (Mr. Teh, 28 Jul 2026: "he can choose his
-  // own stop, the order in booking is just for reference only") — the default
-  // target is still the first undelivered stop by sequence, this just lets the
-  // driver override it. Cleared implicitly when the chosen stop is delivered.
+  // own stop, the order in booking is just for reference only").
   const [focusStopId, setFocusStopId] = useState<string | null>(null);
+  // The captured-but-not-yet-uploaded POD awaiting review (design screen 3).
+  const [review, setReview] = useState<{ photo: PickedPhoto; stop: TripStop } | null>(null);
+  // When THIS session uploaded each stop's POD, so the green line can read
+  // "POD uploaded · 9:47 AM". The server has no pod_uploaded_at column, so a
+  // POD uploaded before this screen mounted has no time — that case falls back
+  // to the untimed string rather than inventing a timestamp.
+  const [podTimes, setPodTimes] = useState<Record<string, string>>({});
+  const stripRef = useRef<ScrollView>(null);
+  const stripOffset = useRef(0);
+  // The peek IS the scroll affordance — but only when there is something to
+  // scroll to. On a wide shell (or a short run) every card fits, so the fade
+  // and the arrow puck must not appear and promise movement that can't happen.
+  // Width is computed from the design constants below rather than
+  // onContentSizeChange, which react-native-web does not report reliably for a
+  // horizontal ScrollView (it left the puck showing on the desktop shell).
+  const [stripViewport, setStripViewport] = useState(0);
 
-  // GPS consent (per device): the driver must agree to the active-trip-only,
-  // foreground-only explainer before we request the OS location permission.
+  // GPS consent (per device): the driver must agree to the active-trip-only
+  // explainer before we request the OS location permission.
   const [gpsConsent, setGpsConsentState] = useState<GpsConsent | null>(null);
   const [consentLoaded, setConsentLoaded] = useState(false);
   const [showGpsConsent, setShowGpsConsent] = useState(false);
@@ -114,15 +190,13 @@ export function ActiveTripScreen() {
     setShowGpsConsent(false);
   };
 
-  // Track this phone's GPS while the trip is active AND consented, and fetch the
-  // real road path. All hooks run unconditionally (before the early returns
-  // below) to keep hook order stable across renders.
+  // Track this phone's GPS while the trip is active AND consented, and fetch
+  // the real road path. All hooks run unconditionally (before the early
+  // returns below) to keep hook order stable across renders.
   //
   // Background tracking (OS-driven, survives the app being closed/locked) owns
   // capture whenever "Allow all the time" is granted; the foreground hook then
   // stands down its own capture (bg.backgroundActive) and just drives the UI.
-  // If background is denied, backgroundActive stays false and the foreground
-  // path runs exactly as before — the fallback.
   const bg = useBackgroundTracking(
     params.tripId,
     trip?.status === "in_progress",
@@ -138,10 +212,6 @@ export function ActiveTripScreen() {
   );
   const { data: route } = useTripRoute(params.tripId, Boolean(trip));
 
-  const sheetRef = useRef<BottomSheet>(null);
-  // Open taller by default so the current stop's action button is reachable
-  // without dragging the sheet up (big-touch: drivers act one-handed).
-  const snapPoints = useMemo(() => ["45%", "88%"], []);
   const [error, setError] = useState<string | null>(null);
   const [earned, setEarned] = useState<string | number | null>(null);
 
@@ -150,16 +220,12 @@ export function ActiveTripScreen() {
   const uploadPod = useUploadPod();
   const uploadK2 = useUploadK2();
   // POD offline outbox: deliveries saved on dead signal live here until the
-  // background flush (usePodOutboxFlush in DriverTabs) replays them. The
-  // per-stop queued item drives the "waiting for signal" UI below.
+  // background flush (usePodOutboxFlush in DriverTabs) replays them.
   const outbox = usePodOutboxItems();
 
   // Web double-click can synthesize a second press before React re-renders
-  // with isPending=true (the same RN-web double-fire class of bug as the
-  // booking form's oncePerTap). The ref flips SYNCHRONOUSLY, so the second
-  // tap is swallowed client-side before it fires a duplicate request — the
-  // server is idempotent anyway, but the 409 it returns reads as a scary
-  // error to a driver.
+  // with isPending=true (the RN-web double-fire class of bug). The ref flips
+  // SYNCHRONOUSLY, so the second tap is swallowed client-side.
   const actionInFlight = useRef(false);
   const oncePerAction = async (fn: () => Promise<void>) => {
     if (actionInFlight.current) return;
@@ -181,40 +247,57 @@ export function ActiveTripScreen() {
   if (isLoading) return <View style={styles.fill}><LoadingState /></View>;
   if (isError || !trip) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
 
-  // Active (not-yet-delivered) stops float to the top so the stop the driver is
-  // working on — and its action button — is the first thing in the sheet. A
-  // driver-chosen target ("Head here") floats above even those, so the card the
-  // map is pointing at is always the first one in the sheet.
-  const stops = (trip.stops ?? []).slice().sort((a, b) => {
-    const af = a.id === focusStopId && a.status !== "delivered" ? 0 : 1;
-    const bf = b.id === focusStopId && b.status !== "delivered" ? 0 : 1;
-    if (af !== bf) return af - bf;
-    const ad = a.status === "delivered" ? 1 : 0;
-    const bd = b.status === "delivered" ? 1 : 0;
-    if (ad !== bd) return ad - bd;
-    return a.sequence - b.sequence;
-  });
+  // ── Derived stop model ──────────────────────────────────────────────────
+  // The rail and the strip both read the BOOKING order; only the target stop
+  // is driver-chosen.
+  const bySeq = [...(trip.stops ?? [])].sort((a, b) => a.sequence - b.sequence);
+  const deliveredStops = bySeq.filter((s) => s.status === "delivered");
+  const focused = bySeq.find((s) => s.id === focusStopId && s.status !== "delivered");
+  const activeStop = focused ?? bySeq.find((s) => s.status !== "delivered") ?? bySeq[0];
+  const upcoming = bySeq.filter((s) => s.status !== "delivered" && s.id !== activeStop?.id);
+  const multiStop = bySeq.length > 1;
 
-  // Navigate to the stop the driver is actually working on (stops[0] after the
-  // sort above — the driver's chosen target when set, else the first
-  // undelivered by sequence), not permanently to stop 1. Falls back to the
-  // trip's first stop once everything is delivered.
-  const activeStop = stops.find((s) => s.status !== "delivered") ?? stops[0];
-  const multiStop = stops.length > 1;
+  const queuedFor = (s: TripStop) => findOutboxItem(outbox, s.id);
+  const stageFlags = (s: TripStop): StageFlags => {
+    const q = queuedFor(s);
+    return {
+      isK2: s.consignee?.zone_code === "K2",
+      arrivedQueued: q?.markArrived === true,
+      podQueued: q?.photo != null || q?.photoUploaded === true,
+      deliveryQueued: q?.confirmDelivered === true && s.status !== "delivered",
+    };
+  };
+  const stage = activeStop ? footerStage(activeStop, stageFlags(activeStop)) : null;
+  const activeQueued = activeStop ? queuedFor(activeStop) : undefined;
+  const podDoneHere = Boolean(
+    activeStop && (activeStop.pod_photo || activeQueued?.photo || activeQueued?.photoUploaded)
+  );
+  const podQueuedHere = Boolean(!activeStop?.pod_photo && (activeQueued?.photo || activeQueued?.photoUploaded));
+
+  // Q1 ruling (29 Jul): re-pointing is allowed, but a stop whose POD is up and
+  // whose Delivered was never tapped follows the driver in a banner.
+  const unfinished = bySeq.filter(
+    (s) => s.id !== activeStop?.id && s.status !== "delivered" && waitingForDelivered(s, stageFlags(s))
+  );
+
   const destination = consigneeDestination(
     activeStop?.consignee ?? { zone_code: tripDestZone(trip) }
   );
   const dest = destination.coord;
   const region = regionFor(PLANT_ORIGIN, dest);
-  const distance = haversineKm(PLANT_ORIGIN, dest);
+  const kmOrigin = tracking.current ?? PLANT_ORIGIN;
 
-  // Hand off to Google Maps for real turn-by-turn (drivers won't use in-app nav).
-  // With a geocoded consignee this is now the building; without one it is still
-  // the zone centroid, and the badge under the heading says so.
-  const openInMaps = () => {
+  // Hand off to Google Maps for real turn-by-turn (drivers won't use in-app
+  // nav). With a geocoded consignee this is the building; without one it is
+  // still the zone centroid, and the card says so.
+  const openMapsFor = (s?: TripStop) => {
+    const c = consigneeDestination(s?.consignee ?? { zone_code: tripDestZone(trip) }).coord;
     Linking.openURL(
-      `https://www.google.com/maps/dir/?api=1&destination=${dest.latitude},${dest.longitude}&travelmode=driving`
+      `https://www.google.com/maps/dir/?api=1&destination=${c.latitude},${c.longitude}&travelmode=driving`
     );
+  };
+  const callConsignee = (s?: TripStop) => {
+    if (s?.consignee?.phone) Linking.openURL(`tel:${s.consignee.phone}`);
   };
 
   const onArrived = (stop: TripStop) =>
@@ -228,9 +311,8 @@ export function ActiveTripScreen() {
           await reconcile();
           return;
         }
-        // Dead signal: queue the arrival so the POD flow UNLOCKS (the photo +
-        // Delivered UI gates on arrived) — the whole stop can now complete
-        // offline and replay in order when signal returns.
+        // Dead signal: queue the arrival so the POD flow UNLOCKS — the whole
+        // stop can now complete offline and replay in order.
         if (isNetworkError(err)) {
           try {
             await enqueuePodItem({ tripId: trip.id, stopId: stop.id, markArrived: true });
@@ -242,9 +324,6 @@ export function ActiveTripScreen() {
         }
         const msg = apiErrorMessage(err);
         setError(msg);
-        // Toast too (same rationale as onCapturePod): the inline error sits in
-        // the often-collapsed bottom sheet — on bad signal a silent failure
-        // looks like the tap registered when it didn't.
         toast(msg, "error");
       }
     });
@@ -254,9 +333,8 @@ export function ActiveTripScreen() {
     try {
       await updateDocs.mutateAsync({ tripId: trip.id, stopId: stop.id, [field]: value });
     } catch (err) {
-      // Dead signal while TICKING the K2 ack: remember it in the outbox so the
-      // background flush sets the flag before confirming delivery. (Unticking
-      // offline isn't queued — the flush only ever asserts the ack.)
+      // Dead signal while asserting the K2 ack: remember it in the outbox so
+      // the background flush sets the flag before confirming delivery.
       if (isNetworkError(err) && field === "k2_form_ack" && value) {
         try {
           await enqueuePodItem({ tripId: trip.id, stopId: stop.id, k2FormAck: true });
@@ -268,23 +346,13 @@ export function ActiveTripScreen() {
       }
       const msg = apiErrorMessage(err);
       setError(msg);
-      // Toast too (audit #14, same rationale as Arrived/Delivered/POD): the
-      // inline error sits in the often-collapsed bottom sheet, and the K2 ack
-      // GATES Delivered — a silent failure reads as a dead checkbox.
       toast(msg, "error");
     }
   };
 
-  // Camera-first POD capture → compress ≤500KB → upload. The API flips
-  // do_uploaded, which (with the K2 ack where applicable) unlocks "Delivered".
-  // Same synchronous double-fire guard as Arrived/Delivered (audit #6): a web
-  // double-click otherwise launches the picker twice — on native the second
-  // call rejects ("Different image picking in progress") into a spurious
-  // "Something went wrong" toast mid-capture. Holding the guard across the
-  // picker also stops a Delivered tap landing while the camera is open.
   // K2 (Borang K2) document upload for a K2-zone stop (Q6). The delivery gate
-  // requires the uploaded document (not a tick). Online-only for now: on a dead
-  // signal the driver is told to reconnect (the K2 zone has usable coverage).
+  // requires the uploaded document, not a tick. Online-only: on a dead signal
+  // the driver is told to reconnect (K2 zones have usable coverage).
   const onCaptureK2 = (stop: TripStop) =>
     oncePerAction(async () => {
       setError(null);
@@ -301,62 +369,75 @@ export function ActiveTripScreen() {
       }
     });
 
-  const onCapturePod = (stop: TripStop) =>
+  // POD step 1 — capture only. The upload no longer fires here: the photo goes
+  // to the review screen, and "Use photo" runs confirmPod() below. A cancel is
+  // a deliberate non-event (nothing captured, nothing uploaded).
+  const openPodCamera = (stop: TripStop) =>
     oncePerAction(async () => {
-    setError(null);
-    let captured: { uri: string; name: string; type: string } | null = null;
-    try {
-      const photo = await capturePodPhoto();
-      if (photo === "permission_denied") {
-        // Without a POD the Delivered gate never unlocks — the driver must be
-        // told the fix is enabling camera access. Only reachable on NATIVE
-        // (the web picker never prompts for permission), so the copy points
-        // at the phone's Settings. A cancel, by contrast, is a deliberate
-        // non-event and shows nothing.
-        const msg = t("trip.cameraBlocked");
+      setError(null);
+      try {
+        const photo = await capturePodPhoto();
+        if (photo === "permission_denied") {
+          // Without a POD the Delivered gate never unlocks — the driver must
+          // be told the fix is enabling camera access (NATIVE only).
+          const msg = t("trip.cameraBlocked");
+          setError(msg);
+          toast(msg, "error");
+          return;
+        }
+        if (!photo) return; // cancelled
+        setReview({ photo, stop });
+      } catch (err) {
+        const msg = apiErrorMessage(err);
         setError(msg);
         toast(msg, "error");
-        return;
       }
-      if (!photo) return; // user cancelled — not an error
-      captured = photo;
-      await uploadPod.mutateAsync({ tripId: trip.id, stopId: stop.id, photo });
-      // If this stop had a queued offline photo, the direct upload supersedes
-      // it — don't let the flush re-send a stale shot.
-      await noteDirectPodUpload(stop.id);
-      toast(t("trip.podUploaded"), "success");
-    } catch (err) {
-      // The trip finalized out from under us (a queued delivered that just
-      // landed, or another device): POD is locked. Resync to server truth
-      // instead of showing an error — the POD that mattered is already stored.
-      if (apiErrorCode(err) === "POD_LOCKED") {
-        await reconcile();
-        return;
-      }
-      // Dead signal with the photo ALREADY captured: queue it locally and let
-      // the driver carry on — this is a save, not a failure. The uri is made
-      // reload-durable first (web blob: URLs die with the page).
-      if (captured && isNetworkError(err)) {
-        try {
-          const durable = await toDurablePhotoUri(captured);
-          await enqueuePodItem({ tripId: trip.id, stopId: stop.id, photo: durable });
-          toast(t("trip.savedOffline"), "info");
+    });
+
+  // POD step 2 — the reviewed photo is uploaded. This is the ORIGINAL upload
+  // path (including the offline-outbox fallback), moved behind "Use photo".
+  const confirmPod = () =>
+    oncePerAction(async () => {
+      if (!review) return;
+      const { photo, stop } = review;
+      setError(null);
+      try {
+        await uploadPod.mutateAsync({ tripId: trip.id, stopId: stop.id, photo });
+        // A direct upload supersedes any queued offline shot for this stop.
+        await noteDirectPodUpload(stop.id);
+        setPodTimes((m) => ({ ...m, [stop.id]: new Date().toISOString() }));
+        setReview(null);
+        toast(t("trip.podUploaded"), "success");
+      } catch (err) {
+        // The trip finalized out from under us: POD is locked. Resync rather
+        // than error — the POD that mattered is already stored.
+        if (apiErrorCode(err) === "POD_LOCKED") {
+          setReview(null);
+          await reconcile();
           return;
-        } catch {
-          // storage full/unavailable — fall through to the normal error
         }
+        // Dead signal with the photo already captured: queue it and let the
+        // driver carry on — a save, not a failure. The uri is made
+        // reload-durable first (web blob: URLs die with the page).
+        if (isNetworkError(err)) {
+          try {
+            const durable = await toDurablePhotoUri(photo);
+            await enqueuePodItem({ tripId: trip.id, stopId: stop.id, photo: durable });
+            setReview(null);
+            toast(t("trip.savedOffline"), "info");
+            return;
+          } catch {
+            // storage full/unavailable — fall through to the normal error
+          }
+        }
+        const msg = apiErrorMessage(err);
+        setError(msg);
+        toast(msg, "error");
       }
-      const msg = apiErrorMessage(err);
-      setError(msg);
-      // Also surface via the toast overlay — the inline error sits inside the
-      // bottom sheet, which is often collapsed, so on web it looked like nothing
-      // happened after the photo was picked.
-      toast(msg, "error");
-    }
     });
 
   // Queue the Delivered intent locally (photo/K2 already merged on the item if
-  // they were captured offline) — the background flush completes the stop.
+  // captured offline) — the background flush completes the stop.
   const queueDeliveredOffline = async (stop: TripStop): Promise<boolean> => {
     try {
       await enqueuePodItem({ tripId: trip.id, stopId: stop.id, confirmDelivered: true });
@@ -370,10 +451,9 @@ export function ActiveTripScreen() {
   const onDelivered = (stop: TripStop) =>
     oncePerAction(async () => {
       setError(null);
-      // The server would reject this delivered confirm outright while the POD
-      // photo is still queued on the phone (DOCUMENTATION_INCOMPLETE — it has
-      // no photo yet), so don't even try: record the intent and let the flush
-      // run photo → ack → delivered in order once signal returns.
+      // The server would reject this delivered confirm while the POD photo is
+      // still queued on the phone (DOCUMENTATION_INCOMPLETE), so don't try:
+      // record the intent and let the flush run photo → ack → delivered.
       const queued = findOutboxItem(outbox, stop.id);
       if (queued && (queued.photo || (queued.k2FormAck && !queued.k2Acked))) {
         if (await queueDeliveredOffline(stop)) return;
@@ -384,16 +464,12 @@ export function ActiveTripScreen() {
           action: "delivered",
           stop_id: stop.id,
         });
-        // Delivered through the normal online path — clear any leftover
-        // queued intent for this stop so the flush has nothing to replay.
         await removePodItem(stop.id);
-        // Last stop delivered → the trip flips to pending_approval (POD-approval
-        // gate, 16 Jul 2026): its incentive is PROPOSED, shown to the driver as
-        // "awaiting approval", and only paid once an admin approves the POD.
+        // The delivered stop stops being the target; the screen re-points.
+        setFocusStopId(null);
+        // Last stop delivered → pending_approval (POD-approval gate): the
+        // incentive is PROPOSED, paid only once an admin approves.
         if (updated.status === "pending_approval") {
-          // Trip finished — stop background tracking immediately (the reactive
-          // hook also stops once the trip refetches, but this makes it prompt so
-          // we never keep the GPS service alive past the last delivery).
           void stopBackgroundTracking();
           setEarned(updated.incentive_earned);
         } else {
@@ -409,165 +485,492 @@ export function ActiveTripScreen() {
         if (isNetworkError(err) && (await queueDeliveredOffline(stop))) return;
         const msg = apiErrorMessage(err);
         setError(msg);
-        // Delivered gates the driver's pay — a silently-lost tap here means an
-        // unfinalized incentive, so the failure must be impossible to miss.
+        // Delivered gates the driver's pay — never let it fail silently.
         toast(msg, "error");
       }
     });
 
+  // ── Footer: exactly one primary action ──────────────────────────────────
+  const busy = updateStatus.isPending || updateDocs.isPending;
+  const footer = (() => {
+    if (!activeStop || stage === null) return null;
+    if (stage === "arrived") {
+      return {
+        meta: t("trip.stepNOfTotal", { n: 1, total: 3 }),
+        node: (
+          <Button
+            title={t("trip.arrivedAtPickup")}
+            onPress={() => onArrived(activeStop)}
+            loading={busy}
+            size="xl"
+            icon={<Ionicons name="location" size={24} color={colors.white} />}
+          />
+        ),
+      };
+    }
+    if (stage === "pod") {
+      return {
+        meta: t("trip.stepsDone", { done: 1, total: 3 }),
+        node: (
+          <Button
+            title={t("trip.podCapture")}
+            onPress={() => openPodCamera(activeStop)}
+            loading={uploadPod.isPending}
+            size="xl"
+            icon={<Ionicons name="camera" size={24} color={colors.white} />}
+          />
+        ),
+      };
+    }
+    if (stage === "k2") {
+      return {
+        meta: t("trip.stepsDone", { done: 2, total: 3 }),
+        node: (
+          <>
+            <Button
+              title={t("trip.k2Capture")}
+              onPress={() => onCaptureK2(activeStop)}
+              loading={uploadK2.isPending}
+              size="xl"
+              icon={<Ionicons name="document-attach" size={24} color={colors.white} />}
+            />
+            {/* Delivered is LOCKED, not dimmed — an explicit row saying why. */}
+            <View style={styles.lockedRow}>
+              <Ionicons name="lock-closed" size={15} color={colors.textFaint} />
+              <Text style={styles.lockedText}>{t("trip.deliveredAfterK2")}</Text>
+            </View>
+          </>
+        ),
+      };
+    }
+    return {
+      meta: t("trip.lastStepForStop"),
+      node: (
+        <Button
+          title={t("trip.markDelivered")}
+          onPress={() => onDelivered(activeStop)}
+          loading={busy}
+          variant="accent"
+          size="xl"
+          icon={<Ionicons name="checkmark" size={26} color={colors.navy} />}
+        />
+      ),
+    };
+  })();
+
+  // Current-stop card state label: NOW once arrived, HEADING TO when the
+  // driver re-pointed here, NEXT when the run advanced to it on its own.
+  const arrivedHere =
+    activeStop?.status === "arrived" || (activeStop ? stageFlags(activeStop).arrivedQueued === true : false);
+  const stateHue = arrivedHere ? CURRENT_STOP_HUE : colors.blue;
+  const stateLabel = arrivedHere
+    ? t("trip.nowStopLabel", { n: activeStop?.sequence, total: bySeq.length })
+    : focusStopId === activeStop?.id
+      ? t("trip.headingToStopLabel", { n: activeStop?.sequence, total: bySeq.length })
+      : t("trip.nextStopLabel", { n: activeStop?.sequence, total: bySeq.length });
+
+  const deliveredSummary =
+    deliveredStops.length > 0
+      ? t("trip.deliveredNames", {
+          count: deliveredStops.length,
+          names: deliveredStops
+            .map((s) => s.consignee?.company_name ?? "")
+            .filter(Boolean)
+            .join(", "),
+        })
+      : null;
+
   return (
     <View style={styles.fill}>
-      {/* Full-screen map (the hero). Native renders react-native-maps; the web
-          build swaps in a placeholder via ActiveTripMap.web.tsx. */}
-      <ActiveTripMap
-        region={region}
-        dest={dest}
-        destLabel={tripDestination(trip)}
-        polyline={route?.polyline}
-        current={tracking.current}
-      />
-
-      {/* Floating top card */}
-      <View style={[styles.topCard, { top: insets.top + 8 }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={22} color={colors.navy} />
+      {/* 1 ── Map band (196px). Native renders react-native-maps; the web
+              build swaps in a placeholder via ActiveTripMap.web.tsx. */}
+      <View style={styles.mapBand}>
+        <ActiveTripMap
+          region={region}
+          dest={dest}
+          destLabel={tripDestination(trip)}
+          polyline={route?.polyline}
+          current={tracking.current}
+        />
+        <TouchableOpacity
+          style={[styles.backBtn, { top: insets.top + 8 }]}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+        >
+          <Ionicons name="chevron-back" size={24} color={colors.navy} />
         </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headingLabel}>{t("trip.headingTo")}</Text>
-          {/* Names the stop Navigate actually targets — on a multi-stop run this
-              must follow the active stop, not stay on stop 1. */}
-          <Text style={styles.headingDest} numberOfLines={1}>
-            {activeStop?.consignee?.company_name || tripDestination(trip)}
-          </Text>
-          <Text style={styles.headingSub}>
-            ≈ {distance} {t("common.km")} · {trip.truck_plate ?? ""}
-          </Text>
-          {/* Honesty about the pin: without a geocode this is the zone centre,
-              so the driver knows to read the address rather than trust the map. */}
-          {!destination.precise ? (
-            <Text style={styles.headingApprox}>{t("trip.approxLocation")}</Text>
-          ) : null}
-          {trip.status === "in_progress" ? (
+        {trip.status === "in_progress" ? (
+          <View style={[styles.badgeFloat, { top: insets.top + 16 }]}>
             <TrackingBadge tracking={tracking} onReEnable={() => setShowGpsConsent(true)} />
-          ) : null}
-        </View>
-        {/* Real turn-by-turn handoff to Google Maps */}
-        <TouchableOpacity style={styles.navBtn} onPress={openInMaps} activeOpacity={0.85}>
-          <Ionicons name="navigate" size={20} color={colors.white} />
-          <Text style={styles.navBtnText}>{t("trip.navigate")}</Text>
-        </TouchableOpacity>
+          </View>
+        ) : null}
       </View>
 
-      {/* Bottom sheet with the stop list + action buttons */}
-      <BottomSheet ref={sheetRef} index={0} snapPoints={snapPoints}>
-        <BottomSheetScrollView
-          contentContainerStyle={styles.sheetContent}
-          // Manual resync for the lost-response case the reconcile codes miss
-          // (e.g. the driver backgrounds the tab mid-write and comes back).
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
-        >
-          <View style={styles.sheetHandleRow}>
-            <Text style={styles.sheetTitle}>{t("trip.stops")}</Text>
-            {/* Browsers have no pull-to-refresh gesture (RN-web renders
-                RefreshControl as a plain View) — web drivers resync here. */}
+      {/* 2 ── Progress header + segmented rail */}
+      <View style={styles.railWrap}>
+        <View style={styles.railInner}>
+          <View style={styles.railHead}>
+            <Text style={styles.railTitle}>
+              {t("trip.stopOfTotal", {
+                n: activeStop?.sequence ?? bySeq.length,
+                total: bySeq.length,
+                delivered: deliveredStops.length,
+              })}
+            </Text>
+            {/* Browsers have no pull-to-refresh (RN-web renders RefreshControl
+                as a plain View) — web drivers resync here. */}
             <WebRefreshButton refreshing={isRefetching} onRefresh={refetch} />
-            <Text style={styles.sheetTicket}>{trip.ticket_number}</Text>
+            <Text style={styles.railTicket}>{trip.ticket_number}</Text>
           </View>
+          <View style={styles.rail}>
+            {bySeq.map((s) => (
+              <View
+                key={s.id}
+                style={[
+                  styles.railSeg,
+                  {
+                    backgroundColor:
+                      s.status === "delivered"
+                        ? colors.green
+                        : s.status === "arrived"
+                          ? CURRENT_STOP_HUE
+                          : s.id === activeStop?.id
+                            ? colors.blue
+                            : colors.border,
+                  },
+                ]}
+              />
+            ))}
+          </View>
+        </View>
+      </View>
 
-          {exceptionsEnabled() && trip.status === "in_progress" && (
-            <>
-              <ExceptionStatusCard tripId={trip.id} />
-              <TouchableOpacity style={styles.reportExceptionBtn} onPress={() => setShowReport(true)}>
-                <Ionicons name="warning-outline" size={18} color={colors.red} />
-                <Text style={styles.reportExceptionText}>{t("exception.reportButton")}</Text>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {/* Free stop order (28 Jul): the booking's sequence is a suggestion. */}
-          {multiStop ? <Text style={styles.orderHint}>{t("trip.stopOrderHint")}</Text> : null}
-
-          {stops.map((stop) => (
-            <StopCard
-              key={stop.id}
-              stop={stop}
-              isTarget={stop.id === activeStop?.id && stop.status !== "delivered"}
-              canTarget={multiStop && stop.status !== "delivered" && stop.id !== activeStop?.id}
-              busy={updateStatus.isPending || updateDocs.isPending}
-              uploadingPod={uploadPod.isPending}
-              uploadingK2={uploadK2.isPending}
-              queued={findOutboxItem(outbox, stop.id)}
-              onArrived={() => onArrived(stop)}
-              onToggleDoc={(f, v) => toggleDoc(stop, f, v)}
-              onCapturePod={() => onCapturePod(stop)}
-              onCaptureK2={() => onCaptureK2(stop)}
-              onDelivered={() => onDelivered(stop)}
-              onSetTarget={() => setFocusStopId(stop.id)}
-            />
-          ))}
-
-          {/* Requestor-uploaded documents (DO / invoice) — reference during
-              delivery. Tapping opens the Cloudinary file in the browser. */}
-          {trip.documents && trip.documents.length > 0 ? (
-            <View style={styles.docSection}>
-              <Text style={styles.docSectionTitle}>{t("trip.documents")}</Text>
-              {trip.documents.map((doc) => (
-                <TouchableOpacity
-                  key={doc.id}
-                  style={styles.docRow}
-                  onPress={() => Linking.openURL(doc.file_url)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="document-text-outline" size={20} color={colors.blue} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.docName}>
-                      {t(
-                        doc.type === "do_photo"
-                          ? "bookingDetail.docTypeDO"
-                          : doc.type === "k2_form"
-                            ? "bookingDetail.docTypeK2"
-                            : "bookingDetail.docTypeOther"
-                      )}
-                    </Text>
-                    <Text style={styles.docDate}>{formatDateTime(doc.uploaded_at)}</Text>
-                  </View>
-                  <Ionicons name="open-outline" size={18} color={colors.blue} />
-                </TouchableOpacity>
-              ))}
+      {/* 3 ── Unfinished-stop banner (POD up, Delivered never tapped) */}
+      {unfinished.length > 0 ? (
+        <View style={styles.bannerWrap}>
+          <TouchableOpacity
+            style={styles.banner}
+            activeOpacity={0.8}
+            onPress={() => setFocusStopId(unfinished[0].id)}
+            accessibilityRole="button"
+          >
+            <View style={styles.bannerIcon}>
+              <Ionicons name="alert" size={17} color={colors.white} />
             </View>
-          ) : null}
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.bannerTitle} numberOfLines={1}>
+                {unfinished.length > 1
+                  ? t("trip.unfinishedStopMany", { count: unfinished.length })
+                  : t("trip.unfinishedStop", { n: unfinished[0].sequence })}
+              </Text>
+              <Text style={styles.bannerSub} numberOfLines={1}>
+                {t("trip.unfinishedStopSub", {
+                  name: unfinished[0].consignee?.company_name ?? "",
+                })}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={CURRENT_STOP_HUE} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-        </BottomSheetScrollView>
-      </BottomSheet>
+      {/* 4 ── Scroll body */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.body}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+      >
+        {activeStop ? (
+          <View style={styles.stopCard}>
+            <View style={styles.stopCardHead}>
+              <View style={styles.stateRow}>
+                <View style={[styles.stateDot, { backgroundColor: stateHue }]} />
+                <Text style={[styles.stateLabel, { color: stateHue }]}>{stateLabel}</Text>
+              </View>
+              <View style={{ flex: 1 }} />
+              <View style={styles.zonePill}>
+                <Text style={styles.zonePillText}>{activeStop.consignee?.zone_code ?? "—"}</Text>
+              </View>
+            </View>
+            <Text style={styles.consigneeName}>{activeStop.consignee?.company_name ?? "—"}</Text>
+            <Text style={styles.consigneeAddr}>
+              {consigneeAddress(activeStop.consignee) ||
+                [activeStop.consignee?.area, activeStop.consignee?.state].filter(Boolean).join(", ") ||
+                "—"}
+            </Text>
+            {!destination.precise ? (
+              <Text style={styles.approx}>{t("trip.approxLocation")}</Text>
+            ) : null}
+
+            {/* Before the POD: the full-width Maps CTA + Call / Problem.
+                After it: the green POD line + three compact chips. */}
+            {podDoneHere ? (
+              <>
+                <View style={styles.podLine}>
+                  <Ionicons
+                    name={podQueuedHere ? "cloud-upload-outline" : "checkmark-circle"}
+                    size={19}
+                    color={podQueuedHere ? colors.orange : colors.green}
+                  />
+                  <Text style={[styles.podLineText, podQueuedHere && { color: colors.navy }]} numberOfLines={1}>
+                    {podQueuedHere
+                      ? t("trip.podQueued")
+                      : podTimes[activeStop.id]
+                        ? t("trip.podUploadedAt", { time: formatTime(podTimes[activeStop.id]) })
+                        : t("trip.podUploaded")}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.retakePill}
+                    onPress={() => openPodCamera(activeStop)}
+                    disabled={uploadPod.isPending}
+                    accessibilityRole="button"
+                  >
+                    <Ionicons name="camera-reverse" size={16} color={colors.blue} />
+                    <Text style={styles.retakePillText}>{t("trip.podRetakeShort")}</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.chipRow}>
+                  <Chip icon="navigate" label={t("trip.mapsShort")} onPress={() => openMapsFor(activeStop)} />
+                  <Chip icon="call" label={t("trip.call")} onPress={() => callConsignee(activeStop)} />
+                  {exceptionsEnabled() ? (
+                    <Chip icon="warning-outline" label={t("trip.problemShort")} danger onPress={() => setShowReport(true)} />
+                  ) : null}
+                </View>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={styles.mapsCta}
+                  onPress={() => openMapsFor(activeStop)}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="navigate" size={15} color={colors.blue} />
+                  <Text style={styles.mapsCtaText}>{t("trip.driveInMaps")}</Text>
+                  <Ionicons name="open-outline" size={13} color={colors.blue} />
+                </TouchableOpacity>
+                <View style={styles.chipRowWide}>
+                  <Chip icon="call" label={t("trip.callConsignee")} onPress={() => callConsignee(activeStop)} grow />
+                  {exceptionsEnabled() ? (
+                    <Chip icon="warning-outline" label={t("trip.reportProblemBtn")} danger grow onPress={() => setShowReport(true)} />
+                  ) : null}
+                </View>
+              </>
+            )}
+          </View>
+        ) : null}
+
+        {/* K2 explainer — why Delivered is locked on this stop. */}
+        {stage === "k2" ? (
+          <View style={styles.k2Card}>
+            <View style={styles.k2Icon}>
+              <Ionicons name="document-attach" size={22} color={colors.teal} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.k2Title}>{t("trip.k2StillNeeded")}</Text>
+              <Text style={styles.k2Sub}>{t("trip.k2StillNeededSub")}</Text>
+            </View>
+          </View>
+        ) : null}
+
+        {exceptionsEnabled() && trip.status === "in_progress" ? (
+          <ExceptionStatusCard tripId={trip.id} />
+        ) : null}
+
+        {/* Upcoming stops — horizontal strip; the peek IS the affordance. */}
+        {upcoming.length > 0 ? (
+          <View>
+            <View style={styles.stripHead}>
+              <Text style={styles.stripHeadLeft}>{t("trip.stopsLeftCount", { count: upcoming.length })}</Text>
+              <Text style={styles.stripHeadRight}>{t("trip.anyOrder")}</Text>
+            </View>
+            <View>
+              <ScrollView
+                ref={stripRef}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.strip}
+                onScroll={(e) => {
+                  stripOffset.current = e.nativeEvent.contentOffset.x;
+                }}
+                scrollEventThrottle={16}
+                onLayout={(e) => setStripViewport(e.nativeEvent.layout.width)}
+              >
+                {upcoming.map((s, i) => {
+                  const tag = zoneTagColors(s.consignee?.zone_code);
+                  const first = i === 0;
+                  return (
+                    <View key={s.id} style={[styles.stripCard, first && styles.stripCardFirst]}>
+                      <View style={styles.stripTop}>
+                        <View style={[styles.zoneTag, { backgroundColor: tag.bg }]}>
+                          <Text style={[styles.zoneTagText, { color: tag.fg }]}>
+                            {s.consignee?.zone_code ?? "—"}
+                          </Text>
+                        </View>
+                        <Text style={styles.stripKm}>
+                          {haversineKm(kmOrigin, consigneeDestination(s.consignee).coord)} {t("common.km")}
+                        </Text>
+                      </View>
+                      <Text style={styles.stripName} numberOfLines={2}>
+                        {s.consignee?.company_name ?? "—"}
+                      </Text>
+                      <Text style={styles.stripTown} numberOfLines={1}>
+                        {s.consignee?.area ?? ""}
+                      </Text>
+                      <TouchableOpacity
+                        style={[styles.goHere, first && styles.goHereFirst]}
+                        onPress={() => setFocusStopId(s.id)}
+                        accessibilityRole="button"
+                      >
+                        <Text style={styles.goHereText}>{t("trip.goHere")}</Text>
+                        <Ionicons name="arrow-forward" size={17} color={colors.blue} />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+              {stripViewport > 0 &&
+              upcoming.length * STRIP_CARD_W +
+                (upcoming.length - 1) * STRIP_GAP +
+                STRIP_PAD * 2 >
+                stripViewport + 8 ? (
+                <>
+                  <LinearGradient
+                    colors={["rgba(244,246,251,0)", colors.bg]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.stripFade}
+                    pointerEvents="none"
+                  />
+                  <TouchableOpacity
+                    style={styles.stripPuck}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("trip.stopsLeftCount", { count: upcoming.length })}
+                    onPress={() =>
+                      stripRef.current?.scrollTo({ x: stripOffset.current + 160, animated: true })
+                    }
+                  >
+                    <Ionicons name="chevron-forward" size={22} color={colors.blue} />
+                  </TouchableOpacity>
+                </>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
+
+        {deliveredSummary ? (
+          <View style={styles.deliveredLine}>
+            <Ionicons name="checkmark-circle" size={15} color={colors.green} />
+            <Text style={styles.deliveredLineText} numberOfLines={1}>
+              {deliveredSummary}
+            </Text>
+          </View>
+        ) : null}
+
+        {/* Requestor-uploaded documents (DO / invoice) — reference material. */}
+        {trip.documents && trip.documents.length > 0 ? (
+          <View style={styles.docSection}>
+            <Text style={styles.docSectionTitle}>{t("trip.documents")}</Text>
+            {trip.documents.map((doc) => (
+              <TouchableOpacity
+                key={doc.id}
+                style={styles.docRow}
+                onPress={() => Linking.openURL(doc.file_url)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="document-text-outline" size={20} color={colors.blue} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.docName}>
+                    {t(
+                      doc.type === "do_photo"
+                        ? "bookingDetail.docTypeDO"
+                        : doc.type === "k2_form"
+                          ? "bookingDetail.docTypeK2"
+                          : "bookingDetail.docTypeOther"
+                    )}
+                  </Text>
+                  <Text style={styles.docDate}>{formatDateTime(doc.uploaded_at)}</Text>
+                </View>
+                <Ionicons name="open-outline" size={18} color={colors.blue} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+      </ScrollView>
+
+      {/* 5 ── Pinned footer: exactly one primary action */}
+      {footer ? (
+        <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
+          <View style={styles.footerInner}>
+            <View style={styles.footerHead}>
+              <Text style={styles.footerKicker}>{t("trip.doThisNext")}</Text>
+              <Text style={styles.footerMeta}>{footer.meta}</Text>
+            </View>
+            {footer.node}
+          </View>
+        </View>
+      ) : null}
+
+      {/* POD review — capture → check → upload (design screen 3) */}
+      <PodReviewModal
+        photo={review?.photo ?? null}
+        subtitle={
+          review
+            ? `${t("trip.stop", { n: review.stop.sequence })} · ${review.stop.consignee?.company_name ?? ""}`
+            : ""
+        }
+        uploading={uploadPod.isPending}
+        onRetake={() => {
+          const stop = review?.stop;
+          setReview(null);
+          if (stop) void openPodCamera(stop);
+        }}
+        onUse={() => void confirmPod()}
+        onCancel={() => setReview(null)}
+      />
 
       {exceptionsEnabled() && (
         <ReportExceptionSheet
           visible={showReport}
           tripId={trip.id}
-          stops={stops.map((s) => ({ id: s.id, label: t("exception.stopN", { n: s.sequence, name: s.consignee?.company_name ?? "" }) }))}
+          stops={bySeq.map((s) => ({
+            id: s.id,
+            label: t("exception.stopN", { n: s.sequence, name: s.consignee?.company_name ?? "" }),
+          }))}
           onClose={() => setShowReport(false)}
         />
       )}
 
-      {/* Completion modal */}
+      {/* Completion modal — re-toned per the corrected design: GREEN marks the
+          delivery, and the incentive sits in its own boxed block behind an
+          amber PENDING APPROVAL chip with a NAVY figure, so a held payment can
+          never read as paid. Presentation only — `pending_approval` is
+          unchanged server-side (the amount is still the engine's proposal). */}
       <Modal visible={earned !== null} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalIcon}>
               <Ionicons name="checkmark" size={36} color={colors.white} />
             </View>
-            <Text style={styles.modalTitle}>{t("trip.completedTitle")}</Text>
-            <Text style={styles.modalSub}>{t("trip.incentivePending")}</Text>
-            <Text style={styles.modalAmount}>{formatMoney(earned)}</Text>
-            <Text style={styles.modalNote}>{t("trip.incentivePendingNote")}</Text>
+            <Text style={styles.modalTitle}>
+              {t("trip.allStopsDelivered", { count: (trip.stops ?? []).length })}
+            </Text>
+            <Text style={styles.modalSub}>{t("trip.runFinished")}</Text>
+            <View style={styles.pendingBlock}>
+              <View style={styles.pendingChip}>
+                <Ionicons name="time-outline" size={15} color={PENDING_AMBER_TEXT} />
+                <Text style={styles.pendingChipText}>{t("trip.pendingApprovalChip")}</Text>
+              </View>
+              <Text style={styles.pendingAmount}>{formatMoney(earned)}</Text>
+              <Text style={styles.modalNote}>{t("trip.incentivePendingNote")}</Text>
+            </View>
             <Button
               title={t("trip.backToDashboard")}
               size="xl"
               onPress={() => {
                 setEarned(null);
-                // Reset the Trips stack, then switch to the Home (Dashboard) tab
-                // so the button actually lands where its label says.
                 navigation.popToTop();
                 navigation.getParent<BottomTabNavigationProp<DriverTabParamList>>()?.navigate("Home");
               }}
@@ -616,9 +1019,38 @@ export function ActiveTripScreen() {
   );
 }
 
-// Small status chip in the heading card: live / locating / offline+queued /
-// off. When off (consent not given, or OS-denied) it's tappable to re-open the
-// consent explainer and re-request permission.
+// Compact pill action on the current-stop card. 44px min target throughout.
+function Chip({
+  icon,
+  label,
+  onPress,
+  danger,
+  grow,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  danger?: boolean;
+  grow?: boolean;
+}) {
+  const fg = danger ? colors.red : colors.blue;
+  return (
+    <TouchableOpacity
+      style={[styles.chip, { borderColor: danger ? colors.red : colors.border }]}
+      onPress={onPress}
+      activeOpacity={0.8}
+      accessibilityRole="button"
+    >
+      <Ionicons name={icon} size={grow ? 17 : 15} color={fg} />
+      <Text style={[styles.chipText, { color: fg, fontSize: grow ? typeScale.sm : typeScale.xs }]} numberOfLines={1}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+// Status chip on the map band: live / locating / offline+queued / off. When
+// off (consent not given, or OS-denied) it re-opens the consent explainer.
 function TrackingBadge({
   tracking,
   onReEnable,
@@ -628,7 +1060,6 @@ function TrackingBadge({
 }) {
   const { t } = useTranslation();
   const offline = !tracking.online || tracking.queued > 0;
-  // "off" = the driver hasn't agreed yet, or the OS/browser denied permission.
   const off = tracking.status === "needs_consent" || tracking.status === "denied";
 
   let dotColor: string = colors.green;
@@ -637,6 +1068,7 @@ function TrackingBadge({
     dotColor = colors.red;
     label = t("trip.locationOff");
   } else if (offline) {
+    // Orange appears ONLY for offline/queued — the standing owner ruling.
     dotColor = colors.orange;
     label = t("trip.offlineQueued", { count: tracking.queued });
   } else if (tracking.status !== "tracking" || !tracking.current) {
@@ -661,378 +1093,292 @@ function TrackingBadge({
   );
 }
 
-function StopCard({
-  stop,
-  isTarget,
-  canTarget,
-  busy,
-  uploadingPod,
-  uploadingK2,
-  queued,
-  onArrived,
-  onToggleDoc,
-  onCapturePod,
-  onCaptureK2,
-  onDelivered,
-  onSetTarget,
-}: {
-  stop: TripStop;
-  isTarget: boolean;
-  canTarget: boolean;
-  busy: boolean;
-  uploadingPod: boolean;
-  uploadingK2: boolean;
-  queued?: PodOutboxItem;
-  onArrived: () => void;
-  onToggleDoc: (field: "do_uploaded" | "k2_form_ack", value: boolean) => void;
-  onCapturePod: () => void;
-  onCaptureK2: () => void;
-  onDelivered: () => void;
-  onSetTarget: () => void;
-}) {
-  const { t } = useTranslation();
-  const isK2 = stop.consignee?.zone_code === "K2";
-  // Offline-queued pieces count toward the gate: the arrival/photo/ack are
-  // safely on the phone and the flush replays them (in order) before the
-  // delivered confirm, so the driver isn't blocked by dead signal.
-  const queuedPhoto = queued?.photo != null || queued?.photoUploaded === true;
-  const queuedAck = queued?.k2FormAck === true;
-  // Arrived (server) or arrived-saved-on-phone — unlocks the POD section.
-  const arrivedLocal =
-    stop.status === "arrived" || (stop.status === "pending" && queued?.markArrived === true);
-  // Delivered already queued → the stop is done as far as the driver is
-  // concerned; show the waiting-for-signal state instead of buttons.
-  const deliveryQueued = queued?.confirmDelivered === true && stop.status !== "delivered";
-  // do_uploaded is driven by the POD photo upload. The ACTIVE K2 gate is the
-  // UPLOADED Borang K2 document ONLY (Q6) — the legacy `k2_form_ack` tick (and its
-  // queued form) must NEVER authorize a new delivery, matching the server gate
-  // (isDocumentationComplete keys on k2_photo). A historical completed record may
-  // still show the old ack, but it cannot satisfy this active gate.
-  const k2Done = !isK2 || !!stop.k2_photo;
-  const docsComplete = (stop.do_uploaded || queuedPhoto) && k2Done;
-  // Translated stop-status label (was a raw, untranslated enum like "ARRIVED").
-  const statusLabel: Record<string, string> = {
-    pending: t("trip.stopPending"),
-    arrived: t("trip.stopArrived"),
-    delivered: t("trip.stopDelivered"),
-  };
-
-  // Visual state of this stop in the run: done (green ✓), current (violet —
-  // the map's target: the driver's chosen stop, else the first undelivered),
-  // or upcoming (muted). The badge shows the BOOKING sequence, not the sheet
-  // position — free stop order (28 Jul) means cards re-sort as the driver
-  // works, and a stop's number must not change under them.
-  const isDone = stop.status === "delivered";
-  const isCurrent = isTarget;
-
-  return (
-    <View style={[styles.stopCard, isCurrent && styles.stopCardCurrent]}>
-      <View style={styles.stopHead}>
-        <View
-          style={[
-            styles.stopSeq,
-            isDone && { backgroundColor: colors.green },
-            !isDone && !isCurrent && styles.stopSeqUpcoming,
-          ]}
-        >
-          {isDone ? (
-            <Ionicons name="checkmark" size={16} color={colors.white} />
-          ) : (
-            <Text style={[styles.stopSeqText, !isCurrent && { color: colors.navy }]}>{stop.sequence}</Text>
-          )}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.stopName}>{stop.consignee?.company_name ?? t("trip.stop", { n: stop.sequence })}</Text>
-          {/* The delivery address — the driver's primary cue for WHERE this is.
-              Falls back to area/state for a row with no street address. */}
-          <Text style={styles.stopArea} numberOfLines={3}>
-            {consigneeAddress(stop.consignee) ||
-              [stop.consignee?.area, stop.consignee?.state].filter(Boolean).join(", ") ||
-              "—"}
-          </Text>
-        </View>
-        {stop.status === "delivered" ? (
-          <View style={styles.deliveredPill}>
-            <Ionicons name="checkmark-circle" size={16} color={colors.green} />
-            <Text style={styles.deliveredText}>{t("trip.markDelivered")}</Text>
-          </View>
-        ) : deliveryQueued ? (
-          <View style={styles.queuedPill}>
-            <Ionicons name="cloud-upload-outline" size={16} color={colors.orange} />
-            <Text style={styles.queuedText}>{t("trip.waitingSignal")}</Text>
-          </View>
-        ) : (
-          <Text
-            style={[
-              styles.stopStatus,
-              // Arrived wears the in-progress violet; not-yet-reached stays muted.
-              { color: stop.status === "arrived" ? colors.violet : colors.textMuted },
-            ]}
-          >
-            {(statusLabel[stop.status] ?? stop.status).toUpperCase()}
-          </Text>
-        )}
-      </View>
-
-      {/* Per-stop quick actions: call the consignee (every stop has its own
-          contact now, not just stop 1 — DG-D3), and "Head here" to point the
-          map + Navigate at THIS stop (free stop order, 28 Jul). */}
-      {!isDone && !deliveryQueued && (stop.consignee?.phone || canTarget) ? (
-        <View style={styles.stopActions}>
-          {stop.consignee?.phone ? (
-            <TouchableOpacity
-              style={styles.stopActionBtn}
-              activeOpacity={0.7}
-              onPress={() => Linking.openURL(`tel:${stop.consignee!.phone}`)}
-            >
-              <Ionicons name="call" size={16} color={colors.blue} />
-              <Text style={styles.stopActionText}>{t("trip.call")}</Text>
-            </TouchableOpacity>
-          ) : null}
-          {canTarget ? (
-            <TouchableOpacity style={styles.stopActionBtn} activeOpacity={0.7} onPress={onSetTarget}>
-              <Ionicons name="navigate-outline" size={16} color={colors.blue} />
-              <Text style={styles.stopActionText}>{t("trip.headHere")}</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      ) : null}
-
-      {/* Delivered is saved on this phone — nothing left for the driver to do
-          at this stop; the outbox completes it when signal returns. */}
-      {deliveryQueued ? (
-        <Text style={styles.queuedHint}>{t("trip.savedOffline")}</Text>
-      ) : null}
-
-      {/* pending → Arrived button (hidden once arrival is saved on-phone) */}
-      {stop.status === "pending" && !arrivedLocal && !deliveryQueued ? (
-        <Button
-          title={t("trip.arrivedAtPickup")}
-          onPress={onArrived}
-          loading={busy}
-          variant="primary"
-          size="xl"
-          style={{ marginTop: 12 }}
-          icon={<Ionicons name="location" size={20} color={colors.white} />}
-        />
-      ) : null}
-
-      {/* arrived (server or saved-on-phone) → POD photo gate + Delivered.
-          Hidden once the delivery itself is queued — nothing left to do. */}
-      {arrivedLocal && !deliveryQueued ? (
-        <View style={{ marginTop: 12 }}>
-          <Text style={styles.gateHint}>{t("trip.podGateHint")}</Text>
-
-          {/* POD photo: capture (camera-first), the uploaded shot, or the
-              offline-queued shot waiting for signal */}
-          {stop.pod_photo || queued?.photo ? (
-            <View style={styles.podRow}>
-              <Image
-                source={{ uri: stop.pod_photo ?? queued!.photo!.uri }}
-                style={styles.podThumb}
-              />
-              <View style={{ flex: 1 }}>
-                <View style={styles.podDoneRow}>
-                  <Ionicons
-                    name={stop.pod_photo ? "checkmark-circle" : "cloud-upload-outline"}
-                    size={16}
-                    color={stop.pod_photo ? colors.green : colors.orange}
-                  />
-                  <Text style={stop.pod_photo ? styles.podDoneText : styles.podQueuedText}>
-                    {stop.pod_photo ? t("trip.podUploaded") : t("trip.podQueued")}
-                  </Text>
-                </View>
-                <TouchableOpacity onPress={onCapturePod} hitSlop={8} disabled={uploadingPod}>
-                  <Text style={styles.podRetake}>{t("trip.podRetake")}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <Button
-              title={t("trip.podCapture")}
-              onPress={onCapturePod}
-              loading={uploadingPod}
-              variant="outline"
-              size="xl"
-              style={{ marginTop: 4 }}
-              icon={<Ionicons name="camera" size={20} color={colors.blue} />}
-            />
-          )}
-
-          {isK2 ? (
-            stop.k2_photo ? (
-              <View style={styles.podDoneRow}>
-                <Ionicons name="checkmark-circle" size={16} color={colors.green} />
-                <Text style={styles.podDoneText}>{t("trip.k2Uploaded")}</Text>
-                <TouchableOpacity onPress={onCaptureK2} hitSlop={8} disabled={uploadingK2}>
-                  <Text style={styles.podRetake}>{t("trip.podRetake")}</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <Button
-                title={t("trip.k2Capture")}
-                onPress={onCaptureK2}
-                loading={uploadingK2}
-                variant="outline"
-                size="xl"
-                style={{ marginTop: 8 }}
-                icon={<Ionicons name="document-attach" size={20} color={colors.blue} />}
-              />
-            )
-          ) : null}
-          <Button
-            title={t("trip.markDelivered")}
-            onPress={onDelivered}
-            loading={busy}
-            disabled={!docsComplete}
-            variant="accent"
-            size="xl"
-            style={{ marginTop: 8 }}
-            icon={<Ionicons name="checkmark" size={20} color={colors.navy} />}
-          />
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-function DocCheckbox({
-  label,
-  checked,
-  onToggle,
-}: {
-  label: string;
-  checked: boolean;
-  onToggle: (v: boolean) => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={styles.checkRow}
-      onPress={() => onToggle(!checked)}
-      activeOpacity={0.7}
-      hitSlop={8}
-    >
-      <View style={[styles.checkBox, checked && styles.checkBoxOn]}>
-        {checked ? <Ionicons name="checkmark" size={18} color={colors.white} /> : null}
-      </View>
-      <Text style={styles.checkLabel}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
 const styles = StyleSheet.create({
-  reportExceptionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.red, marginBottom: 12 },
-  reportExceptionText: { color: colors.red, fontWeight: "700" },
   fill: { flex: 1, backgroundColor: colors.bg },
-  topCard: {
+
+  // 1 — map band
+  mapBand: { height: 196, position: "relative", backgroundColor: colors.tintBlue },
+  backBtn: {
     position: "absolute",
     left: 12,
-    right: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.white,
-    borderRadius: radius.lg,
-    padding: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadow.card,
+  },
+  badgeFloat: { position: "absolute", right: 12 },
+  trackBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.white,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    ...shadow.card,
+  },
+  trackDot: { width: 8, height: 8, borderRadius: 4 },
+  trackText: { fontSize: typeScale.sm, fontWeight: "700", color: colors.navy },
+  trackEnable: { fontSize: typeScale.sm, fontWeight: "700", color: colors.blue },
+
+  // 2 — progress header + rail
+  railWrap: { backgroundColor: colors.white, borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  railInner: { width: "100%", maxWidth: layout.content, alignSelf: "center", paddingHorizontal: 16, paddingVertical: 11 },
+  railHead: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 7 },
+  railTitle: { flex: 1, fontSize: typeScale.sm, fontWeight: "800", color: colors.navy },
+  railTicket: { fontSize: typeScale.xs, fontWeight: "600", color: colors.textFaint },
+  rail: { flexDirection: "row", gap: 4 },
+  railSeg: { flex: 1, height: 6, borderRadius: 3 },
+
+  // 3 — unfinished-stop banner
+  bannerWrap: { width: "100%", maxWidth: layout.content, alignSelf: "center", paddingHorizontal: 16, paddingTop: 12 },
+  banner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: CURRENT_STOP_TINT,
+    borderWidth: 1.5,
+    borderColor: CURRENT_STOP_HUE,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  bannerIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: CURRENT_STOP_HUE,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bannerTitle: { fontSize: typeScale.sm, fontWeight: "800", color: colors.navy },
+  bannerSub: { fontSize: typeScale.xs, color: CURRENT_STOP_HUE, marginTop: 1 },
+
+  // 4 — scroll body
+  body: { width: "100%", maxWidth: layout.content, alignSelf: "center", paddingVertical: 14, gap: 12 },
+
+  stopCard: {
+    marginHorizontal: 16,
+    backgroundColor: colors.white,
+    borderRadius: 18,
+    padding: 12,
+    ...shadow.floating,
+  },
+  stopCardHead: { flexDirection: "row", alignItems: "center", gap: 8 },
+  stateRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  stateDot: { width: 9, height: 9, borderRadius: 5 },
+  stateLabel: { fontSize: typeScale.xs, fontWeight: "900", letterSpacing: 0.7 },
+  zonePill: { backgroundColor: colors.fieldBg, paddingHorizontal: 9, paddingVertical: 3, borderRadius: radius.pill },
+  zonePillText: { fontSize: typeScale.xs, fontWeight: "900", color: colors.navy, letterSpacing: 0.5 },
+  consigneeName: { fontSize: 17, fontWeight: "800", color: colors.navy, marginTop: 10, lineHeight: 21 },
+  consigneeAddr: { fontSize: typeScale.sm, color: colors.textMuted, marginTop: 4, lineHeight: 19 },
+  approx: { fontSize: typeScale.xs, color: colors.textFaint, marginTop: 4 },
+
+  mapsCta: {
+    minHeight: 44,
+    marginTop: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.blue,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+  },
+  mapsCtaText: { fontSize: typeScale.sm, fontWeight: "800", color: colors.blue },
+
+  chipRow: { flexDirection: "row", gap: 6, marginTop: 8 },
+  chipRowWide: { flexDirection: "row", gap: 8, marginTop: 10 },
+  chip: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    minHeight: 44,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    paddingHorizontal: 8,
+  },
+  chipText: { fontWeight: "700" },
+
+  podLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    marginTop: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: colors.tintGreen,
+  },
+  podLineText: { flex: 1, fontSize: typeScale.sm, fontWeight: "800", color: POD_GREEN_TEXT },
+  retakePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    minHeight: 44,
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
+    backgroundColor: colors.white,
+    borderWidth: 1.5,
+    borderColor: POD_GREEN_BORDER,
+  },
+  retakePillText: { fontSize: typeScale.sm, fontWeight: "800", color: colors.blue },
+
+  k2Card: {
+    marginHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    ...shadow.floating,
+    backgroundColor: colors.white,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    padding: 10,
+    ...shadow.card,
   },
-  backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  k2Icon: { width: 44, height: 44, borderRadius: 12, backgroundColor: colors.tintTeal, alignItems: "center", justifyContent: "center" },
+  k2Title: { fontSize: typeScale.md, fontWeight: "800", color: colors.navy },
+  k2Sub: { fontSize: typeScale.xs, color: colors.textMuted, marginTop: 2, lineHeight: 17 },
+
+  stripHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", paddingHorizontal: 16, marginBottom: 6 },
+  stripHeadLeft: { fontSize: typeScale.xs, fontWeight: "800", color: colors.grey, letterSpacing: 0.5, textTransform: "uppercase" },
+  stripHeadRight: { fontSize: typeScale.xs, color: colors.textFaint },
+  strip: { gap: STRIP_GAP, paddingHorizontal: STRIP_PAD },
+  stripCard: {
+    width: STRIP_CARD_W,
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    padding: 10,
+    gap: 5,
+  },
+  stripCardFirst: { borderWidth: 1.5, borderColor: colors.blue },
+  stripTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  zoneTag: { minWidth: 26, height: 18, borderRadius: 5, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
+  zoneTagText: { fontSize: 10, fontWeight: "900", letterSpacing: 0.4 },
+  stripKm: { fontSize: typeScale.xs, fontWeight: "700", color: colors.textFaint },
+  stripName: { fontSize: typeScale.sm, fontWeight: "800", color: colors.navy, lineHeight: 17 },
+  stripTown: { fontSize: typeScale.xs, color: colors.textFaint },
+  goHere: {
+    marginTop: "auto",
+    minHeight: 44,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  goHereFirst: { backgroundColor: colors.tintBlue, borderColor: colors.tintBlue },
+  goHereText: { fontSize: typeScale.sm, fontWeight: "800", color: colors.blue },
+  stripFade: { position: "absolute", top: 0, bottom: 0, right: 0, width: 64 },
+  stripPuck: {
+    position: "absolute",
+    top: "50%",
+    right: 10,
+    marginTop: -22,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.white,
     borderWidth: 1.5,
     borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
+    ...shadow.card,
   },
-  headingLabel: { fontSize: 12, fontWeight: "700", color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.6 },
-  headingDest: { fontSize: 20, fontWeight: "800", color: colors.navy, marginTop: 2 },
-  headingSub: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
-  // Muted, not orange: orange is reserved for offline states (owner ruling).
-  headingApprox: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
 
-  navBtn: {
-    backgroundColor: colors.blue,
+  deliveredLine: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16 },
+  deliveredLineText: { flex: 1, fontSize: typeScale.xs, fontWeight: "700", color: colors.green },
+
+  docSection: { marginHorizontal: 16 },
+  docSectionTitle: { fontSize: typeScale.md, fontWeight: "800", color: colors.navy, marginBottom: 10 },
+  docRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: colors.white,
     borderRadius: radius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  docName: { fontSize: typeScale.md, fontWeight: "700", color: colors.navy },
+  docDate: { fontSize: typeScale.sm, color: colors.textFaint, marginTop: 2 },
+
+  error: { color: colors.red, fontSize: typeScale.md, fontWeight: "600", marginHorizontal: 16 },
+
+  // 5 — pinned footer
+  footer: {
+    backgroundColor: colors.white,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+    paddingTop: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  footerInner: { width: "100%", maxWidth: layout.content, alignSelf: "center", paddingHorizontal: 16 },
+  footerHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  footerKicker: { fontSize: typeScale.xs, fontWeight: "700", color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.6 },
+  footerMeta: { fontSize: typeScale.xs, fontWeight: "700", color: colors.grey },
+  lockedRow: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    minWidth: 64,
-    gap: 2,
+    gap: 7,
+    marginTop: 8,
+    minHeight: 32,
+    borderRadius: 12,
+    backgroundColor: colors.fieldBg,
   },
-  navBtnText: { color: colors.white, fontSize: 13, fontWeight: "700" },
+  lockedText: { fontSize: typeScale.sm, fontWeight: "800", color: colors.textFaint },
 
-  trackBadge: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
-  trackDot: { width: 8, height: 8, borderRadius: 4 },
-  trackText: { fontSize: 13, fontWeight: "700", color: colors.navy },
-  trackEnable: { fontSize: 13, fontWeight: "700", color: colors.blue },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center", padding: 24 },
+  modalCard: { backgroundColor: colors.white, borderRadius: 24, padding: 32, alignItems: "center", width: "100%", maxWidth: layout.auth },
+  modalIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.green, alignItems: "center", justifyContent: "center", marginBottom: 16 },
+  modalTitle: { fontSize: 22, fontWeight: "800", color: colors.navy, marginBottom: 8 },
+  modalSub: { fontSize: typeScale.md, color: colors.textMuted, textAlign: "center", marginTop: 6 },
+  modalNote: { fontSize: typeScale.sm, color: colors.textMuted, textAlign: "center", marginTop: 6, lineHeight: 18 },
+  // The incentive gets its OWN block so it reads as a separate, still-open
+  // matter rather than a reward banner.
+  pendingBlock: {
+    alignSelf: "stretch",
+    marginTop: 20,
+    padding: 16,
+    borderRadius: radius.lg,
+    backgroundColor: colors.fieldBg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+  },
+  pendingChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    backgroundColor: colors.tintYellow,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+  },
+  pendingChipText: { fontSize: typeScale.xs, fontWeight: "800", color: PENDING_AMBER_TEXT, letterSpacing: 0.3 },
+  // NAVY, never green — green is "paid" everywhere else in this app.
+  pendingAmount: { fontSize: typeScale.hero, fontWeight: "900", color: colors.navy, marginTop: 10, lineHeight: 46 },
+
   gpsConsentBody: { fontSize: 14.5, color: colors.textMuted, textAlign: "center", lineHeight: 21, marginBottom: 4 },
   gpsPoints: { alignSelf: "stretch", gap: 10, marginTop: 16 },
   gpsPointRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  gpsPointText: { flex: 1, fontSize: 14, fontWeight: "600", color: colors.navy },
-  gpsBatteryHint: { alignSelf: "stretch", fontSize: 12, color: colors.textFaint, lineHeight: 17, marginTop: 14 },
-  gpsNotNow: { fontSize: 15, fontWeight: "700", color: colors.textMuted },
-
-  sheetContent: { paddingHorizontal: 16, paddingBottom: 40 },
-  sheetHandleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
-  orderHint: { fontSize: 13, color: colors.textMuted, marginBottom: 10, lineHeight: 18 },
-  stopActions: { flexDirection: "row", gap: 8, marginTop: 10 },
-  stopActionBtn: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 40, paddingHorizontal: 14, borderRadius: radius.pill, borderWidth: 1.5, borderColor: colors.border },
-  stopActionText: { fontSize: 13, fontWeight: "700", color: colors.blue },
-  sheetTitle: { fontSize: 16, fontWeight: "800", color: colors.navy },
-  sheetTicket: { fontSize: 13, fontWeight: "700", color: colors.blue },
-
-  stopCard: { backgroundColor: colors.white, borderRadius: radius.md, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: colors.borderLight },
-  // The stop being worked right now — violet ring (the in-progress family)
-  // so "where am I in this run" reads before any text does.
-  stopCardCurrent: { borderColor: colors.violet, borderWidth: 1.5, borderLeftWidth: 5, ...shadow.card },
-  stopHead: { flexDirection: "row", alignItems: "center", gap: 12 },
-  stopSeq: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.violet, alignItems: "center", justifyContent: "center" },
-  stopSeqUpcoming: { backgroundColor: colors.fieldBg, borderWidth: 1.5, borderColor: colors.border },
-  stopSeqText: { color: colors.white, fontWeight: "800", fontSize: 14 },
-  stopName: { fontSize: 14, fontWeight: "700", color: colors.navy },
-  stopArea: { fontSize: 13, color: colors.textFaint, marginTop: 2 },
-  stopStatus: { fontSize: 12, fontWeight: "800", letterSpacing: 0.4 },
-  deliveredPill: { flexDirection: "row", alignItems: "center", gap: 4 },
-  deliveredText: { fontSize: 12, fontWeight: "800", color: colors.green },
-  // Offline-outbox states: saved on this phone, waiting for signal.
-  queuedPill: { flexDirection: "row", alignItems: "center", gap: 4 },
-  queuedText: { fontSize: 12, fontWeight: "800", color: colors.orange },
-  queuedHint: { fontSize: 13, color: colors.orange, marginTop: 10, lineHeight: 17 },
-  podQueuedText: { fontSize: 14, fontWeight: "700", color: colors.orange },
-
-  gateHint: { fontSize: 13, color: colors.textMuted, marginBottom: 10, lineHeight: 17 },
-  podRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 4 },
-  podThumb: { width: 56, height: 56, borderRadius: radius.md, backgroundColor: colors.bg },
-  podDoneRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  podDoneText: { fontSize: 14, fontWeight: "700", color: colors.green },
-  podRetake: { fontSize: 14, fontWeight: "700", color: colors.blue, marginTop: 4 },
-  checkRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
-  checkBox: { width: 28, height: 28, borderRadius: 8, borderWidth: 2, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
-  checkBoxOn: { backgroundColor: colors.green, borderColor: colors.green },
-  checkLabel: { flex: 1, fontSize: 14, color: colors.navy, fontWeight: "600" },
-
-  docSection: { marginTop: 4, marginBottom: 8 },
-  docSectionTitle: { fontSize: 14, fontWeight: "800", color: colors.navy, marginBottom: 10 },
-  docRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: colors.white, borderRadius: radius.md, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: colors.borderLight },
-  docName: { fontSize: 14, fontWeight: "700", color: colors.navy },
-  docDate: { fontSize: 13, color: colors.textFaint, marginTop: 2 },
-
-  error: { color: colors.red, fontSize: 14, fontWeight: "600", marginTop: 8 },
-
-  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center", padding: 24 },
-  modalCard: { backgroundColor: colors.white, borderRadius: 24, padding: 32, alignItems: "center", width: "100%" },
-  modalIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.green, alignItems: "center", justifyContent: "center", marginBottom: 16 },
-  modalTitle: { fontSize: 22, fontWeight: "800", color: colors.navy, marginBottom: 8 },
-  modalSub: { fontSize: 14, color: colors.textMuted },
-  modalAmount: { fontSize: 42, fontWeight: "900", color: colors.green, marginTop: 4 },
-  modalNote: {
-    fontSize: 13,
-    color: colors.textMuted,
-    textAlign: "center",
-    marginTop: 10,
-    paddingHorizontal: 8,
-    lineHeight: 18,
-  },
+  gpsPointText: { flex: 1, fontSize: typeScale.md, fontWeight: "600", color: colors.navy },
+  gpsBatteryHint: { alignSelf: "stretch", fontSize: typeScale.xs, color: colors.textFaint, lineHeight: 17, marginTop: 14 },
+  gpsNotNow: { fontSize: typeScale.lg, fontWeight: "700", color: colors.textMuted },
 });
