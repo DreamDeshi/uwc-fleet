@@ -205,8 +205,8 @@
         { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-07-16", "quote": "yes will fail if lorry breakdown, i will write down the flow to you", "note": "He is authoring the failed-delivery FLOW; the strongest source (workbook) is silent. This is a MONEY rule — highest priority to get in writing." }
       ],
       "workbook_pending_note": "WhatsApp-only; workbook SILENT (not a conflict — a silence). The per-stop reading ('reached-but-couldn't-deliver still paid', 'delivered-before-breakdown stays paid') is an interpretation of an off-the-cuff line; do not build finalization to it as if confirmed until his written flow/proposal reply lands.",
-      "implementation": "NOT IMPLEMENTED — pay is gated strictly on 'delivered' status (POD photo required). A stop reached but not delivered is never stamped delivered_at, so it earns 0 AND blocks trip finalization; a mid-trip breakdown ends via abort -> cancelled with no pay. The 'reached-but-undeliverable, still entitled' path does not exist yet.",
-      "verified": "2026-07-18"
+      "implementation": "PARTIALLY IMPLEMENTED — pay is gated strictly on 'delivered' status (POD photo required). A stop reached but not delivered is never stamped delivered_at, so it earns 0; the 'reached-but-undeliverable, still entitled' path does not exist yet. Since 2026-07-28 an admin abort of an in_progress trip with >=1 DELIVERED stop pays those delivered stops via the approval lane (see partial_pay_on_admin_cancel); an abort with zero delivered stops still ends cancelled with no pay.",
+      "verified": "2026-07-28"
     },
     {
       "topic": "pod_approval_gate",
@@ -293,6 +293,17 @@
         { "channel": "workbook", "sheet": "INTERNAL LORRY RATE", "date": "2026-06-27", "quote": "If A1 & A2 with less than 2 pallets of 4x4, give the priority", "note": "PRH 5292's small-load priority — kept unchanged." }
       ],
       "implementation": "api/src/services/dispatchEngine.ts filterA1A2Eligible — priority tiers unchanged (PLX lock, then PND + PRH<2), plus a new last-resort tier returning the whole fitting fleet (minus PRH at/over its cargo cap). Previously the function returned an empty set here and the booking went to manual (auto_dispatch_failed).",
+      "verified": "2026-07-28"
+    },
+    {
+      "topic": "partial_pay_on_admin_cancel",
+      "rule": "When an admin cancels (aborts) an in_progress trip after N stops were delivered, the driver KEEPS the pay for those N delivered stops; undelivered stops pay nothing. The kept pay still passes through the per-trip POD-approval gate (admin validates, may edit with a reason, approval makes it payable).",
+      "status": "WORKBOOK-PENDING (WhatsApp-only) — built on the owner's explicit call 2026-07-28. Closes the R1-Q2c gap Mr. Teh left unanswered in the 24 Jul email. Q2b (breakdown -> no pay for unreached stops) unchanged.",
+      "source_tier": "whatsapp",
+      "sources": [
+        { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-07-28", "quote": "yes keep the pay for those 3", "note": "Answer to: admin cancels a trip halfway, driver already delivered 3 of 5 stops with POD — keep the pay for those 3, or no pay at all? (R2 doc Q5 / R1-Q2c.)" }
+      ],
+      "implementation": "PATCH /trips/:id/abort: with zero delivered stops the original behaviour stands (in_progress -> cancelled, no pay). With >=1 delivered stop the route scores the DELIVERED stops only — same engine, same per-zone-per-day ledger, same assignment snapshots (proposeDeliveredStopsIncentive, shared verbatim with the final-delivery branch) — and flips in_progress -> pending_approval, the normal approval lane; approval -> completed sets the payable incentive_final. Payroll and all earnings reads stay keyed on 'completed' alone. Undelivered stops keep pending/arrived status and null points_awarded. Integration-pinned in tests-integration/abortPartialPay.test.ts. PRESENTATION (owner 28 Jul, H1): requestor-facing surfaces and completed-count reports must distinguish a partially-delivered trip — banner + /track say 'Partially delivered' and the completed/on-time KPIs count only fully-delivered trips.",
       "verified": "2026-07-28"
     }
   ]

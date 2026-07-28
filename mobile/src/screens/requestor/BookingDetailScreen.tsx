@@ -52,7 +52,11 @@ export function BookingDetailScreen() {
   if (isLoading) return <View style={styles.fill}><LoadingState /></View>;
   if (isError || !trip) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
 
-  const banner = bannerFor(trip.status);
+  // A delivered-family trip with undelivered stops = a partial abort (28 Jul
+  // partial-pay rule): the banner must say so, or the requestor never learns
+  // the remaining stops need re-booking.
+  const partiallyDelivered = (trip.stops ?? []).some((s) => s.status !== "delivered");
+  const banner = bannerFor(trip.status, { partiallyDelivered });
   const canCancel = trip.status === "pending" || trip.status === "approved";
   // Editing is narrower than cancelling: strictly pending (the server enforces
   // the same rule — once a driver is claimed the booking is immutable).

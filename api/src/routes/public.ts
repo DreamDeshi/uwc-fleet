@@ -36,7 +36,7 @@ function html(inner: string): string {
     .brand{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#64748b;font-weight:700}
     .ticket{font-size:22px;font-weight:800;margin:6px 0 16px}
     .status{display:inline-block;padding:6px 14px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-weight:700;font-size:15px}
-    .status.done{background:#dcfce7;color:#15803d}.status.off{background:#fee2e2;color:#b91c1c}
+    .status.done{background:#dcfce7;color:#15803d}.status.off{background:#fee2e2;color:#b91c1c}.status.part{background:#fef3c7;color:#b45309}
     .row{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid #f1f5f9;font-size:15px}
     .row:last-child{border-bottom:0}.muted{color:#64748b}
     .foot{margin-top:16px;font-size:12px;color:#94a3b8}
@@ -77,8 +77,14 @@ router.get("/:token", async (req, res) => {
 
   const delivered = trip.stops.filter((s) => s.status === "delivered").length;
   const total = trip.stops.length;
-  const label = STATUS_LABEL[trip.status] ?? trip.status;
-  const cls = label === "Delivered" ? "status done" : label === "Cancelled" ? "status off" : "status";
+  // A delivered-family trip with undelivered stops is a PARTIAL abort (28 Jul
+  // partial-pay rule): the label must not claim "Delivered" for stops that
+  // never happened — the recipient reads this page to know what arrived.
+  const deliveredFamily = trip.status === "pending_approval" || trip.status === "completed";
+  const partial = deliveredFamily && delivered < total;
+  const label = partial ? "Partially delivered" : (STATUS_LABEL[trip.status] ?? trip.status);
+  const cls =
+    label === "Delivered" ? "status done" : label === "Cancelled" ? "status off" : partial ? "status part" : "status";
   const areas = [...new Set(trip.stops.map((s) => s.consignee.area).filter(Boolean))].join(", ");
 
   res.type("html").send(

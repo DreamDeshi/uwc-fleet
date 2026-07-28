@@ -50,3 +50,30 @@ describe("bannerFor — every status renders a sane banner", () => {
     expect(red.sort()).toEqual(["cancelled", "rejected"]);
   });
 });
+
+describe("bannerFor — partially delivered (28 Jul partial-pay-on-abort)", () => {
+  // A partial abort ends pending_approval → completed with undelivered stops;
+  // status alone would say "Delivered" for stops that never happened, and the
+  // requestor would have no idea to re-book them (H1).
+  it.each(["pending_approval", "completed"] as const)(
+    "%s + undelivered stops → the partial banner, not green Delivered",
+    (status) => {
+      const banner = bannerFor(status, { partiallyDelivered: true });
+      expect(banner.textKey).toBe("bookingDetail.bannerPartiallyDelivered");
+      // Yellow: not red (goods did move), not green (the booking is not done).
+      expect(banner.bg).toBe(colors.yellow);
+      expect(banner.icon).toBe("alert-circle");
+    }
+  );
+
+  it("a fully delivered trip keeps the green Delivered banner", () => {
+    expect(bannerFor("completed", { partiallyDelivered: false })).toEqual(bannerFor("completed"));
+  });
+
+  it("the flag is ignored outside the delivered family — in transit stays blue", () => {
+    // Every in_progress trip trivially has undelivered stops; the partial
+    // notice must never fire before the trip has ended.
+    expect(bannerFor("in_progress", { partiallyDelivered: true })).toEqual(bannerFor("in_progress"));
+    expect(bannerFor("cancelled", { partiallyDelivered: true })).toEqual(bannerFor("cancelled"));
+  });
+});
