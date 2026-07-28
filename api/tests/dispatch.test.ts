@@ -123,8 +123,10 @@ describe("selectTruck — one active trip per driver (no consolidation onto a bu
 });
 
 describe("selectTruck — A1/A2 driver-priority (INTERNAL LORRY RATE sheet)", () => {
-  // Real coverage zones from the sheet. PRH 5292 covers ALL zones but is gated
-  // to <2 pallets on A1/A2; the 17.5ft lorries never serve A1/A2.
+  // Real coverage zones from the sheet. PRH 5292 covers ALL zones but is capped
+  // to <2 pallets on A1/A2. The priorities ORDER the fleet — they are not a
+  // fence (client, 28 Jul 2026): when no priority truck is free, any fitting
+  // truck (the 17.5ft lorries) may take the order.
   const plx = (over: Partial<TruckCandidate> = {}) =>
     truck({ plate: "PLX 2406", maxPallets: 16, coverageZones: ["A1", "A2", "P1", "P2"], ...over });
   const pnd = (over: Partial<TruckCandidate> = {}) =>
@@ -176,8 +178,33 @@ describe("selectTruck — A1/A2 driver-priority (INTERNAL LORRY RATE sheet)", ()
     expect(sel?.plate).toBe("PND 1888");
   });
 
-  it("never auto-assigns A1/A2 to a 17.5ft lorry — returns null if only those are free", () => {
+  it("falls back to a 17.5ft lorry when no priority truck is free (widening, 28 Jul)", () => {
+    // Pre-28-Jul this returned null and the booking went to manual.
     const sel = selectTruck({ pallets: 4, zone: "A1" }, [prj()], ADJACENCY);
+    expect(sel?.plate).toBe("PRJ 5292");
+  });
+
+  it("the fallback never outranks a free priority truck — PND still wins over a 17.5ft", () => {
+    const sel = selectTruck({ pallets: 4, zone: "A2" }, [pnd(), prj()], ADJACENCY);
+    expect(sel?.plate).toBe("PND 1888");
+  });
+
+  it("PRH's <2-pallet cargo cap holds even in the fallback tier — a 2-pallet order skips PRH", () => {
+    // No PLX, no PND: the preferred set is empty, so the fallback opens. It must
+    // hand the order to the 17.5ft lorry, never to PRH at/over its A1/A2 cap.
+    const sel = selectTruck({ pallets: 2, zone: "A2" }, [prh(), prj()], ADJACENCY);
+    expect(sel?.plate).toBe("PRJ 5292");
+  });
+
+  it("widening never bypasses capacity — an A1 order too big for the free fleet still fails", () => {
+    const sel = selectTruck({ pallets: 10, zone: "A1" }, [prj(), prh()], ADJACENCY);
+    expect(sel).toBeNull();
+  });
+
+  it("PRH alone at its cap fails closed — a 2-pallet A1 order with ONLY PRH free returns null", () => {
+    // The one spot the fallback could ever have failed open: no competitor to
+    // outrank PRH, order exactly at its physical capacity but at the A1/A2 cap.
+    const sel = selectTruck({ pallets: 2, zone: "A1" }, [prh()], ADJACENCY);
     expect(sel).toBeNull();
   });
 

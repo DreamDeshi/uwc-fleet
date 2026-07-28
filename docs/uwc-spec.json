@@ -282,6 +282,18 @@
       "open_question": "Is 02:00 the latest a truck may LEAVE, or when it must be BACK? The workbook does not say. If he means 'latest to leave', the completion bound must become its own separate setting.",
       "implementation": "BUILT to the BACK-by-02:00 reading (one shift-shaped window). api/src/services/operatingWindow.ts bounds BOTH the pickup AND the estimated completion by the window; completionPastWindow flags a run whose estimated completion lands after the operating-day close (see the ⚠ OPEN QUESTION comment at operatingWindow.ts:22-25 and _meta.operating_window). Not a code contradiction — a documented assumption pending his answer.",
       "verified": "2026-07-18"
+    },
+    {
+      "topic": "a1_a2_truck_eligibility_widened",
+      "rule": "A1 (Taiping) / A2 (Ipoh) truck eligibility is a PREFERENCE ORDERING, not a fence: PLX 2406 primary (locks the zone while free), PND 1888 backup, PRH 5292 with priority for orders under 2 pallets of 4x4; when no priority truck is free, ANY fitting truck (the 17.5ft lorries) may take the order. PRH's under-2-pallet cargo cap holds in every tier. Nothing was removed from eligibility — the change is widening only.",
+      "status": "WORKBOOK-PENDING (WhatsApp-only) — built on the owner's explicit call 2026-07-28; the workbook's priority columns are consistent (they state priorities, not a ban; the old hard fence was an implementation inference).",
+      "source_tier": "whatsapp (the widening) / workbook (the priority ordering + PRH small-load rule)",
+      "sources": [
+        { "channel": "whatsapp", "date": "2026-07-28", "quote": "all lorry will go to taiping / ipoh, depend on arrangement and cargo size", "note": "Answer to the fast-track question whether to REMOVE PRH 5292 from A1/A2 — his answer widens instead of narrowing. Reverses the direction implied by R1-Q8 (24 Jul email: prioritize PLX 2406 / PND 1888 for Taiping/Ipoh)." },
+        { "channel": "workbook", "sheet": "INTERNAL LORRY RATE", "date": "2026-06-27", "quote": "If A1 & A2 with less than 2 pallets of 4x4, give the priority", "note": "PRH 5292's small-load priority — kept unchanged." }
+      ],
+      "implementation": "api/src/services/dispatchEngine.ts filterA1A2Eligible — priority tiers unchanged (PLX lock, then PND + PRH<2), plus a new last-resort tier returning the whole fitting fleet (minus PRH at/over its cargo cap). Previously the function returned an empty set here and the booking went to manual (auto_dispatch_failed).",
+      "verified": "2026-07-28"
     }
   ]
 }

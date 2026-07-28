@@ -183,8 +183,9 @@ describe("DISPATCH integration — auto-dispatch engine", () => {
       await prisma.driverLeave.create({
         data: { driver_id: plxDriver, start_date: pickupDateKey(), end_date: pickupDateKey() },
       });
-      // 15 pallets in A2: only PLX (16) both fits AND may serve A2. With PLX out,
-      // PND (14) can't fit 15 and PRH is barred from A2 → nobody.
+      // 15 pallets in A2 with PLX (16) out: even under the 28-Jul widening
+      // (all lorries eligible for A1/A2) nothing else FITS — PND holds 14, the
+      // 17.5ft lorries 8, PRH 2. Capacity, not eligibility, fails the booking.
       const trip = await bookTrip(requestor, ["A2"], rt, pallets(15));
       const res = await autoDispatch(admin, trip.id);
       expect(res.status).toBe(409);
@@ -194,6 +195,34 @@ describe("DISPATCH integration — auto-dispatch engine", () => {
       expect(after.status).toBe("pending");
       expect(after.auto_dispatch_failed).toBe(true);
       expect(after.auto_dispatch_note).toBe("No available truck has capacity for this order.");
+    });
+
+    it("with PLX AND PND out, an A2 order falls back to a 17.5ft lorry (widening, 28 Jul) — never PRH at its cap", async () => {
+      // Pre-28-Jul the 17.5ft lorries were fenced out of A1/A2 and this booking
+      // went to manual. The client's answer ("all lorry will go to taiping /
+      // ipoh, depend on arrangement and cargo size") opens the fallback tier;
+      // PRH 5292's < 2-pallet A1/A2 cargo cap still holds, so a 2-pallet order
+      // must land on an 8-pallet lorry, not the 1-tonne.
+      const [requestor, admin] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN)]);
+      const rt = await firstRouteTypeId(requestor);
+      const [plxDriver, pndDriver] = await Promise.all([
+        userIdByPhone(DRIVERS.PLX.phone),
+        userIdByPhone(DRIVERS.PND.phone),
+      ]);
+      await prisma.driverLeave.createMany({
+        data: [plxDriver, pndDriver].map((driver_id) => ({
+          driver_id,
+          start_date: pickupDateKey(),
+          end_date: pickupDateKey(),
+        })),
+      });
+      const trip = await bookTrip(requestor, ["A2"], rt, pallets(2));
+      expect((await autoDispatch(admin, trip.id)).status).toBe(200);
+
+      const after = (await prisma.trip.findUnique({ where: { id: trip.id } }))!;
+      expect(after.status).toBe("assigned");
+      expect(after.truck_plate).not.toBe("PRH 5292");
+      expect(await assignedTruckMax(trip.id)).toBe(8);
     });
   });
 });
