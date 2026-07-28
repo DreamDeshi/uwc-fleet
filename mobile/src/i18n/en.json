@@ -124,6 +124,9 @@
     "navigate": "Navigate",
     "approxLocation": "Approximate — zone centre, check the address",
     "headingTo": "Heading to",
+    "headHere": "Head here",
+    "stopOrderHint": "Deliver in any order — the list order is just a suggestion.",
+    "multiDest": "{{name}} +{{n}} more",
     "eta": "ETA",
     "remaining": "{{km}} km remaining",
     "doUploaded": "Delivery Order (DO) confirmed",
@@ -259,6 +262,18 @@
     "newPassword": "New Password",
     "confirmPassword": "Confirm New Password",
     "updatePassword": "Update Password"
+  },
+  "feedback": {
+    "title": "Report a problem or idea",
+    "hint": "Bug, annoyance, or feature idea — it goes straight to the developer.",
+    "categoryBug": "Bug",
+    "categoryIdea": "Idea",
+    "categoryOther": "Other",
+    "placeholder": "What happened, or what would you like changed?",
+    "submit": "Send",
+    "sent": "Thanks — your feedback was sent.",
+    "failed": "Could not send feedback.",
+    "tooShort": "Please write a few more words."
   },
   "fuel": {
     "title": "Log Fuel Fill-up",
@@ -568,6 +583,9 @@
     "settings": {
       "languageSection": "Language",
       "languageHint": "Applies across all screens; saved to your account.",
+      "feedbackTitle": "User feedback",
+      "feedbackEmpty": "No feedback yet.",
+      "feedbackLoadFailed": "Could not load feedback.",
       "aboutTitle": "App & updates",
       "apiRow": "API server",
       "apiOk": "OK · {{ms}} ms",

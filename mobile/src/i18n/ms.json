@@ -124,6 +124,9 @@
     "navigate": "Navigasi",
     "approxLocation": "Anggaran — pusat zon, semak alamat",
     "headingTo": "Menuju ke",
+    "headHere": "Tuju ke sini",
+    "stopOrderHint": "Hantar ikut sebarang urutan — susunan senarai hanya cadangan.",
+    "multiDest": "{{name}} +{{n}} lagi",
     "eta": "Anggaran",
     "remaining": "{{km}} km lagi",
     "doUploaded": "Pesanan Penghantaran (DO) disahkan",
@@ -256,6 +259,18 @@
     "newPassword": "Kata Laluan Baharu",
     "confirmPassword": "Sahkan Kata Laluan Baharu",
     "updatePassword": "Kemas Kini Kata Laluan"
+  },
+  "feedback": {
+    "title": "Laporkan masalah atau idea",
+    "hint": "Pepijat, gangguan, atau idea ciri — terus sampai kepada pembangun.",
+    "categoryBug": "Pepijat",
+    "categoryIdea": "Idea",
+    "categoryOther": "Lain-lain",
+    "placeholder": "Apa yang berlaku, atau apa yang anda mahu ubah?",
+    "submit": "Hantar",
+    "sent": "Terima kasih — maklum balas anda telah dihantar.",
+    "failed": "Tidak dapat menghantar maklum balas.",
+    "tooShort": "Sila tulis beberapa perkataan lagi."
   },
   "fuel": {
     "title": "Rekod Isi Minyak",
@@ -565,6 +580,9 @@
     "settings": {
       "languageSection": "Bahasa",
       "languageHint": "Digunakan di semua skrin; disimpan ke akaun anda.",
+      "feedbackTitle": "Maklum balas pengguna",
+      "feedbackEmpty": "Tiada maklum balas lagi.",
+      "feedbackLoadFailed": "Tidak dapat memuatkan maklum balas.",
       "aboutTitle": "Aplikasi & kemas kini",
       "apiRow": "Pelayan API",
       "apiOk": "OK · {{ms}} ms",

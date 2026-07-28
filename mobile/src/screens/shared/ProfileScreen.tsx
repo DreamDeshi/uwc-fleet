@@ -10,6 +10,7 @@ import { Button } from "../../components/Button";
 import { initials } from "../../lib/format";
 import { AppLanguage } from "../../types";
 import { EditProfileModal, ChangePasswordModal } from "../../components/AccountModals";
+import { FeedbackModal } from "../../components/FeedbackModal";
 
 export function ProfileScreen() {
   const { t, i18n } = useTranslation();
@@ -17,6 +18,7 @@ export function ProfileScreen() {
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const lang: AppLanguage = (["en", "ms", "zh"] as const).includes(i18n.language as AppLanguage)
     ? (i18n.language as AppLanguage)
@@ -80,6 +82,15 @@ export function ProfileScreen() {
           style={{ marginTop: 10 }}
           icon={<Ionicons name="lock-closed-outline" size={18} color={colors.blue} />}
         />
+        {/* Feedback channel (28 Jul): bugs / gripes / ideas from any role,
+            straight to the admin's User-feedback inbox. */}
+        <Button
+          title={t("feedback.title")}
+          variant="outline"
+          onPress={() => setFeedbackOpen(true)}
+          style={{ marginTop: 10 }}
+          icon={<Ionicons name="megaphone-outline" size={18} color={colors.blue} />}
+        />
 
         {/* Fuel logging moved to the driver Home as a quick-action (a driver
             logs a fill-up often — it belongs on the dashboard, not in Settings). */}
@@ -130,6 +141,11 @@ export function ProfileScreen() {
 
       <EditProfileModal visible={editOpen} onClose={() => setEditOpen(false)} />
       <ChangePasswordModal visible={pwOpen} onClose={() => setPwOpen(false)} />
+      <FeedbackModal
+        visible={feedbackOpen}
+        screen={user?.role === "driver" ? "driver-profile" : "requestor-profile"}
+        onClose={() => setFeedbackOpen(false)}
+      />
     </View>
   );
 }

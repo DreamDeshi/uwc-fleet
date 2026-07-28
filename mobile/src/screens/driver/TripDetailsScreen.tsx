@@ -63,6 +63,12 @@ export function TripDetailsScreen() {
   if (isError || !trip) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
 
   const consignee = firstStop(trip)?.consignee;
+  // All stops in booking order. The order is a SUGGESTION only (Mr. Teh,
+  // 28 Jul 2026: "driver no need follow route order") — the multi-stop card
+  // says so and gives every stop its own address + call affordance, where the
+  // old screen showed stop 1 alone.
+  const stops = (trip.stops ?? []).slice().sort((a, b) => a.sequence - b.sequence);
+  const multiStop = stops.length > 1;
 
   // Money display follows lib/earnings.ts's ruling: classification is on
   // STATUS, never on "an amount is present". `incentive_earned` is written at
@@ -173,7 +179,11 @@ export function TripDetailsScreen() {
           <Card style={{ marginBottom: 12 }}>
             <RouteLine
               from={ORIGIN_LABEL}
-              to={tripConsigneeName(trip)}
+              to={
+                multiStop
+                  ? t("trip.multiDest", { name: tripConsigneeName(trip), n: stops.length - 1 })
+                  : tripConsigneeName(trip)
+              }
               fromLabel={t("trip.pickup")}
               toLabel={t("trip.dropoff")}
             />
@@ -192,40 +202,83 @@ export function TripDetailsScreen() {
             />
           </View>
 
-          {/* Consignee */}
-          <Card style={{ marginBottom: 12 }}>
-            <Text style={styles.cardLabel}>{t("trip.consignee")}</Text>
-            <Text style={styles.consigneeName}>{tripConsigneeName(trip)}</Text>
-            {consignee?.contact_person ? (
-              <Text style={styles.consigneeSub}>{consignee.contact_person}</Text>
-            ) : null}
-            {/* Full delivery address — this is the screen the driver reads
-                BEFORE starting, so it is where the route gets planned. Falls
-                back to area/state when the row has no street address. */}
-            {consigneeAddress(consignee) ||
-            [consignee?.area, consignee?.state].filter(Boolean).length > 0 ? (
-              <Text style={styles.consigneeArea}>
-                {consigneeAddress(consignee) ||
-                  [consignee?.area, consignee?.state].filter(Boolean).join(", ")}
+          {/* Consignee(s). Single-stop keeps the classic card; a multi-stop
+              trip lists EVERY stop — name, contact, address, its own call
+              button — where the old screen showed stop 1 alone (DG-D3). */}
+          {multiStop ? (
+            <Card style={{ marginBottom: 12 }}>
+              <Text style={styles.cardLabel}>
+                {t("trip.stops")} ({stops.length})
               </Text>
-            ) : null}
-            {consignee?.phone ? (
-              <TouchableOpacity
-                style={styles.phoneRow}
-                activeOpacity={0.7}
-                onPress={() => Linking.openURL(`tel:${consignee.phone}`)}
-              >
-                <View style={styles.phoneInfo}>
-                  <Ionicons name="call-outline" size={16} color={colors.blue} />
-                  <Text style={styles.phoneNumber}>{consignee.phone}</Text>
-                </View>
-                <View style={styles.callBtn}>
-                  <Ionicons name="call" size={18} color={colors.white} />
-                  <Text style={styles.callBtnText}>{t("trip.call")}</Text>
-                </View>
-              </TouchableOpacity>
-            ) : null}
-          </Card>
+              <Text style={styles.stopOrderHint}>{t("trip.stopOrderHint")}</Text>
+              {stops.map((s, i) => {
+                const addr =
+                  consigneeAddress(s.consignee) ||
+                  [s.consignee?.area, s.consignee?.state].filter(Boolean).join(", ");
+                return (
+                  <View key={s.id} style={[styles.stopRow, i > 0 && styles.stopRowBorder]}>
+                    <View style={styles.stopSeq}>
+                      <Text style={styles.stopSeqText}>{i + 1}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.consigneeName}>
+                        {s.consignee?.company_name ?? t("trip.stop", { n: i + 1 })}
+                      </Text>
+                      {s.consignee?.contact_person ? (
+                        <Text style={styles.consigneeSub}>{s.consignee.contact_person}</Text>
+                      ) : null}
+                      {addr ? <Text style={styles.consigneeArea}>{addr}</Text> : null}
+                    </View>
+                    {s.consignee?.phone ? (
+                      <TouchableOpacity
+                        style={styles.callBtnRound}
+                        activeOpacity={0.7}
+                        hitSlop={8}
+                        accessibilityLabel={t("trip.call")}
+                        onPress={() => Linking.openURL(`tel:${s.consignee!.phone}`)}
+                      >
+                        <Ionicons name="call" size={18} color={colors.white} />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </Card>
+          ) : (
+            <Card style={{ marginBottom: 12 }}>
+              <Text style={styles.cardLabel}>{t("trip.consignee")}</Text>
+              <Text style={styles.consigneeName}>{tripConsigneeName(trip)}</Text>
+              {consignee?.contact_person ? (
+                <Text style={styles.consigneeSub}>{consignee.contact_person}</Text>
+              ) : null}
+              {/* Full delivery address — this is the screen the driver reads
+                  BEFORE starting, so it is where the route gets planned. Falls
+                  back to area/state when the row has no street address. */}
+              {consigneeAddress(consignee) ||
+              [consignee?.area, consignee?.state].filter(Boolean).length > 0 ? (
+                <Text style={styles.consigneeArea}>
+                  {consigneeAddress(consignee) ||
+                    [consignee?.area, consignee?.state].filter(Boolean).join(", ")}
+                </Text>
+              ) : null}
+              {consignee?.phone ? (
+                <TouchableOpacity
+                  style={styles.phoneRow}
+                  activeOpacity={0.7}
+                  onPress={() => Linking.openURL(`tel:${consignee.phone}`)}
+                >
+                  <View style={styles.phoneInfo}>
+                    <Ionicons name="call-outline" size={16} color={colors.blue} />
+                    <Text style={styles.phoneNumber}>{consignee.phone}</Text>
+                  </View>
+                  <View style={styles.callBtn}>
+                    <Ionicons name="call" size={18} color={colors.white} />
+                    <Text style={styles.callBtnText}>{t("trip.call")}</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+            </Card>
+          )}
 
           {/* Requestor + truck */}
           <View style={styles.infoRow}>
@@ -430,6 +483,12 @@ const styles = StyleSheet.create({
   consigneeName: { fontSize: 15, fontWeight: "700", color: colors.navy },
   consigneeSub: { fontSize: 14, color: colors.textMuted, marginTop: 4 },
   consigneeArea: { fontSize: 13, color: colors.textFaint, marginTop: 2 },
+  stopOrderHint: { fontSize: 13, color: colors.textMuted, marginBottom: 4, lineHeight: 18 },
+  stopRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
+  stopRowBorder: { borderTopWidth: 1, borderTopColor: colors.bg },
+  stopSeq: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
+  stopSeqText: { color: colors.blue, fontWeight: "800", fontSize: 13 },
+  callBtnRound: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.green, alignItems: "center", justifyContent: "center" },
   phoneRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.bg },
   phoneInfo: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
   phoneNumber: { fontSize: 14, fontWeight: "700", color: colors.blue },

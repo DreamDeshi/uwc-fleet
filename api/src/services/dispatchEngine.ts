@@ -61,27 +61,32 @@ export interface TruckSelection {
 }
 
 // ── A1/A2 (Taiping/Ipoh) driver-priority rules — INTERNAL LORRY RATE sheet ──
-// These two zones are NOT open to the whole fleet: the sheet names exactly who
-// may serve them. Encoded here as plate constants so the rules read literally.
+// The sheet names who serves these zones by PREFERENCE, and the client confirmed
+// the preference is not a fence (28 Jul 2026, WhatsApp: "all lorry will go to
+// taiping / ipoh, depend on arrangement and cargo size"). Encoded as plate
+// constants so the rules read literally.
 const A1_A2_ZONES = ["A1", "A2"];
 const PRIMARY_A1_A2_PLATE = "PLX 2406"; // the primary A1/A2 driver's truck
 const BACKUP_A1_A2_PLATE = "PND 1888"; // backup — only if PLX 2406 unavailable
-const SMALL_LOAD_A1_A2_PLATE = "PRH 5292"; // only for orders under 2 pallets
+const SMALL_LOAD_A1_A2_PLATE = "PRH 5292"; // priority for orders under 2 pallets
 const SMALL_LOAD_MAX_A1_A2_PALLETS = 2; // PRH 5292 may take A1/A2 only when pallets < this
 
 /**
- * Narrow the fitting trucks to those *allowed* to serve this order's zone.
+ * Narrow the fitting trucks to those *preferred* for this order's zone.
  *
  * For any zone other than A1/A2 the set is returned unchanged. For A1 (Taiping)
- * or A2 (Ipoh) the INTERNAL LORRY RATE sheet's priority applies:
+ * or A2 (Ipoh) the INTERNAL LORRY RATE sheet's priority applies as an ORDERING:
  *   1. PLX 2406's driver is the primary — whenever that truck fits and is
- *      available it is the ONLY eligible truck (nobody else takes A1/A2 while
+ *      available it is the ONLY truck offered (nobody else takes A1/A2 while
  *      PLX 2406 is free).
  *   2. If PLX 2406 is unavailable (busy elsewhere or not in the pool), the
  *      backups are PND 1888 (any size) and PRH 5292, but PRH only for orders
- *      strictly under 2 pallets (a 2-pallet A1/A2 order must not go to PRH
- *      even though it could physically hold 2).
- *   3. Every other truck (the 17.5ft lorries) is never eligible for A1/A2.
+ *      strictly under 2 pallets (the sheet's cargo-size rule for the 1-tonne).
+ *   3. If no priority truck is free either, ANY fitting truck may take the
+ *      order (client, 28 Jul 2026 — previously the 17.5ft lorries were fenced
+ *      out entirely and the booking went to manual). PRH's < 2-pallet cargo cap
+ *      still holds in this tier: widening opened A1/A2 to the 17.5ft lorries,
+ *      it did not lift the 1-tonne's cargo rule.
  *
  * "PLX available" is derived purely from the passed candidates (it appears in
  * the fitting set) — no DB lookup — so a busy or absent PLX both open the
@@ -95,11 +100,17 @@ function filterA1A2Eligible(order: DispatchOrder, fitting: TruckCandidate[]): Tr
     return fitting.filter((c) => c.plate === PRIMARY_A1_A2_PLATE);
   }
 
-  return fitting.filter((c) => {
+  const backups = fitting.filter((c) => {
     if (c.plate === BACKUP_A1_A2_PLATE) return true; // PND 1888 backs up A1/A2, any size
     if (c.plate === SMALL_LOAD_A1_A2_PLATE) return order.pallets < SMALL_LOAD_MAX_A1_A2_PALLETS; // PRH 5292: <2 pallets only
-    return false; // 17.5ft lorries never serve A1/A2
+    return false;
   });
+  if (backups.length > 0) return backups;
+
+  // Last resort: the whole fitting fleet, minus PRH over its A1/A2 cargo cap.
+  return fitting.filter(
+    (c) => c.plate !== SMALL_LOAD_A1_A2_PLATE || order.pallets < SMALL_LOAD_MAX_A1_A2_PALLETS
+  );
 }
 
 /**
@@ -111,8 +122,9 @@ function filterA1A2Eligible(order: DispatchOrder, fitting: TruckCandidate[]): Tr
  * candidate. (Previously a same-zone truck could consolidate a second order,
  * which kept handing new trips to a driver who was already rolling.)
  *
- * A1/A2 orders are first narrowed to the drivers the INTERNAL LORRY RATE sheet
- * permits (see filterA1A2Eligible). Among the remaining candidates we rank by
+ * A1/A2 orders are first narrowed to the sheet's priority drivers, falling back
+ * to any fitting truck when none is free (see filterA1A2Eligible). Among the
+ * remaining candidates we rank by
  * tier (covers zone > adjacent > any), then Best-Fit Decreasing: prefer the
  * smallest truck that fits so large trucks stay free for large orders, breaking
  * ties by tightest remaining space.

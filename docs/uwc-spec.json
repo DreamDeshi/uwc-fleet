@@ -284,6 +284,18 @@
       "verified": "2026-07-18"
     },
     {
+      "topic": "a1_a2_truck_eligibility_widened",
+      "rule": "A1 (Taiping) / A2 (Ipoh) truck eligibility is a PREFERENCE ORDERING, not a fence: PLX 2406 primary (locks the zone while free), PND 1888 backup, PRH 5292 with priority for orders under 2 pallets of 4x4; when no priority truck is free, ANY fitting truck (the 17.5ft lorries) may take the order. PRH's under-2-pallet cargo cap holds in every tier. Nothing was removed from eligibility — the change is widening only.",
+      "status": "WORKBOOK-PENDING (WhatsApp-only) — built on the owner's explicit call 2026-07-28; the workbook's priority columns are consistent (they state priorities, not a ban; the old hard fence was an implementation inference).",
+      "source_tier": "whatsapp (the widening) / workbook (the priority ordering + PRH small-load rule)",
+      "sources": [
+        { "channel": "whatsapp", "date": "2026-07-28", "quote": "all lorry will go to taiping / ipoh, depend on arrangement and cargo size", "note": "Answer to the fast-track question whether to REMOVE PRH 5292 from A1/A2 — his answer widens instead of narrowing. Reverses the direction implied by R1-Q8 (24 Jul email: prioritize PLX 2406 / PND 1888 for Taiping/Ipoh)." },
+        { "channel": "workbook", "sheet": "INTERNAL LORRY RATE", "date": "2026-06-27", "quote": "If A1 & A2 with less than 2 pallets of 4x4, give the priority", "note": "PRH 5292's small-load priority — kept unchanged." }
+      ],
+      "implementation": "api/src/services/dispatchEngine.ts filterA1A2Eligible — priority tiers unchanged (PLX lock, then PND + PRH<2), plus a new last-resort tier returning the whole fitting fleet (minus PRH at/over its cargo cap). Previously the function returned an empty set here and the booking went to manual (auto_dispatch_failed).",
+      "verified": "2026-07-28"
+    },
+    {
       "topic": "partial_pay_on_admin_cancel",
       "rule": "When an admin cancels (aborts) an in_progress trip after N stops were delivered, the driver KEEPS the pay for those N delivered stops; undelivered stops pay nothing. The kept pay still passes through the per-trip POD-approval gate (admin validates, may edit with a reason, approval makes it payable).",
       "status": "WORKBOOK-PENDING (WhatsApp-only) — built on the owner's explicit call 2026-07-28. Closes the R1-Q2c gap Mr. Teh left unanswered in the 24 Jul email. Q2b (breakdown -> no pay for unreached stops) unchanged.",
@@ -291,7 +303,7 @@
       "sources": [
         { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-07-28", "quote": "yes keep the pay for those 3", "note": "Answer to: admin cancels a trip halfway, driver already delivered 3 of 5 stops with POD — keep the pay for those 3, or no pay at all? (R2 doc Q5 / R1-Q2c.)" }
       ],
-      "implementation": "PATCH /trips/:id/abort: with zero delivered stops the original behaviour stands (in_progress -> cancelled, no pay). With >=1 delivered stop the route scores the DELIVERED stops only — same engine, same per-zone-per-day ledger, same assignment snapshots (proposeDeliveredStopsIncentive, shared verbatim with the final-delivery branch) — and flips in_progress -> pending_approval, the normal approval lane; approval -> completed sets the payable incentive_final. Payroll and all earnings reads stay keyed on 'completed' alone. Undelivered stops keep pending/arrived status and null points_awarded. Integration-pinned in tests-integration/abortPartialPay.test.ts.",
+      "implementation": "PATCH /trips/:id/abort: with zero delivered stops the original behaviour stands (in_progress -> cancelled, no pay). With >=1 delivered stop the route scores the DELIVERED stops only — same engine, same per-zone-per-day ledger, same assignment snapshots (proposeDeliveredStopsIncentive, shared verbatim with the final-delivery branch) — and flips in_progress -> pending_approval, the normal approval lane; approval -> completed sets the payable incentive_final. Payroll and all earnings reads stay keyed on 'completed' alone. Undelivered stops keep pending/arrived status and null points_awarded. Integration-pinned in tests-integration/abortPartialPay.test.ts. PRESENTATION (owner 28 Jul, H1): requestor-facing surfaces and completed-count reports must distinguish a partially-delivered trip — banner + /track say 'Partially delivered' and the completed/on-time KPIs count only fully-delivered trips.",
       "verified": "2026-07-28"
     }
   ]

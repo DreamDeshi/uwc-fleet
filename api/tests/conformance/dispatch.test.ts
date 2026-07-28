@@ -85,8 +85,27 @@ describe("A1/A2 fallback when PLX 2406 is unavailable (busy/out)", () => {
   it("A2 × 3 with PLX out → PND 1888 (the any-size A1/A2 backup)", () => {
     expect(pick("A2", 3, ["PLX 2406"])?.plate).toBe("PND 1888");
   });
-  it("A2 × 15 with PLX out → no truck (PND can't fit 15; a 17.5ft lorry never serves A1/A2)", () => {
+  it("A2 × 15 with PLX out → no truck (capacity: PND holds 14, the 17.5ft lorries 8)", () => {
     expect(pick("A2", 15, ["PLX 2406"])).toBeNull();
+  });
+});
+
+describe("A1/A2 last-resort fallback — priorities order the fleet, they are not a fence (client, 28 Jul 2026)", () => {
+  // "all lorry will go to taiping / ipoh, depend on arrangement and cargo size"
+  // — with every priority truck out, any fitting truck may take the order.
+  // Pre-28-Jul these orders returned null and went to manual.
+  it("A2 × 2 with PLX + PND out → a 17.5ft lorry (PPE 1804, alpha tie-break), never PRH at its cap", () => {
+    const sel = pick("A2", 2, ["PLX 2406", "PND 1888"]);
+    expect(sel?.plate).toBe("PPE 1804");
+  });
+  it("A1 × 4 with PLX + PND out → PPE 1804 (P2-adjacent 8-pallet lorry)", () => {
+    expect(pick("A1", 4, ["PLX 2406", "PND 1888"])?.plate).toBe("PPE 1804");
+  });
+  it("A2 × 1 with PLX + PND out → PRH 5292 (small-load priority still beats the fallback)", () => {
+    expect(pick("A2", 1, ["PLX 2406", "PND 1888"])?.plate).toBe("PRH 5292");
+  });
+  it("A2 × 2 with ONLY PRH free → no truck (the <2-pallet cargo cap fails closed even as last resort)", () => {
+    expect(pick("A2", 2, ["PLX 2406", "PND 1888", "PRJ 5292", "PQL 5292", "PPE 1804"])).toBeNull();
   });
 });
 
@@ -98,9 +117,12 @@ describe("invariants — must hold for every zone and every load 1..16", () => {
         if (sel) {
           // Chosen truck always has capacity for the order.
           expect(truckByPlate(sel.plate).maxPallets).toBeGreaterThanOrEqual(pallets);
-          // A1/A2 may only ever be served by the sheet's named plates.
+          // With the full fleet idle, PLX 2406 is free and fits any 1..16 load,
+          // so its A1/A2 primary LOCK must always fire here. (The named-plate
+          // rule is a priority ordering, not a fence — 28 Jul 2026 widening —
+          // but the lock while PLX is free is unchanged.)
           if (zone === "A1" || zone === "A2") {
-            expect(["PLX 2406", "PND 1888", "PRH 5292"]).toContain(sel.plate);
+            expect(sel.plate).toBe("PLX 2406");
           }
           // 4 Wheel is never dispatched.
           expect(sel.plate).not.toBe("4 Wheel");
