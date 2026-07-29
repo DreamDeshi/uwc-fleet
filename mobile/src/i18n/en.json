@@ -1482,8 +1482,21 @@
     "more": "(+{{qty}} more)"
   },
   "exception": {
-    "reportButton": "Report Exception",
+    "reportButton": "Report a problem",
     "reportTitle": "Report an exception",
+    "whatWentWrong": "What went wrong?",
+    "pickOrType": "Pick one, or type it",
+    "notePlaceholderDriver": "Anything else the office should know…",
+    "tellTheOffice": "Tell the office",
+    "autoAttached": "Your location and the time are attached automatically",
+    "waitingForOffice": "Waiting for the office",
+    "sentAtWaiting": "Sent {{time}} · the office is looking at it",
+    "canned": {
+      "gateLocked": "Gate locked",
+      "nobodyAtSite": "Nobody at site",
+      "siteClosed": "Site closed",
+      "wrongAddress": "Wrong address"
+    },
     "categoryLabel": "What is the problem?",
     "stopLabel": "Affected stop (optional)",
     "stopN": "Stop {{n}} — {{name}}",

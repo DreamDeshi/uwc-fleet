@@ -170,6 +170,31 @@ function tripsFor(state: string) {
   }
 }
 
+// Swapped per test so the exception card can be photographed in each state.
+// Only read when EXPO_PUBLIC_FEATURE_EXCEPTIONS=true — the flow is flag-dark.
+let exceptionFixture: Record<string, unknown> | null = null;
+
+function exceptionIn(state: string) {
+  return {
+    id: "exc-1",
+    trip_id: "t-1",
+    trip_stop_id: "stop-2",
+    category: "customer_site",
+    reason: "Gate locked, nobody at the site to receive",
+    reported_by: "drv-1",
+    reported_at: new Date().toISOString(),
+    current_state: state,
+    resolution: null,
+    resolved_at: null,
+    closed_at: null,
+    is_open: true,
+    version: 1,
+    created_at: new Date().toISOString(),
+    evidence: [],
+    actions: [],
+  };
+}
+
 const DEPARTMENTS = [
   { id: "d-1", name: "Logistics" },
   { id: "d-2", name: "Production" },
@@ -213,7 +238,17 @@ async function mockApi(page: Page, state: string) {
     if (url.includes("/fuel/history")) return json(fuelHistory());
     if (url.includes("/holidays")) return json([]);
     if (/\/departments(\?|$)/.test(url)) return json(DEPARTMENTS);
+    if (/\/exception$/.test(url) && route.request().method() === "GET") {
+      return json({ exception: exceptionFixture });
+    }
     if (/\/trips(\?|$)/.test(url)) return json(tripsFor(state));
+    // GET /trips/:id — the Active Trip screen's own fetch. Without this the
+    // list mock is not enough and the screen lands on its error state.
+    const detail = url.match(/\/trips\/([^/?]+)(\?|$)/);
+    if (detail) {
+      const one = tripsFor(state).find((tr) => tr.id === detail[1]);
+      if (one) return json({ ...one, timeline: [] });
+    }
     // Anything else this screen touches (push token, settings, health…) — a
     // benign 200 so nothing hangs and no request escapes to a real server.
     return json({});
@@ -304,6 +339,61 @@ test("profile", async ({ page }) => {
   await page.getByText("Ahmad Faizal", { exact: true }).first().waitFor({ timeout: 15_000 });
   await page.waitForTimeout(1500);
   await page.screenshot({ path: path.join(SHOTS, "10-profile.png"), fullPage: true });
+});
+
+// ── Delivery-exception flow (frames 19, 21, 22) ────────────────────────────
+// Only meaningful when Metro was started with
+// EXPO_PUBLIC_FEATURE_EXCEPTIONS=true; the flow is otherwise hidden, so these
+// skip themselves rather than failing a normal run.
+const EXCEPTIONS_ON = process.env.E2E_EXCEPTIONS === "1";
+
+async function intoActiveTrip(page: Page) {
+  await page.goto(APP);
+  await page.getByPlaceholder("12-345 6789").fill("100000901");
+  await page.getByPlaceholder("Enter your password").fill("fixture");
+  await page.getByText("Sign In", { exact: true }).click();
+  await page.getByText(/Hi, Ahmad Faizal/).first().waitFor({ timeout: 30_000 });
+  await page.getByText("Continue trip", { exact: true }).click();
+  // The GPS consent explainer (frame 12) opens over the Active Trip screen on
+  // first entry and blocks everything behind it.
+  const notNow = page.getByText("Not now", { exact: true });
+  await notNow.waitFor({ timeout: 20_000 }).catch(() => {});
+  if (await notNow.isVisible().catch(() => false)) await notNow.click();
+  await page.getByText(/Drive there in Google Maps|Call consignee/).first().waitFor({ timeout: 20_000 });
+  await page.waitForTimeout(1200);
+}
+
+test("exception · report sheet", async ({ page }) => {
+  test.skip(!EXCEPTIONS_ON, "needs EXPO_PUBLIC_FEATURE_EXCEPTIONS=true");
+  exceptionFixture = null;
+  await mockApi(page, "running");
+  await intoActiveTrip(page);
+  // The button reads "Problem" in the narrow chip row and "Report a problem"
+  // in the wide one, depending on which stop card is showing.
+  await page.getByText(/^(Problem|Report a problem)$/).first().click();
+  await page.getByText("What went wrong?").waitFor({ timeout: 15_000 });
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: path.join(SHOTS, "11-exception-report.png"), fullPage: true });
+});
+
+test("exception · reported, on hold", async ({ page }) => {
+  test.skip(!EXCEPTIONS_ON, "needs EXPO_PUBLIC_FEATURE_EXCEPTIONS=true");
+  exceptionFixture = exceptionIn("reported");
+  await mockApi(page, "running");
+  await intoActiveTrip(page);
+  await page.getByText("Exception reported").first().waitFor({ timeout: 15_000 });
+  await page.waitForTimeout(1000);
+  await page.screenshot({ path: path.join(SHOTS, "12-exception-reported.png"), fullPage: true });
+});
+
+test("exception · more evidence needed", async ({ page }) => {
+  test.skip(!EXCEPTIONS_ON, "needs EXPO_PUBLIC_FEATURE_EXCEPTIONS=true");
+  exceptionFixture = exceptionIn("more_evidence");
+  await mockApi(page, "running");
+  await intoActiveTrip(page);
+  await page.getByText("Exception reported").first().waitFor({ timeout: 15_000 });
+  await page.waitForTimeout(1000);
+  await page.screenshot({ path: path.join(SHOTS, "13-exception-more-evidence.png"), fullPage: true });
 });
 
 test("trips list", async ({ page }) => {
