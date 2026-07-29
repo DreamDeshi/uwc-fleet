@@ -214,8 +214,11 @@ function HomeHeader({
         <View style={styles.headerTop}>
           <View style={{ flex: 1, minWidth: 0 }}>
             {/* Full name, not the first word — Mr. Teh 16 Jul: "Need show the
-                driver full name in driver page". */}
-            <Text style={styles.greeting} numberOfLines={1}>
+                driver full name in driver page". Which is exactly why this
+                wraps to two lines at 20px instead of the design's single 24px
+                line: beside the plate chip, even "Ahmad Faizal" truncated to
+                "Hi, Ahmad Faizal …", and real names here run far longer. */}
+            <Text style={styles.greeting} numberOfLines={2}>
               {t("driver.greeting", { name })} 👋
             </Text>
             <Text style={styles.headerSub} numberOfLines={1}>{summary}</Text>
@@ -377,24 +380,29 @@ function Receipt({ trip, onPress }: { trip: Trip; onPress: () => void }) {
       <View style={styles.receiptIcon}>
         <Ionicons name="checkmark-circle" size={20} color="#2E7D32" />
       </View>
+      {/* The chip sits on the SECOND line, not beside the title: sharing the
+          row cost the ticket ~150px and truncated it to "TKT-20260729-02…" —
+          the one string on this card the driver would quote to the office. */}
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={styles.receiptTitle} numberOfLines={1}>
           {t("driver.receiptDelivered", { ticket: trip.ticket_number })}
         </Text>
-        <Text style={styles.receiptSub} numberOfLines={1}>
-          {[
-            t("driver.stopCount", { n: stops.length }),
-            finished ? t("driver.finishedAt", { time: formatTime(finished) }) : null,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </Text>
-      </View>
-      {trip.status === "pending_approval" ? (
-        <View style={styles.awaitChip}>
-          <Text style={styles.awaitChipText}>{t("trip.awaitingApproval")}</Text>
+        <View style={styles.receiptMetaRow}>
+          <Text style={styles.receiptSub} numberOfLines={1}>
+            {[
+              t("driver.stopCount", { n: stops.length }),
+              finished ? t("driver.finishedAt", { time: formatTime(finished) }) : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </Text>
+          {trip.status === "pending_approval" ? (
+            <View style={styles.awaitChip}>
+              <Text style={styles.awaitChipText}>{t("trip.awaitingApproval")}</Text>
+            </View>
+          ) : null}
         </View>
-      ) : null}
+      </View>
     </TouchableOpacity>
   );
 }
@@ -469,7 +477,7 @@ const styles = StyleSheet.create({
 
   header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 18 },
   headerTop: { flexDirection: "row", alignItems: "center", gap: 12 },
-  greeting: { color: colors.white, fontSize: 24, fontWeight: "800" },
+  greeting: { color: colors.white, fontSize: 20, fontWeight: "800", lineHeight: 25 },
   headerSub: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: "600", marginTop: 2 },
   plateChip: {
     flexDirection: "row",
@@ -497,7 +505,10 @@ const styles = StyleSheet.create({
   primaryTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
   labelPill: { backgroundColor: colors.yellow, paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.pill },
   labelPillRunning: { backgroundColor: colors.blue },
-  labelPillText: { fontSize: 12, fontWeight: "900", color: colors.navy, letterSpacing: 0.5 },
+  // Uppercased here, not in the strings: `driver.activeTrip` is shared with
+  // other screens as "Active Trip", and next to a hard-coded "FIRST TRIP" the
+  // pill read in two different cases.
+  labelPillText: { fontSize: 12, fontWeight: "900", color: colors.navy, letterSpacing: 0.5, textTransform: "uppercase" },
   labelPillTextRunning: { color: colors.white },
   primaryTicket: { fontSize: 12, color: colors.textFaint, flexShrink: 1 },
   primaryHead: { flexDirection: "row", alignItems: "baseline", gap: 10, marginTop: 12 },
@@ -551,8 +562,9 @@ const styles = StyleSheet.create({
   },
   receiptIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.tintGreen, alignItems: "center", justifyContent: "center" },
   receiptTitle: { fontSize: 14, fontWeight: "800", color: colors.navy },
-  receiptSub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  awaitChip: { backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
+  receiptMetaRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 3, flexWrap: "wrap" },
+  receiptSub: { fontSize: 12, color: colors.textMuted },
+  awaitChip: { backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3 },
   awaitChipText: { fontSize: 12, fontWeight: "700", color: colors.textMuted },
 
   doneCard: { backgroundColor: colors.white, borderRadius: radius.lg, padding: 22, alignItems: "center", ...shadow.card },
