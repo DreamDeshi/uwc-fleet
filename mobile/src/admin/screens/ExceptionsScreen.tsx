@@ -68,6 +68,19 @@ function ExceptionDetailModal({ row, onClose, onResolved }: { row: ExceptionList
   const [note, setNote] = useState("");
 
   const exc = detail.data as ExceptionFull | null;
+  // Has an admin already made the PAY decision on this report? Mirrors the
+  // server rule in api/src/services/undeliveredPay.ts — a `verify` action in
+  // the append-only log is half of what pays the stop; closing with "Do not
+  // return" (resume) is the other half. Keep the two in step.
+  const isVerified = (exc?.actions ?? []).some((a) => a.type === "verify");
+  // ...but a verify can only ever pay a stop the driver actually REACHED
+  // (Q11(b): "if the lorry breakdown halfway, no incentive"), and a trip-level
+  // report has no stop at all. Saying "pay approved" for one of those would be
+  // a false promise on the one screen whose whole job is to state the money
+  // consequence — a `truck` report filed en route attaches to the NEXT stop,
+  // which has no arrival.
+  const canPay = Boolean(row.stop?.arrived_at);
+  const paysThisStop = isVerified && canPay;
 
   const run = async (kind: "verify" | "request-more-evidence" | "reject" | "resume" | "resolve") => {
     if (!exc) return;
@@ -128,12 +141,48 @@ function ExceptionDetailModal({ row, onClose, onResolved }: { row: ExceptionList
               <Text style={styles.section}>{t("exception.noteLabel")}</Text>
               <TextInput style={styles.input} value={note} onChangeText={setNote} placeholder={t("exception.notePlaceholder")} multiline />
 
+              {/* THE PAY BANNER. Since R3 Q11(a) a failed stop can be paid the
+                  same as a delivered one, and the two halves of that decision
+                  are Verify (approve the pay) + "Do not return" (close it).
+                  Neither is obvious from a bare verb, and an admin who taps
+                  the wrong one moves real money — so the current pay state is
+                  stated outright rather than left to be inferred. */}
+              <View style={[styles.payBanner, paysThisStop ? styles.payBannerOn : styles.payBannerOff]}>
+                <Text style={styles.payBannerTitle}>
+                  {paysThisStop
+                    ? t("exception.pay.approvedTitle")
+                    : canPay
+                      ? t("exception.pay.notApprovedTitle")
+                      : t("exception.pay.noStopTitle")}
+                </Text>
+                <Text style={styles.payBannerBody}>
+                  {paysThisStop
+                    ? t("exception.pay.approvedBody")
+                    : canPay
+                      ? t("exception.pay.notApprovedBody")
+                      : t("exception.pay.noStopBody")}
+                </Text>
+              </View>
+
               <View style={styles.actions}>
+                {/* Step 1 — the pay decision. */}
+                <Text style={styles.actionGroup}>{t("exception.group.decide")}</Text>
                 <Button variant="success" title={t("exception.verify")} onPress={() => run("verify")} />
-                <Button variant="outline" title={t("exception.requestMore")} onPress={() => run("request-more-evidence")} />
+                <Text style={styles.actionHint}>{t("exception.verifyHint")}</Text>
                 <Button variant="danger" title={t("exception.reject")} onPress={() => run("reject")} />
+                <Text style={styles.actionHint}>{t("exception.rejectHint")}</Text>
+                <Button variant="outline" title={t("exception.requestMore")} onPress={() => run("request-more-evidence")} />
+
+                {/* Step 2 — what the truck does next. Only "resume" closes the
+                    stop; "retry" deliberately settles nothing so the driver can
+                    still deliver it. */}
+                <Text style={styles.actionGroup}>{t("exception.group.next")}</Text>
                 <Button title={t("exception.resume")} onPress={() => run("resume")} />
-                <Button title={t("exception.retry")} onPress={() => run("resolve")} />
+                <Text style={styles.actionHint}>
+                  {paysThisStop ? t("exception.resumeHintVerified") : t("exception.resumeHintUnverified")}
+                </Text>
+                <Button variant="outline" title={t("exception.retry")} onPress={() => run("resolve")} />
+                <Text style={styles.actionHint}>{t("exception.retryHint")}</Text>
               </View>
             </ScrollView>
           )}
@@ -165,4 +214,13 @@ const styles = StyleSheet.create({
   timelineMeta: { color: colors.textMuted, fontSize: 12 },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm, minHeight: 60, textAlignVertical: "top", color: colors.text },
   actions: { gap: spacing.sm, marginTop: spacing.md, marginBottom: spacing.xl },
+  actionGroup: { fontWeight: "700", color: colors.text, marginTop: spacing.md, fontSize: 13, textTransform: "uppercase", letterSpacing: 0.5 },
+  actionHint: { color: colors.textMuted, fontSize: 12, lineHeight: 17, marginTop: -spacing.xs, marginBottom: spacing.xs },
+  payBanner: { borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md, borderLeftWidth: 4 },
+  // Same tints the admin design system already uses: #F0FDF4 green (see
+  // SustainabilityScreen) and #FFF7E0 amber (see the alerts banner).
+  payBannerOn: { backgroundColor: "#F0FDF4", borderLeftColor: colors.green },
+  payBannerOff: { backgroundColor: "#FFF7E0", borderLeftColor: colors.yellow },
+  payBannerTitle: { fontWeight: "700", color: colors.text, marginBottom: 2 },
+  payBannerBody: { color: colors.text, fontSize: 12, lineHeight: 17 },
 });

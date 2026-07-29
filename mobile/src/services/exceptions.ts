@@ -65,7 +65,7 @@ export interface ExceptionListRow {
   current_state: string;
   reason: string;
   reported_at: string;
-  stop: { sequence: number; company_name: string } | null;
+  stop: { sequence: number; arrived_at: string | null; company_name: string } | null;
 }
 
 export interface ReportExceptionInput {

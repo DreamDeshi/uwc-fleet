@@ -1,5 +1,6 @@
 import { ApiError } from "../lib/apiError";
 import type { DeliveryIncentiveResult } from "./incentiveEngine";
+import { stopPayEligibility } from "./undeliveredPay";
 
 /**
  * Delivery / finalization guards for PATCH /trips/:id/status (action=delivered),
@@ -152,19 +153,79 @@ export function firstDeliveredAt(stops: { delivered_at: Date | null }[]): Date |
 }
 
 /**
- * The instant a trip's month bucket keys on: the first delivery confirm — the
+ * The trip's first EARNING instant — `firstDeliveredAt` widened for R3 Q11(a)
+ * (services/undeliveredPay.ts): a stop the driver reached but could not
+ * deliver, once an admin verified it and closed with `resume`, is paid, and its
+ * pay attributes to `arrived_at`. A trip whose stops ALL failed that way has no
+ * delivery confirm at all, so the delivered-only version returned null and the
+ * trip fell back to `pickup_datetime` — bucketing real pay into the wrong month
+ * whenever pickup and the attempt straddle a month end.
+ *
+ * ⚠ This is the EARLIEST earning instant across the whole trip, so a settled
+ * ARRIVAL that precedes every delivery confirm DOES become the key — a trip
+ * that failed a stop at 23:40 on 31 Jul and delivered another at 00:20 on
+ * 1 Aug now buckets into July, where before it bucketed into August. That is
+ * intended: this function's contract is to mirror what finalization scored
+ * against, and finalization's first day-group anchors on exactly that instant
+ * (routes/trips proposeDeliveredStopsIncentive). A month key that disagreed
+ * with the ledger would put the payroll sheet and the pay in different months —
+ * the failure this helper exists to prevent. It shifts a pay PERIOD, never an
+ * amount, and it cannot double-pay: a stop's settled-ness is frozen at
+ * finalization (a closed exception cannot transition, and an open one blocks
+ * finalization outright).
+ *
+ * Within ONE stop a non-null `delivered_at` always wins, so a delivered stop is
+ * never re-keyed to its own arrival. The widening fields are OPTIONAL — a caller
+ * that selects only `delivered_at` gets exactly the old behaviour rather than a
+ * silently wrong answer. Every money-bucket caller selects them; see the queries
+ * in routes/reports.ts.
+ *
+ * NOT the rate-tier anchor. Which timestamp selects a whole-trip RATE is a
+ * frozen item and stays on the delivery confirm — see the rateAnchor comment in
+ * services/tripFinalize.
+ */
+export interface EarningStopLike {
+  delivered_at: Date | null;
+  status?: string;
+  arrived_at?: Date | null;
+  exceptions?: {
+    current_state: string;
+    resolution: string | null;
+    actions?: { type: string }[];
+  }[];
+}
+
+export function firstEarningInstant(stops: EarningStopLike[]): Date | null {
+  return stops.reduce<Date | null>((earliest, s) => {
+    const instant =
+      s.delivered_at ??
+      (s.status !== undefined &&
+      stopPayEligibility({
+        status: s.status,
+        arrived_at: s.arrived_at ?? null,
+        delivered_at: s.delivered_at,
+        exceptions: s.exceptions,
+      }) === "undelivered_paid"
+        ? (s.arrived_at ?? null)
+        : null);
+    return instant && (!earliest || instant < earliest) ? instant : earliest;
+  }, null);
+}
+
+/**
+ * The instant a trip's month bucket keys on: its first EARNING instant — the
  * same anchor finalization wrote the day ledger and pay against. Pay is
  * earned on the DELIVERY day, so a trip picked up 30 June and delivered
  * 1 July is July money; bucketing reports by any other date makes a report
  * and the payroll sheet disagree about the same trip. Falls back to pickup
- * only where no delivery confirm exists (not-yet-delivered, external, or the
- * legacy null-delivered_at anomaly surfaced by /reports/attention).
+ * only where nothing earned (not-yet-delivered, external, or the legacy
+ * null-delivered_at anomaly surfaced by /reports/attention).
  */
 export function payAttributionInstant(trip: {
   pickup_datetime: Date;
-  stops: { delivered_at: Date | null }[];
+  stops: EarningStopLike[];
 }): Date {
-  return firstDeliveredAt(trip.stops) ?? trip.pickup_datetime;
+  return firstEarningInstant(trip.stops) ?? trip.pickup_datetime;
 }
 
 // Minimal slice of the Prisma client the propose/approve steps need. Lets tests

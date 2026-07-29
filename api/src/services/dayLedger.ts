@@ -47,9 +47,46 @@ export const LEDGER_TRIP_STATUSES = ["in_progress", "pending_approval", "complet
 
 // Concrete shape (rather than the wide Prisma input type) so tests can assert
 // the exact semantics; structurally assignable to Prisma.TripStopWhereInput.
+//
+// The OR is the 29 Jul 2026 addition: a stop the driver REACHED but could not
+// deliver, whose stop-attached exception an admin VERIFIED and closed with
+// `resume`, now earns (R3 Q11(a), services/undeliveredPay.ts) — so it must also
+// occupy its zone's slot in this ledger, or the same zone could pay full points
+// twice in a day. It is bounded on `arrived_at` because that is the instant its
+// pay attributes to; a stop with no arrival is his Q11(b) case and never
+// appears here.
+//
+// ⚠ The second branch MUST stay character-for-character the same predicate as
+// SETTLED_UNDELIVERED_WHERE. If this ledger counted a stop the finalizer does
+// not pay (or vice versa), a zone slot would be consumed by a stop that earned
+// nothing — the exact shape of the old proposal-vs-paid bug. In particular
+// `resolution: "resume"` and the `verify` action are both load-bearing:
+// dropping either would let a bare "Resume trip" (no adjudication) demote a
+// later real delivery in that zone to a 1-point repeat.
+//
+// ⚠ R4 QUESTION §A1: whether a failed attempt should claim the zone's
+// first-drop slot at all is an inference from "if he GO TO P1 … subsequent
+// destination in same day, same zone will be 1 point" — he has never been asked
+// directly. Written up in QUESTIONS_FOR_TEH_R4.md ($UWC_REFS_DIR), with the
+// worked RM figures and what reversing it means: delete this OR branch.
 export interface PriorDeliveredDropsWhere {
-  status: "delivered";
-  delivered_at: { gte: Date; lt: Date };
+  OR: [
+    {
+      status: "delivered";
+      delivered_at: { gte: Date; lt: Date };
+    },
+    {
+      status: { not: "delivered" };
+      arrived_at: { gte: Date; lt: Date };
+      exceptions: {
+        some: {
+          current_state: "resolved";
+          resolution: "resume";
+          actions: { some: { type: "verify" } };
+        };
+      };
+    },
+  ];
   trip: {
     driver_id: string;
     status: { in: ("in_progress" | "pending_approval" | "completed")[] };
@@ -58,9 +95,9 @@ export interface PriorDeliveredDropsWhere {
 }
 
 /**
- * Where-clause for the drops this driver delivered on `[dayStart, anchor)` on
+ * Where-clause for the drops this driver EARNED on `[dayStart, anchor)` on
  * trips other than the one being finalized — the "prior drops today" ledger
- * for one delivery-day group. `anchor` is the group's first delivered_at
+ * for one delivery-day group. `anchor` is the group's first pay instant
  * (DeliveryDayGroup.anchor); `dayStart` bounds it to the group's MYT day.
  */
 export function priorDeliveredDropsWhere(params: {
@@ -69,9 +106,25 @@ export function priorDeliveredDropsWhere(params: {
   dayStart: Date;
   anchor: Date;
 }): PriorDeliveredDropsWhere {
+  const window = { gte: params.dayStart, lt: params.anchor };
   return {
-    status: "delivered",
-    delivered_at: { gte: params.dayStart, lt: params.anchor },
+    OR: [
+      { status: "delivered", delivered_at: window },
+      // Same predicate as SETTLED_UNDELIVERED_WHERE (services/undeliveredPay),
+      // with its arrival bounded to this group's window — spelled out here
+      // because the concrete shape is what the pinned tests assert.
+      {
+        status: { not: "delivered" },
+        arrived_at: window,
+        exceptions: {
+          some: {
+            current_state: "resolved",
+            resolution: "resume",
+            actions: { some: { type: "verify" } },
+          },
+        },
+      },
+    ],
     trip: {
       driver_id: params.driverId,
       status: { in: [...LEDGER_TRIP_STATUSES] },

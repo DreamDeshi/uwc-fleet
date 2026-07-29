@@ -4,7 +4,8 @@ import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { estimateTripDistanceKm } from "../lib/geo";
 import { currentMytMonthBounds, inMytMonth, mytMonthKey } from "../lib/myt";
-import { firstDeliveredAt, payableIncentive } from "../services/tripCompletion";
+import { firstEarningInstant, payableIncentive } from "../services/tripCompletion";
+import { EARNING_STOP_SELECT } from "../services/undeliveredPay";
 
 const router = Router();
 router.use(requireAuth);
@@ -35,7 +36,7 @@ router.get("/mine", requireRole("driver"), async (req, res, next) => {
         stops: {
           orderBy: { sequence: "asc" },
           select: {
-            delivered_at: true,
+            ...EARNING_STOP_SELECT,
             consignee: { select: { company_name: true, area: true, zone_code: true } },
           },
         },
@@ -50,9 +51,12 @@ router.get("/mine", requireRole("driver"), async (req, res, next) => {
         id: t.id,
         ticket_number: t.ticket_number,
         pickup_datetime: t.pickup_datetime,
-        // The first delivery confirm — the instant the rate tier and pay-day
-        // attribution actually keyed on; also the month-bucket key below.
-        delivered_at: firstDeliveredAt(t.stops),
+        // The first EARNING instant — the moment the rate tier and pay-day
+        // attribution actually keyed on. For an all-failed-but-adjudicated
+        // trip (R3 Q11(a)) that is an ARRIVAL, not a delivery confirm; the
+        // delivered-only version showed the driver a blank date on a trip he
+        // was being paid for.
+        delivered_at: firstEarningInstant(t.stops),
         // The payable amount (approved final, or proposal for grandfathered
         // trips). For a pending_approval trip this is the PROPOSED figure —
         // flagged `pending` so the UI shows it as awaiting approval, not paid.

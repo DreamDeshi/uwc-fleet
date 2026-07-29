@@ -18,6 +18,10 @@ import {
   serializeException,
   type ExceptionAudience,
 } from "../lib/exceptionEvidence";
+import type { Prisma } from "@prisma/client";
+import { sendPushNotifications } from "../lib/pushNotifications";
+import { SETTLED_UNDELIVERED_WHERE } from "../services/undeliveredPay";
+import { proposeDeliveredStopsIncentive } from "../services/tripFinalize";
 import {
   EXCEPTION_CATEGORIES,
   assertVersion,
@@ -301,6 +305,61 @@ function sameActionSemantics(a: { type: string; resolution: string | null; actor
   return a.type === opts.action && (a.resolution ?? null) === (opts.resolveWith ?? null) && a.actor_id === opts.actorId && (a.note ?? null) === (opts.note ?? null);
 }
 
+/**
+ * Finalize the trip when CLOSING this exception left nothing outstanding.
+ *
+ * WHY THIS EXISTS. Since R3 Q11(a) a stop can be settled as paid-undelivered
+ * (verify + resume) instead of delivered. On a single-drop trip — the canonical
+ * Q11(a) case, "customer was closed" — that settles the LAST stop, and there is
+ * then no further delivery event to trigger finalization. Without this the trip
+ * would sit `in_progress` forever: the pay it just earned would never propose,
+ * the driver would be locked out of every other trip by the one-active guard,
+ * and the truck's capacity would never free. The 3am sweep deliberately never
+ * touches in_progress, so nothing else would rescue it. Pay would exist only if
+ * an admin thought to hit Abort — which files it as a `cancelled` timeline event
+ * on a trip that is being paid.
+ *
+ * Mirrors the delivered branch exactly: same outstanding-stop predicate, same
+ * shared scorer, same write-once CAS. Caller holds lockTripRow.
+ * Returns true when this call finalized the trip (→ notify), false otherwise.
+ */
+async function finalizeIfNothingOutstanding(
+  tx: Prisma.TransactionClient,
+  tripId: string,
+  actorId: string
+): Promise<boolean> {
+  const trip = await tx.trip.findUnique({ where: { id: tripId }, include: { truck: true } });
+  // Only an OUT trip finalizes. An abort may have cancelled it while the
+  // exception was open, and a trip with no driver has no ledger owner.
+  if (!trip || trip.status !== "in_progress" || !trip.driver_id) return false;
+
+  const remainingStops = await tx.tripStop.count({
+    where: { trip_id: tripId, status: { not: "delivered" }, NOT: SETTLED_UNDELIVERED_WHERE },
+  });
+  if (remainingStops > 0) return false;
+
+  // Nothing left to deliver. If NOTHING earned either (e.g. the exception was
+  // rejected, or resumed without a verify), there is no incentive to propose —
+  // leave the trip alone for the admin to abort, which is the existing unpaid
+  // path. Only a trip with at least one earning stop finalizes here.
+  const earning = await tx.tripStop.count({
+    where: { trip_id: tripId, OR: [{ status: "delivered" }, SETTLED_UNDELIVERED_WHERE] },
+  });
+  if (earning === 0) return false;
+
+  const proposed = await proposeDeliveredStopsIncentive(tx, trip, trip.driver_id);
+  if (proposed === null) return false; // CAS lost — someone else finalized it
+  await tx.auditLog.create({
+    data: {
+      user_id: actorId,
+      action: `trip.settled_pending_approval — no stops outstanding after the exception closed (RM${proposed} proposed)`,
+      table_name: "Trip",
+      record_id: tripId,
+    },
+  });
+  return true;
+}
+
 async function applyTransition(opts: {
   tripId: string;
   exId: string;
@@ -323,9 +382,16 @@ async function applyTransition(opts: {
   assertVersion(exc.version, opts.expectedVersion);
   const t = nextExceptionState(exc.current_state as never, opts.action, opts.resolveWith);
   const allowed = allowedFromStates(opts.action);
+  let finalized = false;
 
   try {
     await prisma.$transaction(async (tx) => {
+      // Lock the trip FIRST (lib/tripLock discipline) — a CLOSING transition can
+      // now finalize the trip (see below), so it must serialize against the
+      // delivered/abort paths exactly as they serialize against each other.
+      // Taken unconditionally rather than only when `t.closes`: the lock order
+      // must not depend on the action, or two transitions could deadlock.
+      await lockTripRow(tx, opts.tripId);
       const cas = await tx.tripException.updateMany({
         where: { id: opts.exId, version: exc.version, closed_at: null, current_state: { in: allowed as never } },
         data: { current_state: t.state as never, resolution: t.resolution ?? undefined, resolved_at: t.closes ? new Date() : undefined, closed_at: t.closes ? new Date() : undefined, version: { increment: 1 } },
@@ -347,6 +413,7 @@ async function applyTransition(opts: {
         if (ptr.count !== 1) throw new ApiError(409, "POINTER_INCONSISTENT", "The trip's open-exception pointer was not in the expected state; the close was rolled back.");
       }
       await tx.auditLog.create({ data: { user_id: opts.actorId, action: `exception.${opts.action}${t.resolution ? ` (${t.resolution})` : ""}${opts.note ? `: ${opts.note}` : ""}`, table_name: "TripException", record_id: opts.exId } });
+      if (t.closes) finalized = await finalizeIfNothingOutstanding(tx, opts.tripId, opts.actorId);
     });
   } catch (err) {
     if (isUniqueViolation(err)) {
@@ -358,6 +425,30 @@ async function applyTransition(opts: {
       }
     }
     throw err;
+  }
+
+  // Best-effort, OUTSIDE the tx — same notification the delivered branch sends,
+  // so a trip that finalized this way reaches the approval queue by the same
+  // route as any other. Without it the pay is proposed silently and waits for
+  // an admin to happen to look.
+  if (finalized) await notifyPendingApproval(opts.tripId);
+}
+
+/** "Trip awaiting approval" push to every admin with a device. Never throws. */
+async function notifyPendingApproval(tripId: string): Promise<void> {
+  try {
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { ticket_number: true } });
+    const admins = await prisma.user.findMany({
+      where: { role: "admin", status: "active", expo_push_token: { not: null } },
+      select: { expo_push_token: true },
+    });
+    await sendPushNotifications(admins.map((a) => a.expo_push_token), {
+      title: "Trip awaiting approval",
+      body: `Trip ${trip?.ticket_number ?? ""} closed with no stops outstanding — approve to release the incentive`,
+      data: { type: "pending_approval", tripId },
+    });
+  } catch {
+    // A failed push must never roll back or fail an already-committed close.
   }
 }
 
@@ -414,7 +505,9 @@ router.get("/exceptions/open", requireRole("admin"), async (_req, res, next) => 
       orderBy: { created_at: "asc" },
       include: {
         trip: { select: { id: true, ticket_number: true, truck_plate: true, driver: { select: { name: true } } } },
-        trip_stop: { select: { sequence: true, consignee: { select: { company_name: true } } } },
+        // arrived_at: the admin UI needs it to know whether a verify can PAY this
+        // stop at all — Q11(b), a stop the driver never reached earns nothing.
+        trip_stop: { select: { sequence: true, arrived_at: true, consignee: { select: { company_name: true } } } },
       },
     });
     res.json({
@@ -428,7 +521,7 @@ router.get("/exceptions/open", requireRole("admin"), async (_req, res, next) => 
         current_state: r.current_state,
         reason: r.reason,
         reported_at: r.reported_at,
-        stop: r.trip_stop ? { sequence: r.trip_stop.sequence, company_name: r.trip_stop.consignee.company_name } : null,
+        stop: r.trip_stop ? { sequence: r.trip_stop.sequence, arrived_at: r.trip_stop.arrived_at, company_name: r.trip_stop.consignee.company_name } : null,
       })),
     });
   } catch (err) {

@@ -7,6 +7,7 @@ import {
   assertStopDeliverable,
   collectFinalizeBreakdown,
   firstDeliveredAt,
+  firstEarningInstant,
   payAttributionInstant,
   payableIncentive,
   proposeTripIncentiveOnce,
@@ -409,9 +410,86 @@ describe("payAttributionInstant - the ONE month-bucket key for trips and money",
     ).toBe(delivered);
   });
 
-  it("falls back to pickup when no stop has a delivery confirm", () => {
+  it("falls back to pickup when nothing earned", () => {
     expect(
       payAttributionInstant({ pickup_datetime: pickup, stops: [{ delivered_at: null }] })
     ).toBe(pickup);
+  });
+});
+
+describe("firstEarningInstant - R3 Q11(a) widening of the month bucket", () => {
+  // A stop the driver REACHED, an admin VERIFIED, and that closed with `resume`
+  // is paid (services/undeliveredPay.ts) and attributes to its arrival. A trip
+  // whose stops ALL ended that way has no delivery confirm at all.
+  const arrived = new Date("2026-07-01T02:00:00Z"); // 1 Jul 10:00 MYT
+  const delivered = new Date("2026-07-01T04:00:00Z");
+  const settled = (arrived_at: Date | null) => ({
+    status: "arrived",
+    arrived_at,
+    delivered_at: null,
+    exceptions: [
+      {
+        current_state: "resolved",
+        resolution: "resume",
+        actions: [{ type: "verify" }],
+      },
+    ],
+  });
+
+  it("uses a settled stop's ARRIVAL when the trip has no delivery confirm", () => {
+    expect(firstEarningInstant([settled(arrived)])).toBe(arrived);
+  });
+
+  it("keeps an all-failed trip in the month it was WORKED, not the month it was picked up", () => {
+    // The concrete bug: picked up 30 June, the attempt (and its pay) on 1 July.
+    // The delivered-only version returned null, fell back to pickup, and put
+    // real July pay on the June payroll sheet.
+    const pickupJune = new Date("2026-06-30T16:00:00Z"); // 1 Jul 00:00 MYT is next
+    expect(
+      payAttributionInstant({ pickup_datetime: pickupJune, stops: [settled(arrived)] })
+    ).toBe(arrived);
+  });
+
+  it("within ONE stop a delivery confirm always wins over its own arrival", () => {
+    expect(
+      firstEarningInstant([{ ...settled(arrived), status: "delivered", delivered_at: delivered }])
+    ).toBe(delivered);
+  });
+
+  it("ACROSS stops it is the EARLIEST earning instant - a settled arrival CAN win", () => {
+    // Deliberate, and NOT "strictly additive": a trip that failed a stop at
+    // 23:40 on 31 Jul and delivered another at 00:20 on 1 Aug now buckets into
+    // July where it used to bucket into August. This function's contract is to
+    // mirror what finalization scored against, and finalization's first
+    // day-group anchors on exactly this instant — a month key that disagreed
+    // with the ledger would put the payroll sheet and the pay in different
+    // months. It moves a pay PERIOD, never an amount.
+    expect(firstEarningInstant([settled(arrived), { delivered_at: delivered }])).toBe(arrived);
+  });
+
+  it("ignores a stop the driver never reached (Q11(b))", () => {
+    expect(firstEarningInstant([settled(null)])).toBeNull();
+  });
+
+  it("a caller that selects ONLY delivered_at gets exactly the old behaviour", () => {
+    // The widening fields are optional so an under-selected query degrades to
+    // delivered-only rather than silently answering wrong.
+    expect(firstEarningInstant([{ delivered_at: null }])).toBeNull();
+    expect(firstEarningInstant([{ delivered_at: delivered }])).toBe(delivered);
+  });
+
+  it("does not pay on a bare resume or a retry", () => {
+    const bareResume = {
+      ...settled(arrived),
+      exceptions: [{ current_state: "resolved", resolution: "resume", actions: [] }],
+    };
+    const retried = {
+      ...settled(arrived),
+      exceptions: [
+        { current_state: "resolved", resolution: "retry", actions: [{ type: "verify" }] },
+      ],
+    };
+    expect(firstEarningInstant([bareResume])).toBeNull();
+    expect(firstEarningInstant([retried])).toBeNull();
   });
 });

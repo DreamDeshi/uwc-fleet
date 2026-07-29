@@ -24,17 +24,22 @@ import { formatMoney, formatDateTime } from "../lib/format";
 import { apiErrorMessage } from "../services/api";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import type { Trip, TripStop } from "../types";
+import { isStopSettled } from "../../lib/stopSettled";
 
 // The engine proposal stored on the trip (what pay defaults to at approval).
 const proposedAmount = (trip: Trip): number => Number(trip.incentive_earned ?? 0);
 
-// The trip's first delivery confirm — the instant it flipped to pending_approval.
+// The trip's first EARNING instant — the anchor finalization actually scored
+// against, and the instant the trip flipped to pending_approval. Mirrors the
+// server's firstEarningInstant: since R3 Q11(a) a stop can be PAID without a
+// delivery confirm (reached, admin verified + resumed), so a delivered-only
+// version showed a blank date on an all-failed trip and sorted it to the top of
+// the approvals queue as if it were the oldest.
 function deliveredAt(trip: Trip): string | null {
-  return trip.stops.reduce<string | null>(
-    (earliest, s) =>
-      s.delivered_at && (!earliest || s.delivered_at < earliest) ? s.delivered_at : earliest,
-    null
-  );
+  return trip.stops.reduce<string | null>((earliest, s) => {
+    const at = s.delivered_at ?? (isStopSettled(s) ? s.arrived_at : null);
+    return at && (!earliest || at < earliest) ? at : earliest;
+  }, null);
 }
 
 export function IncentiveApprovalsScreen() {

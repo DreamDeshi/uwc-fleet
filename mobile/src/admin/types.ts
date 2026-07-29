@@ -109,6 +109,15 @@ export interface TripStop {
   points_awarded?: number | null;
   was_repeat?: boolean | null;
   zone_code?: string | null;
+  // Stop-attached exception headers (tripInclude) — lets the admin app tell a
+  // SETTLED stop (reached, verified + resumed, PAID under R3 Q11(a)) from an
+  // outstanding one. `status` alone cannot: a settled stop stays
+  // "pending"/"arrived". See lib/stopSettled. Optional: absent → not settled.
+  exceptions?: {
+    current_state: string;
+    resolution: string | null;
+    actions?: { type: string }[];
+  }[];
 }
 
 export interface RouteType {

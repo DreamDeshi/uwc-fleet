@@ -16,6 +16,7 @@
 
 import type { Trip, TripStop } from "../types";
 import { isDelivered } from "./tripStatus";
+import { isStopSettled } from "./stopSettled";
 
 export type DriverDayState = "no_trips" | "before" | "running" | "between" | "finished";
 
@@ -65,7 +66,7 @@ export function stopProgress(trip: Trip): { delivered: number; total: number } {
  */
 export function currentStopNumber(trip: Trip): number {
   const stops = stopsOf(trip);
-  const idx = stops.findIndex((s) => s.status !== "delivered");
+  const idx = stops.findIndex((s) => s.status !== "delivered" && !isStopSettled(s));
   return idx === -1 ? stops.length : idx + 1;
 }
 

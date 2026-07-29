@@ -56,6 +56,9 @@ import {
 } from "../services/incentiveEngine";
 import { leaveDateFilter } from "../services/driverLeave";
 import { priorDeliveredDropsWhere } from "../services/dayLedger";
+import { SETTLED_UNDELIVERED_WHERE, isStopSettled } from "../services/undeliveredPay";
+import { TRIP_INCLUDE } from "../lib/tripInclude";
+import { proposeDeliveredStopsIncentive } from "../services/tripFinalize";
 import { effectiveTruckRates, effectiveZonePoints } from "../services/pendingRates";
 import { truckExpiryIssues } from "../services/truckEligibility";
 import { getRoute } from "../services/routeLegs";
@@ -131,15 +134,7 @@ router.use((_req, res, next) => {
   next();
 });
 
-const tripInclude = {
-  requestor: { select: { id: true, name: true, phone: true } },
-  driver: { select: { id: true, name: true, phone: true } },
-  truck: true,
-  route_type: true,
-  stops: { include: { consignee: true }, orderBy: { sequence: "asc" as const } },
-  cargo_details: true,
-  documents: { orderBy: { uploaded_at: "desc" as const } },
-};
+const tripInclude = TRIP_INCLUDE;
 
 // Human-readable destination for notifications — first stop's area/company.
 function tripDestinationLabel(trip: {
@@ -1845,89 +1840,6 @@ router.patch("/:id/cancel", async (req, res, next) => {
   }
 });
 
-/**
- * Score THIS trip's DELIVERED stops and PROPOSE the incentive: the per-zone-
- * per-day ledger, snapshot rates and write-once CAS (in_progress →
- * pending_approval, via proposeTripIncentiveOnce) that used to live inline in
- * the final-delivery branch, factored out so the abort path can reuse it
- * verbatim. Two callers:
- *   - the delivered branch, after the LAST stop's delivered write commits —
- *     every stop is status "delivered" by then, so the status filter below
- *     matches all of them (byte-identical to the pre-extraction inline block);
- *   - the abort route, when an in_progress trip with ≥1 delivered stop is
- *     aborted (partial-pay rule, Mr. Teh 28 Jul 2026: "yes keep the pay for
- *     those 3" — delivered stops keep their pay; undelivered stops are never
- *     scored, so they can't leak a fallback-dated group into the ledger).
- * Caller must hold lockTripRow(tx, trip.id) and pass a trip row RE-READ under
- * that lock. `driverId` is the TRIP's driver (the ledger owner) — for the
- * abort caller that is trip.driver_id, never the acting admin.
- * Returns the proposed RM, or null when the CAS lost (status moved on or an
- * incentive already exists).
- */
-async function proposeDeliveredStopsIncentive(
-  tx: Prisma.TransactionClient,
-  trip: Prisma.TripGetPayload<{ include: { truck: true } }>,
-  driverId: string
-): Promise<number | null> {
-  if (!trip.truck) throw new ApiError(400, "TRUCK_NOT_ASSIGNED", "This trip has no truck assigned.");
-
-  // This trip's delivered drops, in delivered order, each with its zone's
-  // full destination points. Scored stop-by-stop (per-zone-per-day), summed.
-  const thisTripStops = await tx.tripStop.findMany({
-    where: { trip_id: trip.id, status: "delivered" },
-    orderBy: { delivered_at: "asc" },
-    include: { consignee: { select: { zone_code: true } } },
-  });
-  const zoneCodes = [...new Set(thisTripStops.map((s) => dropZoneCode(s, s.consignee.zone_code)))];
-  const rateRows = await tx.destinationRate.findMany({
-    where: { zone_code: { in: zoneCodes } },
-    select: { zone_code: true, location_name: true, points: true, pending_points: true, pending_points_effective: true },
-  });
-  const pointsByZone = buildPointsByZone(rateRows.map((r) => ({ ...r, points: effectiveZonePoints(r, new Date()) })));
-
-  // Incentive day keys on DELIVERY confirm time (client rule 3 Jul 2026).
-  const dayGroups = groupStopsByDeliveryDay(thisTripStops, new Date());
-  const publicHolidays = await loadHolidaySet();
-  const truckRates = finalizationRateParams({
-    entitled_claim_weekday: trip.entitled_claim_weekday,
-    entitled_claim_offpeak: trip.entitled_claim_offpeak,
-    daily_deduction_points: trip.daily_deduction_points,
-    truck: effectiveTruckRates(trip.truck, new Date()),
-  });
-
-  let incentiveThisTrip = 0;
-  const finalizedGroups: FinalizedGroup[] = [];
-  for (const group of dayGroups) {
-    // Per-day ledger: drops this driver already DELIVERED earlier today on
-    // OTHER in_progress/completed trips (see dayLedger.ts).
-    const priorStopsToday = await tx.tripStop.findMany({
-      where: priorDeliveredDropsWhere({ driverId, excludeTripId: trip.id, dayStart: group.dayStart, anchor: group.anchor }),
-      orderBy: { delivered_at: "asc" },
-      select: { zone_code: true, zone_points: true, consignee: { select: { zone_code: true } } },
-    });
-    const priorDrops = priorStopsToday.map((s) => {
-      const zone = dropZoneCode(s, s.consignee.zone_code);
-      return { zoneCode: zone, zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone) };
-    });
-    const zonesDeliveredEarlierToday = priorDrops.map((d) => d.zoneCode);
-    const priorPointsToday = scoreDrops(priorDrops).reduce((a, b) => a + b, 0);
-    const drops = group.stops.map((s) => {
-      const zone = dropZoneCode(s, s.consignee.zone_code);
-      return { zoneCode: zone, zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone) };
-    });
-    const incentive = calculateDeliveryIncentive({ rateDateTime: group.anchor, drops, zonesDeliveredEarlierToday, priorPointsToday, publicHolidays, truck: truckRates });
-    incentiveThisTrip += incentive.incentiveThisTrip;
-    finalizedGroups.push({ stops: group.stops.map((s) => ({ id: s.id, zoneCode: dropZoneCode(s, s.consignee.zone_code) })), result: incentive });
-  }
-  incentiveThisTrip = Math.round(incentiveThisTrip * 100) / 100;
-
-  // Write-once CAS (status in_progress + incentive_earned null +
-  // open_exception_id null) — under the lock this is fully atomic.
-  const breakdown = collectFinalizeBreakdown(finalizedGroups);
-  const proposed = await proposeTripIncentiveOnce(tx, trip.id, incentiveThisTrip, breakdown);
-  return proposed ? incentiveThisTrip : null;
-}
-
 // ── PATCH /trips/:id/abort — admin aborts an IN-PROGRESS trip (de-orphan) ──
 // The only exit for an in_progress trip: unassign/reassign are `assigned`-only
 // and cancel is pending/approved-only, so a trip whose driver must be removed
@@ -1994,9 +1906,20 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
         throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before aborting this trip.");
       }
 
-      const deliveredCount = await tx.tripStop.count({ where: { trip_id: id, status: "delivered" } });
+      // EARNING stops, not merely delivered ones: a trip whose stops were all
+      // reached-but-undeliverable and adjudicated still owes pay (R3 Q11(a)),
+      // so it must take the approval lane rather than cancelling unpaid.
+      //
+      // Named `earningCount`, NOT `deliveredCount` — it is no longer a count of
+      // deliveries, and the audit strings below must not claim it is.
+      const earningCount = await tx.tripStop.count({
+        where: { trip_id: id, OR: [{ status: "delivered" }, SETTLED_UNDELIVERED_WHERE] },
+      });
+      const deliveredCount = await tx.tripStop.count({
+        where: { trip_id: id, status: "delivered" },
+      });
 
-      if (deliveredCount === 0) {
+      if (earningCount === 0) {
         // Nothing delivered → the original abort: cancelled, no pay (breakdown /
         // never-reached stops don't pay — 16 Jul + R1-Q2b).
         // Status-guarded CAS: under the lock this cannot lose to a delivery, but
@@ -2042,7 +1965,10 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
       await tx.auditLog.create({
         data: {
           user_id: req.user!.id,
-          action: `trip.aborted_partial (${deliveredCount}/${totalStops} stops delivered — RM${proposedAmount} proposed for approval)${reason ? ` — ${reason}` : ""}`,
+          // Both numbers, because they can differ: a stop can EARN without
+          // being delivered (R3 Q11(a)). "3/5 stops delivered" for a trip that
+          // delivered 1 and had 2 adjudicated failures is a false audit record.
+          action: `trip.aborted_partial (${earningCount}/${totalStops} stops earning, ${deliveredCount} delivered — RM${proposedAmount} proposed for approval)${reason ? ` — ${reason}` : ""}`,
           table_name: "Trip",
           record_id: id,
         },
@@ -2051,7 +1977,7 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
         tripId: id,
         event: "cancelled",
         actorId: req.user!.id,
-        note: `Aborted after ${deliveredCount}/${totalStops} stops — pay for delivered stops awaiting approval`,
+        note: `Aborted after ${earningCount}/${totalStops} stops (${deliveredCount} delivered) — pay awaiting approval`,
       });
     });
 
@@ -2411,11 +2337,14 @@ router.patch(
       }
 
       // arrived / delivered both act on a specific stop. No stop_id → default
-      // to the first not-yet-delivered stop, so single-stop trips don't need
-      // to name it.
+      // to the first OUTSTANDING stop, so single-stop trips don't need to name
+      // it. "Outstanding" excludes settled paid-undelivered stops (R3 Q11(a)):
+      // an older client that omits stop_id would otherwise target a stop the
+      // admin already closed and paid, and hit a hard DOCUMENTATION_INCOMPLETE
+      // that blocks every later delivery on the trip.
       const stop = stop_id
         ? trip.stops.find((s) => s.id === stop_id)
-        : trip.stops.find((s) => s.status !== "delivered");
+        : trip.stops.find((s) => s.status !== "delivered" && !isStopSettled(s));
       if (!stop) {
         throw new ApiError(400, "STOP_NOT_FOUND", "No matching stop found for this trip.");
       }
@@ -2475,7 +2404,13 @@ router.patch(
         await tx.auditLog.create({ data: { user_id: req.user!.id, action: "stop.delivered", table_name: "TripStop", record_id: stop.id } });
         await recordTripEvent(tx, { tripId: id, event: "stop_delivered", stopId: stop.id, actorId: req.user!.id });
 
-        const remainingStops = await tx.tripStop.count({ where: { trip_id: id, status: { not: "delivered" } } });
+        // OUTSTANDING stops — not delivered AND not settled as paid-undelivered.
+        // Without the NOT, a stop the admin resolved under R3 Q11(a) would sit
+        // "not delivered" forever, the trip could never finalize, and the pay it
+        // just earned would never propose.
+        const remainingStops = await tx.tripStop.count({
+          where: { trip_id: id, status: { not: "delivered" }, NOT: SETTLED_UNDELIVERED_WHERE },
+        });
         if (remainingStops > 0) {
           // More stops to go — no money moves. (Barrier: a report may still open
           // against the remaining trip after this NON-final delivery commits.)

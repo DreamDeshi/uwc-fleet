@@ -121,6 +121,17 @@ export interface TripStop {
   points_awarded?: number | null;
   was_repeat?: boolean | null;
   consignee?: Consignee;
+  // Stop-attached exception headers, shipped by tripInclude so the app can tell
+  // a SETTLED stop (reached, admin verified + resumed, paid under R3 Q11(a) —
+  // nothing left to do) from an outstanding one. `status` alone cannot: a
+  // settled stop is still "pending"/"arrived". See lib/stopSettled.
+  // Optional because older API builds do not send it; absent → not settled,
+  // which is the pre-Q11(a) behaviour.
+  exceptions?: {
+    current_state: string;
+    resolution: string | null;
+    actions?: { type: string }[];
+  }[];
 }
 
 export type TripEvent =

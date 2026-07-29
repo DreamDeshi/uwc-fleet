@@ -58,6 +58,7 @@ import { ReportExceptionSheet } from "../../components/ReportExceptionSheet";
 import { ExceptionStatusCard } from "../../components/ExceptionStatusCard";
 import { useExceptionOutboxFlush } from "../../hooks/useExceptionOutbox";
 import { TripStop } from "../../types";
+import { outstandingStops } from "../../lib/stopSettled";
 
 type Nav = NativeStackNavigationProp<TripsStackParamList, "ActiveTrip">;
 type Rt = RouteProp<TripsStackParamList, "ActiveTrip">;
@@ -249,9 +250,14 @@ export function ActiveTripScreen() {
   // is driver-chosen.
   const bySeq = [...(trip.stops ?? [])].sort((a, b) => a.sequence - b.sequence);
   const deliveredStops = bySeq.filter((s) => s.status === "delivered");
-  const focused = bySeq.find((s) => s.id === focusStopId && s.status !== "delivered");
-  const activeStop = focused ?? bySeq.find((s) => s.status !== "delivered") ?? bySeq[0];
-  const upcoming = bySeq.filter((s) => s.status !== "delivered" && s.id !== activeStop?.id);
+  // OUTSTANDING, not merely not-delivered: a stop the admin verified and closed
+  // with "Do not return" (R3 Q11(a)) is settled and paid, so offering the driver
+  // a POD button for it would invite him to deliver work the office already
+  // closed. lib/stopSettled mirrors the server rule.
+  const open = outstandingStops(bySeq);
+  const focused = open.find((s) => s.id === focusStopId);
+  const activeStop = focused ?? open[0] ?? bySeq[0];
+  const upcoming = open.filter((s) => s.id !== activeStop?.id);
   const multiStop = bySeq.length > 1;
 
   const queuedFor = (s: TripStop) => findOutboxItem(outbox, s.id);
