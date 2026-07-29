@@ -32,6 +32,7 @@ import { ReportsScreen } from "../screens/ReportsScreen";
 import { SustainabilityScreen } from "../screens/SustainabilityScreen";
 import { IncentivesScreen } from "../screens/IncentivesScreen";
 import { IncentiveApprovalsScreen } from "../screens/IncentiveApprovalsScreen";
+import { ChangeRequestsScreen } from "../screens/ChangeRequestsScreen";
 import { TripsScreen } from "../screens/TripsScreen";
 import { AdminSettingsScreen } from "../screens/AdminSettingsScreen";
 import { AuditLogScreen } from "../screens/AuditLogScreen";
@@ -72,6 +73,7 @@ const NAV_GROUPS: { headingKey: string; items: NavItem[] }[] = [
         ? [{ route: "AdminExceptions", labelKey: "exception.laneTitle", icon: "warning-outline" as IoniconName }]
         : []),
       { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline" },
+      { route: "AdminChangeRequests", labelKey: "admin.nav.changeRequests", icon: "git-pull-request-outline" },
       { route: "AdminDrivers", labelKey: "admin.nav.drivers", icon: "person-outline" },
       { route: "AdminTrucks", labelKey: "admin.nav.trucks", icon: "bus-outline" },
       { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },
@@ -262,6 +264,7 @@ const SUBTITLE_KEYS: Record<string, string> = {
   AdminDashboard: "admin.subtitles.dashboard",
   AdminTrips: "admin.subtitles.trips",
   AdminIncentiveApprovals: "admin.subtitles.incentiveApprovals",
+  AdminChangeRequests: "admin.subtitles.changeRequests",
   AdminDrivers: "admin.subtitles.drivers",
   AdminPerformance: "admin.subtitles.performance",
   AdminTrucks: "admin.subtitles.trucks",
@@ -464,6 +467,11 @@ function AdminDrawerWide() {
         name="AdminIncentiveApprovals"
         component={IncentiveApprovalsScreen}
         options={{ title: t("admin.titles.incentiveApprovals") }}
+      />
+      <Drawer.Screen
+        name="AdminChangeRequests"
+        component={ChangeRequestsScreen}
+        options={{ title: t("admin.titles.changeRequests") }}
       />
       <Drawer.Screen
         name="AdminSearch"

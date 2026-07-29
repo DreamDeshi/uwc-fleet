@@ -71,6 +71,7 @@ export function AdminHomeScreen() {
   // approvals row that used to sit below the map.
   const quickTiles: { route: string; labelKey: string; icon: IoniconName; count?: number }[] = [
     { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline", count: approvalCount },
+    { route: "AdminChangeRequests", labelKey: "admin.nav.changeRequests", icon: "git-pull-request-outline" as IoniconName },
     { route: "AdminIncentives", labelKey: "admin.nav.incentives", icon: "cash-outline" },
     { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline" },
     { route: "AdminSustainability", labelKey: "admin.nav.sustainability", icon: "leaf-outline" },

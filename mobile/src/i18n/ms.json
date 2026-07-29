@@ -508,7 +508,8 @@
     "saveTemplateHint": "Guna semula laluan, hentian dan kargo ini pada tempahan akan datang dengan satu ketikan.",
     "templateName": "Nama templat",
     "templateNamePlaceholder": "cth. Larian mingguan Jabil",
-    "templateSaved": "Templat disimpan."
+    "templateSaved": "Templat disimpan.",
+    "changeRequestedToast": "Permintaan perubahan dihantar ke pejabat untuk kelulusan."
   },
   "bookingDetail": {
     "title": "Butiran Tempahan",
@@ -557,7 +558,8 @@
     "cancelConfirmBody": "Tindakan ini tidak boleh dibatalkan.",
     "keepIt": "Kekalkan",
     "yesCancel": "Ya, Batalkan",
-    "cancelledToast": "Tempahan dibatalkan."
+    "cancelledToast": "Tempahan dibatalkan.",
+    "requestChange": "Mohon perubahan"
   },
   "history": {
     "title": "Sejarah Perjalanan",
@@ -599,7 +601,8 @@
       "consignees": "Penerima Barang",
       "reports": "Laporan",
       "sustainability": "Kelestarian",
-      "settings": "Tetapan"
+      "settings": "Tetapan",
+      "changeRequests": "Permintaan perubahan"
     },
     "navGroups": {
       "overview": "Ringkasan",
@@ -1134,7 +1137,8 @@
       "consignees": "Betulkan zon, namakan semula, nyahaktif",
       "reports": "Trip, insentif & penggunaan",
       "sustainability": "Bahan api, karbon & penjimatan armada",
-      "settings": "Bahasa & keutamaan"
+      "settings": "Bahasa & keutamaan",
+      "changeRequests": "Perubahan pemohon menunggu keputusan"
     },
     "reports": {
       "reportsError": "Tidak dapat memuatkan laporan.",
@@ -1192,7 +1196,8 @@
       "consignees": "Direktori Penerima",
       "reports": "Laporan & Analitik",
       "sustainability": "Kelestarian",
-      "settings": "Tetapan"
+      "settings": "Tetapan",
+      "changeRequests": "Permintaan perubahan"
     },
     "incentives": {
       "tabTrucks": "Kadar Tuntutan Lori",
@@ -1565,5 +1570,21 @@
       "reasonTooLong": "Sebab terlalu panjang.",
       "photoRequired": "Foto diperlukan."
     }
+  },
+  "changeRequest": {
+    "loadError": "Tidak dapat memuatkan permintaan perubahan",
+    "noneWaiting": "Tiada permintaan perubahan menunggu.",
+    "awaiting": "{{count}} permintaan perubahan menunggu keputusan anda.",
+    "queueEmpty": "Tiada apa-apa untuk disemak sekarang.",
+    "whatChanged": "APA YANG PEMOHON MAHU UBAH",
+    "requestedAt": "Dimohon {{at}}",
+    "pendingPill": "Menunggu",
+    "approve": "Luluskan perubahan",
+    "reject": "Tolak",
+    "approveHint": "Kelulusan akan terus mengubah tempahan. Jika lori yang ditugaskan tidak lagi muat dengan kargo baharu, kelulusan ditolak dan anda perlu lepaskan lori itu dahulu.",
+    "rejectTitle": "Tolak perubahan ini?",
+    "rejectBody": "Tempahan kekal seperti sedia ada. Beritahu pemohon sebabnya supaya mereka boleh hantar permintaan lain.",
+    "rejectPlaceholder": "Sebab (pemohon akan lihat ini)",
+    "actionFailed": "Tidak dapat menyelesaikan keputusan"
   }
 }

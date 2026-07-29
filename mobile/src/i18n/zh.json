@@ -508,7 +508,8 @@
     "saveTemplateHint": "一键即可在下次预订中重用此路线、停靠点和货物。",
     "templateName": "模板名称",
     "templateNamePlaceholder": "例如：Jabil 每周班次",
-    "templateSaved": "模板已保存。"
+    "templateSaved": "模板已保存。",
+    "changeRequestedToast": "变更申请已发送至办公室等待批准。"
   },
   "bookingDetail": {
     "title": "预订详情",
@@ -557,7 +558,8 @@
     "cancelConfirmBody": "此操作无法撤销。",
     "keepIt": "保留",
     "yesCancel": "是的，取消",
-    "cancelledToast": "预订已取消。"
+    "cancelledToast": "预订已取消。",
+    "requestChange": "申请变更"
   },
   "history": {
     "title": "行程历史",
@@ -599,7 +601,8 @@
       "consignees": "收货方",
       "reports": "报表",
       "sustainability": "可持续发展",
-      "settings": "设置"
+      "settings": "设置",
+      "changeRequests": "变更申请"
     },
     "navGroups": {
       "overview": "概览",
@@ -1134,7 +1137,8 @@
       "consignees": "修正区域、重命名、停用",
       "reports": "行程、激励与利用率",
       "sustainability": "车队燃油、碳排放与节省",
-      "settings": "语言与偏好"
+      "settings": "语言与偏好",
+      "changeRequests": "等待决定的申请人变更"
     },
     "reports": {
       "reportsError": "无法加载报表。",
@@ -1192,7 +1196,8 @@
       "consignees": "收货方目录",
       "reports": "报表与分析",
       "sustainability": "可持续发展",
-      "settings": "设置"
+      "settings": "设置",
+      "changeRequests": "变更申请"
     },
     "incentives": {
       "tabTrucks": "罗里索赔费率",
@@ -1565,5 +1570,21 @@
       "reasonTooLong": "原因过长。",
       "photoRequired": "需要一张照片。"
     }
+  },
+  "changeRequest": {
+    "loadError": "无法加载变更申请",
+    "noneWaiting": "没有等待处理的变更申请。",
+    "awaiting": "有 {{count}} 项变更申请等待您的决定。",
+    "queueEmpty": "目前没有需要审核的内容。",
+    "whatChanged": "申请人想变更的内容",
+    "requestedAt": "申请于 {{at}}",
+    "pendingPill": "等待中",
+    "approve": "批准变更",
+    "reject": "拒绝",
+    "approveHint": "批准后会立即修改该预订。如果已指派的车辆装不下新的货量，批准会被拒绝，您需要先释放该车辆。",
+    "rejectTitle": "拒绝此变更？",
+    "rejectBody": "预订将保持不变。请告诉申请人原因，以便他们重新提交。",
+    "rejectPlaceholder": "原因（申请人可见）",
+    "actionFailed": "无法完成此决定"
   }
 }

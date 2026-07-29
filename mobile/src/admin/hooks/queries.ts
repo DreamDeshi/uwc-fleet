@@ -718,6 +718,50 @@ export function usePendingApprovals(opts: { poll?: boolean } = {}) {
 // `incentive_final` is set. Omit final_amount to confirm the proposal as-is;
 // pass it (with a reason) to edit. Refresh reports/drivers too: approving is
 // the moment the money becomes payable, so every earnings figure changes.
+export interface ChangeRequestRow {
+  id: string;
+  trip_id: string;
+  summary: string;
+  status: string;
+  version: number;
+  requested_at: string;
+  ticket_number: string;
+  truck_plate: string | null;
+  pickup_datetime: string;
+  requestor_name: string;
+  driver_name: string | null;
+}
+
+/** The dispatcher's Request Change queue — oldest pending first. */
+export function useOpenChangeRequests(opts: { poll?: boolean } = {}) {
+  const { poll = true } = opts;
+  return useQuery({
+    queryKey: ["change-requests", "open"],
+    queryFn: async () =>
+      (await api.get<{ change_requests: ChangeRequestRow[] }>("/trips/change-requests/open")).data
+        .change_requests,
+    refetchInterval: poll ? 20_000 : false,
+  });
+}
+
+/**
+ * Approve or reject a change request. Approving REPLAYS the proposal through
+ * the same validated edit path a requestor's own edit uses, so it can fail
+ * (409 TRUCK_OVERLOADED when the assigned lorry no longer fits, 400 when a
+ * consignee has been deactivated since) — surface the server message.
+ */
+export function useDecideChangeRequest() {
+  const invalidate = useInvalidate([["trips"], ["change-requests"], ["dashboard"]]);
+  return useMutation({
+    mutationFn: async (v: { tripId: string; id: string; decision: "approve" | "reject"; note?: string; version?: number }) =>
+      (await api.post(`/trips/${v.tripId}/change-request/${v.id}/${v.decision}`, {
+        ...(v.note ? { note: v.note } : {}),
+        ...(v.version !== undefined ? { expected_version: v.version } : {}),
+      })).data,
+    onSuccess: invalidate,
+  });
+}
+
 export function useApproveIncentive() {
   const invalidate = useInvalidate([
     ["trips"],

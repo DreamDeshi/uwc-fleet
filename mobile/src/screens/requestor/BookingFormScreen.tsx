@@ -19,6 +19,7 @@ import {
   useConsignees,
   useCreateTrip,
   useUpdateTrip,
+  useRequestTripChange,
   useTrip,
   useTrips,
   useUploadTripDocument,
@@ -169,6 +170,12 @@ export function BookingFormScreen() {
   const { data: editTrip } = useTrip(editTripId ?? "");
   const createTrip = useCreateTrip();
   const updateTrip = useUpdateTrip();
+  const requestChange = useRequestTripChange();
+  // ASSIGNED bookings go through the approval queue instead of writing
+  // directly (Mr. Teh A19). Derived from the LOADED trip, never from a nav
+  // param, so a booking assigned while this screen was open still routes
+  // correctly rather than attempting a write the server would refuse.
+  const isChangeRequest = isEdit && editTrip?.status === "assigned";
   const uploadDoc = useUploadTripDocument();
   const toast = useToast();
 
@@ -510,6 +517,17 @@ export function BookingFormScreen() {
         stops: stops.map((c) => ({ consignee_id: c.id })),
         cargo_details: buildCargo(),
       };
+
+      if (isChangeRequest && editTripId) {
+        // REQUEST CHANGE: the booking has a lorry, so this is a PROPOSAL for
+        // the dispatcher, not a write. Documents are deliberately NOT attached
+        // here — the change has not been approved, so there is nothing yet for
+        // paperwork to describe.
+        await requestChange.mutateAsync({ tripId: editTripId, input: payload });
+        toast(t("booking.changeRequestedToast"), "success");
+        navigation.goBack();
+        return;
+      }
 
       if (isEdit && editTripId) {
         // EDIT: save over the existing pending booking, then return to its

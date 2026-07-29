@@ -240,6 +240,23 @@ export function useUpdateTrip() {
   });
 }
 
+/**
+ * Request Change on an ASSIGNED booking (Mr. Teh A19). Same payload shape as an
+ * edit — the difference is that this creates a PROPOSAL for admin approval and
+ * changes nothing on the booking until they approve it.
+ */
+export function useRequestTripChange() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tripId, input }: { tripId: string; input: CreateTripInput }) =>
+      (await api.post(`/trips/${tripId}/change-request`, input)).data,
+    onSettled: (_d, _e, vars) => {
+      qc.invalidateQueries({ queryKey: ["trips"] });
+      qc.invalidateQueries({ queryKey: ["trip", vars.tripId] });
+    },
+  });
+}
+
 export interface StatusInput {
   tripId: string;
   action: "start" | "arrived" | "delivered";

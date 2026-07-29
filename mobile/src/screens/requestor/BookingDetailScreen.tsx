@@ -61,6 +61,10 @@ export function BookingDetailScreen() {
   // Editing is narrower than cancelling: strictly pending (the server enforces
   // the same rule — once a driver is claimed the booking is immutable).
   const canEdit = trip.status === "pending";
+  // Once a lorry is assigned the booking is no longer the requestor's to change
+  // directly (Mr. Teh A19) — but they are not stuck: Request Change sends the
+  // same edit to the dispatcher for approval.
+  const canRequestChange = trip.status === "assigned";
   const canShare = ["assigned", "in_progress", "pending_approval", "completed"].includes(trip.status);
 
   async function shareTracking() {
@@ -333,6 +337,15 @@ export function BookingDetailScreen() {
                   onPress={() => navigation.navigate("EditBooking", { tripId: trip.id })}
                   style={{ flex: 1 }}
                   icon={<Ionicons name="create-outline" size={18} color={colors.white} />}
+                />
+              ) : null}
+              {canRequestChange ? (
+                <Button
+                  variant="outline"
+                  title={t("bookingDetail.requestChange")}
+                  onPress={() => navigation.navigate("EditBooking", { tripId: trip.id })}
+                  style={{ flex: 1 }}
+                  icon={<Ionicons name="git-pull-request-outline" size={18} color={colors.navy} />}
                 />
               ) : null}
               {canCancel ? (

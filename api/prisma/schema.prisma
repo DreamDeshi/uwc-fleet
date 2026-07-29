@@ -384,16 +384,17 @@ model Trip {
   external_forwarder ExternalForwarder?
   status_history     TripStatusHistory[]
   exceptions         TripException[]     @relation("TripExceptions")
+  change_requests    TripChangeRequest[]
 
+  // The idempotency constraint itself (DG-T7). This is what makes a concurrent
+  // double-submit safe: the second INSERT loses on the unique index rather than
+  // racing the pre-check, and the handler then returns the winner's trip.
+  @@unique([requestor_id, client_request_id])
   // Keyset scan for the paged trip list (lib/tripCursor): the list orders by
   // (created_at DESC, id DESC) — same-direction columns, so this one ASC
   // composite serves it via a backward index scan. Also covers the legacy
   // newest-N limit window the other admin pages still use.
   @@index([created_at, id])
-  // The idempotency constraint itself (DG-T7). This is what makes a concurrent
-  // double-submit safe: the second INSERT loses on the unique index rather than
-  // racing the pre-check, and the handler then returns the winner's trip.
-  @@unique([requestor_id, client_request_id])
 }
 
 // ── 8. TripStop ──────────────────────────────────────────────────────
@@ -833,4 +834,60 @@ model RouteLeg {
   to_lng       Decimal  @db.Decimal(10, 7)
 
   @@id([from_key, to_key])
+}
+
+// ── 25. TripChangeRequest ────────────────────────────────────────────
+// Mr. Teh's A19 matrix (29 Jul 2026, DOCUMENT tier): once a lorry is ASSIGNED,
+// the requestor may no longer directly change anything that affects
+// auto-dispatch (delivery location, date/time, pallet quantity/size, customer).
+// Instead they click "Request Change" and it goes to admin for approval.
+//
+// WHY A TABLE AND NOT AuditLog. The in-app feedback channel stores rows as
+// AuditLog with table_name = "Feedback", and that trick was considered here and
+// rejected: AuditLog has no mutable state column, no Trip relation and no unique
+// constraint, so "pending vs approved" would be derived by scanning for a later
+// row — with NO compare-and-set to make approve-once atomic. This flow ENDS IN
+// AN ADMIN EDITING A LIVE BOOKING, so a double-approve is a real hazard.
+//
+// The record is deliberately a PROPOSAL, never a partial write: nothing on the
+// Trip changes until an admin approves, and approval replays the payload
+// through the SAME validated edit path a pending booking uses.
+model TripChangeRequest {
+  id            String              @id @default(cuid())
+  trip_id       String
+  trip          Trip                @relation(fields: [trip_id], references: [id])
+  requested_by  String // requestor User id (no FK — matches the append-only history pattern)
+  requested_at  DateTime            @default(now()) // SERVER receipt
+  // The proposed booking, in the EXACT shape PATCH /trips/:id already accepts
+  // (route_type_id, pickup_datetime, stops[], cargo_details[]). Json rather than
+  // a column per field on purpose: the editable set is already defined once by
+  // updateTripSchema, and duplicating it in columns guarantees the two drift.
+  // Approval re-validates through that same schema, so a payload stored before a
+  // validation rule changed can never bypass the new rule.
+  payload       Json
+  // Human summary from summarizeTripChanges — the SAME wording the trip timeline
+  // uses, so the dispatcher reads one vocabulary for changes.
+  summary       String
+  status        ChangeRequestStatus @default(pending)
+  decided_by    String? // admin User id
+  decided_at    DateTime?
+  // Required on reject (why the requestor did not get it) and free on approve.
+  decision_note String?
+  version       Int                 @default(0) // optimistic concurrency, as TripException
+  created_at    DateTime            @default(now())
+
+  // The dispatcher's queue: oldest pending first.
+  @@index([status, requested_at])
+  @@index([trip_id, requested_at])
+}
+
+// pending → approved | rejected, or superseded when the requestor replaces an
+// undecided request with a newer one. `superseded` exists so a trip can never
+// hold two pending requests that both get approved into conflicting states; the
+// partial unique index in the migration enforces that at the DB level too.
+enum ChangeRequestStatus {
+  pending
+  approved
+  rejected
+  superseded
 }
