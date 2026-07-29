@@ -81,9 +81,30 @@ async function loadException(tripId: string, exId: string) {
   if (!exc) throw new ApiError(404, "EXCEPTION_NOT_FOUND", "Exception not found.");
   return exc;
 }
+/**
+ * Attach the DERIVED `blocking` flag — but only for audiences entitled to it.
+ *
+ * `blocking` answers "is this report currently stopping the driver", which is
+ * an OPERATIONAL fact about the run, not part of the requestor's redacted view
+ * (lib/exceptionEvidence documents that contract as category + coarse status +
+ * timestamps ONLY). Spreading it on after the audience switch would put a
+ * second, competing decision about requestor visibility outside the one
+ * function that owns it — so it goes through here instead.
+ */
+function withBlocking<T extends object>(view: T, audience: ExceptionAudience, blocking: boolean): T {
+  return audience === "redacted" ? view : ({ ...view, blocking } as T);
+}
+
 async function reloadAndSend(res: import("express").Response, tripId: string, exId: string, audience: ExceptionAudience, status = 200) {
   const fresh = await loadException(tripId, exId);
-  res.status(status).json({ exception: serializeException(fresh, audience) });
+  // `blocking` is DERIVED from the trip pointer, never stored: an exception can
+  // now be OPEN but not blocking, because the driver continued past it (see the
+  // /continue route). The driver's card needs to tell "the office still has it"
+  // from "and I am stuck here", and those became two different things.
+  const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { open_exception_id: true } });
+  res.status(status).json({
+    exception: withBlocking(serializeException(fresh, audience), audience, trip?.open_exception_id === exId),
+  });
 }
 
 function numField(v: unknown): number | null {
@@ -407,10 +428,29 @@ async function applyTransition(opts: {
       }
       await tx.exceptionAction.create({ data: { exception_id: opts.exId, client_action_id: opts.clientActionId, type: opts.action, resolution: t.resolution ?? null, actor_id: opts.actorId, actor_role: "admin", note: opts.note ?? null } });
       if (t.closes) {
-        // Pointer clear MUST match exactly one row, else the projection and the
-        // cache pointer would disagree — throw and roll the whole close back.
+        // Clear the trip's block if this exception is the one holding it.
+        //
+        // count === 0 is now LEGITIMATE: the driver may have continued past
+        // this report (POST /continue), which clears the pointer while leaving
+        // the exception open. So the invariant is no longer "exactly one row
+        // updated" — it is "the trip is not left pointing at an exception we
+        // just closed". Re-read and assert that instead; anything else is a
+        // genuine inconsistency and still rolls the whole close back.
         const ptr = await tx.trip.updateMany({ where: { id: opts.tripId, open_exception_id: opts.exId }, data: { open_exception_id: null } });
-        if (ptr.count !== 1) throw new ApiError(409, "POINTER_INCONSISTENT", "The trip's open-exception pointer was not in the expected state; the close was rolled back.");
+        if (ptr.count !== 1) {
+          // The ONLY legitimate reason to match 0 rows is that the driver
+          // continued past this report, which leaves the pointer NULL. Any
+          // other value means the trip is pointing at some third exception
+          // while we close this one — an inconsistency that would leave the
+          // trip permanently blocked (delivery, abort and finalization all
+          // refuse, and no route can clear a pointer to a closed exception).
+          // The DB's one-open-per-trip index makes that unreachable in theory;
+          // this is the assertion that says so out loud.
+          const t2 = await tx.trip.findUnique({ where: { id: opts.tripId }, select: { open_exception_id: true } });
+          if (!t2 || t2.open_exception_id !== null) {
+            throw new ApiError(409, "POINTER_INCONSISTENT", "The trip's open-exception pointer was not in the expected state; the close was rolled back.");
+          }
+        }
       }
       await tx.auditLog.create({ data: { user_id: opts.actorId, action: `exception.${opts.action}${t.resolution ? ` (${t.resolution})` : ""}${opts.note ? `: ${opts.note}` : ""}`, table_name: "TripException", record_id: opts.exId } });
       if (t.closes) finalized = await finalizeIfNothingOutstanding(tx, opts.tripId, opts.actorId);
@@ -486,6 +526,98 @@ router.post("/:id/exception/:exId/resume", requireRole("admin"), validateBody(re
   } catch (err) { next(err); }
 });
 
+// ── POST /:id/exception/:exId/continue — the DRIVER unblocks his own trip ────
+//
+// THE PROBLEM. An open exception sets Trip.open_exception_id, which blocks
+// every delivery and the finalization on that trip. So a driver who reported a
+// problem could do nothing until an admin was at a screen: a report filed at
+// 8pm stranded a loaded truck and every remaining consignee until morning.
+//
+// THE RULE THIS IMPLEMENTS (owner ruling, 29 Jul 2026 — a design call, not a
+// question for the client, because it follows from rules he has already given):
+//
+//     the driver's "Continue trip" carries on and SETTLES NOTHING;
+//     an admin marking a stop undeliverable is the ONLY thing that pays.
+//
+// So this route deliberately writes NO resolution and NO ExceptionAction. It
+// clears the trip's BLOCK and leaves the exception exactly as it was — open,
+// unadjudicated, and still the office's to decide.
+//
+// WHY NOT CLOSE IT (the earlier design, withdrawn). Closing it with
+// `resolution: "resume"` let the driver supply the half that PAYS: pay is
+// `resolved` + `resume` + a `verify` action (services/undeliveredPay), so a
+// driver tapping continue after an admin had verified — but while the admin
+// intended Retry or Reject — moved RM77 by winning a race against the admin's
+// own CAS. Closing it any OTHER way was equally wrong in the opposite
+// direction: a closed exception is terminal (nextExceptionState throws
+// EXCEPTION_CLOSED), so no admin could ever verify it afterwards and the driver
+// silently forfeited his own R3-Q11(a) entitlement.
+//
+// Leaving it open is the only shape where the driver decides nothing at all.
+//
+// CONSEQUENCE, deliberate: `open_exception_id` now means "an exception is
+// BLOCKING this trip", not "an exception is open". Reads that want "is anything
+// open" query TripException.closed_at, which the admin lane already does.
+//
+// ⚠ KNOWN LIMITATION, deliberately shipped: while a continued report is still
+// open, the driver CANNOT file a second one. That is not this route's choice —
+// it is the DB constraint `TripException_one_open_per_trip`, a partial unique
+// index on (trip_id) WHERE closed_at IS NULL (migration
+// 20260725130100_exception_hardening_constraints). Relaxing it to
+// one-BLOCKING-per-trip is a migration, and the schema is frozen.
+// So a driver who carries on past a customer-site problem and then breaks down
+// has to phone the office. Bounded, because the office is already pushed at
+// report time (the at-report alert) and closing the first report restores his
+// ability to file. Pinned by a test so it is visible rather than discovered.
+router.post("/:id/exception/:exId/continue", requireRole("driver"), validateBody(reviewSchema), async (req, res, next) => {
+  try {
+    const { id: tripId, exId } = req.params;
+    const driverId = req.user!.id;
+
+    // Ownership BEFORE any aggregate exposure — an exception id is not a
+    // capability (same ordering as the report route).
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { driver_id: true, status: true } });
+    if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+    if (trip.driver_id !== driverId) throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+    if (trip.status !== "in_progress") {
+      throw new ApiError(409, "TRIP_NOT_IN_PROGRESS", "This trip is not in progress.");
+    }
+
+    const exc = await loadException(tripId, exId);
+    if (exc.closed_at) {
+      throw new ApiError(409, "EXCEPTION_CLOSED", "This report is already closed — the trip is not blocked by it.");
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await lockTripRow(tx, tripId); // serialize with Arrived/Delivered/report
+      // CAS on the pointer: only the exception that is ACTUALLY blocking may be
+      // continued past, and only once. A concurrent admin close (which clears
+      // the same pointer) makes this a no-op rather than a conflict — either
+      // way the driver ends up unblocked, which is all he asked for.
+      const cleared = await tx.trip.updateMany({
+        where: { id: tripId, status: "in_progress", open_exception_id: exId },
+        data: { open_exception_id: null },
+      });
+      if (cleared.count === 1) {
+        await tx.auditLog.create({
+          data: {
+            user_id: driverId,
+            // No ExceptionActionType fits "continued without deciding", and the
+            // enum is frozen — the audit row is the record. It is deliberately
+            // NOT an ExceptionAction: the action log is the adjudication trail,
+            // and this is not an adjudication.
+            action: "exception.driver_continued (trip unblocked; report left open for the office)",
+            table_name: "TripException",
+            record_id: exId,
+          },
+        });
+      }
+    });
+
+    await reloadAndSend(res, tripId, exId, "full");
+  } catch (err) { next(err); }
+});
+
 const resolveSchema = reviewSchema.extend({ resolution: z.string().min(1) });
 router.post("/:id/exception/:exId/resolve", requireRole("admin"), validateBody(resolveSchema), async (req, res, next) => {
   try {
@@ -533,7 +665,7 @@ router.get("/exceptions/open", requireRole("admin"), async (_req, res, next) => 
 router.get("/:id/exception", requireRole("driver", "admin", "requestor"), async (req, res, next) => {
   try {
     const tripId = req.params.id;
-    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { driver_id: true, requestor_id: true } });
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { driver_id: true, requestor_id: true, open_exception_id: true } });
     if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
 
     const role = req.user!.role;
@@ -547,7 +679,13 @@ router.get("/:id/exception", requireRole("driver", "admin", "requestor"), async 
       (await prisma.tripException.findFirst({ where: { trip_id: tripId, closed_at: null }, include: exceptionInclude, orderBy: [{ created_at: "desc" }, { id: "desc" }] })) ??
       (await prisma.tripException.findFirst({ where: { trip_id: tripId }, include: exceptionInclude, orderBy: [{ created_at: "desc" }, { id: "desc" }] }));
 
-    res.json({ exception: exc ? serializeException(exc, audience) : null });
+    // `blocking` derived, as in reloadAndSend: OPEN and BLOCKING are no longer
+    // the same thing once a driver has continued past a report.
+    res.json({
+      exception: exc
+        ? withBlocking(serializeException(exc, audience), audience, trip.open_exception_id === exc.id)
+        : null,
+    });
   } catch (err) {
     next(err);
   }

@@ -166,7 +166,13 @@ export async function releaseAssignedTrip(
 export interface TripExitClient {
   trip: {
     updateMany(args: {
-      where: { id: string; status: { in: ("pending" | "approved" | "in_progress")[] }; open_exception_id?: null };
+      where: {
+        id: string;
+        status: { in: ("pending" | "approved" | "in_progress")[] };
+        // "no OPEN exception on this trip" — deliberately the exception itself,
+        // not Trip.open_exception_id, which only means "currently BLOCKING".
+        exceptions?: { none: { closed_at: null } };
+      };
       data: Record<string, unknown>;
     }): Promise<{ count: number }>;
   };
@@ -225,10 +231,22 @@ export async function abortActiveTrip(
   tripId: string
 ): Promise<boolean> {
   const res = await client.trip.updateMany({
-    // open_exception_id: null — an OPEN exception atomically blocks abort: no
-    // capacity release may occur while one is open (lifecycle isolation, Phase 1
-    // hardening). The exception must be resolved first.
-    where: { id: tripId, status: { in: ["in_progress"] }, open_exception_id: null },
+    // An OPEN exception atomically blocks abort: no capacity release may occur
+    // while one is open (lifecycle isolation, Phase 1 hardening). The exception
+    // must be resolved first.
+    //
+    // ⚠ `exceptions: { none: { closed_at: null } }`, NOT `open_exception_id:
+    // null`. The pointer means "an exception is BLOCKING this trip", and the
+    // driver's Continue-trip route clears it while leaving the report OPEN — so
+    // the pointer alone would let an abort through on an unadjudicated failed
+    // stop and cancel it for RM0 (R3 Q11(a) says that stop is owed pay). The
+    // route checks this too, under the row lock; this is the atomic backstop,
+    // and it has to test the same thing the route does or it is not a backstop.
+    where: {
+      id: tripId,
+      status: { in: ["in_progress"] },
+      exceptions: { none: { closed_at: null } },
+    },
     data: { status: "cancelled", auto_dispatch_failed: false, auto_dispatch_note: null },
   });
   return res.count === 1;

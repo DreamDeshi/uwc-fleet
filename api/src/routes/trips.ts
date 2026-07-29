@@ -56,7 +56,7 @@ import {
 } from "../services/incentiveEngine";
 import { leaveDateFilter } from "../services/driverLeave";
 import { priorDeliveredDropsWhere } from "../services/dayLedger";
-import { SETTLED_UNDELIVERED_WHERE, isStopSettled } from "../services/undeliveredPay";
+import { SETTLED_UNDELIVERED_WHERE, isStopSettled, hasOpenException } from "../services/undeliveredPay";
 import { TRIP_INCLUDE } from "../lib/tripInclude";
 import { proposeDeliveredStopsIncentive } from "../services/tripFinalize";
 import { effectiveTruckRates, effectiveZonePoints } from "../services/pendingRates";
@@ -1881,9 +1881,19 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
       );
     }
     // Lifecycle isolation (Phase 1 hardening): an OPEN exception blocks abort /
-    // capacity release. The abortActiveTrip CAS also carries open_exception_id =
-    // null; this is the friendly up-front error.
-    if (trip.open_exception_id) {
+    // capacity release. This is the friendly up-front error; the authoritative
+    // check is re-done under the trip lock below.
+    //
+    // ⚠ KEYED ON THE EXCEPTION, NOT ON Trip.open_exception_id. That pointer now
+    // means "an exception is BLOCKING this trip", and a driver who taps
+    // Continue clears it while leaving the report OPEN. Reading the pointer
+    // here would let an admin abort a trip whose failed stop has not been
+    // adjudicated yet — destroying pay the client has already ruled is owed
+    // (R3 Q11(a) "Same rate paid, although not delivered"): the trip cancels
+    // for RM0, and a later Verify + Resume silently pays nothing because
+    // finalization only runs on an in_progress trip. RM52 on a single Ipoh
+    // drop, RM78 on a 2-stop run, with a 200 on every request.
+    if (await hasOpenException(prisma, id)) {
       throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before aborting this trip.");
     }
 
@@ -1902,7 +1912,11 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
           "This trip just changed state (it may have completed). Refresh and try again."
         );
       }
-      if (t2.open_exception_id) {
+      // Authoritative check, under the row lock. Same reasoning as above: an
+      // OPEN report blocks the abort whether or not it is currently blocking
+      // the driver. The report route takes this same lock, so nothing can open
+      // one between here and the CAS.
+      if (await hasOpenException(tx, id)) {
         throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before aborting this trip.");
       }
 

@@ -1,3 +1,5 @@
+import type { PrismaClient, Prisma } from "@prisma/client";
+
 /**
  * WHICH STOPS EARN — the failed-delivery pay rule. MONEY PATH.
  *
@@ -225,4 +227,23 @@ export function stopPayInstant(stop: PayableStopLike, fallback?: Date): Date | n
     case "unpaid":
       return null;
   }
+}
+
+/**
+ * Does this trip have an OPEN exception — blocking or not?
+ *
+ * ⚠ Use this, never `Trip.open_exception_id`, for any guard that means "an
+ * unadjudicated report exists". Since the driver's Continue-trip route the
+ * pointer means "an exception is BLOCKING this trip": tapping Continue clears
+ * it and leaves the report open. The two are no longer the same question, and
+ * confusing them cost the driver his R3-Q11(a) pay on the abort path.
+ *
+ * Accepts a transaction client so the caller can ask it under the trip lock.
+ */
+export async function hasOpenException(
+  client: Pick<PrismaClient, "tripException"> | Prisma.TransactionClient,
+  tripId: string
+): Promise<boolean> {
+  const open = await client.tripException.count({ where: { trip_id: tripId, closed_at: null } });
+  return open > 0;
 }

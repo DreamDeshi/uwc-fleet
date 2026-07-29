@@ -7,6 +7,7 @@ import {
   requestMoreEvidence,
   rejectException,
   resumeException,
+  continueTripPastException,
   resolveException,
   addExceptionEvidence,
   type AdminActionInput,
@@ -69,6 +70,16 @@ export function useAdminExceptionAction() {
       const fn: AdminFn = { verify: verifyException, "request-more-evidence": requestMoreEvidence, reject: rejectException, resume: resumeException }[vars.action];
       return fn(vars.tripId, vars.exId, vars.input);
     },
+    onSuccess: (_data, vars) => invalidate(vars.tripId),
+  });
+}
+
+/** Driver "Continue trip" — unblocks his own trip; never a pay decision. */
+export function useContinueTrip() {
+  const invalidate = useExceptionInvalidate();
+  return useMutation({
+    mutationFn: (vars: { tripId: string; exId: string; input: AdminActionInput }) =>
+      continueTripPastException(vars.tripId, vars.exId, vars.input),
     onSuccess: (_data, vars) => invalidate(vars.tripId),
   });
 }
