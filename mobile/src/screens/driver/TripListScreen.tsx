@@ -9,7 +9,9 @@ import { colors, layout, radius, shadow } from "../../theme";
 import { Header } from "../../components/Header";
 import { TripCard } from "../../components/TripCard";
 import { LoadingState, ErrorState, EmptyState } from "../../components/States";
-import { cargoSummary } from "../../lib/trip";
+import { totalPallets } from "../../lib/trip";
+import { formatTime } from "../../lib/format";
+import { currentStopNumber, stopsOf } from "../../lib/driverHome";
 import { ACTIVE_STATUSES, DELIVERED_STATUSES } from "../../lib/tripStatus";
 
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripList">;
@@ -71,14 +73,37 @@ export function TripListScreen() {
           contentContainerStyle={{ padding: 16, paddingTop: 4, flexGrow: 1, width: "100%", maxWidth: layout.content, alignSelf: "center" }}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
           ListEmptyComponent={<EmptyState message={t("history.empty")} icon="cube-outline" />}
-          renderItem={({ item }) => (
-            <TripCard
-              trip={item}
-              meta={`${item.ticket_number} · ${cargoSummary(item)}`}
-              showIncentive
-              onPress={() => navigation.navigate("TripDetails", { tripId: item.id })}
-            />
-          )}
+          renderItem={({ item }) => {
+            const stops = stopsOf(item);
+            // The record of work, in the driver's terms: ticket, when it leaves
+            // (only while it still hasn't), how many drops, how much cargo. No
+            // money — that lives on My Stats (approved design, 29 Jul 2026).
+            const meta = [
+              item.ticket_number,
+              item.status === "assigned" ? formatTime(item.pickup_datetime) : null,
+              t("driver.stopCount", { n: stops.length }),
+              t("driver.palletCount", { n: totalPallets(item) }),
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            const live = item.status === "in_progress";
+            return (
+              <TripCard
+                trip={item}
+                meta={meta}
+                onPress={() => navigation.navigate("TripDetails", { tripId: item.id })}
+                continueLabel={
+                  live
+                    ? t("driver.continueAtStop", {
+                        n: currentStopNumber(item),
+                        total: stops.length,
+                      })
+                    : undefined
+                }
+                onContinue={live ? () => navigation.navigate("ActiveTrip", { tripId: item.id }) : undefined}
+              />
+            );
+          }}
         />
       )}
     </View>
@@ -90,8 +115,10 @@ const styles = StyleSheet.create({
   centerCol: { width: "100%", maxWidth: layout.content, alignSelf: "center" },
   countPill: { backgroundColor: colors.yellow, paddingHorizontal: 12, paddingVertical: 4, borderRadius: radius.pill },
   countText: { color: colors.navy, fontSize: 13, fontWeight: "800" },
-  tabs: { flexDirection: "row", backgroundColor: colors.white, margin: 16, marginBottom: 8, borderRadius: radius.md, padding: 4, ...shadow.card },
-  tab: { flex: 1, height: 36, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
+  tabs: { flexDirection: "row", gap: 4, backgroundColor: colors.white, margin: 16, marginBottom: 8, borderRadius: radius.md, padding: 4, ...shadow.card },
+  // 44, not 36 — these are the driver's most-tapped controls and the design
+  // holds every target at the 44px floor.
+  tab: { flex: 1, height: 44, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
   tabActive: { backgroundColor: colors.blue },
   tabText: { fontSize: 13, fontWeight: "700", color: colors.textMuted },
   tabTextActive: { color: colors.white },

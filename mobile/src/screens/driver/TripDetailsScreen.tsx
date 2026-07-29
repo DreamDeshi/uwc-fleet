@@ -29,6 +29,7 @@ import { formatMoney, formatDate, formatTime } from "../../lib/format";
 import { incentiveAdjustment, tripMoneyState } from "../../lib/earnings";
 import { buildPayBreakdown } from "../../lib/payBreakdown";
 import { DELIVERED_STATUSES } from "../../lib/tripStatus";
+import { shouldReconcileStart } from "../../lib/startTrip";
 import { estimateTripCo2 } from "../../lib/tripCo2";
 import { consigneeDestination } from "../../lib/geo";
 import {
@@ -99,8 +100,11 @@ export function TripDetailsScreen() {
       : moneyState === "estimate" && estimate !== null
         ? t("trip.estimated")
         : undefined;
+  // greenText, not green: this is a FIGURE, and `green` on white is 3:1 — short
+  // of the 4.5:1 a driver needs reading pay in sunlight. Status pills keep the
+  // fill colour.
   const incentiveColor =
-    moneyState === "final" && incentiveValue !== "—" ? colors.green : undefined;
+    moneyState === "final" && incentiveValue !== "—" ? colors.greenText : undefined;
 
   const onStart = async () => {
     if (startInFlight.current) return;
@@ -110,17 +114,10 @@ export function TripDetailsScreen() {
       await startTrip.mutateAsync({ tripId: trip.id, action: "start" });
       navigation.replace("ActiveTrip", { tripId: trip.id });
     } catch (err) {
-      // A committed-start-then-lost-response retry usually comes back as
-      // 400 INVALID_STATUS ("Only assigned trips can be started" — the plain
-      // pre-read fires before the CAS), and only the tight read-to-CAS race
-      // returns TRIP_STATE_CHANGED. Reconcile BOTH: refetch, and if the trip
-      // is out, proceed to the active screen exactly as if the tap had
-      // succeeded (audit 2026-07-05 #7). The status===in_progress recheck is
-      // what keeps this safe — a genuine refusal (admin unassigned it, or
-      // another trip is already running) falls through to the error message
-      // with the screen refreshed to the real state.
-      const code = apiErrorCode(err);
-      if (code === "TRIP_STATE_CHANGED" || code === "INVALID_STATUS") {
+      // Reconcile a committed-then-lost start (audit 2026-07-05 #7). The rule
+      // itself lives in lib/startTrip so Home's "Start this trip" — the second
+      // entry point the approved design adds — behaves identically.
+      if (shouldReconcileStart(apiErrorCode(err))) {
         const fresh = await refetch();
         if (fresh.data?.status === "in_progress") {
           navigation.replace("ActiveTrip", { tripId: trip.id });
@@ -482,7 +479,10 @@ const styles = StyleSheet.create({
   cardLabel: { fontSize: 12, fontWeight: "700", color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 10 },
   consigneeName: { fontSize: 15, fontWeight: "700", color: colors.navy },
   consigneeSub: { fontSize: 14, color: colors.textMuted, marginTop: 4 },
-  consigneeArea: { fontSize: 13, color: colors.textFaint, marginTop: 2 },
+  // The delivery address is the human backstop for a wrong pin — the driver
+  // reads it to find the place. textFaint on white is 2.5:1, so it steps up to
+  // textMuted (approved contrast pass).
+  consigneeArea: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   stopOrderHint: { fontSize: 13, color: colors.textMuted, marginBottom: 4, lineHeight: 18 },
   stopRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
   stopRowBorder: { borderTopWidth: 1, borderTopColor: colors.bg },

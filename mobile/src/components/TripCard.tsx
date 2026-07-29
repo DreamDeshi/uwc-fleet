@@ -1,49 +1,55 @@
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { colors, radius, shadow } from "../theme";
 import { StatusBadge } from "./StatusBadge";
 import { useHolidaySet } from "../hooks/queries";
 import { dayMonth, formatMoney } from "../lib/format";
-import { tripDestination, estimateIncentive, ORIGIN_LABEL } from "../lib/trip";
+import { tripConsigneeName, estimateIncentive } from "../lib/trip";
 import { tripMoneyState } from "../lib/earnings";
 import { Trip } from "../types";
 
-// Shared compact trip row — date block + route + status badge + optional meta
-// line and incentive. One implementation replaces the near-identical cards that
-// were duplicated across the driver dashboard and trip list (audit: 4 variants
-// of the same card). The caller supplies the meta string so the same row works
-// for both driver trips (ticket · cargo) and other contexts.
+// The driver's trip row: a blue date block, where it went, what it was, and one
+// status pill. Rebuilt to the approved design (driver screens, 29 Jul 2026).
+//
+// TWO DELIBERATE CHANGES FROM THE OLD CARD:
+//
+//  1. NO MONEY BY DEFAULT (`showIncentive` now defaults to false). Every trip
+//     row used to carry an RM figure that repeated My Stats while obeying
+//     different approval rules — an "Est." on an assigned trip, a proposal on a
+//     delivered one. The design puts money on My Stats and Trip Details only.
+//     The prop survives because the money treatment below is the audited one
+//     (estimate vs proposal vs paid); nothing in the driver app passes it today.
+//  2. The title is WHERE IT WENT, not "UWC Batu Kawan → X". Every trip starts
+//     at the plant, so the origin was 14 identical characters in front of the
+//     only word that told them apart.
 export function TripCard({
   trip,
   onPress,
   meta,
   showIncentive = false,
+  continueLabel,
+  onContinue,
 }: {
   trip: Trip;
   onPress: () => void;
   meta?: string;
   showIncentive?: boolean;
+  /** Live trip only: the pinned "Continue · stop 2 of 5" action. */
+  continueLabel?: string;
+  onContinue?: () => void;
 }) {
   const { t } = useTranslation();
   const holidays = useHolidaySet();
   const dm = dayMonth(trip.pickup_datetime);
   const dim = trip.status === "cancelled" || trip.status === "rejected";
-  // incentive_earned is null until the trip completes, so an assigned /
-  // in-progress trip must show the "Est." estimate (mirroring the dashboard's
-  // AssignmentCard) — never a bare green "RM 0", which reads as "this run pays
-  // nothing". Cancelled/rejected trips pay nothing and show no amount at all.
-  //
-  // MONEY: `incentive_earned !== null` is NOT the same as "this is what you were
-  // paid". A pending_approval trip HAS an amount — the engine writes the
-  // proposal at delivery — but it is not payable until an admin approves the
-  // POD. Treating "has an amount" as finalized painted an unapproved proposal in
-  // the confident green of settled pay. It stayed hidden because such trips were
-  // absent from every driver list; surfacing them (so the driver can see the
-  // work he just finished) is what made this reachable, so the two land together.
-  // The decision itself lives in lib/earnings (pure, unit-tested) — this
-  // component cannot be imported by a test, and an untestable money rule is
-  // exactly how the bug survived.
+
+  // MONEY: classification is on STATUS, never on "an amount is present".
+  // `incentive_earned` is written at PROPOSAL (delivery), so a pending_approval
+  // trip HAS an amount while the money is still held. The decision lives in
+  // lib/earnings (pure, unit-tested) — an untestable money rule is exactly how
+  // the earlier bug survived.
   const money = tripMoneyState(trip);
   const awaiting = money === "awaiting";
   const finalized = money === "final";
@@ -56,73 +62,94 @@ export function TripCard({
       : estimate !== null
         ? formatMoney(estimate)
         : null;
+
   return (
-    <TouchableOpacity
-      activeOpacity={0.85}
-      onPress={onPress}
-      style={[styles.card, dim && { opacity: 0.7 }]}
-    >
-      <View style={styles.dateBlock}>
-        <Text style={styles.dateDay}>{dm.day}</Text>
-        <Text style={styles.dateMon}>{dm.mon}</Text>
-      </View>
-      <View style={styles.cardBody}>
-        <View style={styles.cardTop}>
-          <Text style={styles.route} numberOfLines={1}>
-            {ORIGIN_LABEL} → {tripDestination(trip)}
-          </Text>
-          <StatusBadge status={trip.status} small />
+    <View style={[styles.card, dim && { opacity: 0.7 }]}>
+      <TouchableOpacity style={styles.hit} activeOpacity={0.85} onPress={onPress}>
+        <View style={styles.dateBlock}>
+          <Text style={styles.dateDay}>{dm.day}</Text>
+          <Text style={styles.dateMon}>{dm.mon}</Text>
         </View>
-        {meta ? <Text style={styles.meta}>{meta}</Text> : null}
-        {showIncentive && rmValue !== null ? (
-          <View style={styles.rmWrap}>
-            {/* Any non-final figure wears a chip so it can never be mistaken for
-                the finalized green one (driver design goal). Amber "Est." = a
-                guess before delivery; GREY "Awaiting approval" = a real proposed
-                amount that an admin has not signed off. Grey, not orange —
-                orange is reserved for offline/queued (7 Jul design ruling). */}
-            {!finalized ? (
-              <View style={[styles.estChip, awaiting && styles.awaitingChip]}>
-                <Text style={[styles.est, awaiting && styles.awaitingText]}>
-                  {awaiting ? t("trip.awaitingApproval") : t("trip.est")}
-                </Text>
-              </View>
-            ) : null}
-            <Text
-              style={[
-                styles.rm,
-                !finalized && { color: colors.textMuted },
-                dim && { color: colors.textFaint },
-              ]}
-            >
-              {rmValue}
-            </Text>
+        <View style={styles.cardBody}>
+          <Text style={styles.title} numberOfLines={2}>
+            {tripConsigneeName(trip)}
+          </Text>
+          {meta ? <Text style={styles.meta} numberOfLines={2}>{meta}</Text> : null}
+          <View style={styles.badgeRow}>
+            <StatusBadge status={trip.status} small />
           </View>
-        ) : null}
-      </View>
-    </TouchableOpacity>
+          {showIncentive && rmValue !== null ? (
+            <View style={styles.rmWrap}>
+              {/* Any non-final figure wears a chip so it can never be mistaken
+                  for the finalized one. Amber "Est." = a guess before delivery;
+                  GREY "Awaiting approval" = a real proposed amount an admin has
+                  not signed off. Grey, not orange — orange is offline/queued. */}
+              {!finalized ? (
+                <View style={[styles.estChip, awaiting && styles.awaitingChip]}>
+                  <Text style={[styles.est, awaiting && styles.awaitingText]}>
+                    {awaiting ? t("trip.awaitingApproval") : t("trip.est")}
+                  </Text>
+                </View>
+              ) : null}
+              <Text
+                style={[
+                  styles.rm,
+                  !finalized && { color: colors.textMuted },
+                  dim && { color: colors.textFaint },
+                ]}
+              >
+                {rmValue}
+              </Text>
+            </View>
+          ) : null}
+
+          {continueLabel && onContinue ? (
+            <TouchableOpacity style={styles.continue} onPress={onContinue} activeOpacity={0.85}>
+              <Ionicons name="navigate" size={17} color={colors.white} />
+              <Text style={styles.continueText} numberOfLines={1}>{continueLabel}</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { flexDirection: "row", backgroundColor: colors.white, borderRadius: radius.lg, overflow: "hidden", marginBottom: 10, ...shadow.card },
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    overflow: "hidden",
+    marginBottom: 9,
+    ...shadow.card,
+  },
+  hit: { flexDirection: "row" },
   dateBlock: { width: 56, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center", paddingVertical: 16 },
   dateDay: { color: colors.white, fontSize: 22, fontWeight: "800" },
   dateMon: { color: colors.yellow, fontSize: 12, fontWeight: "700", letterSpacing: 0.6 },
-  cardBody: { flex: 1, padding: 12 },
-  cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
-  route: { flex: 1, fontSize: 15, fontWeight: "700", color: colors.navy },
-  meta: { fontSize: 12, color: colors.textMuted, marginTop: 4 },
+  cardBody: { flex: 1, paddingVertical: 12, paddingHorizontal: 14 },
+  title: { fontSize: 16, fontWeight: "800", color: colors.navy, lineHeight: 21 },
+  // textMuted, not textFaint — this line carries the stop and pallet counts.
+  meta: { fontSize: 12, fontWeight: "600", color: colors.textMuted, marginTop: 4 },
+  badgeRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 9 },
   rmWrap: { flexDirection: "row", alignItems: "center", gap: 7, marginTop: 8 },
-  estChip: {
-    backgroundColor: colors.tintYellow,
-    borderRadius: radius.pill,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
+  estChip: { backgroundColor: colors.tintYellow, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2 },
   est: { fontSize: 12, fontWeight: "800", color: "#A16207", textTransform: "uppercase", letterSpacing: 0.4 },
-  // Awaiting-approval money: grey, matching the Earnings breakdown chip.
   awaitingChip: { backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border },
   awaitingText: { color: colors.textMuted },
-  rm: { fontSize: 17, fontWeight: "800", color: colors.green },
+  rm: { fontSize: 17, fontWeight: "800", color: colors.greenText },
+  continue: {
+    minHeight: 44,
+    marginTop: 11,
+    borderRadius: radius.md,
+    backgroundColor: colors.blue,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+  },
+  continueText: { color: colors.white, fontSize: 14, fontWeight: "800" },
 });
