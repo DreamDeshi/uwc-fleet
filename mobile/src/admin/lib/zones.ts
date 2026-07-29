@@ -28,7 +28,7 @@ export const PLANT_ORIGIN = {
 
 export const ZONES: ZoneInfo[] = [
   { code: "P1", name: "Penang Island", lat: 5.4145, lng: 100.3294, color: colors.blue },
-  { code: "P2", name: "Juru & Perai", lat: 5.3318, lng: 100.4007, color: colors.green },
+  { code: "P2", name: "Juru & Perai & Batu Kawan", lat: 5.3318, lng: 100.4007, color: colors.green },
   { code: "P3", name: "Tasek Gelugor", lat: 5.4669, lng: 100.4884, color: colors.orange },
   { code: "K1", name: "Kulim", lat: 5.3653, lng: 100.5618, color: "#9333ea" },
   { code: "K2", name: "Sg. Petani / Kuala Ketil", lat: 5.6497, lng: 100.4878, color: "#0891b2" },

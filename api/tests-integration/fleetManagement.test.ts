@@ -191,9 +191,9 @@ describe("Fleet management — driver + truck CRUD", () => {
   it("blocks a truck change / retire while a live trip is in flight", async () => {
     const [admin, requestor, driver] = await Promise.all([loginAs(ADMIN), loginAs(REQUESTOR), loginAs(DRIVER)]);
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(DRIVERS.PLX.phone);
+    const plx = await userIdByPhone(DRIVERS.PND.phone);
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, DRIVERS.PLX.plate);
+    await approveTrip(admin, trip.id, plx, DRIVERS.PND.plate);
     await startTrip(driver, trip.id); // in_progress
 
     // Can't reassign the driver's truck mid-trip.
@@ -202,7 +202,7 @@ describe("Fleet management — driver + truck CRUD", () => {
     expect(reassign.body.error.code).toBe("DRIVER_HAS_ACTIVE_TRIP");
 
     // Can't retire the truck mid-trip.
-    const retire = await api().patch(`/api/v1/trucks/${encodeURIComponent(DRIVERS.PLX.plate)}/retire`).set(auth(admin)).send({ retired: true });
+    const retire = await api().patch(`/api/v1/trucks/${encodeURIComponent(DRIVERS.PND.plate)}/retire`).set(auth(admin)).send({ retired: true });
     expect(retire.status).toBe(409);
     expect(retire.body.error.code).toBe("TRUCK_HAS_ACTIVE_TRIP");
   });

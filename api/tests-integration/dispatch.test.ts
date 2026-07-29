@@ -16,9 +16,13 @@ import {
  * DISPATCH integration (Phase 2) — the auto-dispatch engine (autoDispatchTrip)
  * exercised through the real HTTP endpoint + Postgres.
  *
- * The seeded fleet (all cover the Penang/Kedah P-zones): PLX 2406 (16, the only
- * A1/A2 primary), PND 1888 (14, A1/A2 backup), PRJ/PQL/PPE 5292 (8), PRH 5292
- * (2). KL is a long-haul zone no truck covers.
+ * The seeded CUSTOMER pool since the 28 Jul 2026 revision: PND 1888 (14 — the
+ * A1/A2 primary, Azmi's move), PSA 5292 (14), PRJ/PQL/PPE 1804 (8),
+ * PRH 5292 (2, covers ALL zones — its old A1/A2 small-load cap is REMOVED,
+ * R3 A3). PLX 2406 (16) and PPE 2406 are INTERPLANT — never auto-dispatched
+ * for customer work, so the pool's largest truck is 14 and the 15–16-pallet
+ * band falls to manual by design (owner-approved, R3 A7). KL is a long-haul
+ * zone no truck covers.
  */
 
 async function assignedTruckMax(tripId: string): Promise<number> {
@@ -92,13 +96,37 @@ describe("DISPATCH integration — auto-dispatch engine", () => {
       expect(await assignedTruckMax(trip.id)).toBe(14);
     });
 
-    it("an order at the fleet's max fits only the largest truck (16 → PLX 2406)", async () => {
+    it("the 15–16-pallet band is ACCEPTED at booking but auto-unfulfillable → manual (28 Jul revision)", async () => {
+      // PLX (16) left the customer pool for interplant, so the pool max is 14.
+      // The booking is still accepted (CARGO_EXCEEDS_FLEET keys on the WHOLE
+      // fleet incl. PLX) and falls to needs-attention for the admin's
+      // PLX-as-backup / external-lorry call — the owner-approved design (R3 A7).
       const [requestor, admin] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN)]);
       const rt = await firstRouteTypeId(requestor);
-      const trip = await bookTrip(requestor, ["P1"], rt, pallets(16));
+      const trip = await bookTrip(requestor, ["P1"], rt, pallets(16)); // accepted: 201
+      const res = await autoDispatch(admin, trip.id);
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("NO_TRUCK_AVAILABLE");
+
+      const after = (await prisma.trip.findUnique({ where: { id: trip.id } }))!;
+      expect(after.status).toBe("pending");
+      expect(after.truck_plate).toBeNull(); // never the interplant PLX
+      expect(after.auto_dispatch_failed).toBe(true);
+      expect(after.auto_dispatch_note).toBe("No available truck has capacity for this order.");
+    });
+
+    it("the interplant shuttles are NEVER auto-assigned, even when idle and fitting", async () => {
+      // An 11-pallet P2 order fits PLX (16) and both 14s. PLX is idle — but it
+      // is interplant (email pt 1: "remove it from auto dispatch to customer /
+      // supplier delivery"), so a 14 must win.
+      const [requestor, admin] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN)]);
+      const rt = await firstRouteTypeId(requestor);
+      const trip = await bookTrip(requestor, ["P2"], rt, pallets(11));
       expect((await autoDispatch(admin, trip.id)).status).toBe(200);
       const after = (await prisma.trip.findUnique({ where: { id: trip.id } }))!;
-      expect(after.truck_plate).toBe("PLX 2406");
+      expect(after.truck_plate).not.toBe("PLX 2406");
+      expect(after.truck_plate).not.toBe("PPE 2406");
+      expect(await assignedTruckMax(trip.id)).toBe(14);
     });
 
     it("an order over the fleet's largest truck is rejected at booking (CARGO_EXCEEDS_FLEET)", async () => {
@@ -142,50 +170,50 @@ describe("DISPATCH integration — auto-dispatch engine", () => {
     );
   });
 
-  // ── Candidate filtering (A1/A2 gate + leave + roadworthy) ─────────────────
+  // ── Candidate filtering (A1/A2 primary + leave + roadworthy) ──────────────
   describe("candidate filtering", () => {
-    it("a healthy A2 order goes to the primary PLX 2406", async () => {
+    it("a healthy A2 order goes to the primary PND 1888 (Azmi's truck since 28 Jul)", async () => {
       const [requestor, admin] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN)]);
       const rt = await firstRouteTypeId(requestor);
-      const trip = await bookTrip(requestor, ["A2"], rt, pallets(2));
-      expect((await autoDispatch(admin, trip.id)).status).toBe(200);
-      expect((await prisma.trip.findUnique({ where: { id: trip.id } }))!.truck_plate).toBe("PLX 2406");
-    });
-
-    it("with PLX 2406's driver on leave, an A2 order falls to the PND 1888 backup", async () => {
-      const [requestor, admin] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN)]);
-      const rt = await firstRouteTypeId(requestor);
-      const plxDriver = await userIdByPhone(DRIVERS.PLX.phone);
-      await prisma.driverLeave.create({
-        data: { driver_id: plxDriver, start_date: pickupDateKey(), end_date: pickupDateKey() },
-      });
       const trip = await bookTrip(requestor, ["A2"], rt, pallets(2));
       expect((await autoDispatch(admin, trip.id)).status).toBe(200);
       expect((await prisma.trip.findUnique({ where: { id: trip.id } }))!.truck_plate).toBe("PND 1888");
     });
 
-    it("with PLX 2406 unroadworthy (insurance expired), an A2 order falls to PND 1888", async () => {
+    it("REGRESSION (R3 A3): with PND's driver on leave, a 2-pallet A2 order goes to PRH 5292", async () => {
+      // No named backup ("You can assign any … depend cargo size", R3 A2) and
+      // the strictly-under-2 small-load cap died with the removed rule — PRH
+      // covers A2 and a 2-pallet load fits its physical max exactly.
+      const [requestor, admin] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN)]);
+      const rt = await firstRouteTypeId(requestor);
+      const pndDriver = await userIdByPhone(DRIVERS.PND.phone);
+      await prisma.driverLeave.create({
+        data: { driver_id: pndDriver, start_date: pickupDateKey(), end_date: pickupDateKey() },
+      });
+      const trip = await bookTrip(requestor, ["A2"], rt, pallets(2));
+      expect((await autoDispatch(admin, trip.id)).status).toBe(200);
+      expect((await prisma.trip.findUnique({ where: { id: trip.id } }))!.truck_plate).toBe("PRH 5292");
+    });
+
+    it("with PND 1888 unroadworthy (insurance expired), a 9-pallet A2 order falls to PSA 5292", async () => {
+      // 9 pallets keeps PRH/the 8s out, so the only remaining fit is the other
+      // 14 — proving the roadworthiness exclusion opens A1/A2 to normal ranking.
       const [requestor, admin] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN)]);
       const rt = await firstRouteTypeId(requestor);
       await prisma.truck.update({
-        where: { plate: "PLX 2406" },
+        where: { plate: "PND 1888" },
         data: { insurance_expiry: new Date("2020-01-01T00:00:00Z") },
       });
-      const trip = await bookTrip(requestor, ["A2"], rt, pallets(2));
+      const trip = await bookTrip(requestor, ["A2"], rt, pallets(9));
       expect((await autoDispatch(admin, trip.id)).status).toBe(200);
-      expect((await prisma.trip.findUnique({ where: { id: trip.id } }))!.truck_plate).toBe("PND 1888");
+      expect((await prisma.trip.findUnique({ where: { id: trip.id } }))!.truck_plate).toBe("PSA 5292");
     });
 
-    it("when leave removes the ONLY truck that can fit + serve A2, the booking is flagged", async () => {
+    it("an A2 order too big for the whole customer pool is flagged, never given to interplant PLX", async () => {
+      // 15 pallets: PLX (16) is idle and would fit — but it is interplant.
+      // Capacity of the CUSTOMER pool (max 14), not eligibility, fails this.
       const [requestor, admin] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN)]);
       const rt = await firstRouteTypeId(requestor);
-      const plxDriver = await userIdByPhone(DRIVERS.PLX.phone);
-      await prisma.driverLeave.create({
-        data: { driver_id: plxDriver, start_date: pickupDateKey(), end_date: pickupDateKey() },
-      });
-      // 15 pallets in A2 with PLX (16) out: even under the 28-Jul widening
-      // (all lorries eligible for A1/A2) nothing else FITS — PND holds 14, the
-      // 17.5ft lorries 8, PRH 2. Capacity, not eligibility, fails the booking.
       const trip = await bookTrip(requestor, ["A2"], rt, pallets(15));
       const res = await autoDispatch(admin, trip.id);
       expect(res.status).toBe(409);
@@ -193,35 +221,31 @@ describe("DISPATCH integration — auto-dispatch engine", () => {
 
       const after = (await prisma.trip.findUnique({ where: { id: trip.id } }))!;
       expect(after.status).toBe("pending");
+      expect(after.truck_plate).toBeNull();
       expect(after.auto_dispatch_failed).toBe(true);
       expect(after.auto_dispatch_note).toBe("No available truck has capacity for this order.");
     });
 
-    it("with PLX AND PND out, an A2 order falls back to a 17.5ft lorry (widening, 28 Jul) — never PRH at its cap", async () => {
-      // Pre-28-Jul the 17.5ft lorries were fenced out of A1/A2 and this booking
-      // went to manual. The client's answer ("all lorry will go to taiping /
-      // ipoh, depend on arrangement and cargo size") opens the fallback tier;
-      // PRH 5292's < 2-pallet A1/A2 cargo cap still holds, so a 2-pallet order
-      // must land on an 8-pallet lorry, not the 1-tonne.
+    it("with BOTH 14s out, a 3-pallet A2 order falls to a 17.5ft lorry (PRH too small)", async () => {
       const [requestor, admin] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN)]);
       const rt = await firstRouteTypeId(requestor);
-      const [plxDriver, pndDriver] = await Promise.all([
-        userIdByPhone(DRIVERS.PLX.phone),
+      const [pndDriver, psaDriver] = await Promise.all([
         userIdByPhone(DRIVERS.PND.phone),
+        userIdByPhone(DRIVERS.PSA.phone),
       ]);
       await prisma.driverLeave.createMany({
-        data: [plxDriver, pndDriver].map((driver_id) => ({
+        data: [pndDriver, psaDriver].map((driver_id) => ({
           driver_id,
           start_date: pickupDateKey(),
           end_date: pickupDateKey(),
         })),
       });
-      const trip = await bookTrip(requestor, ["A2"], rt, pallets(2));
+      const trip = await bookTrip(requestor, ["A2"], rt, pallets(3));
       expect((await autoDispatch(admin, trip.id)).status).toBe(200);
 
       const after = (await prisma.trip.findUnique({ where: { id: trip.id } }))!;
       expect(after.status).toBe("assigned");
-      expect(after.truck_plate).not.toBe("PRH 5292");
+      expect(after.truck_plate).not.toBe("PRH 5292"); // 3 > its physical max of 2
       expect(await assignedTruckMax(trip.id)).toBe(8);
     });
   });

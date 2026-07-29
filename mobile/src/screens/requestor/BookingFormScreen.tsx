@@ -90,6 +90,11 @@ const PALLET_SIZES: BookablePalletSize[] = [
 // truck and can split a load — but we warn past this so the requestor knows
 // a big order may need more than one truck instead of hitting
 // CARGO_EXCEEDS_FLEET at submit.
+//
+// STAYS 16 after the 28 Jul 2026 revision, deliberately: PLX went interplant
+// (out of AUTO dispatch), but the owner-decided booking ceiling is fleet max —
+// a 15–16-pallet order is accepted and falls to MANUAL, where the admin may
+// cross-assign PLX as backup (email pt 6) or use an external lorry.
 const LARGEST_TRUCK_PALLETS = 16;
 
 // A loaded API cargo line → the outgoing shape, preserving every field so a

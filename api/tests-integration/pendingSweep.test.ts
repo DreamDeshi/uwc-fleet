@@ -197,7 +197,7 @@ describe("pending sweep — retry decoupled from the one-shot alert", () => {
     const rt = await firstRouteTypeId(requestor);
 
     const trip = await bookTrip(requestor, ["A2"], rt);
-    await approveTrip(admin, trip.id, driverId, "PLX 2406");
+    await approveTrip(admin, trip.id, driverId, "PND 1888");
     expect((await freshTrip(trip.id)).status).toBe("assigned");
 
     // The admin pulls the driver off (unassign) → pending + pinned to manual.
@@ -219,7 +219,7 @@ describe("pending sweep — retry decoupled from the one-shot alert", () => {
     expect(pendingAlertCount(trip.id)).toBe(0); // paused trips aren't even re-alerted
 
     // The admin can still MANUALLY re-assign — which clears the pin.
-    await approveTrip(admin, trip.id, driverId, "PLX 2406");
+    await approveTrip(admin, trip.id, driverId, "PND 1888");
     t = await freshTrip(trip.id);
     expect(t.status).toBe("assigned");
     expect(t.auto_dispatch_paused).toBe(false); // pin cleared on re-assign

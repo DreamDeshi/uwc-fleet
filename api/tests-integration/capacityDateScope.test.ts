@@ -26,12 +26,13 @@ import { firstRouteTypeId, ensureConsigneeInZone, pallets } from "./helpers/flow
  * physically on the truck, the driver is out); an `assigned` trip blocks and
  * counts ONLY against bookings picked up on the SAME MYT day.
  *
- * 15 pallets of 4×4 fit ONLY PLX 2406 (16) — every other truck is ≤14 — so
- * each booking below has exactly one possible truck, making the assertions
- * deterministic.
+ * 9 pallets of 4×4 fit only the two 14-pallet trucks (PND 1888 / PSA 5292 —
+ * the 16-pallet PLX 2406 is INTERPLANT since the 28 Jul 2026 revision and out
+ * of the auto pool), and Best-Fit's alphabetical tie-break makes the FIRST
+ * assignment deterministically PND 1888 — so the assertions stay exact.
  */
 
-const BIG = pallets(15); // 15 × 4×4 = 15 equivalents → only PLX 2406 (16) fits
+const BIG = pallets(9); // 9 × 4×4 → only the 14s fit; first pick = PND 1888 (alpha)
 
 /** Pickup at 09:00/10:00 MYT `daysAhead` days from now — always bookable,
  *  always inside the 07:00–18:00 operating window. */
@@ -95,20 +96,20 @@ describe("truck capacity is scoped to the pickup MYT day", () => {
     const requestor = await loginAs(REQUESTOR);
     const rt = await firstRouteTypeId(requestor);
 
-    // Day A: 15 pallets → only PLX fits → auto-assigns to PLX.
+    // Day A: 9 pallets → the 14s tie, alpha picks PND.
     const tripA = await bookBig(requestor, rt, 1, 9);
     expect((await freshTrip(tripA.id)).status).toBe("assigned");
-    expect((await freshTrip(tripA.id)).truck_plate).toBe("PLX 2406");
+    expect((await freshTrip(tripA.id)).truck_plate).toBe("PND 1888");
 
-    // Day B (a DIFFERENT MYT day): same 15-pallet order. Pre-fix, PLX's driver
-    // was excluded (holds an assigned trip, any date) and PLX's currentLoad was
-    // 15/16 — so dispatch failed with "no truck has capacity". The truck is
-    // empty on day B; it must assign.
+    // Day B (a DIFFERENT MYT day): same 9-pallet order. Pre-fix, PND's driver
+    // was excluded (holds an assigned trip, any date) and PND's currentLoad was
+    // 9/14 — so the order shunted to PSA. The truck is empty on day B; the
+    // tie-break must pick PND again.
     const tripB = await bookBig(requestor, rt, 2, 10);
     const b = await freshTrip(tripB.id);
     expect(b.auto_dispatch_failed).toBe(false);
     expect(b.status).toBe("assigned");
-    expect(b.truck_plate).toBe("PLX 2406");
+    expect(b.truck_plate).toBe("PND 1888");
   });
 
   it("MANUAL: assigning the same truck on a different day is not TRUCK_OVERLOADED", async () => {
@@ -117,8 +118,8 @@ describe("truck capacity is scoped to the pickup MYT day", () => {
     const admin = await loginAs(ADMIN);
     const rt = await firstRouteTypeId(requestor);
 
-    const plxDriver = await prisma.user.findFirstOrThrow({
-      where: { assigned_truck_plate: "PLX 2406" },
+    const pndDriver = await prisma.user.findFirstOrThrow({
+      where: { assigned_truck_plate: "PND 1888" },
       select: { id: true },
     });
 
@@ -126,10 +127,10 @@ describe("truck capacity is scoped to the pickup MYT day", () => {
     const approveA = await api()
       .patch(`/api/v1/trips/${tripA.id}/approve`)
       .set(auth(admin))
-      .send({ driver_id: plxDriver.id, truck_plate: "PLX 2406" });
+      .send({ driver_id: pndDriver.id, truck_plate: "PND 1888" });
     expect(approveA.status).toBe(200);
 
-    // Same truck, next day: the 15 pallets from day A must not count.
+    // Same truck, next day: the 9 pallets from day A must not count.
     // (force covers the soft scheduling-conflict warning only — the overload
     // check is a hard 400 that force can NOT bypass, so a pass proves the
     // capacity itself is now date-scoped.)
@@ -137,25 +138,28 @@ describe("truck capacity is scoped to the pickup MYT day", () => {
     const approveB = await api()
       .patch(`/api/v1/trips/${tripB.id}/approve`)
       .set(auth(admin))
-      .send({ driver_id: plxDriver.id, truck_plate: "PLX 2406", force: true });
+      .send({ driver_id: pndDriver.id, truck_plate: "PND 1888", force: true });
     expect(approveB.status, JSON.stringify(approveB.body)).toBe(200);
     expect((await freshTrip(tripB.id)).status).toBe("assigned");
   });
 
-  it("SAME DAY still blocks: two 15-pallet bookings on one day cannot both ride PLX", async () => {
+  it("SAME DAY still blocks: with both 14s committed, a third 9-pallet booking that day goes needs-attention", async () => {
     await setMode("auto");
     const requestor = await loginAs(REQUESTOR);
     const rt = await firstRouteTypeId(requestor);
 
+    // First and second 9-pallet orders consume BOTH 14s for the day.
     const tripA = await bookBig(requestor, rt, 1, 9);
-    expect((await freshTrip(tripA.id)).truck_plate).toBe("PLX 2406");
+    expect((await freshTrip(tripA.id)).truck_plate).toBe("PND 1888");
+    const tripB = await bookBig(requestor, rt, 1, 11);
+    expect((await freshTrip(tripB.id)).truck_plate).toBe("PSA 5292");
 
-    // Second 15-pallet order the SAME day: PLX is committed that day, nothing
-    // else fits → must NOT assign (needs-attention), same as before the fix.
-    const tripB = await bookBig(requestor, rt, 1, 14);
-    const b = await freshTrip(tripB.id);
-    expect(b.status).toBe("pending");
-    expect(b.truck_plate).toBeNull();
+    // Third 9-pallet order the SAME day: nothing left that fits → must NOT
+    // assign (needs-attention), same as before the fix.
+    const tripC = await bookBig(requestor, rt, 1, 14);
+    const c = await freshTrip(tripC.id);
+    expect(c.status).toBe("pending");
+    expect(c.truck_plate).toBeNull();
   });
 
   it("GET /trucks: current_load shows TODAY's commitment, not a future day's", async () => {
@@ -167,12 +171,12 @@ describe("truck capacity is scoped to the pickup MYT day", () => {
     // Assigned for TOMORROW: today's card must not show it as load
     // (his screenshot: "Idle · 0 trips today" yet "Load 9/14").
     const trip = await bookBig(requestor, rt, 1, 9);
-    expect((await freshTrip(trip.id)).truck_plate).toBe("PLX 2406");
+    expect((await freshTrip(trip.id)).truck_plate).toBe("PND 1888");
 
     const res = await api().get("/api/v1/trucks").set(auth(admin));
     expect(res.status).toBe(200);
-    const plx = res.body.find((t: { plate: string }) => t.plate === "PLX 2406");
-    expect(plx.current_load).toBe(0);
+    const pnd = res.body.find((t: { plate: string }) => t.plate === "PND 1888");
+    expect(pnd.current_load).toBe(0);
   });
 
   /**
@@ -188,29 +192,29 @@ describe("truck capacity is scoped to the pickup MYT day", () => {
     const rt = await firstRouteTypeId(requestor);
 
     const trip = await bookBig(requestor, rt, 1, 9); // tomorrow
-    expect((await freshTrip(trip.id)).truck_plate).toBe("PLX 2406");
+    expect((await freshTrip(trip.id)).truck_plate).toBe("PND 1888");
 
-    const plxOn = async (date?: string) => {
+    const pndOn = async (date?: string) => {
       const res = await api()
         .get(`/api/v1/trucks${date ? `?date=${date}` : ""}`)
         .set(auth(admin));
       expect(res.status).toBe(200);
-      return res.body.find((t: { plate: string }) => t.plate === "PLX 2406");
+      return res.body.find((t: { plate: string }) => t.plate === "PND 1888");
     };
 
     // Today: nothing (the 16 Jul fix).
-    expect((await plxOn(mytKeyDaysAhead(0))).current_load).toBe(0);
-    expect((await plxOn(mytKeyDaysAhead(0))).current_loading).toEqual([]);
+    expect((await pndOn(mytKeyDaysAhead(0))).current_load).toBe(0);
+    expect((await pndOn(mytKeyDaysAhead(0))).current_loading).toEqual([]);
 
-    // Tomorrow — the day it's actually booked for: the full 15 shows up. This
+    // Tomorrow — the day it's actually booked for: the full 9 shows up. This
     // is the half his screenshot couldn't see at all; before ?date= the only
     // answerable question was "what's on it today".
-    const tomorrow = await plxOn(mytKeyDaysAhead(1));
-    expect(tomorrow.current_load).toBe(15);
+    const tomorrow = await pndOn(mytKeyDaysAhead(1));
+    expect(tomorrow.current_load).toBe(9);
     expect(tomorrow.current_loading).toHaveLength(1);
 
     // The day after: empty again — the scope is one day, not "today onwards".
-    expect((await plxOn(mytKeyDaysAhead(2))).current_load).toBe(0);
+    expect((await pndOn(mytKeyDaysAhead(2))).current_load).toBe(0);
   });
 
   it("GET /trucks?date=: each loading names its ticket, destination company and cargo", async () => {
@@ -221,11 +225,11 @@ describe("truck capacity is scoped to the pickup MYT day", () => {
 
     const trip = await bookBig(requestor, rt, 1, 9);
     const fresh = await freshTrip(trip.id);
-    expect(fresh.truck_plate).toBe("PLX 2406");
+    expect(fresh.truck_plate).toBe("PND 1888");
 
     const res = await api().get(`/api/v1/trucks?date=${mytKeyDaysAhead(1)}`).set(auth(admin));
-    const plx = res.body.find((t: { plate: string }) => t.plate === "PLX 2406");
-    const [loading] = plx.current_loading;
+    const pnd = res.body.find((t: { plate: string }) => t.plate === "PND 1888");
+    const [loading] = pnd.current_loading;
 
     // (a) which ticket — the whole point of the ask; admin had to open the
     // Trips board to answer this before.
@@ -236,15 +240,15 @@ describe("truck capacity is scoped to the pickup MYT day", () => {
     expect(loading.destination).toBe(consignee.company_name);
     // (c) cargo details.
     expect(loading.cargo).toEqual([
-      expect.objectContaining({ pallet_type: "4×4", quantity: 15 }),
+      expect.objectContaining({ pallet_type: "4×4", quantity: 9 }),
     ]);
     // (d) the date of the assignment's cargo.
     expect(loading.pickup_datetime).toBe(fresh.pickup_datetime.toISOString());
     // The entries must always reconcile with the bar above them.
-    expect(loading.pallets).toBe(15);
+    expect(loading.pallets).toBe(9);
     expect(
-      plx.current_loading.reduce((s: number, l: { pallets: number }) => s + l.pallets, 0)
-    ).toBe(plx.current_load);
+      pnd.current_loading.reduce((s: number, l: { pallets: number }) => s + l.pallets, 0)
+    ).toBe(pnd.current_load);
   });
 
   it("GET /trucks: a malformed ?date= falls back to today rather than 400ing", async () => {

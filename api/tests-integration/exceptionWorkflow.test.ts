@@ -22,7 +22,7 @@ import { userIdByPhone, firstRouteTypeId, bookTrip, approveTrip, startTrip } fro
 import { uploadBuffer } from "../src/lib/cloudinary"; // the mocked adapter (vi.fn) — asserted for contract
 import { armBarrier } from "../src/lib/testHooks"; // deterministic interleaving for concurrency tests
 
-const PLX_PLATE = "PLX 2406";
+const PND_PLATE = "PND 1888";
 const PHOTO = Buffer.from("fake-jpeg-bytes");
 
 // Cached once in beforeAll — the general rate limiter is one budget per IP for
@@ -39,7 +39,7 @@ const REQUESTOR2_PHONE = "+60199990002";
 /** Book zones → assign PLX → start. Leaves the trip in_progress. */
 async function inProgressTripZones(zones: string[]) {
   const t = await bookTrip(requestor, zones, rt);
-  await approveTrip(admin, t.id, driverId, PLX_PLATE);
+  await approveTrip(admin, t.id, driverId, PND_PLATE);
   await startTrip(driver, t.id);
   return t;
 }

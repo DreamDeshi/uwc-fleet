@@ -38,7 +38,7 @@ export interface Credentials {
 
 // Seeded accounts (see prisma/seed.ts + prisma/seed-test.ts).
 export const ADMIN: Credentials = { phone: "+60100000001", password: "Password123" };
-export const DRIVER: Credentials = { phone: "+60100000101", password: "Password123" }; // PLX 2406
+export const DRIVER: Credentials = { phone: "+60100000101", password: "Password123" }; // PND 1888 (A1/A2 primary since the 28 Jul 2026 revision)
 export const REQUESTOR: Credentials = { phone: "+60199990001", password: "Password123" };
 
 /** Log in and return the access token, throwing a readable error on failure. */

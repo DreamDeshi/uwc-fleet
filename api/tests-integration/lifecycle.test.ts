@@ -26,7 +26,7 @@ import {
  *   → incentive finalized and asserted.
  */
 
-const PLX_PLATE = DRIVERS.PLX.plate;
+const PND_PLATE = DRIVERS.PND.plate;
 
 describe("FULL LIFECYCLE integration — book → assign → deliver → pay", () => {
   beforeEach(async () => {
@@ -43,7 +43,7 @@ describe("FULL LIFECYCLE integration — book → assign → deliver → pay", (
       loginAs(DRIVER),
     ]);
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(DRIVERS.PLX.phone);
+    const plx = await userIdByPhone(DRIVERS.PND.phone);
 
     // ── REQUESTOR: book ──────────────────────────────────────────────────
     const trip = await bookTrip(requestor, ["A2"], rt); // Ipoh, 6 points
@@ -55,7 +55,7 @@ describe("FULL LIFECYCLE integration — book → assign → deliver → pay", (
     expect(ownerRead.body.status).toBe("pending");
 
     // ── ADMIN: approve/assign — freezes the rate snapshot onto the trip ───
-    await approveTrip(admin, trip.id, plx, PLX_PLATE);
+    await approveTrip(admin, trip.id, plx, PND_PLATE);
     const assigned = (await prisma.trip.findUnique({ where: { id: trip.id } }))!;
     expect(assigned.status).toBe("assigned");
     expect(assigned.driver_id).toBe(plx);

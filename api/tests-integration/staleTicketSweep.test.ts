@@ -16,7 +16,7 @@ import { mytDayStart } from "../src/lib/myt";
  * scope: not-yet-started only (never in_progress or delivered), prior days only.
  */
 
-const PLX_PLATE = "PLX 2406";
+const PND_PLATE = "PND 1888";
 
 async function setManual() {
   await prisma.appSetting.upsert({
@@ -63,7 +63,7 @@ describe("stale-ticket 3am sweep — cancel prior-day undelivered, free capacity
     const rt = await firstRouteTypeId(requestor);
 
     const trip = await bookTrip(requestor, ["A2"], rt);
-    await approveTrip(admin, trip.id, driverId, PLX_PLATE);
+    await approveTrip(admin, trip.id, driverId, PND_PLATE);
     await setPickup(trip.id, priorDayPickup());
     expect((await fresh(trip.id)).status).toBe("assigned");
 
@@ -73,7 +73,7 @@ describe("stale-ticket 3am sweep — cancel prior-day undelivered, free capacity
     // Capacity refreshed: the driver + truck are free, so a NEW booking assigns
     // to them without a busy/overloaded rejection (the guards key on status).
     const trip2 = await bookTrip(requestor, ["A2"], rt);
-    await approveTrip(admin, trip2.id, driverId, PLX_PLATE);
+    await approveTrip(admin, trip2.id, driverId, PND_PLATE);
     expect((await fresh(trip2.id)).status).toBe("assigned");
   });
 
@@ -95,7 +95,7 @@ describe("stale-ticket 3am sweep — cancel prior-day undelivered, free capacity
     const rt = await firstRouteTypeId(requestor);
 
     const trip = await bookTrip(requestor, ["A2"], rt);
-    await approveTrip(admin, trip.id, driverId, PLX_PLATE);
+    await approveTrip(admin, trip.id, driverId, PND_PLATE);
     await startTrip(driver, trip.id);
     await setPickup(trip.id, priorDayPickup());
     expect((await fresh(trip.id)).status).toBe("in_progress");
@@ -113,7 +113,7 @@ describe("stale-ticket 3am sweep — cancel prior-day undelivered, free capacity
     const rt = await firstRouteTypeId(requestor);
 
     const trip = await bookTrip(requestor, ["A2"], rt);
-    await approveTrip(admin, trip.id, driverId, PLX_PLATE);
+    await approveTrip(admin, trip.id, driverId, PND_PLATE);
     await prisma.trip.update({ where: { id: trip.id }, data: { status: "completed", pickup_datetime: priorDayPickup() } });
     expect((await fresh(trip.id)).status).toBe("completed");
 

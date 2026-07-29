@@ -8,7 +8,7 @@ import { firstRouteTypeId, bookTrip, approveTrip, startTrip, userIdByPhone, DRIV
  * and a fresh (not stale) flag; a later vendor fix wins the preference.
  */
 
-const PLX = DRIVERS.PLX;
+const PND = DRIVERS.PND;
 
 describe("GPS tracking — source round-trip + preference", () => {
   beforeEach(async () => {
@@ -25,9 +25,9 @@ describe("GPS tracking — source round-trip + preference", () => {
       loginAs(DRIVER),
     ]);
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(PLX.phone);
+    const plx = await userIdByPhone(PND.phone);
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX.plate);
+    await approveTrip(admin, trip.id, plx, PND.plate);
     await startTrip(driver, trip.id);
 
     const post = await api()
@@ -76,9 +76,9 @@ describe("GPS tracking — source round-trip + preference", () => {
       loginAs(DRIVER),
     ]);
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(PLX.phone);
+    const plx = await userIdByPhone(PND.phone);
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX.plate);
+    await approveTrip(admin, trip.id, plx, PND.plate);
     await startTrip(driver, trip.id); // in_progress, but no GPS posted
 
     const live = await api().get("/api/v1/fleet/live").set(auth(admin));

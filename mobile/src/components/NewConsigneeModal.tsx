@@ -21,7 +21,7 @@ export function zoneLabel(code: string): string {
 
 export const ZONES: { code: string; name: string }[] = [
   { code: "P1", name: "Penang Island" },
-  { code: "P2", name: "Juru & Perai" },
+  { code: "P2", name: "Juru & Perai & Batu Kawan" },
   { code: "P3", name: "Tasek Gelugor" },
   { code: "K1", name: "Kulim" },
   { code: "K2", name: "Sungai Petani / Kuala Ketil" },

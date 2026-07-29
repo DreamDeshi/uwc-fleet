@@ -12,28 +12,28 @@ import { firstRouteTypeId, bookTrip, approveTrip, startTrip, userIdByPhone, DRIV
  * Isolation: users aren't truncated by resetDb, so this suite re-activates the
  * PLX driver each run (it disables it) and on teardown.
  */
-const PLX = DRIVERS.PLX;
+const PND = DRIVERS.PND;
 
-async function reactivatePlx() {
-  await prisma.user.update({ where: { phone: PLX.phone }, data: { status: "active" } }).catch(() => {});
+async function reactivatePrimary() {
+  await prisma.user.update({ where: { phone: PND.phone }, data: { status: "active" } }).catch(() => {});
 }
 
 describe("Disable guard + admin abort (in_progress de-orphan)", () => {
   beforeEach(async () => {
     await resetDb();
-    await reactivatePlx();
+    await reactivatePrimary();
   });
   afterAll(async () => {
-    await reactivatePlx();
+    await reactivatePrimary();
     await prisma.$disconnect();
   });
 
   async function startedTrip() {
     const [admin, requestor, driver] = await Promise.all([loginAs(ADMIN), loginAs(REQUESTOR), loginAs(DRIVER)]);
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(PLX.phone);
+    const plx = await userIdByPhone(PND.phone);
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX.plate);
+    await approveTrip(admin, trip.id, plx, PND.plate);
     await startTrip(driver, trip.id); // → in_progress
     return { admin, requestor, driver, plx, trip };
   }
@@ -51,9 +51,9 @@ describe("Disable guard + admin abort (in_progress de-orphan)", () => {
   it("a scheduled (assigned, not started) trip does NOT block disabling — it's reassignable", async () => {
     const [admin, requestor] = await Promise.all([loginAs(ADMIN), loginAs(REQUESTOR)]);
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(PLX.phone);
+    const plx = await userIdByPhone(PND.phone);
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX.plate); // assigned, NOT started
+    await approveTrip(admin, trip.id, plx, PND.plate); // assigned, NOT started
     const res = await api().patch(`/api/v1/users/${plx}/approve`).set(auth(admin)).send({ status: "disabled" });
     expect(res.status).toBe(200);
   });

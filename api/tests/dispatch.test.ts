@@ -62,13 +62,14 @@ describe("selectTruck — Best-Fit Decreasing (Rule A)", () => {
 
 describe("selectTruck — driver priority zones", () => {
   it("prefers a driver whose coverage includes the order zone over one who doesn't", () => {
+    // K2 order (not A1/A2, so no primary lock interferes): the 14-pallet
+    // coverer beats the smaller non-coverer — coverage outranks size.
     const candidates = [
-      truck({ plate: "PND 1888", maxPallets: 14, coverageZones: ["P1", "P2", "P3", "K1", "K2"] }),
-      truck({ plate: "PLX 2406", maxPallets: 16, coverageZones: ["A1", "A2", "P1", "P2"] }),
+      truck({ plate: "PQL 5292", maxPallets: 8, coverageZones: ["P3"] }),
+      truck({ plate: "PSA 5292", maxPallets: 14, coverageZones: ["P1", "P2", "P3", "K1", "K2"] }),
     ];
-    // Order to A2 — only PLX2406 covers A2, so it wins despite being larger.
-    const sel = selectTruck({ pallets: 6, zone: "A2" }, candidates, ADJACENCY);
-    expect(sel?.plate).toBe("PLX 2406");
+    const sel = selectTruck({ pallets: 6, zone: "K2" }, candidates, ADJACENCY);
+    expect(sel?.plate).toBe("PSA 5292");
   });
 
   it("falls back to an adjacent-zone driver when no driver covers the zone", () => {
@@ -122,89 +123,78 @@ describe("selectTruck — one active trip per driver (no consolidation onto a bu
   });
 });
 
-describe("selectTruck — A1/A2 driver-priority (INTERNAL LORRY RATE sheet)", () => {
-  // Real coverage zones from the sheet. PRH 5292 covers ALL zones but is capped
-  // to <2 pallets on A1/A2. The priorities ORDER the fleet — they are not a
-  // fence (client, 28 Jul 2026): when no priority truck is free, any fitting
-  // truck (the 17.5ft lorries) may take the order.
-  const plx = (over: Partial<TruckCandidate> = {}) =>
-    truck({ plate: "PLX 2406", maxPallets: 16, coverageZones: ["A1", "A2", "P1", "P2"], ...over });
+describe("selectTruck — A1/A2 driver-priority (28 Jul 2026 revision + R3 answers)", () => {
+  // PND 1888 is the primary since the 28 Jul revision (Azmi's A1/A2 priority
+  // moved with him, PLX 2406 → PND 1888). His R3 answers (29 Jul, DOCUMENT
+  // tier) settled the rest: NO named backup ("You can assign any … depend
+  // cargo size" — A2) and the PRH small-load rule is REMOVED ("Remove it,
+  // PRH 5292 not priority for Taiping / Ipoh" — A3).
   const pnd = (over: Partial<TruckCandidate> = {}) =>
-    truck({ plate: "PND 1888", maxPallets: 14, coverageZones: ["P1", "P2", "P3", "K1", "K2"], ...over });
+    truck({ plate: "PND 1888", maxPallets: 14, coverageZones: ["A1", "A2", "P1", "P2"], ...over });
+  const psa = (over: Partial<TruckCandidate> = {}) =>
+    truck({ plate: "PSA 5292", maxPallets: 14, coverageZones: ["P1", "P2", "P3", "K1", "K2"], ...over });
   const prh = (over: Partial<TruckCandidate> = {}) =>
     truck({ plate: "PRH 5292", maxPallets: 2, coverageZones: ["P1", "P2", "P3", "K1", "K2", "A1", "A2"], ...over });
   const prj = (over: Partial<TruckCandidate> = {}) =>
     truck({ plate: "PRJ 5292", maxPallets: 8, coverageZones: ["P1", "P2", "P3", "K1", "K2"], ...over });
 
-  it("A1: picks PLX 2406 (the primary) over PRH even for a 1-pallet load", () => {
-    const sel = selectTruck({ pallets: 1, zone: "A1" }, [plx(), prh(), prj()], ADJACENCY);
-    expect(sel?.plate).toBe("PLX 2406");
+  it("A1: picks PND 1888 (the primary) over PRH even for a 1-pallet load", () => {
+    const sel = selectTruck({ pallets: 1, zone: "A1" }, [pnd(), prh(), prj()], ADJACENCY);
+    expect(sel?.plate).toBe("PND 1888");
   });
 
-  it("A1: when PLX is absent, a 1-pallet order may go to PRH (smallest fit)", () => {
-    const sel = selectTruck({ pallets: 1, zone: "A1" }, [pnd(), prh(), prj()], ADJACENCY);
+  it("A2: while PND is free it locks the zone — a smaller fitting truck never wins", () => {
+    const sel = selectTruck({ pallets: 6, zone: "A2" }, [pnd(), psa(), prj()], ADJACENCY);
+    expect(sel?.plate).toBe("PND 1888");
+  });
+
+  it("A1: when PND is absent, a 1-pallet order goes to PRH (smallest fit)", () => {
+    const sel = selectTruck({ pallets: 1, zone: "A1" }, [psa(), prh(), prj()], ADJACENCY);
     expect(sel?.plate).toBe("PRH 5292");
   });
 
-  it("A2: when PLX is absent, a 2-pallet order excludes PRH and falls to PND (the backup)", () => {
-    const sel = selectTruck({ pallets: 2, zone: "A2" }, [pnd(), prh(), prj()], ADJACENCY);
-    expect(sel?.plate).toBe("PND 1888");
+  it("REGRESSION (R3 A3): a 2-pallet A1/A2 order MAY go to PRH now — the strictly-under-2 cap died with the removed rule", () => {
+    // The old sheet remark capped PRH to <2 pallets on A1/A2. Mr. Teh removed
+    // the rule; PRH's only remaining constraint is its physical max_pallets (2).
+    const sel = selectTruck({ pallets: 2, zone: "A2" }, [prh(), prj()], ADJACENCY);
+    expect(sel?.plate).toBe("PRH 5292"); // covers A2 + smallest fit
   });
 
-  it("A2: when PLX is available, PND (the backup) is excluded — PLX wins", () => {
-    const sel = selectTruck({ pallets: 6, zone: "A2" }, [plx(), pnd()], ADJACENCY);
-    expect(sel?.plate).toBe("PLX 2406");
-  });
-
-  it("treats a busy PLX as unavailable, opening A1/A2 to the backups", () => {
-    // PLX is out on a P2 run → not available; PND backs up the A2 order.
+  it("treats a busy PND as unavailable, opening A1/A2 to the whole fitting fleet", () => {
     const sel = selectTruck(
       { pallets: 2, zone: "A2" },
-      [plx({ currentLoad: 5, activeZones: ["P2"] }), pnd()],
+      [pnd({ currentLoad: 5, activeZones: ["P2"] }), psa(), prj()],
       ADJACENCY
     );
-    expect(sel?.plate).toBe("PND 1888");
+    // No named backup (R3 A2): normal ranking. Nobody covers A2 here, so
+    // Best-Fit picks the smallest fitting truck.
+    expect(sel?.plate).toBe("PRJ 5292");
   });
 
-  it("excludes PLX when it is already on an active A2 trip (no same-zone stacking) — falls to PND", () => {
-    // PLX is mid-delivery to A2 (currentLoad > 0). Even though the new order is
-    // also A2, the one-active-trip rule bars consolidation onto a busy driver, so
-    // the order backs up to PND rather than re-picking the in_progress PLX 2406.
+  it("excludes PND when it is already on an active A2 trip (no same-zone stacking)", () => {
     const sel = selectTruck(
       { pallets: 2, zone: "A2" },
-      [plx({ currentLoad: 5, activeZones: ["A2"] }), pnd()],
+      [pnd({ currentLoad: 5, activeZones: ["A2"] }), prj()],
       ADJACENCY
     );
-    expect(sel?.plate).toBe("PND 1888");
+    expect(sel?.plate).toBe("PRJ 5292");
   });
 
-  it("falls back to a 17.5ft lorry when no priority truck is free (widening, 28 Jul)", () => {
-    // Pre-28-Jul this returned null and the booking went to manual.
+  it("falls back to a 17.5ft lorry when the primary is not in the pool", () => {
     const sel = selectTruck({ pallets: 4, zone: "A1" }, [prj()], ADJACENCY);
     expect(sel?.plate).toBe("PRJ 5292");
   });
 
-  it("the fallback never outranks a free priority truck — PND still wins over a 17.5ft", () => {
-    const sel = selectTruck({ pallets: 4, zone: "A2" }, [pnd(), prj()], ADJACENCY);
-    expect(sel?.plate).toBe("PND 1888");
-  });
-
-  it("PRH's <2-pallet cargo cap holds even in the fallback tier — a 2-pallet order skips PRH", () => {
-    // No PLX, no PND: the preferred set is empty, so the fallback opens. It must
-    // hand the order to the 17.5ft lorry, never to PRH at/over its A1/A2 cap.
-    const sel = selectTruck({ pallets: 2, zone: "A2" }, [prh(), prj()], ADJACENCY);
-    expect(sel?.plate).toBe("PRJ 5292");
+  it("an A1/A2 order the primary cannot FIT opens the fleet — the lock only holds while PND fits", () => {
+    // 15 pallets: PND (14) is free but does not fit, so it never enters the
+    // fitting set and cannot lock the zone. Nothing else fits either → null
+    // (the customer pool's largest truck is 14 since PLX went interplant).
+    const sel = selectTruck({ pallets: 15, zone: "A2" }, [pnd(), psa(), prj()], ADJACENCY);
+    expect(sel).toBeNull();
   });
 
   it("widening never bypasses capacity — an A1 order too big for the free fleet still fails", () => {
     const sel = selectTruck({ pallets: 10, zone: "A1" }, [prj(), prh()], ADJACENCY);
-    expect(sel).toBeNull();
-  });
-
-  it("PRH alone at its cap fails closed — a 2-pallet A1 order with ONLY PRH free returns null", () => {
-    // The one spot the fallback could ever have failed open: no competitor to
-    // outrank PRH, order exactly at its physical capacity but at the A1/A2 cap.
-    const sel = selectTruck({ pallets: 2, zone: "A1" }, [prh()], ADJACENCY);
     expect(sel).toBeNull();
   });
 

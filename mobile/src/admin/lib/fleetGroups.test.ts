@@ -56,13 +56,15 @@ describe("groupFleet — reconciliation invariant (owner requirement, 28 Jul)", 
   });
 });
 
-describe("groupFleet — ship-early single-class fallback", () => {
-  it("with the SHIPPED (empty) interplant list, the whole fleet is ONE group → UI renders the flat list", () => {
-    expect(INTERPLANT_PLATES).toHaveLength(0); // the ship-early contract itself
+describe("groupFleet — the lit-up default (29 Jul 2026)", () => {
+  it("the SHIPPED interplant list names the two Batu Kawan shuttles → the grouped UI is live", () => {
+    // The ship-early contract's other half: the component shipped dormant on an
+    // empty list, and populating it (the 28 Jul revision, cleared by R3) is
+    // what lights the groups up. Must mirror docs/uwc-spec.json service_class.
+    expect([...INTERPLANT_PLATES].sort()).toEqual(["PLX 2406", "PPE 2406"]);
     const groups = groupFleet(FUTURE_FLEET, () => false);
-    expect(groups).toHaveLength(1);
-    expect(groups[0].key).toBe("customer");
-    expect(groups[0].total).toBe(FUTURE_FLEET.length);
+    expect(groups.map((g) => g.key)).toEqual(["customer", "interplant"]);
+    expect(groups.reduce((s, g) => s + g.total, 0)).toBe(FUTURE_FLEET.length);
   });
 
   it("classes with zero trucks never render a group (no empty 'Interplant' header)", () => {

@@ -27,7 +27,7 @@ import {
  * ZERO delivered stops keeps the original behaviour (cancelled, no pay) —
  * pinned by driverDisableGuard.test.ts.
  */
-const PLX = DRIVERS.PLX;
+const PND = DRIVERS.PND;
 
 describe("Admin abort with delivered stops — partial pay (28 Jul 2026)", () => {
   beforeEach(async () => {
@@ -37,7 +37,7 @@ describe("Admin abort with delivered stops — partial pay (28 Jul 2026)", () =>
     await prisma.$disconnect();
   });
 
-  /** A started 2-stop PLX trip: stop 1 → A2 (Ipoh, 6 pts), stop 2 → P1. */
+  /** A started 2-stop PND trip: stop 1 → A2 (Ipoh, 6 pts), stop 2 → P1. */
   async function startedTwoStopTrip() {
     const [admin, requestor, driver] = await Promise.all([
       loginAs(ADMIN),
@@ -45,9 +45,9 @@ describe("Admin abort with delivered stops — partial pay (28 Jul 2026)", () =>
       loginAs(DRIVER),
     ]);
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(PLX.phone);
+    const pnd = await userIdByPhone(PND.phone);
     const trip = await bookTrip(requestor, ["A2", "P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX.plate);
+    await approveTrip(admin, trip.id, pnd, PND.plate);
     await startTrip(driver, trip.id);
     const [stopA2, stopP1] = stopsBySequence(trip);
     return { admin, requestor, driver, trip, stopA2, stopP1 };
@@ -68,7 +68,7 @@ describe("Admin abort with delivered stops — partial pay (28 Jul 2026)", () =>
 
     const t = (await prisma.trip.findUnique({ where: { id: trip.id }, include: { stops: true } }))!;
     // The proposal covers the DELIVERED stop only: Ipoh (A2) = 6 points, the
-    // PLX daily deduction (2) applied once → (6 − 2) × rate. The tier (weekday
+    // PND daily deduction (2) applied once → (6 − 2) × rate. The tier (weekday
     // 11 / off-peak 13) depends on the wall clock, so assert against the
     // rate_used the finalize itself recorded rather than re-deriving it.
     expect(t.incentive_earned).not.toBeNull();
@@ -159,9 +159,9 @@ describe("Admin abort with delivered stops — partial pay (28 Jul 2026)", () =>
 
     // A genuinely full delivery still counts.
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(PLX.phone);
+    const pnd = await userIdByPhone(PND.phone);
     const full = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, full.id, plx, PLX.plate);
+    await approveTrip(admin, full.id, pnd, PND.plate);
     await startTrip(driver, full.id);
     await arriveAndDeliver(driver, full.id, stopsBySequence(full)[0].id);
     await approveIncentive(admin, full.id);
@@ -180,9 +180,9 @@ describe("Admin abort with delivered stops — partial pay (28 Jul 2026)", () =>
     // pending_approval trip no longer occupies them (same as a completed one).
     const requestor = await loginAs(REQUESTOR);
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(PLX.phone);
+    const pnd = await userIdByPhone(PND.phone);
     const next = await bookTrip(requestor, ["P1"], rt);
-    const assigned = await approveTrip(admin, next.id, plx, PLX.plate);
+    const assigned = await approveTrip(admin, next.id, pnd, PND.plate);
     expect(assigned.status).toBe("assigned");
   });
 });

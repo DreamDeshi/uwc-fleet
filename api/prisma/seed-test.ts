@@ -10,7 +10,7 @@
  *      gitignored and absent on a clean machine, so `seedConsignees()` skips and
  *      leaves ZERO consignees — every trip-seeding fixture then throws "No
  *      consignees available." We add a small synthetic set spread across the
- *      real zones (incl. A2, the PLX-2406-only zone dispatch fixtures rely on).
+ *      real zones (incl. A2, whose primary-truck dispatch fixtures rely on it).
  *
  * Idempotent: the requestor upserts by phone; synthetic consignees are only
  * created when the table is empty, so a DB that already has the real Excel
