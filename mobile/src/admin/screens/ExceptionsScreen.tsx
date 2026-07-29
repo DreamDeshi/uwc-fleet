@@ -73,6 +73,14 @@ function ExceptionDetailModal({ row, onClose, onResolved }: { row: ExceptionList
   // the append-only log is half of what pays the stop; closing with "Do not
   // return" (resume) is the other half. Keep the two in step.
   const isVerified = (exc?.actions ?? []).some((a) => a.type === "verify");
+  // ...but a verify can only ever pay a stop the driver actually REACHED
+  // (Q11(b): "if the lorry breakdown halfway, no incentive"), and a trip-level
+  // report has no stop at all. Saying "pay approved" for one of those would be
+  // a false promise on the one screen whose whole job is to state the money
+  // consequence — a `truck` report filed en route attaches to the NEXT stop,
+  // which has no arrival.
+  const canPay = Boolean(row.stop?.arrived_at);
+  const paysThisStop = isVerified && canPay;
 
   const run = async (kind: "verify" | "request-more-evidence" | "reject" | "resume" | "resolve") => {
     if (!exc) return;
@@ -139,12 +147,20 @@ function ExceptionDetailModal({ row, onClose, onResolved }: { row: ExceptionList
                   Neither is obvious from a bare verb, and an admin who taps
                   the wrong one moves real money — so the current pay state is
                   stated outright rather than left to be inferred. */}
-              <View style={[styles.payBanner, isVerified ? styles.payBannerOn : styles.payBannerOff]}>
+              <View style={[styles.payBanner, paysThisStop ? styles.payBannerOn : styles.payBannerOff]}>
                 <Text style={styles.payBannerTitle}>
-                  {isVerified ? t("exception.pay.approvedTitle") : t("exception.pay.notApprovedTitle")}
+                  {paysThisStop
+                    ? t("exception.pay.approvedTitle")
+                    : canPay
+                      ? t("exception.pay.notApprovedTitle")
+                      : t("exception.pay.noStopTitle")}
                 </Text>
                 <Text style={styles.payBannerBody}>
-                  {isVerified ? t("exception.pay.approvedBody") : t("exception.pay.notApprovedBody")}
+                  {paysThisStop
+                    ? t("exception.pay.approvedBody")
+                    : canPay
+                      ? t("exception.pay.notApprovedBody")
+                      : t("exception.pay.noStopBody")}
                 </Text>
               </View>
 
@@ -163,7 +179,7 @@ function ExceptionDetailModal({ row, onClose, onResolved }: { row: ExceptionList
                 <Text style={styles.actionGroup}>{t("exception.group.next")}</Text>
                 <Button title={t("exception.resume")} onPress={() => run("resume")} />
                 <Text style={styles.actionHint}>
-                  {isVerified ? t("exception.resumeHintVerified") : t("exception.resumeHintUnverified")}
+                  {paysThisStop ? t("exception.resumeHintVerified") : t("exception.resumeHintUnverified")}
                 </Text>
                 <Button variant="outline" title={t("exception.retry")} onPress={() => run("resolve")} />
                 <Text style={styles.actionHint}>{t("exception.retryHint")}</Text>

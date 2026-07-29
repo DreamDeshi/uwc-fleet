@@ -17,6 +17,8 @@
  */
 export interface SettleableStop {
   status: string;
+  /** REQUIRED by the rule — see the arrival guard below. */
+  arrived_at?: string | null;
   exceptions?: {
     current_state: string;
     resolution: string | null;
@@ -26,6 +28,16 @@ export interface SettleableStop {
 
 export function isStopSettled(stop: SettleableStop): boolean {
   if (stop.status === "delivered") return false;
+  // THE ARRIVAL GUARD — all THREE server conditions, not two.
+  //
+  // Q11(b), "if the lorry breakdown halfway, no incentive": a stop the driver
+  // never REACHED earns nothing and is still his to deliver. Dropping this
+  // condition here silently hid live work: the report sheet attaches a `truck`
+  // or `external` exception to the driver's NEXT stop (pending, no arrival), so
+  // a breakdown en route, verified and resumed, made that stop vanish from his
+  // rail while the server still counted it outstanding — the trip could never
+  // finalize and he was never offered a way to deliver it.
+  if (!stop.arrived_at) return false;
   return (stop.exceptions ?? []).some(
     (e) =>
       e.current_state === "resolved" &&

@@ -1531,7 +1531,9 @@
       "approvedTitle": "Pay approved for this stop",
       "approvedBody": "You verified this report. If you close it with \"Do not return\", the driver is paid for this stop at the normal rate — the same as a delivery.",
       "notApprovedTitle": "No pay approved yet",
-      "notApprovedBody": "Verify first if this was a genuine failed delivery. Without a verify, closing this report pays the driver nothing for this stop."
+      "notApprovedBody": "Verify first if this was a genuine failed delivery. Without a verify, closing this report pays the driver nothing for this stop.",
+      "noStopTitle": "No pay for this report",
+      "noStopBody": "This report is not attached to a stop the driver reached, so verifying it pays nothing. A stop he never got to earns no incentive."
     },
     "verify": "Verify — approve pay for this stop",
     "verifyHint": "Confirms the driver really could not deliver. This is the pay decision: the stop is then paid at the normal rate once you close the report with \"Do not return\".",

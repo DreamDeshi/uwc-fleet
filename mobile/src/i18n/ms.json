@@ -1509,7 +1509,9 @@
       "approvedTitle": "Bayaran diluluskan untuk hentian ini",
       "approvedBody": "Anda telah mengesahkan laporan ini. Jika anda tutup dengan \"Jangan patah balik\", pemandu dibayar untuk hentian ini pada kadar biasa — sama seperti penghantaran.",
       "notApprovedTitle": "Belum ada bayaran diluluskan",
-      "notApprovedBody": "Sahkan dahulu jika ini benar-benar penghantaran gagal. Tanpa pengesahan, menutup laporan ini tidak membayar pemandu apa-apa untuk hentian ini."
+      "notApprovedBody": "Sahkan dahulu jika ini benar-benar penghantaran gagal. Tanpa pengesahan, menutup laporan ini tidak membayar pemandu apa-apa untuk hentian ini.",
+      "noStopTitle": "Tiada bayaran untuk laporan ini",
+      "noStopBody": "Laporan ini tidak terikat pada hentian yang pemandu sampai, jadi pengesahan tidak membayar apa-apa. Hentian yang tidak dicapai tiada insentif."
     },
     "verify": "Sahkan — luluskan bayaran untuk hentian ini",
     "verifyHint": "Mengesahkan pemandu memang tidak dapat menghantar. Ini keputusan bayaran: hentian ini dibayar pada kadar biasa selepas anda tutup laporan dengan \"Jangan patah balik\".",

@@ -497,7 +497,9 @@ router.get("/exceptions/open", requireRole("admin"), async (_req, res, next) => 
       orderBy: { created_at: "asc" },
       include: {
         trip: { select: { id: true, ticket_number: true, truck_plate: true, driver: { select: { name: true } } } },
-        trip_stop: { select: { sequence: true, consignee: { select: { company_name: true } } } },
+        // arrived_at: the admin UI needs it to know whether a verify can PAY this
+        // stop at all — Q11(b), a stop the driver never reached earns nothing.
+        trip_stop: { select: { sequence: true, arrived_at: true, consignee: { select: { company_name: true } } } },
       },
     });
     res.json({
@@ -511,7 +513,7 @@ router.get("/exceptions/open", requireRole("admin"), async (_req, res, next) => 
         current_state: r.current_state,
         reason: r.reason,
         reported_at: r.reported_at,
-        stop: r.trip_stop ? { sequence: r.trip_stop.sequence, company_name: r.trip_stop.consignee.company_name } : null,
+        stop: r.trip_stop ? { sequence: r.trip_stop.sequence, arrived_at: r.trip_stop.arrived_at, company_name: r.trip_stop.consignee.company_name } : null,
       })),
     });
   } catch (err) {

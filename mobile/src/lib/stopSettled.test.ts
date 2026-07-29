@@ -8,8 +8,11 @@ import { isStopSettled, outstandingStops } from "./stopSettled";
  * disappears from his rail.
  */
 
+const ARRIVED = "2026-07-29T02:00:00.000Z";
+
 const settled = {
   status: "arrived",
+  arrived_at: ARRIVED,
   exceptions: [
     { current_state: "resolved", resolution: "resume", actions: [{ type: "verify" }] },
   ],
@@ -20,11 +23,21 @@ describe("isStopSettled", () => {
     expect(isStopSettled(settled)).toBe(true);
   });
 
+  it("NEVER REACHED (no arrival) is NOT settled, however fully adjudicated - Q11(b)", () => {
+    // "if the lorry breakdown halfway, no incentive" — the stops he never got
+    // to. The report sheet attaches a `truck`/`external` exception to the
+    // driver's NEXT stop, which is pending with no arrival, so without this the
+    // stop vanished from his rail while the server still counted it
+    // outstanding: unfinishable trip, undelivered consignee, RM66 short.
+    expect(isStopSettled({ ...settled, arrived_at: null })).toBe(false);
+    expect(isStopSettled({ status: "pending", exceptions: settled.exceptions })).toBe(false);
+  });
+
   it("a bare resume with NO verify is NOT settled", () => {
     // An admin unblocking a stuck truck has not adjudicated anything, and the
     // server pays nothing — so the stop is still the driver's to deliver.
     expect(
-      isStopSettled({ status: "arrived", exceptions: [{ current_state: "resolved", resolution: "resume", actions: [] }] })
+      isStopSettled({ status: "arrived", arrived_at: ARRIVED, exceptions: [{ current_state: "resolved", resolution: "resume", actions: [] }] })
     ).toBe(false);
   });
 
@@ -32,14 +45,15 @@ describe("isStopSettled", () => {
     expect(
       isStopSettled({
         status: "arrived",
+        arrived_at: ARRIVED,
         exceptions: [{ current_state: "resolved", resolution: "retry", actions: [{ type: "verify" }] }],
       })
     ).toBe(false);
   });
 
   it("rejected and still-open are not settled", () => {
-    expect(isStopSettled({ status: "arrived", exceptions: [{ current_state: "rejected", resolution: null }] })).toBe(false);
-    expect(isStopSettled({ status: "arrived", exceptions: [{ current_state: "reported", resolution: null }] })).toBe(false);
+    expect(isStopSettled({ status: "arrived", arrived_at: ARRIVED, exceptions: [{ current_state: "rejected", resolution: null }] })).toBe(false);
+    expect(isStopSettled({ status: "arrived", arrived_at: ARRIVED, exceptions: [{ current_state: "reported", resolution: null }] })).toBe(false);
   });
 
   it("a DELIVERED stop is never 'settled undelivered'", () => {
@@ -48,8 +62,8 @@ describe("isStopSettled", () => {
 
   it("no exceptions at all, or an older API that omits the field → not settled", () => {
     // Absent field must degrade to the pre-Q11(a) behaviour, never to "settled".
-    expect(isStopSettled({ status: "arrived", exceptions: [] })).toBe(false);
-    expect(isStopSettled({ status: "arrived" })).toBe(false);
+    expect(isStopSettled({ status: "arrived", arrived_at: ARRIVED, exceptions: [] })).toBe(false);
+    expect(isStopSettled({ status: "arrived", arrived_at: ARRIVED })).toBe(false);
   });
 });
 
@@ -58,8 +72,8 @@ describe("outstandingStops", () => {
     const stops = [
       { id: "a", status: "delivered" },
       { id: "b", ...settled },
-      { id: "c", status: "pending" },
-      { id: "d", status: "arrived" },
+      { id: "c", status: "pending", arrived_at: null },
+      { id: "d", status: "arrived", arrived_at: ARRIVED },
     ];
     expect(outstandingStops(stops).map((s) => s.id)).toEqual(["c", "d"]);
   });
