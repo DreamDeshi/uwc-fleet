@@ -38,19 +38,42 @@ interface StopRow {
   zone_points: number;
   stop_status: string;
   delivered_at: Date;
+  /** Set on a paid-undelivered row (R3 Q11(a)); its pay instant. */
+  arrived_at?: Date | null;
+  /** current_state of a stop-attached exception, if any. */
+  exception_state?: string | null;
+}
+
+/** The instant a row's pay attributes to — mirrors undeliveredPay. */
+function payInstant(s: StopRow): Date {
+  return s.stop_status === "delivered" ? s.delivered_at : s.arrived_at!;
 }
 
 // In-memory evaluator for exactly the where-shape priorDeliveredDropsWhere
 // builds — the test-side stand-in for Postgres applying it to trip_stops.
-// Returns the matching prior drops IN DELIVERED ORDER (as trips.ts queries).
+// Returns the matching prior drops IN PAY-INSTANT ORDER (as trips.ts sorts).
+//
+// The where is now an OR of two branches (29 Jul 2026): delivered stops bounded
+// on delivered_at, and paid-undelivered ones (arrived + a resolved stop
+// exception) bounded on arrived_at.
 function ledgerDrops(stops: StopRow[], where: PriorDeliveredDropsWhere) {
+  const [deliveredBranch, undeliveredBranch] = where.OR;
+  const inWindow = (at: Date | null | undefined, w: { gte: Date; lt: Date }) =>
+    at != null && at >= w.gte && at < w.lt;
   return stops
-    .filter((s) => s.stop_status === where.status)
-    .filter((s) => s.delivered_at >= where.delivered_at.gte && s.delivered_at < where.delivered_at.lt)
+    .filter((s) => {
+      const asDelivered =
+        s.stop_status === deliveredBranch.status && inWindow(s.delivered_at, deliveredBranch.delivered_at);
+      const asUndelivered =
+        s.stop_status !== "delivered" &&
+        inWindow(s.arrived_at, undeliveredBranch.arrived_at) &&
+        s.exception_state === undeliveredBranch.exceptions.some.current_state;
+      return asDelivered || asUndelivered;
+    })
     .filter((s) => s.driver_id === where.trip.driver_id)
     .filter((s) => where.trip.status.in.includes(s.trip_status as "in_progress" | "pending_approval" | "completed"))
     .filter((s) => s.trip_id !== where.trip.id.not)
-    .sort((a, b) => a.delivered_at.getTime() - b.delivered_at.getTime())
+    .sort((a, b) => payInstant(a).getTime() - payInstant(b).getTime())
     .map((s) => ({ zoneCode: s.zone_code, zonePoints: s.zone_points }));
 }
 
@@ -101,14 +124,23 @@ describe("priorDeliveredDropsWhere — the ledger's semantics, pinned", () => {
     expect(where.trip.status).toEqual({ in: ["in_progress", "pending_approval", "completed"] });
   });
 
-  it("only counts drops delivered before this group's first confirm ([dayStart, anchor))", () => {
-    expect(where.delivered_at).toEqual({ gte: dayStart, lt: anchor });
+  it("only counts drops earned before this group's first confirm ([dayStart, anchor))", () => {
+    // Both branches carry the SAME window — a paid-undelivered stop is bounded
+    // on its arrival because that is the instant its pay attributes to.
+    expect(where.OR[0].delivered_at).toEqual({ gte: dayStart, lt: anchor });
+    expect(where.OR[1].arrived_at).toEqual({ gte: dayStart, lt: anchor });
   });
 
-  it("excludes the trip being finalized and scopes to the driver's delivered stops", () => {
+  it("excludes the trip being finalized and scopes to the driver", () => {
     expect(where.trip.id).toEqual({ not: "tB" });
     expect(where.trip.driver_id).toBe("d1");
-    expect(where.status).toBe("delivered");
+  });
+
+  it("counts delivered stops AND paid-undelivered ones (R3 Q11(a))", () => {
+    expect(where.OR[0].status).toBe("delivered");
+    expect(where.OR[1].status).toEqual({ not: "delivered" });
+    // The admin's resolution is what puts an undelivered stop on the ledger.
+    expect(where.OR[1].exceptions).toEqual({ some: { current_state: "resolved" } });
   });
 });
 
@@ -225,6 +257,61 @@ describe("overlapping trips — the RM88→RM55 double-first-drop hole (MONEY)",
     const b = finalizeTrip(otherDriver, "tB", "d1", 6);
     expect(b.dropPoints).toEqual([6]); // fresh for THIS driver
     expect(b.deductionApplied).toBe(2); // and it's his day's first drop
+    expect(b.incentiveThisTrip).toBe(44);
+  });
+
+  // ── R3 Q11(a): a paid-undelivered stop on the ledger ──────────────────────
+  it("MONEY: a PAID-UNDELIVERED earlier stop demotes a later same-zone delivery to a repeat", () => {
+    // Driver reached Ipoh at 10:00, couldn't deliver, admin RESOLVED it → that
+    // stop earns. Trip B then delivers Ipoh at 10:30. The zone's first-drop
+    // slot is already spent, so B is a 1-pt repeat and the deduction is not
+    // re-applied — the same shape as two real deliveries.
+    // ⚠ This is the R4 question: whether a failed attempt claims the slot.
+    const withFailed: StopRow[] = [
+      {
+        ...stops[0],
+        stop_status: "arrived",
+        arrived_at: new Date("2026-06-22T02:00:00Z"), // 10:00 MYT
+        exception_state: "resolved",
+      },
+      stops[1], // delivered Ipoh 10:30 MYT
+    ];
+    const b = finalizeTrip(withFailed, "tB", "d1", 6);
+    expect(b.dropPoints).toEqual([1]);
+    expect(b.deductionApplied).toBe(0);
+    expect(b.incentiveThisTrip).toBe(11);
+  });
+
+  it("a REJECTED exception leaves the ledger empty — the later delivery pays full", () => {
+    // The admin's no-pay lever: a rejected stop earns nothing and claims no
+    // zone slot, so trip B is still the day's first Ipoh drop.
+    const withRejected: StopRow[] = [
+      {
+        ...stops[0],
+        stop_status: "arrived",
+        arrived_at: new Date("2026-06-22T02:00:00Z"),
+        exception_state: "rejected",
+      },
+      stops[1],
+    ];
+    const b = finalizeTrip(withRejected, "tB", "d1", 6);
+    expect(b.dropPoints).toEqual([6]);
+    expect(b.deductionApplied).toBe(2);
+    expect(b.incentiveThisTrip).toBe(44);
+  });
+
+  it("a stop the driver NEVER REACHED never reaches the ledger (Q11(b))", () => {
+    const neverReached: StopRow[] = [
+      {
+        ...stops[0],
+        stop_status: "pending",
+        arrived_at: null,
+        exception_state: "resolved", // even so: no arrival, no pay, no slot
+      },
+      stops[1],
+    ];
+    const b = finalizeTrip(neverReached, "tB", "d1", 6);
+    expect(b.dropPoints).toEqual([6]);
     expect(b.incentiveThisTrip).toBe(44);
   });
 

@@ -56,6 +56,7 @@ import {
 } from "../services/incentiveEngine";
 import { leaveDateFilter } from "../services/driverLeave";
 import { priorDeliveredDropsWhere } from "../services/dayLedger";
+import { payAttributionInstant, SETTLED_UNDELIVERED_WHERE } from "../services/undeliveredPay";
 import { effectiveTruckRates, effectiveZonePoints } from "../services/pendingRates";
 import { truckExpiryIssues } from "../services/truckEligibility";
 import { getRoute } from "../services/routeLegs";
@@ -1871,13 +1872,33 @@ async function proposeDeliveredStopsIncentive(
 ): Promise<number | null> {
   if (!trip.truck) throw new ApiError(400, "TRUCK_NOT_ASSIGNED", "This trip has no truck assigned.");
 
-  // This trip's delivered drops, in delivered order, each with its zone's
-  // full destination points. Scored stop-by-stop (per-zone-per-day), summed.
-  const thisTripStops = await tx.tripStop.findMany({
-    where: { trip_id: trip.id, status: "delivered" },
-    orderBy: { delivered_at: "asc" },
-    include: { consignee: { select: { zone_code: true } } },
+  // This trip's EARNING drops, each with its zone's full destination points.
+  // Scored stop-by-stop (per-zone-per-day), summed.
+  //
+  // Two kinds earn (services/undeliveredPay.ts owns the rule):
+  //   - delivered stops, anchored on delivered_at (unchanged);
+  //   - stops the driver REACHED but could not deliver, whose stop-attached
+  //     exception the admin resolved — R3 Q11(a) "Same rate paid, although not
+  //     delivered" — anchored on arrived_at.
+  // A stop the driver never reached still earns nothing (Q11(b)), and a
+  // rejected exception is the admin's no-pay lever.
+  const candidateStops = await tx.tripStop.findMany({
+    where: {
+      trip_id: trip.id,
+      OR: [{ status: "delivered" }, SETTLED_UNDELIVERED_WHERE],
+    },
+    include: {
+      consignee: { select: { zone_code: true } },
+      exceptions: { select: { current_state: true } },
+    },
   });
+  // Normalise to ONE pay instant per stop, then order by it — the engine's
+  // per-zone-per-day scoring depends on the sequence the driver worked in, and
+  // an undelivered stop's instant is its arrival, not a delivery it never had.
+  const thisTripStops = candidateStops
+    .map((s) => ({ ...s, delivered_at: payAttributionInstant(s) }))
+    .filter((s) => s.delivered_at !== null)
+    .sort((a, b) => a.delivered_at!.getTime() - b.delivered_at!.getTime());
   const zoneCodes = [...new Set(thisTripStops.map((s) => dropZoneCode(s, s.consignee.zone_code)))];
   const rateRows = await tx.destinationRate.findMany({
     where: { zone_code: { in: zoneCodes } },
@@ -1902,13 +1923,23 @@ async function proposeDeliveredStopsIncentive(
     // OTHER in_progress/completed trips (see dayLedger.ts).
     const priorStopsToday = await tx.tripStop.findMany({
       where: priorDeliveredDropsWhere({ driverId, excludeTripId: trip.id, dayStart: group.dayStart, anchor: group.anchor }),
-      orderBy: { delivered_at: "asc" },
-      select: { zone_code: true, zone_points: true, consignee: { select: { zone_code: true } } },
+      select: {
+        zone_code: true, zone_points: true, arrived_at: true, delivered_at: true, status: true,
+        consignee: { select: { zone_code: true } },
+        exceptions: { select: { current_state: true } },
+      },
     });
-    const priorDrops = priorStopsToday.map((s) => {
-      const zone = dropZoneCode(s, s.consignee.zone_code);
-      return { zoneCode: zone, zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone) };
-    });
+    // Ordered by each stop's OWN pay instant (delivered_at, or arrival for a
+    // paid-undelivered one) — the same normalisation this trip's stops get.
+    const priorDrops = [...priorStopsToday]
+      .sort(
+        (a, b) =>
+          (payAttributionInstant(a)?.getTime() ?? 0) - (payAttributionInstant(b)?.getTime() ?? 0)
+      )
+      .map((s) => {
+        const zone = dropZoneCode(s, s.consignee.zone_code);
+        return { zoneCode: zone, zonePoints: dropZonePoints(s, pointsByZone.get(zone), zone) };
+      });
     const zonesDeliveredEarlierToday = priorDrops.map((d) => d.zoneCode);
     const priorPointsToday = scoreDrops(priorDrops).reduce((a, b) => a + b, 0);
     const drops = group.stops.map((s) => {
@@ -1994,7 +2025,12 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
         throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before aborting this trip.");
       }
 
-      const deliveredCount = await tx.tripStop.count({ where: { trip_id: id, status: "delivered" } });
+      // EARNING stops, not merely delivered ones: a trip whose stops were all
+      // reached-but-undeliverable and resolved still owes pay (R3 Q11(a)), so
+      // it must take the approval lane rather than cancelling unpaid.
+      const deliveredCount = await tx.tripStop.count({
+        where: { trip_id: id, OR: [{ status: "delivered" }, SETTLED_UNDELIVERED_WHERE] },
+      });
 
       if (deliveredCount === 0) {
         // Nothing delivered → the original abort: cancelled, no pay (breakdown /
@@ -2475,7 +2511,13 @@ router.patch(
         await tx.auditLog.create({ data: { user_id: req.user!.id, action: "stop.delivered", table_name: "TripStop", record_id: stop.id } });
         await recordTripEvent(tx, { tripId: id, event: "stop_delivered", stopId: stop.id, actorId: req.user!.id });
 
-        const remainingStops = await tx.tripStop.count({ where: { trip_id: id, status: { not: "delivered" } } });
+        // OUTSTANDING stops — not delivered AND not settled as paid-undelivered.
+        // Without the NOT, a stop the admin resolved under R3 Q11(a) would sit
+        // "not delivered" forever, the trip could never finalize, and the pay it
+        // just earned would never propose.
+        const remainingStops = await tx.tripStop.count({
+          where: { trip_id: id, status: { not: "delivered" }, NOT: SETTLED_UNDELIVERED_WHERE },
+        });
         if (remainingStops > 0) {
           // More stops to go — no money moves. (Barrier: a report may still open
           // against the remaining trip after this NON-final delivery commits.)
