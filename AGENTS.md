@@ -274,6 +274,24 @@ Platform:
 &#x20; changing it reintroduces a known APK launch-crash).
 \- Code runs on Hermes — no dynamic `import()` tricks, no `Intl` beyond what
 &#x20; Hermes provides.
+\- RUNTIME CONFIG MUST COME FROM `expo.extra`, NEVER FROM A NATIVE CONFIG
+&#x20; BLOCK. EAS Update strips `android.config` and `ios.config` out of the OTA
+&#x20; manifest — native config cannot change over the air, so it is not served.
+&#x20; In a build with `expo-updates`, `Constants.expoConfig` is read from the
+&#x20; APPLIED UPDATE, not from the config compiled into the binary, so
+&#x20; `Constants.expoConfig.android.config.*` reads back `undefined` on any APK
+&#x20; that has taken an OTA — even though the value IS in the built manifest and
+&#x20; the native feature works.
+&#x20; This fails SILENTLY and looks like a broken feature, not a broken config:
+&#x20; it disabled every driver and requestor map for days (29 Jul 2026) while the
+&#x20; admin fleet map, which never consulted the flag, kept rendering.
+&#x20; Survives the manifest: `extra.*`, `version`, `runtimeVersion`, `slug`,
+&#x20; `scheme`, `ios.bundleIdentifier`, `android.package`. Stripped:
+&#x20; `android.config`, `ios.config`.
+&#x20; If a running app needs to know about native config, MIRROR it into
+&#x20; `expo.extra` and pin the mirror with a test — see
+&#x20; `mobile/src/lib/appConfig.test.ts`, which fails the build if the mirror and
+&#x20; the real value drift apart.
 
 Text and layout:
 

@@ -76,6 +76,8 @@
     "extra": {
       "//": "Production API on Railway. For local dev against your machine, set this to your LAN IP, e.g. http://192.168.100.154:3000 (localhost only works on the iOS simulator).",
       "apiUrl": "https://uwc-api-production.up.railway.app",
+      "//googleMapsConfigured": "MIRROR of android.config.googleMaps.apiKey being non-empty. EAS Update STRIPS android.config/ios.config from the OTA manifest, so runtime code can never read the key back — it must read this flag instead. Keep the two in step; tests/appConfig.test.ts fails the build if they drift. See src/lib/maps.ts.",
+      "googleMapsConfigured": true,
       "eas": {
         "projectId": "6cb19185-a273-4dad-9993-bc3ef859cc17"
       }
