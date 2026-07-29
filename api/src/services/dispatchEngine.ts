@@ -18,6 +18,7 @@
  *   driver is free. Hard constraint: never exceed a truck's max_pallets.
  */
 import { Prisma } from "@prisma/client";
+import { TRIP_INCLUDE } from "../lib/tripInclude";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
 import { sendPushNotifications } from "../lib/pushNotifications";
@@ -259,18 +260,9 @@ export interface DispatchResult {
 }
 
 function loadTripWithRelations(id: string) {
-  return prisma.trip.findUnique({
-    where: { id },
-    include: {
-      requestor: { select: { id: true, name: true, phone: true } },
-      driver: { select: { id: true, name: true, phone: true } },
-      truck: true,
-      route_type: true,
-      stops: { include: { consignee: true }, orderBy: { sequence: "asc" } },
-      cargo_details: true,
-      documents: { orderBy: { uploaded_at: "desc" } },
-    },
-  });
+  // TRIP_INCLUDE, not a copy: this result is returned to the client in place of
+  // the route's payload, so the two must be the SAME type, not merely equal.
+  return prisma.trip.findUnique({ where: { id }, include: TRIP_INCLUDE });
 }
 
 /**

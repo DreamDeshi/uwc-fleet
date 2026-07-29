@@ -129,12 +129,14 @@ describe("failed-delivery pay (R3 Q11a) — through Postgres", () => {
     const stopId = t.stops[0].id;
     await failStopAndResolve(t.id, stopId);
 
-    // With every stop settled, the trip must be able to finalize. The driver
-    // has nothing left to deliver, so the admin closes it out via abort — which
-    // now recognises the settled stop as EARNING, not as an unpaid cancel.
-    const abort = await api().patch(`/api/v1/trips/${t.id}/abort`).set(auth(admin)).send({ reason: "all stops undeliverable" });
-    expect(abort.status, JSON.stringify(abort.body)).toBe(200);
-
+    // ⚠ NO ABORT. Settling the LAST outstanding stop must finalize the trip on
+    // its own. There is no further delivery event coming, so if closing the
+    // exception did not finalize, this trip would sit in_progress forever: the
+    // pay would never propose, the driver would be locked out of every other
+    // trip by the one-active guard, and the truck's capacity would never free.
+    // The 3am sweep deliberately never touches in_progress, so nothing else
+    // would rescue it — pay would exist only if an admin happened to hit Abort,
+    // which files a `cancelled` timeline event on a trip that is being paid.
     const after = await freshTrip(t.id);
     expect(after.status).toBe("pending_approval"); // the approval lane, NOT cancelled
     expect(num(after.incentive_earned)).toBe(await expectedRm(t.id, 6));
@@ -211,6 +213,63 @@ describe("failed-delivery pay (R3 Q11a) — through Postgres", () => {
     const stops = await prisma.tripStop.findMany({ where: { trip_id: t.id }, orderBy: { sequence: "asc" } });
     expect(stops[0].points_awarded).toBe(6); // the failed-but-paid first drop
     expect(stops[1].points_awarded).toBe(1); // the delivered repeat
+  });
+
+  it("the driver is FREED and the truck released once the settled trip finalizes", async () => {
+    // The operational half of the blocker above: a trip stuck in_progress locks
+    // its driver out of every other trip (DRIVER_ALREADY_ON_TRIP).
+    const t = await startedTrip(["A2"]);
+    await failStopAndResolve(t.id, t.stops[0].id);
+    expect((await freshTrip(t.id)).status).toBe("pending_approval");
+
+    const next = await bookTrip(requestor, ["K1"], rt);
+    const assigned = await api()
+      .patch(`/api/v1/trips/${next.id}/approve`)
+      .set(auth(admin))
+      .send({ driver_id: driverId, truck_plate: PND_PLATE });
+    expect(assigned.status, JSON.stringify(assigned.body)).toBe(200);
+  });
+
+  it("the RATE TIER is set by the delivery confirm, never by a failed stop's arrival", async () => {
+    // ⚠ FROZEN ITEM (AGENTS.md): which timestamp selects a whole-trip rate.
+    // The day-group anchor is a MINIMUM, so letting an arrival in could only
+    // ever drag the tier EARLIER — off-peak into peak — and systematically
+    // UNDERPAY. Worked case: Ipoh failed at 17:45, Kulim delivered at 18:20.
+    // Anchoring on the arrival rates the whole group weekday RM11 (RM77);
+    // anchoring on the delivery confirm rates it off-peak RM13 (RM91).
+    const t = await startedTrip(["A2", "K1"]);
+    await failStopAndResolve(t.id, t.stops[0].id);
+    await deliverStop(t.id, t.stops[1].id);
+
+    // Backdate to straddle 18:00 MYT, then re-finalize from scratch so the
+    // engine re-runs against a pinned clock (the suite otherwise runs on the
+    // real one, which is exactly how this went unnoticed).
+    const arrivedAt = new Date("2026-07-29T09:45:00Z"); // 17:45 MYT — peak
+    const deliveredAt = new Date("2026-07-29T10:20:00Z"); // 18:20 MYT — off-peak
+    await prisma.tripStop.update({ where: { id: t.stops[0].id }, data: { arrived_at: arrivedAt } });
+    await prisma.tripStop.update({ where: { id: t.stops[1].id }, data: { delivered_at: deliveredAt } });
+    await prisma.trip.update({
+      where: { id: t.id },
+      data: { status: "in_progress", incentive_earned: null, rate_used: null, deduction_applied: null },
+    });
+    const abort = await api().patch(`/api/v1/trips/${t.id}/abort`).set(auth(admin)).send({ reason: "re-finalize" });
+    expect(abort.status, JSON.stringify(abort.body)).toBe(200);
+
+    const after = await freshTrip(t.id);
+    // The OFF-PEAK rate, chosen by the 18:20 delivery — not the 17:45 arrival.
+    expect(num(after.rate_used)).toBe(13);
+    // Ipoh 6 (settled, still paid) + Kulim 3 − deduction 2 = 7 × 13 = RM91.
+    expect(num(after.incentive_earned)).toBe(91);
+  });
+
+  it("an ALL-FAILED trip still gets a rate — it falls back to the arrival", async () => {
+    // The one case where an arrival may set the tier: no delivery exists to
+    // re-rate, so the only instant available is when he was there.
+    const t = await startedTrip(["A2"]);
+    await failStopAndResolve(t.id, t.stops[0].id);
+    const after = await freshTrip(t.id);
+    expect(num(after.rate_used)).toBeGreaterThan(0);
+    expect(num(after.incentive_earned)).toBe(await expectedRm(t.id, 6));
   });
 
   // ── The two halves of the adjudication, end to end ────────────────────────

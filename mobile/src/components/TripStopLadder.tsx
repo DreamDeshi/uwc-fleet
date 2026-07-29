@@ -8,6 +8,7 @@ import { stopsOf } from "../lib/driverHome";
 import { requiresCustomsDoc } from "../lib/activeTripStage";
 import { totalPallets, ORIGIN_LABEL } from "../lib/trip";
 import type { Trip, TripStop } from "../types";
+import { isStopSettled } from "../lib/stopSettled";
 
 // The stop ladder on the driver's Home card: the pickup, then every drop, on a
 // single rail. Before the run it reads as a plan; during the run the same
@@ -28,7 +29,10 @@ export function TripStopLadder({ trip, running }: { trip: Trip; running: boolean
   const stops = stopsOf(trip);
   if (stops.length === 0) return null;
 
-  const currentIdx = stops.findIndex((s) => s.status !== "delivered");
+  // The rail's "you are here" marker follows the first OUTSTANDING stop —
+  // a settled paid-undelivered stop (R3 Q11(a)) is finished work, not the
+  // driver's next job. See lib/stopSettled.
+  const currentIdx = stops.findIndex((s) => !isStopSettled(s) && s.status !== "delivered");
   const pallets = totalPallets(trip);
 
   return (

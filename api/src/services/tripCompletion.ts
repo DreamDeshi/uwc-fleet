@@ -161,11 +161,28 @@ export function firstDeliveredAt(stops: { delivered_at: Date | null }[]): Date |
  * trip fell back to `pickup_datetime` — bucketing real pay into the wrong month
  * whenever pickup and the attempt straddle a month end.
  *
- * STRICTLY ADDITIVE by construction: a non-null `delivered_at` always wins, so
- * this can never move a trip that already had one. The widening fields are
- * OPTIONAL — a caller that selects only `delivered_at` gets exactly the old
- * behaviour rather than a silently wrong answer. Every money-bucket caller
- * selects them; see the queries in routes/reports.ts.
+ * ⚠ This is the EARLIEST earning instant across the whole trip, so a settled
+ * ARRIVAL that precedes every delivery confirm DOES become the key — a trip
+ * that failed a stop at 23:40 on 31 Jul and delivered another at 00:20 on
+ * 1 Aug now buckets into July, where before it bucketed into August. That is
+ * intended: this function's contract is to mirror what finalization scored
+ * against, and finalization's first day-group anchors on exactly that instant
+ * (routes/trips proposeDeliveredStopsIncentive). A month key that disagreed
+ * with the ledger would put the payroll sheet and the pay in different months —
+ * the failure this helper exists to prevent. It shifts a pay PERIOD, never an
+ * amount, and it cannot double-pay: a stop's settled-ness is frozen at
+ * finalization (a closed exception cannot transition, and an open one blocks
+ * finalization outright).
+ *
+ * Within ONE stop a non-null `delivered_at` always wins, so a delivered stop is
+ * never re-keyed to its own arrival. The widening fields are OPTIONAL — a caller
+ * that selects only `delivered_at` gets exactly the old behaviour rather than a
+ * silently wrong answer. Every money-bucket caller selects them; see the queries
+ * in routes/reports.ts.
+ *
+ * NOT the rate-tier anchor. Which timestamp selects a whole-trip RATE is a
+ * frozen item and stays on the delivery confirm — see the rateAnchor comment in
+ * services/tripFinalize.
  */
 export interface EarningStopLike {
   delivered_at: Date | null;

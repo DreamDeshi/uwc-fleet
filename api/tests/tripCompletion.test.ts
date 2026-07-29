@@ -450,14 +450,20 @@ describe("firstEarningInstant - R3 Q11(a) widening of the month bucket", () => {
     ).toBe(arrived);
   });
 
-  it("is STRICTLY ADDITIVE - a delivery confirm always wins", () => {
-    // Ordering guarantee: this can never move a trip that already had one, so
-    // no historical trip re-buckets when this ships.
+  it("within ONE stop a delivery confirm always wins over its own arrival", () => {
     expect(
       firstEarningInstant([{ ...settled(arrived), status: "delivered", delivered_at: delivered }])
     ).toBe(delivered);
-    // Even when the settled stop's arrival is EARLIER than the delivery, the
-    // earliest earning instant across the trip is what wins - here the arrival.
+  });
+
+  it("ACROSS stops it is the EARLIEST earning instant - a settled arrival CAN win", () => {
+    // Deliberate, and NOT "strictly additive": a trip that failed a stop at
+    // 23:40 on 31 Jul and delivered another at 00:20 on 1 Aug now buckets into
+    // July where it used to bucket into August. This function's contract is to
+    // mirror what finalization scored against, and finalization's first
+    // day-group anchors on exactly this instant — a month key that disagreed
+    // with the ledger would put the payroll sheet and the pay in different
+    // months. It moves a pay PERIOD, never an amount.
     expect(firstEarningInstant([settled(arrived), { delivered_at: delivered }])).toBe(arrived);
   });
 

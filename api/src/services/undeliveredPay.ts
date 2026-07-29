@@ -109,6 +109,24 @@ export const EARNING_STOP_SELECT = {
 } as const;
 
 /**
+ * The same three fields as an `include` fragment, for queries that INCLUDE a
+ * stop's relations rather than select its columns (the trip payload, the
+ * dispatch engine). Exposing them lets a CLIENT tell a settled stop from an
+ * outstanding one — mobile/src/lib/stopSettled.ts mirrors the predicate.
+ *
+ * Both trip includes must carry it or TypeScript rejects assigning one result
+ * to the other; that friction is deliberate, since a payload that omits it
+ * makes every stop read as outstanding.
+ */
+export const SETTLED_EXCEPTION_INCLUDE = {
+  select: {
+    current_state: true,
+    resolution: true,
+    actions: { where: { type: "verify" as const }, select: { type: true }, take: 1 },
+  },
+} as const;
+
+/**
  * SQL superset bound for "this trip EARNED something inside [gte, lt)" — the
  * OR of a delivered stop in the window and a settled-undelivered stop whose
  * ARRIVAL is in the window. Report queries that bounded only on `delivered_at`
@@ -164,6 +182,19 @@ export function stopPayEligibility(stop: PayableStopLike): PayEligibility {
   // Reached, but nobody adjudicated it (still open) or it was rejected.
   if (!hasResolvedStopException(stop)) return "unpaid";
   return "undelivered_paid";
+}
+
+/**
+ * True when this stop is SETTLED as paid-undelivered — closed and paid, with
+ * nothing left for the driver to do. The "is this stop still outstanding?"
+ * question, for the API's default-stop picker and for the driver app's
+ * next-stop pickers (mobile/src/lib/stopSettled.ts mirrors this).
+ *
+ * Distinct from `stopEarns`: a DELIVERED stop earns but is not "settled
+ * undelivered", and a stop with an open exception is outstanding, not settled.
+ */
+export function isStopSettled(stop: PayableStopLike): boolean {
+  return stopPayEligibility(stop) === "undelivered_paid";
 }
 
 /** True when the stop earns at all (either path). */
