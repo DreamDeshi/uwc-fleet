@@ -170,6 +170,12 @@ function tripsFor(state: string) {
   }
 }
 
+const DEPARTMENTS = [
+  { id: "d-1", name: "Logistics" },
+  { id: "d-2", name: "Production" },
+  { id: "d-3", name: "Quality Assurance" },
+];
+
 const ME = {
   id: "drv-1",
   phone: "+60100000901",
@@ -206,6 +212,7 @@ async function mockApi(page: Page, state: string) {
     if (url.includes("/users/me")) return json(ME);
     if (url.includes("/fuel/history")) return json(fuelHistory());
     if (url.includes("/holidays")) return json([]);
+    if (/\/departments(\?|$)/.test(url)) return json(DEPARTMENTS);
     if (/\/trips(\?|$)/.test(url)) return json(tripsFor(state));
     // Anything else this screen touches (push token, settings, health…) — a
     // benign 200 so nothing hangs and no request escapes to a real server.
@@ -250,6 +257,53 @@ test("home · day finished", async ({ page }) => {
 
 test("home · no trips today", async ({ page }) => {
   await shoot(page, "no_trips", "05-no-trips");
+});
+
+// ── The screens either side of Home ────────────────────────────────────────
+
+test("sign in", async ({ page }) => {
+  await mockApi(page, "before");
+  await page.goto(APP);
+  await page.getByPlaceholder("12-345 6789").waitFor({ timeout: 30_000 });
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: path.join(SHOTS, "07-login.png"), fullPage: true });
+});
+
+test("register · step 1", async ({ page }) => {
+  await mockApi(page, "before");
+  await page.goto(APP);
+  await page.getByText("Create Account", { exact: true }).first().click();
+  await page.getByText("Personal Details").first().waitFor({ timeout: 20_000 });
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: path.join(SHOTS, "08-register-1.png"), fullPage: true });
+});
+
+test("register · step 2", async ({ page }) => {
+  await mockApi(page, "before");
+  await page.goto(APP);
+  await page.getByText("Create Account", { exact: true }).first().click();
+  await page.getByPlaceholder("e.g. Ahmad Razak Bin Abdullah").fill("Ahmad Faizal Bin Rahman");
+  await page.getByPlaceholder("e.g. H5234").fill("H5234");
+  await page.getByText("Select your department").click();
+  await page.getByText("Logistics", { exact: true }).last().click();
+  await page.getByPlaceholder("12-345 6789").last().fill("123456789");
+  await page.getByText("Next", { exact: true }).click();
+  await page.getByText("Confirm Password", { exact: true }).first().waitFor({ timeout: 20_000 });
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: path.join(SHOTS, "09-register-2.png"), fullPage: true });
+});
+
+test("profile", async ({ page }) => {
+  await mockApi(page, "before");
+  await page.goto(APP);
+  await page.getByPlaceholder("12-345 6789").fill("100000901");
+  await page.getByPlaceholder("Enter your password").fill("fixture");
+  await page.getByText("Sign In", { exact: true }).click();
+  await page.getByText(/Hi, Ahmad Faizal/).first().waitFor({ timeout: 30_000 });
+  await page.getByText("Profile", { exact: true }).last().click();
+  await page.getByText("Ahmad Faizal", { exact: true }).first().waitFor({ timeout: 15_000 });
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: path.join(SHOTS, "10-profile.png"), fullPage: true });
 });
 
 test("trips list", async ({ page }) => {

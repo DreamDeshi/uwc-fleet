@@ -107,16 +107,22 @@ export function RegisterScreen({ navigation }: Props) {
         <Text style={styles.headerSub}>{t("register.subtitle")}</Text>
       </View>
 
-      {/* Progress */}
-      <View style={styles.progressWrap}>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressBar, { backgroundColor: colors.blue }]} />
-          <View style={[styles.progressBar, { backgroundColor: step >= 1 ? colors.blue : colors.border }]} />
+      {/* Numbered stepper (frame 03). The design's own step-2 frame still drew
+          the old two-bar meter; the stepper is the stated intent ("Numbered
+          stepper, two steps, no surprises"), so it runs on BOTH steps rather
+          than swapping the progress control halfway through the form. */}
+      <View style={styles.stepperWrap}>
+        <View style={styles.stepper}>
+          <StepDot n={1} active={step >= 0} />
+          <Text style={[styles.stepLabel, step === 0 && styles.stepLabelActive]}>
+            {t("register.stepPersonal")}
+          </Text>
+          <View style={styles.stepLine} />
+          <StepDot n={2} active={step >= 1} />
+          <Text style={[styles.stepLabel, step === 1 && styles.stepLabelActive]}>
+            {t("register.stepPassword")}
+          </Text>
         </View>
-        <Text style={styles.progressLabel}>
-          {t("register.stepOf", { current: step + 1, total: 2 })} —{" "}
-          {step === 0 ? t("register.stepPersonal") : t("register.stepPassword")}
-        </Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
@@ -256,15 +262,43 @@ export function RegisterScreen({ navigation }: Props) {
   );
 }
 
+// One numbered circle in the stepper: filled blue once reached, hollow before.
+function StepDot({ n, active }: { n: number; active: boolean }) {
+  return (
+    <View style={[styles.stepDot, active ? styles.stepDotActive : styles.stepDotIdle]}>
+      <Text style={[styles.stepDotText, active && styles.stepDotTextActive]}>{n}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 20 },
   headerTitle: { color: colors.white, fontSize: 20, fontWeight: "800" },
   headerSub: { color: "rgba(255,255,255,0.7)", fontSize: 14, marginTop: 8 },
-  progressWrap: { paddingHorizontal: 20, paddingTop: 16, width: "100%", maxWidth: layout.content, alignSelf: "center" },
-  progressTrack: { flexDirection: "row", gap: 6 },
-  progressBar: { flex: 1, height: 5, borderRadius: 3 },
-  progressLabel: { fontSize: 13, color: colors.textMuted, fontWeight: "600", marginTop: 6 },
+  stepperWrap: {
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  stepper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    width: "100%",
+    maxWidth: layout.content,
+    alignSelf: "center",
+  },
+  stepDot: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  stepDotActive: { backgroundColor: colors.blue },
+  stepDotIdle: { borderWidth: 2, borderColor: colors.border },
+  stepDotText: { fontSize: 13, fontWeight: "800", color: colors.textFaint },
+  stepDotTextActive: { color: colors.white },
+  stepLine: { flex: 1, height: 2, backgroundColor: colors.border },
+  stepLabel: { fontSize: 13, fontWeight: "700", color: colors.textFaint },
+  stepLabelActive: { fontWeight: "800", color: colors.blue },
   body: { padding: 20, paddingBottom: 32, width: "100%", maxWidth: layout.content, alignSelf: "center" },
   roleLabel: {
     fontSize: 14,
