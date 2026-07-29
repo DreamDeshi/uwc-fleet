@@ -58,6 +58,7 @@ import { leaveDateFilter } from "../services/driverLeave";
 import { priorDeliveredDropsWhere } from "../services/dayLedger";
 import { SETTLED_UNDELIVERED_WHERE, isStopSettled, hasOpenException } from "../services/undeliveredPay";
 import { sha256Hex } from "../lib/exceptionFingerprint";
+import { changeRequestsEnabled } from "../lib/featureFlags";
 import { TRIP_INCLUDE } from "../lib/tripInclude";
 import { proposeDeliveredStopsIncentive } from "../services/tripFinalize";
 import { effectiveTruckRates, effectiveZonePoints } from "../services/pendingRates";
@@ -1951,6 +1952,15 @@ function editableTripFingerprint(trip: {
   return sha256Hex(Buffer.from([trip.route_type_id, trip.pickup_datetime.toISOString(), stops, cargo].join("~")));
 }
 
+/**
+ * Feature gate for the four Request Change routes. 404 rather than 403: while
+ * the feature is off it should be invisible, not merely forbidden — the same
+ * discipline the exception router uses.
+ */
+function assertChangeRequestsEnabled(): void {
+  if (!changeRequestsEnabled()) throw new ApiError(404, "NOT_FOUND", "Not found.");
+}
+
 // ── Request Change (Mr. Teh A19, 29 Jul 2026 — DOCUMENT tier) ───────────────
 //
 // > "once a lorry is assigned, the requestor should not be able to directly
@@ -2005,6 +2015,7 @@ router.post(
   validateBody(updateTripSchema),
   async (req, res, next) => {
     try {
+      assertChangeRequestsEnabled();
       const { id } = req.params;
       const input = req.body as UpdateTripInput;
 
@@ -2110,6 +2121,7 @@ async function tx_notifyAdminsOfChangeRequest(tripId: string, summary: string): 
 // collide with /trips/:id/change-request.
 router.get("/change-requests/open", requireRole("admin"), async (_req, res, next) => {
   try {
+    assertChangeRequestsEnabled();
     const rows = await prisma.tripChangeRequest.findMany({
       where: { status: "pending" },
       orderBy: { requested_at: "asc" }, // oldest first — longest wait served first
@@ -2157,6 +2169,7 @@ router.post(
   validateBody(changeDecisionSchema),
   async (req, res, next) => {
     try {
+      assertChangeRequestsEnabled();
       const { id, crId } = req.params;
       const { note, expected_version } = req.body as { note?: string; expected_version?: number };
       if (!note || note.trim() === "") {
@@ -2221,6 +2234,7 @@ router.post(
   validateBody(changeDecisionSchema),
   async (req, res, next) => {
     try {
+      assertChangeRequestsEnabled();
       const { id, crId } = req.params;
       const { note, expected_version } = req.body as { note?: string; expected_version?: number };
 
@@ -2381,12 +2395,24 @@ router.post(
         // scores against the snapshot. Carried-forward stops are skipped so
         // their assignment-era lock survives (see priorSnapshot above).
         //
-        // ⚠ OPEN QUESTION (R4): which rate era a NEWLY ADDED destination should
-        // take — the trip's assignment era, or the approval era it is priced at
-        // here. Something must be chosen (a new stop has no prior snapshot);
-        // this takes the current era, which is what a fresh assignment would do.
-        // Not inferred as settled — flagged for the owner.
-        await snapshotStopZonePoints(tx, id, { onlyUnsnapshotted: true });
+        // A destination ADDED by this change takes the trip's ASSIGNMENT era,
+        // not today's (owner ruling, 29 Jul 2026): consistency WITHIN a trip
+        // beats matching a fresh assignment. Otherwise one approval could leave
+        // a trip carrying two stops priced from two different rate eras, and
+        // nobody reading the pay breakdown could tell why.
+        //
+        // The instant comes from the trip's own history. Falls back to now only
+        // for a trip with no recorded assignment (pre-history rows) — the same
+        // answer as before this ruling, and the only honest default.
+        const assignedEvent = await tx.tripStatusHistory.findFirst({
+          where: { trip_id: id, event: { in: ["assigned", "reassigned"] } },
+          orderBy: { created_at: "desc" },
+          select: { created_at: true },
+        });
+        await snapshotStopZonePoints(tx, id, {
+          onlyUnsnapshotted: true,
+          era: assignedEvent?.created_at,
+        });
 
         await tx.auditLog.create({
           data: { user_id: req.user!.id, action: `trip.change_request_approved: ${changeNote}`, table_name: "Trip", record_id: id },

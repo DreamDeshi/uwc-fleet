@@ -23,7 +23,7 @@ import { BrandLogo } from "../../components/BrandLogo";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { AttentionPanel, attentionHasRows } from "../components/AttentionPanel";
 import { AdminSearchButton } from "../components/AdminSearchButton";
-import { exceptionsEnabled } from "../../lib/featureFlags";
+import { exceptionsEnabled, changeRequestsEnabled } from "../../lib/featureFlags";
 import { AdminFleetMap } from "../platform/map";
 import { DashboardWide } from "./DashboardWide";
 
@@ -71,7 +71,9 @@ export function AdminHomeScreen() {
   // approvals row that used to sit below the map.
   const quickTiles: { route: string; labelKey: string; icon: IoniconName; count?: number }[] = [
     { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline", count: approvalCount },
-    { route: "AdminChangeRequests", labelKey: "admin.nav.changeRequests", icon: "git-pull-request-outline" as IoniconName },
+    ...(changeRequestsEnabled()
+      ? [{ route: "AdminChangeRequests", labelKey: "admin.nav.changeRequests", icon: "git-pull-request-outline" as IoniconName }]
+      : []),
     { route: "AdminIncentives", labelKey: "admin.nav.incentives", icon: "cash-outline" },
     { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline" },
     { route: "AdminSustainability", labelKey: "admin.nav.sustainability", icon: "leaf-outline" },

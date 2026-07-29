@@ -27,6 +27,7 @@ import { DELIVERED_STATUSES } from "../../lib/tripStatus";
 import { estimateTripCo2 } from "../../lib/tripCo2";
 import { bannerFor } from "../../lib/bookingBanner";
 import { formatDateTime, initials as nameInitials } from "../../lib/format";
+import { changeRequestsEnabled } from "../../lib/featureFlags";
 
 type Nav = NativeStackNavigationProp<RequestorStackParamList, "BookingDetail">;
 type Rt = RouteProp<RequestorStackParamList, "BookingDetail">;
@@ -64,7 +65,7 @@ export function BookingDetailScreen() {
   // Once a lorry is assigned the booking is no longer the requestor's to change
   // directly (Mr. Teh A19) — but they are not stuck: Request Change sends the
   // same edit to the dispatcher for approval.
-  const canRequestChange = trip.status === "assigned";
+  const canRequestChange = changeRequestsEnabled() && trip.status === "assigned";
   const canShare = ["assigned", "in_progress", "pending_approval", "completed"].includes(trip.status);
 
   async function shareTracking() {

@@ -164,6 +164,18 @@ export async function snapshotStopZonePoints(
      * RM11 for a driver still driving to Ipoh.
      */
     onlyUnsnapshotted?: boolean;
+    /**
+     * The rate ERA to price against. Defaults to now, which is what a fresh
+     * assignment wants.
+     *
+     * Change-request approval passes the trip's ASSIGNMENT instant instead
+     * (owner ruling, 29 Jul 2026): a destination ADDED by an approved change
+     * takes the same era as every other stop on that trip, because consistency
+     * WITHIN a trip beats matching a fresh assignment. Otherwise one approval
+     * could leave a trip carrying two stops priced from two different rate
+     * eras, and no one reading the pay breakdown could tell why.
+     */
+    era?: Date;
   } = {}
 ): Promise<void> {
   const stops = await tx.tripStop.findMany({
@@ -183,12 +195,14 @@ export async function snapshotStopZonePoints(
       pending_points_effective: true,
     },
   });
-  // The points snapshotted are those EFFECTIVE right now — a staged points
-  // edit is invisible until its next-MYT-day cutoff (same rule as the truck
-  // claim rates above).
-  const now = new Date();
+  // The points snapshotted are those EFFECTIVE at `at` — normally now, so a
+  // staged points edit is invisible until its next-MYT-day cutoff (same rule as
+  // the truck claim rates above). Change-request approval overrides it with the
+  // trip's ASSIGNMENT instant so a newly added stop joins the era its siblings
+  // were locked to.
+  const at = opts.era ?? new Date();
   const pointsByZone = buildPointsByZone(
-    rateRows.map((r) => ({ ...r, points: effectiveZonePoints(r, now) }))
+    rateRows.map((r) => ({ ...r, points: effectiveZonePoints(r, at) }))
   );
 
   for (const s of stops) {

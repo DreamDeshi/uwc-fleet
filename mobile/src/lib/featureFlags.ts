@@ -13,3 +13,15 @@
 export function exceptionsEnabled(): boolean {
   return process.env.EXPO_PUBLIC_FEATURE_EXCEPTIONS === "true";
 }
+
+/**
+ * Request Change — the A19 approval flow for ASSIGNED bookings. Off by default;
+ * enable with EXPO_PUBLIC_FEATURE_CHANGE_REQUESTS=true (must match the server's
+ * FEATURE_CHANGE_REQUESTS, which 404s the routes while off).
+ *
+ * While off the requestor sees no Request Change button and the admin drawer
+ * has no queue, so nothing can be submitted and nothing can pile up unseen.
+ */
+export function changeRequestsEnabled(): boolean {
+  return process.env.EXPO_PUBLIC_FEATURE_CHANGE_REQUESTS === "true";
+}

@@ -5,6 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { changeRequestsEnabled } from "../../lib/featureFlags";
 import { api } from "../services/api";
 import type {
   AdminUser,
@@ -738,6 +739,8 @@ export interface ChangeRequestRow {
 export function useOpenChangeRequests(opts: { poll?: boolean } = {}) {
   const { poll = true } = opts;
   return useQuery({
+    // Never poll a route that 404s while the feature is off.
+    enabled: changeRequestsEnabled(),
     queryKey: ["change-requests", "open"],
     queryFn: async () =>
       (await api.get<{ change_requests: ChangeRequestRow[] }>("/trips/change-requests/open")).data

@@ -39,7 +39,7 @@ import { AuditLogScreen } from "../screens/AuditLogScreen";
 import { AdminSearchScreen } from "../screens/AdminSearchScreen";
 import { CalendarScreen } from "../screens/CalendarScreen";
 import { ExceptionsScreen } from "../screens/ExceptionsScreen";
-import { exceptionsEnabled } from "../../lib/featureFlags";
+import { exceptionsEnabled, changeRequestsEnabled } from "../../lib/featureFlags";
 import { AdminSearchButton } from "../components/AdminSearchButton";
 import { AdminAlertsBell } from "../components/AdminAlertsBell";
 import { BrandLogo } from "../../components/BrandLogo";
@@ -73,7 +73,9 @@ const NAV_GROUPS: { headingKey: string; items: NavItem[] }[] = [
         ? [{ route: "AdminExceptions", labelKey: "exception.laneTitle", icon: "warning-outline" as IoniconName }]
         : []),
       { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline" },
-      { route: "AdminChangeRequests", labelKey: "admin.nav.changeRequests", icon: "git-pull-request-outline" },
+      ...(changeRequestsEnabled()
+        ? [{ route: "AdminChangeRequests", labelKey: "admin.nav.changeRequests", icon: "git-pull-request-outline" as const }]
+        : []),
       { route: "AdminDrivers", labelKey: "admin.nav.drivers", icon: "person-outline" },
       { route: "AdminTrucks", labelKey: "admin.nav.trucks", icon: "bus-outline" },
       { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },

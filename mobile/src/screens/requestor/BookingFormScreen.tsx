@@ -63,6 +63,7 @@ import {
 import { formatDate, formatTime } from "../../lib/format";
 import { uuidv4 } from "../../lib/uuid";
 import { Consignee, Trip } from "../../types";
+import { changeRequestsEnabled } from "../../lib/featureFlags";
 
 type Nav = BottomTabNavigationProp<RequestorTabParamList>;
 
@@ -175,7 +176,7 @@ export function BookingFormScreen() {
   // directly (Mr. Teh A19). Derived from the LOADED trip, never from a nav
   // param, so a booking assigned while this screen was open still routes
   // correctly rather than attempting a write the server would refuse.
-  const isChangeRequest = isEdit && editTrip?.status === "assigned";
+  const isChangeRequest = changeRequestsEnabled() && isEdit && editTrip?.status === "assigned";
   const uploadDoc = useUploadTripDocument();
   const toast = useToast();
 

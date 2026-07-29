@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 import { api, auth, prisma, resetDb, loginAs, ADMIN, DRIVER, REQUESTOR } from "./helpers/harness";
 import { userIdByPhone, firstRouteTypeId, bookTrip, approveTrip, startTrip } from "./helpers/flow";
 
@@ -58,6 +58,10 @@ describe("Request Change — assigned bookings go through admin approval", () =>
   });
   beforeEach(async () => {
     await resetDb();
+    process.env.FEATURE_CHANGE_REQUESTS = "true";
+  });
+  afterEach(() => {
+    delete process.env.FEATURE_CHANGE_REQUESTS;
   });
 
   async function assignedTrip(zones = ["A2"]) {
@@ -325,6 +329,67 @@ describe("Request Change — assigned bookings go through admin approval", () =>
     expect(row.detail.join(" ")).toMatch(/Stops:/);
     expect(row.detail.join(" ")).toMatch(/\(A2\)/); // the zone it was
     expect(row.detail.join(" ")).toMatch(/\(K1\)/); // the zone it becomes
+  });
+
+
+  it("is INVISIBLE while the feature flag is off", async () => {
+    // Unlike the rest of this batch, Request Change changes REQUESTOR behaviour
+    // the moment it deploys — so it ships dark. 404, not 403: while off it
+    // should not exist, same discipline as the exception router.
+    const t = await assignedTrip();
+    const body = await payloadFor(t.id, { pickup_datetime: new Date(new Date(t.pickup_datetime).getTime() + 30 * 60_000).toISOString() });
+    delete process.env.FEATURE_CHANGE_REQUESTS;
+
+    expect((await requestChange(requestor, t.id, body)).status).toBe(404);
+    expect((await api().get("/api/v1/trips/change-requests/open").set(auth(admin))).status).toBe(404);
+    expect((await api().post(`/api/v1/trips/${t.id}/change-request/x/approve`).set(auth(admin)).send({})).status).toBe(404);
+    expect((await api().post(`/api/v1/trips/${t.id}/change-request/x/reject`).set(auth(admin)).send({ note: "n" })).status).toBe(404);
+  });
+
+  it("MONEY: a NEWLY ADDED destination is priced at the trip's ASSIGNMENT era", async () => {
+    // Owner ruling, 29 Jul 2026: consistency WITHIN a trip beats matching a
+    // fresh assignment. Otherwise one approval leaves a trip carrying two stops
+    // priced from two different rate eras and nothing explains why.
+    //
+    // Discriminating setup: the trip was assigned YESTERDAY, and a staged K1
+    // points edit takes effect TODAY. Assignment era => the old points; approval
+    // era => the new ones. (A staged edit is the only thing an era can change —
+    // effectiveZonePoints gates on pending_points + its MYT effective day.)
+    const t = await assignedTrip(["A2"]);
+    const k1Before = await zonePoints("K1");
+    // MYT is UTC+8, so "24h ago" can still be the SAME MYT day as the effective
+    // date — push the assignment clearly clear of it. The effective key is the
+    // MYT day of now, which is what the rates editor writes.
+    const assignedAt = new Date(Date.now() - 3 * 864e5);
+    const todayKey = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+
+    await prisma.tripStatusHistory.updateMany({
+      where: { trip_id: t.id, event: "assigned" },
+      data: { created_at: assignedAt },
+    });
+    await prisma.destinationRate.updateMany({
+      where: { zone_code: "K1" },
+      data: { pending_points: k1Before + 5, pending_points_effective: todayKey },
+    });
+
+    try {
+      const cr = (await requestChange(requestor, t.id, await payloadFor(t.id, {
+        stops: [{ consignee_id: await consigneeIn("K1"), sequence: 1 }],
+      }))).body.change_request;
+      const ok = await api().post(`/api/v1/trips/${t.id}/change-request/${cr.id}/approve`).set(auth(admin)).send({});
+      expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+
+      const after = await prisma.tripStop.findFirstOrThrow({ where: { trip_id: t.id } });
+      expect(after.zone_code).toBe("K1");
+      // The staged edit matures TODAY, but this trip was assigned days ago — so
+      // the new stop joins its siblings' era, not today's.
+      expect(after.zone_points).toBe(k1Before);
+    } finally {
+      await prisma.destinationRate.updateMany({
+        where: { zone_code: "K1" },
+        data: { pending_points: null, pending_points_effective: null },
+      });
+    }
   });
 
   it("approve RE-VALIDATES: a consignee deactivated after submission is caught", async () => {
