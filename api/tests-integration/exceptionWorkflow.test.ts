@@ -644,3 +644,155 @@ describe("exception workflow — end-to-end through Postgres", () => {
     process.env.FEATURE_EXCEPTIONS = "true";
   });
 });
+
+/**
+ * DRIVER SELF-RESUME — the flag-on blocker.
+ *
+ * An open exception blocks every delivery and the finalization on that trip. So
+ * before this route a driver who reported a problem could do nothing at all
+ * until an admin was at a screen: a report filed at 8pm stranded a loaded truck
+ * and every remaining consignee on that run until morning.
+ *
+ * The money property is what makes it safe to give him: pay needs an admin
+ * `verify` AND a `resume` closure (services/undeliveredPay). `verify` is
+ * admin-only at the router and no driver route creates one, so a driver acting
+ * alone closes with resume-and-no-verify — pays nothing, and the stop stays
+ * outstanding and still his to deliver.
+ */
+describe("driver self-resume — unblocks the truck, decides no money", () => {
+  // The suite above tears the flag down in its afterAll; re-arm it here.
+  beforeAll(() => {
+    process.env.FEATURE_EXCEPTIONS = "true";
+  });
+  afterAll(() => {
+    delete process.env.FEATURE_EXCEPTIONS;
+  });
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  /** in_progress trip with the driver's own OPEN exception on stop 1. */
+  async function withOpenException() {
+    const t = await inProgressTrip();
+    const stopId = t.stops[0].id;
+    const arrived = await api().patch(`/api/v1/trips/${t.id}/status`).set(auth(driver)).send({ action: "arrived", stop_id: stopId });
+    expect(arrived.status).toBe(200);
+    // reportReq builds the fields; the caller attaches the photo. trip_stop_id
+    // matters here: the money assertions are about THIS stop.
+    const reported = await reportReq(driver, t.id, { trip_stop_id: stopId }).attach("photo", PHOTO, "e.jpg");
+    expect(reported.status, JSON.stringify(reported.body)).toBe(201);
+    return { tripId: t.id as string, stopId: stopId as string, exId: reported.body.exception.id as string };
+  }
+  const selfResume = (token: string, tripId: string, exId: string) =>
+    api().post(`/api/v1/trips/${tripId}/exception/${exId}/self-resume`).set(auth(token)).send({ client_action_id: randomUUID() });
+
+  it("closes his own exception and clears the trip's block", async () => {
+    const { tripId, exId } = await withOpenException();
+    const res = await selfResume(driver, tripId, exId);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.exception.current_state).toBe("resolved");
+    expect(res.body.exception.resolution).toBe("resume");
+
+    const trip = await prisma.trip.findUniqueOrThrow({ where: { id: tripId } });
+    expect(trip.open_exception_id).toBeNull(); // the block is gone
+    expect(trip.status).toBe("in_progress"); // and he is still out on the run
+  });
+
+  it("he can DELIVER again straight after — the actual point of the feature", async () => {
+    const { tripId, stopId, exId } = await withOpenException();
+    // While it was open, delivery is refused.
+    await prisma.tripStop.update({ where: { id: stopId }, data: { pod_photo: "test://pod.jpg", do_uploaded: true } });
+    const blocked = await patchTrip(driver, tripId, { action: "delivered", stop_id: stopId });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error.code).toBe("EXCEPTION_OPEN");
+
+    expect((await selfResume(driver, tripId, exId)).status).toBe(200);
+
+    const ok = await patchTrip(driver, tripId, { action: "delivered", stop_id: stopId });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+  });
+
+  it("records actor_role driver — the log never reads as an office decision", async () => {
+    const { tripId, exId } = await withOpenException();
+    expect((await selfResume(driver, tripId, exId)).status).toBe(200);
+    const action = await prisma.exceptionAction.findFirstOrThrow({ where: { exception_id: exId, type: "resume" } });
+    expect(action.actor_role).toBe("driver");
+  });
+
+  it("MONEY: acting alone he pays himself NOTHING and the stop stays outstanding", async () => {
+    const { tripId, stopId, exId } = await withOpenException();
+    expect((await selfResume(driver, tripId, exId)).status).toBe(200);
+
+    const trip = await prisma.trip.findUniqueOrThrow({ where: { id: tripId } });
+    expect(trip.incentive_earned).toBeNull();
+    // NOT finalized: with no admin verify the stop is not settled, so it is
+    // still outstanding and still his to deliver.
+    expect(trip.status).toBe("in_progress");
+    expect((await prisma.tripStop.findUniqueOrThrow({ where: { id: stopId } })).points_awarded).toBeNull();
+
+    // Closing it out therefore takes the UNPAID abort path.
+    const abort = await api().patch(`/api/v1/trips/${tripId}/abort`).set(auth(admin)).send({ reason: "closed out" });
+    expect(abort.status).toBe(200);
+    const after = await prisma.trip.findUniqueOrThrow({ where: { id: tripId } });
+    expect(after.status).toBe("cancelled");
+    expect(after.incentive_earned).toBeNull();
+  });
+
+  it("after an admin verify, self-resume leaves exactly the shape the pay rule keys on", async () => {
+    // The cross-feature contract, asserted as DATA rather than as money,
+    // because failed-delivery pay ships on its own branch (PR #40) and this
+    // one must stand alone. PR #40 pays a stop iff its exception is
+    // `resolved` + `resolution: "resume"` + has a `verify` action
+    // (SETTLED_UNDELIVERED_WHERE). So: if the office verified and the DRIVER
+    // then closed it, that predicate must match — the admin already made the
+    // pay decision and he merely stopped waiting on them.
+    const { tripId, exId } = await withOpenException();
+    const verified = await api().post(`/api/v1/trips/${tripId}/exception/${exId}/verify`).set(auth(admin)).send({ client_action_id: randomUUID() });
+    expect(verified.status).toBe(200);
+    expect((await selfResume(driver, tripId, exId)).status).toBe(200);
+
+    const exc = await prisma.tripException.findUniqueOrThrow({
+      where: { id: exId },
+      include: { actions: true },
+    });
+    expect(exc.current_state).toBe("resolved");
+    expect(exc.resolution).toBe("resume");
+    const verifyAction = exc.actions.find((a) => a.type === "verify");
+    expect(verifyAction).toBeDefined();
+    expect(verifyAction!.actor_role).toBe("admin"); // the pay decision is the office's
+    expect(exc.actions.find((a) => a.type === "resume")!.actor_role).toBe("driver");
+  });
+
+  it("acting ALONE he never produces a verify action — the pay predicate cannot match", async () => {
+    // The mirror of the above, and the reason this route is safe to give him.
+    const { tripId, exId } = await withOpenException();
+    expect((await selfResume(driver, tripId, exId)).status).toBe(200);
+    const actions = await prisma.exceptionAction.findMany({ where: { exception_id: exId } });
+    expect(actions.some((a) => a.type === "verify")).toBe(false);
+  });
+
+  it("cannot self-resume a trip that is not his", async () => {
+    const { tripId, exId } = await withOpenException();
+    const res = await selfResume(requestor, tripId, exId);
+    expect([403, 404]).toContain(res.status); // role gate or ownership — never 200
+  });
+
+  it("an ADMIN cannot use the driver route (role-gated, not a shortcut)", async () => {
+    const { tripId, exId } = await withOpenException();
+    expect((await selfResume(admin, tripId, exId)).status).toBe(403);
+  });
+
+  it("is idempotent on replay and refuses a stale version", async () => {
+    const { tripId, exId } = await withOpenException();
+    const opId = randomUUID();
+    const first = await api().post(`/api/v1/trips/${tripId}/exception/${exId}/self-resume`).set(auth(driver)).send({ client_action_id: opId });
+    expect(first.status).toBe(200);
+    // Same op id, same payload → the original result, not a second action.
+    const replay = await api().post(`/api/v1/trips/${tripId}/exception/${exId}/self-resume`).set(auth(driver)).send({ client_action_id: opId });
+    expect(replay.status).toBe(200);
+    expect(await prisma.exceptionAction.count({ where: { exception_id: exId, type: "resume" } })).toBe(1);
+    // And a closed exception cannot be reopened by another attempt.
+    const again = await selfResume(driver, tripId, exId);
+    expect(again.status).toBe(409);
+  });
+});

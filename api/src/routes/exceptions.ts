@@ -298,6 +298,11 @@ async function applyTransition(opts: {
   exId: string;
   actorId: string;
   action: Exclude<ExceptionActionTypeT, "report" | "evidence_added">;
+  /** Who is acting. Drivers may only ever reach `resume` (see the self-resume
+   *  route); every other transition is admin-only at the router. Recorded on
+   *  the append-only action so the log distinguishes "the office decided" from
+   *  "the driver unblocked himself". */
+  actorRole?: "admin" | "driver";
   clientActionId: string;
   note?: string;
   resolveWith?: ExceptionResolutionT;
@@ -331,14 +336,14 @@ async function applyTransition(opts: {
         }
         throw new ApiError(409, "EXCEPTION_STATE_CHANGED", "This exception changed since you loaded it. Refresh and try again.");
       }
-      await tx.exceptionAction.create({ data: { exception_id: opts.exId, client_action_id: opts.clientActionId, type: opts.action, resolution: t.resolution ?? null, actor_id: opts.actorId, actor_role: "admin", note: opts.note ?? null } });
+      await tx.exceptionAction.create({ data: { exception_id: opts.exId, client_action_id: opts.clientActionId, type: opts.action, resolution: t.resolution ?? null, actor_id: opts.actorId, actor_role: opts.actorRole ?? "admin", note: opts.note ?? null } });
       if (t.closes) {
         // Pointer clear MUST match exactly one row, else the projection and the
         // cache pointer would disagree — throw and roll the whole close back.
         const ptr = await tx.trip.updateMany({ where: { id: opts.tripId, open_exception_id: opts.exId }, data: { open_exception_id: null } });
         if (ptr.count !== 1) throw new ApiError(409, "POINTER_INCONSISTENT", "The trip's open-exception pointer was not in the expected state; the close was rolled back.");
       }
-      await tx.auditLog.create({ data: { user_id: opts.actorId, action: `exception.${opts.action}${t.resolution ? ` (${t.resolution})` : ""}${opts.note ? `: ${opts.note}` : ""}`, table_name: "TripException", record_id: opts.exId } });
+      await tx.auditLog.create({ data: { user_id: opts.actorId, action: `exception.${opts.action}${t.resolution ? ` (${t.resolution})` : ""}${opts.actorRole === "driver" ? " [driver self-resume]" : ""}${opts.note ? `: ${opts.note}` : ""}`, table_name: "TripException", record_id: opts.exId } });
     });
   } catch (err) {
     if (isUniqueViolation(err)) {
@@ -383,6 +388,55 @@ router.post("/:id/exception/:exId/resume", requireRole("admin"), validateBody(re
   try {
     const { note, client_action_id, expected_version } = req.body as { note?: string; client_action_id: string; expected_version?: number };
     await applyTransition({ tripId: req.params.id, exId: req.params.exId, actorId: req.user!.id, action: "resume", clientActionId: client_action_id, note, resolveWith: "resume", expectedVersion: expected_version });
+    await reloadAndSend(res, req.params.id, req.params.exId, "full");
+  } catch (err) { next(err); }
+});
+
+// ── POST /:id/exception/:exId/self-resume — the DRIVER unblocks his own trip ──
+//
+// THE PROBLEM THIS SOLVES. An open exception freezes the trip: it blocks every
+// delivery and the finalization (routes/trips.ts checks open_exception_id). So
+// before this route, a driver who reported a problem could do NOTHING until an
+// admin happened to be at a screen. On a fleet with one admin, a report filed at
+// 8pm stranded a loaded truck and every remaining consignee on that run until
+// morning. That is the hard blocker on turning FEATURE_EXCEPTIONS on.
+//
+// WHAT IT IS: "I have filed it, I am carrying on." It closes the exception so
+// the truck moves. It is NOT a decision about the stop and NOT a decision about
+// pay.
+//
+// WHY IT CANNOT MOVE MONEY. Pay needs BOTH an admin `verify` action and a
+// `resume` closure (services/undeliveredPay). `verify` is admin-only at the
+// router and a driver has no route that creates one, so a driver acting alone
+// closes with resume-and-no-verify — which pays nothing and leaves the stop
+// OUTSTANDING, still his to deliver. The only way this settles a stop is if an
+// admin had ALREADY verified it, i.e. the office already made the pay decision
+// and the driver merely stopped waiting on them. That is the intended outcome,
+// not a loophole.
+//
+// The action is recorded with actor_role "driver", so the append-only log and
+// the audit line distinguish it from an admin's resume forever.
+router.post("/:id/exception/:exId/self-resume", requireRole("driver"), validateBody(reviewSchema), async (req, res, next) => {
+  try {
+    const { note, client_action_id, expected_version } = req.body as { note?: string; client_action_id: string; expected_version?: number };
+    // Ownership: his own trip only. Checked BEFORE any aggregate is exposed,
+    // matching the report route — an exception id is not a capability.
+    const trip = await prisma.trip.findUnique({ where: { id: req.params.id }, select: { driver_id: true } });
+    if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+    if (trip.driver_id !== req.user!.id) throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+
+    await applyTransition({
+      tripId: req.params.id,
+      exId: req.params.exId,
+      actorId: req.user!.id,
+      actorRole: "driver",
+      action: "resume",
+      clientActionId: client_action_id,
+      note,
+      resolveWith: "resume",
+      expectedVersion: expected_version,
+    });
+    // "full" audience: it is his own report, the same view he already has.
     await reloadAndSend(res, req.params.id, req.params.exId, "full");
   } catch (err) { next(err); }
 });

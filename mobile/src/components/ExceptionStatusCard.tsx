@@ -9,7 +9,7 @@ import { capturePodPhoto } from "../lib/photo";
 import { uuidv4 } from "../lib/uuid";
 import { formatTime } from "../lib/format";
 import { exceptionStateLabelKey, canDriverAddEvidence, isOpenState } from "../lib/exceptionForm";
-import { useTripException, useAddExceptionEvidence } from "../hooks/useExceptions";
+import { useTripException, useAddExceptionEvidence, useSelfResumeException } from "../hooks/useExceptions";
 import type { ExceptionFull } from "../services/exceptions";
 import { apiErrorMessage } from "../services/api";
 
@@ -33,7 +33,10 @@ const STATE_TONE: Record<string, string> = {
  * in a plain sentence about who holds it — and the ONE state that wants
  * something back from him, `more_evidence`, is the only one with a button.
  *
- * He never sees verify / reject / resume / retry: those are the dispatcher's.
+ * He never sees verify / reject / retry: those are the dispatcher's. The one
+ * action he DOES get is self-resume — "I filed it, I am carrying on" — because
+ * an open exception blocks every delivery on the trip, and without it a report
+ * filed after hours strands a loaded truck until someone is at a screen.
  */
 export function ExceptionStatusCard({ tripId }: { tripId: string }) {
   const { t } = useTranslation();
@@ -41,6 +44,8 @@ export function ExceptionStatusCard({ tripId }: { tripId: string }) {
   const { data } = useTripException(tripId);
   const addEvidence = useAddExceptionEvidence();
   const [busy, setBusy] = useState(false);
+  const [resuming, setResuming] = useState(false);
+  const selfResume = useSelfResumeException();
 
   const exc = data as ExceptionFull | null;
   if (!exc || !exc.category || !isOpenState(exc.current_state)) return null;
@@ -69,6 +74,22 @@ export function ExceptionStatusCard({ tripId }: { tripId: string }) {
     }
   };
 
+  const onSelfResume = async () => {
+    setResuming(true);
+    try {
+      await selfResume.mutateAsync({
+        tripId,
+        exId: exc.id,
+        input: { clientActionId: uuidv4(), expectedVersion: exc.version },
+      });
+      toast(t("exception.selfResumeToast"), "success");
+    } catch (e) {
+      toast(apiErrorMessage(e, t("exception.selfResumeFailed")), "error");
+    } finally {
+      setResuming(false);
+    }
+  };
+
   const tone = STATE_TONE[exc.current_state] ?? colors.grey;
   const needsEvidence = canDriverAddEvidence(exc.current_state);
   const reportedAt = exc.reported_at ? formatTime(exc.reported_at) : null;
@@ -92,13 +113,30 @@ export function ExceptionStatusCard({ tripId }: { tripId: string }) {
           <Button title={t("exception.addEvidence")} onPress={onAddEvidence} loading={busy} />
         </View>
       ) : (
-        // No button — there is nothing for him to do. The line tells him who
-        // holds it so he stops waiting on the screen and drives on.
-        <Text style={styles.waiting}>
-          {reportedAt
-            ? t("exception.sentAtWaiting", { time: reportedAt })
-            : t("exception.waitingForOffice")}
-        </Text>
+        <>
+          <Text style={styles.waiting}>
+            {reportedAt
+              ? t("exception.sentAtWaiting", { time: reportedAt })
+              : t("exception.waitingForOffice")}
+          </Text>
+          {/* SELF-RESUME. An open exception blocks every delivery on the trip,
+              so without this the driver sat frozen until an admin was at a
+              screen — a report filed at 8pm stranded a loaded truck and every
+              remaining consignee until morning. That is the hard blocker on
+              turning the feature on.
+              It closes the report so he can drive; it decides nothing about
+              the stop and nothing about pay (that needs an admin verify, which
+              no driver route can create). The stop stays his to deliver. */}
+          <View style={styles.action}>
+            <Button
+              variant="outline"
+              title={t("exception.selfResume")}
+              onPress={onSelfResume}
+              loading={resuming}
+            />
+            <Text style={styles.prompt}>{t("exception.selfResumeHint")}</Text>
+          </View>
+        </>
       )}
     </View>
   );

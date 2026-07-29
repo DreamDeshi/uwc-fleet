@@ -150,6 +150,20 @@ export const verifyException = adminAction("verify");
 export const requestMoreEvidence = adminAction("request-more-evidence");
 export const rejectException = adminAction("reject");
 export const resumeException = adminAction("resume");
+/**
+ * DRIVER self-resume — "I have filed it, I am carrying on."
+ *
+ * Closes his own exception so the trip is unblocked. Not an admin action and
+ * not a pay decision: pay needs an admin `verify` too, which no driver route
+ * can create, so acting alone he closes with resume-and-no-verify — the stop
+ * stays outstanding and still his to deliver. See the route comment in
+ * api/src/routes/exceptions.ts.
+ */
+export async function selfResumeException(tripId: string, exId: string, input: AdminActionInput): Promise<ExceptionFull> {
+  const res = await api.post<{ exception: ExceptionFull }>(`/trips/${tripId}/exception/${exId}/self-resume`, actionBody(input));
+  return res.data.exception;
+}
+
 export async function resolveException(tripId: string, exId: string, input: AdminActionInput & { resolution: string }): Promise<ExceptionFull> {
   const res = await api.post<{ exception: ExceptionFull }>(`/trips/${tripId}/exception/${exId}/resolve`, { ...actionBody(input), resolution: input.resolution });
   return res.data.exception;
