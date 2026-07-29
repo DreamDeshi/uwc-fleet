@@ -100,7 +100,7 @@ export function FeedbackModal({
           />
 
           {status ? (
-            <Text style={[styles.status, { color: status.kind === "ok" ? colors.green : colors.red }]}>
+            <Text style={[styles.status, { color: status.kind === "ok" ? colors.greenText : colors.red }]}>
               {status.text}
             </Text>
           ) : null}

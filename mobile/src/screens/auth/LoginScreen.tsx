@@ -158,6 +158,9 @@ export function LoginScreen({ navigation }: Props) {
           <View>
             <Text style={styles.welcome}>{t("login.welcome")}</Text>
             <Text style={styles.subtitle}>{t("login.subtitle")}</Text>
+            {/* "FLEET MANAGEMENT PORTAL" — frame 01 carries it on the phone
+                header too; only the desktop split had it. */}
+            <Text style={styles.tagline}>{t("common.tagline")}</Text>
           </View>
         </View>
 
@@ -202,6 +205,14 @@ const styles = StyleSheet.create({
   },
   welcome: { color: colors.white, fontSize: 26, fontWeight: "800" },
   subtitle: { color: "rgba(255,255,255,0.7)", fontSize: 15, marginTop: 4 },
+  tagline: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginTop: 20,
+  },
   form: {
     flex: 1,
     padding: 24,

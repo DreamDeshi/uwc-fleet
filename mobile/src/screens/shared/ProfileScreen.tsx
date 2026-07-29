@@ -1,11 +1,10 @@
 import React, { useState } from "react";
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../context/AuthContext";
 import { colors, layout, radius, shadow } from "../../theme";
-import { Header } from "../../components/Header";
-import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
 import { initials } from "../../lib/format";
 import { AppLanguage } from "../../types";
@@ -13,8 +12,18 @@ import { EditProfileModal, ChangePasswordModal } from "../../components/AccountM
 import { FeedbackModal } from "../../components/FeedbackModal";
 import { AppUpdatesCard } from "../../components/AppUpdatesCard";
 
+// Profile, rebuilt to the approved design (frame 37).
+//
+// Identity moves ONTO the blue: avatar, name, and one subtitle that folds the
+// three facts that used to each own a row (role · department · employee
+// number). What is left below is plainly secondary — which is the point of the
+// frame's note, "nothing below competes".
+//
+// Shared with the requestor role. The plate chip is the driver-only slot: it
+// renders only when a truck is assigned, which no requestor has.
 export function ProfileScreen() {
   const { t, i18n } = useTranslation();
+  const insets = useSafeAreaInsets();
   const { user, logout, setLanguage } = useAuth();
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -30,105 +39,123 @@ export function ProfileScreen() {
     zh: t("profile.chinese"),
   };
 
+  // Role · Department · Employee number, as one line under the name. Empty
+  // parts drop out rather than leaving stray separators.
+  //
+  // Reuses the register namespace's role labels — they are already translated
+  // in all three locales, and "Driver"/"Requestor" mean the same thing here as
+  // they do on the sign-up form.
+  const roleLabel =
+    user?.role === "driver"
+      ? t("register.roleDriver")
+      : user?.role === "requestor"
+        ? t("register.roleRequestor")
+        : (user?.role ?? "");
+  const subtitle = [roleLabel, user?.department?.name, user?.employee_number]
+    .filter(Boolean)
+    .join(" · ");
+
   const rows: { label: string; value: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-    { label: t("profile.role"), value: user?.role ?? "—", icon: "person-outline" },
     { label: t("profile.phone"), value: user?.phone ?? "—", icon: "call-outline" },
     { label: t("profile.employeeNumber"), value: user?.employee_number ?? "—", icon: "id-card-outline" },
     { label: t("profile.department"), value: user?.department?.name ?? "—", icon: "business-outline" },
   ];
 
+  const actions: { label: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }[] = [
+    { label: t("account.editProfile"), icon: "create-outline", onPress: () => setEditOpen(true) },
+    { label: t("account.changePassword"), icon: "lock-closed-outline", onPress: () => setPwOpen(true) },
+    { label: t("feedback.title"), icon: "megaphone-outline", onPress: () => setFeedbackOpen(true) },
+  ];
+
   return (
     <View style={styles.fill}>
-      <Header title={t("profile.title")} />
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32, width: "100%", maxWidth: layout.content, alignSelf: "center" }}>
-        {/* Identity card */}
-        <Card style={{ alignItems: "center", paddingVertical: 24 }}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials(user?.name ?? "")}</Text>
+      {/* Identity ON the blue — replaces the old <Header title="Profile"> plus
+          a white identity card underneath it. */}
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <View style={styles.centerCol}>
+          <View style={styles.identityRow}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initials(user?.name ?? "")}</Text>
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.name} numberOfLines={2}>{user?.name}</Text>
+              {subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text> : null}
+            </View>
           </View>
-          <Text style={styles.name}>{user?.name}</Text>
           {user?.assigned_truck ? (
-            <View style={styles.truckPill}>
-              <MaterialCommunityIcons name="truck" size={14} color={colors.blue} />
-              <Text style={styles.truckText}>
-                {user.assigned_truck.plate} · {user.assigned_truck.type}
+            <View style={styles.truckRow}>
+              {/* Styled like a real number plate — it is the thing a driver
+                  checks against the lorry in front of him. */}
+              <View style={styles.plate}>
+                <Text style={styles.plateText}>{user.assigned_truck.plate}</Text>
+              </View>
+              <Text style={styles.truckMeta} numberOfLines={1}>
+                {user.assigned_truck.type} · {t("driver.palletCount", { n: user.assigned_truck.max_pallets })}
               </Text>
             </View>
           ) : null}
-        </Card>
+        </View>
+      </View>
 
-        {/* Info rows */}
-        <Card style={{ marginTop: 16 }} padded={false}>
+      <ScrollView contentContainerStyle={styles.body}>
+        {/* Facts the office owns — read-only, plainly secondary. */}
+        <View style={styles.card}>
           {rows.map((r, i) => (
-            <View key={r.label} style={[styles.infoRow, i < rows.length - 1 && styles.divider]}>
+            <View key={r.label} style={[styles.row, i < rows.length - 1 && styles.rowDivider]}>
               <Ionicons name={r.icon} size={18} color={colors.textFaint} />
-              <Text style={styles.infoLabel}>{r.label}</Text>
-              <Text style={styles.infoValue}>{r.value}</Text>
+              <Text style={styles.rowLabel}>{r.label}</Text>
+              <Text style={styles.rowValue} numberOfLines={1}>{r.value}</Text>
             </View>
           ))}
-        </Card>
+        </View>
 
-        {/* Account actions (any role) — edit own name/department + password */}
-        <Text style={styles.sectionTitle}>{t("account.section")}</Text>
-        <Button
-          title={t("account.editProfile")}
-          variant="outline"
-          onPress={() => setEditOpen(true)}
-          icon={<Ionicons name="create-outline" size={18} color={colors.blue} />}
-        />
-        <Button
-          title={t("account.changePassword")}
-          variant="outline"
-          onPress={() => setPwOpen(true)}
-          style={{ marginTop: 10 }}
-          icon={<Ionicons name="lock-closed-outline" size={18} color={colors.blue} />}
-        />
-        {/* Feedback channel (28 Jul): bugs / gripes / ideas from any role,
-            straight to the admin's User-feedback inbox. */}
-        <Button
-          title={t("feedback.title")}
-          variant="outline"
-          onPress={() => setFeedbackOpen(true)}
-          style={{ marginTop: 10 }}
-          icon={<Ionicons name="megaphone-outline" size={18} color={colors.blue} />}
-        />
+        <Text style={styles.sectionLabel}>{t("account.section")}</Text>
+        <View style={styles.card}>
+          {actions.map((a, i) => (
+            <TouchableOpacity
+              key={a.label}
+              style={[styles.row, i < actions.length - 1 && styles.rowDivider]}
+              onPress={a.onPress}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+            >
+              <Ionicons name={a.icon} size={19} color={colors.blue} />
+              <Text style={styles.actionLabel}>{a.label}</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+            </TouchableOpacity>
+          ))}
+        </View>
 
-        {/* Fuel logging moved to the driver Home as a quick-action (a driver
-            logs a fill-up often — it belongs on the dashboard, not in Settings). */}
-
-        {/* Language picker (EN / BM) */}
-        {/* "Preferences", not "Language": this screen mixes identity (the card
-            above), account actions, app preferences, and session — the section
-            headers are what keep the concepts legible on one screen. */}
-        <Text style={styles.sectionTitle}>{t("profile.preferences")}</Text>
-        <View style={styles.langRow}>
+        {/* One inline segmented control, not three stacked full-width buttons. */}
+        <Text style={styles.sectionLabel}>{t("profile.language")}</Text>
+        <View style={styles.segment}>
           {(["en", "ms", "zh"] as const).map((l) => {
             const active = lang === l;
             return (
               <TouchableOpacity
                 key={l}
-                style={[styles.langBtn, active && styles.langBtnActive]}
+                style={[styles.segmentBtn, active && styles.segmentBtnActive]}
                 onPress={() => setLanguage(l)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
               >
-                <Text style={[styles.langText, active && { color: colors.blue }]}>
+                <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
                   {langLabels[l]}
                 </Text>
-                {active ? <Ionicons name="checkmark-circle" size={18} color={colors.blue} /> : null}
               </TouchableOpacity>
             );
           })}
         </View>
 
         {/* App & updates — OTA ground truth + manual update pull, for the
-            people actually holding phones in the field (28 Jul owner ask).
-            Same shared card the admin Settings screen renders. */}
-        <AppUpdatesCard style={{ marginTop: 24 }} />
+            people actually holding phones in the field (28 Jul owner ask). */}
+        <AppUpdatesCard style={{ marginTop: 20 }} />
 
         <Button
           title={t("profile.logout")}
           variant="danger"
           onPress={() => setConfirmLogout(true)}
-          style={{ marginTop: 24 }}
+          style={{ marginTop: 20 }}
           icon={<Ionicons name="log-out-outline" size={18} color={colors.white} />}
         />
       </ScrollView>
@@ -158,20 +185,61 @@ export function ProfileScreen() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
-  avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.yellow },
-  avatarText: { color: colors.yellow, fontSize: 24, fontWeight: "800" },
-  name: { fontSize: 18, fontWeight: "800", color: colors.navy, marginTop: 12 },
-  truckPill: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, backgroundColor: colors.tintBlue, paddingHorizontal: 12, paddingVertical: 5, borderRadius: radius.pill },
-  truckText: { color: colors.blue, fontSize: 13, fontWeight: "700" },
-  infoRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
-  divider: { borderBottomWidth: 1, borderBottomColor: colors.bg },
-  infoLabel: { fontSize: 14, color: colors.textMuted },
-  infoValue: { marginLeft: "auto", fontSize: 14, fontWeight: "700", color: colors.navy, textTransform: "capitalize" },
-  sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy, marginTop: 24, marginBottom: 12 },
-  langRow: { gap: 10 },
-  langBtn: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.white, borderRadius: radius.md, padding: 16, borderWidth: 1.5, borderColor: colors.border, ...shadow.card },
-  langBtnActive: { borderColor: colors.blue, borderWidth: 2, backgroundColor: colors.tintBlue },
-  langText: { fontSize: 15, fontWeight: "700", color: colors.textMuted },
+  centerCol: { width: "100%", maxWidth: layout.content, alignSelf: "center" },
+
+  header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 22 },
+  identityRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.blueDark,
+    borderWidth: 2,
+    borderColor: colors.yellow,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { color: colors.yellow, fontSize: 22, fontWeight: "800" },
+  name: { color: colors.white, fontSize: 20, fontWeight: "800", lineHeight: 25 },
+  subtitle: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: "600", marginTop: 2 },
+  truckRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 16 },
+  plate: { backgroundColor: "#111318", borderWidth: 2, borderColor: "#3a3f4b", borderRadius: 6, paddingHorizontal: 12, paddingVertical: 5 },
+  plateText: { color: colors.white, fontSize: 16, fontWeight: "600", letterSpacing: 2 },
+  truckMeta: { flex: 1, color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: "700" },
+
+  body: { padding: 16, paddingBottom: 32, width: "100%", maxWidth: layout.content, alignSelf: "center" },
+  card: { backgroundColor: colors.white, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderLight, ...shadow.card },
+  row: { minHeight: 52, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: colors.bg },
+  rowLabel: { fontSize: 14, color: colors.textMuted },
+  rowValue: { marginLeft: "auto", fontSize: 14, fontWeight: "700", color: colors.navy, flexShrink: 1 },
+  actionLabel: { flex: 1, fontSize: 15, fontWeight: "700", color: colors.navy },
+
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.textFaint,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginTop: 20,
+    marginBottom: 8,
+  },
+
+  segment: {
+    flexDirection: "row",
+    gap: 4,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: radius.md,
+    padding: 4,
+    ...shadow.card,
+  },
+  segmentBtn: { flex: 1, minHeight: 44, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
+  segmentBtnActive: { backgroundColor: colors.blue },
+  segmentText: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
+  segmentTextActive: { color: colors.white, fontWeight: "800" },
+
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center", padding: 24 },
   modal: { backgroundColor: colors.white, borderRadius: 20, padding: 24, width: "100%" },
   modalTitle: { fontSize: 17, fontWeight: "800", color: colors.navy, textAlign: "center" },
