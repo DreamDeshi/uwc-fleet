@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { colors, radius } from "../theme";
 import { formatTime } from "../lib/format";
 import { stopsOf } from "../lib/driverHome";
+import { requiresCustomsDoc } from "../lib/activeTripStage";
 import { totalPallets, ORIGIN_LABEL } from "../lib/trip";
 import type { Trip, TripStop } from "../types";
 
@@ -65,7 +66,7 @@ export function TripStopLadder({ trip, running }: { trip: Trip; running: boolean
                   : t("trip.markDelivered")
                 : townOf(s)
             }
-            k2={s.consignee?.zone_code === "K2"}
+            k2={requiresCustomsDoc(s.consignee?.zone_code, s.consignee?.area)}
             highlight={isNow}
             nowLabel={isNow ? t("driver.ladderNow") : undefined}
             last={last}

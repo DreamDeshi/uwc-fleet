@@ -47,7 +47,7 @@ import { WebRefreshButton } from "../../components/WebRefreshButton";
 import { colors, layout, radius, shadow, type as typeScale } from "../../theme";
 import { Button } from "../../components/Button";
 import { PodReviewModal } from "../../components/PodReviewModal";
-import { footerStage, waitingForDelivered, type StageFlags } from "../../lib/activeTripStage";
+import { footerStage, waitingForDelivered, requiresCustomsDoc, type StageFlags } from "../../lib/activeTripStage";
 import { LoadingState, ErrorState } from "../../components/States";
 import { PLANT_ORIGIN, regionFor, consigneeDestination, haversineKm } from "../../lib/geo";
 import { ActiveTripMap } from "../../components/ActiveTripMap";
@@ -258,7 +258,7 @@ export function ActiveTripScreen() {
   const stageFlags = (s: TripStop): StageFlags => {
     const q = queuedFor(s);
     return {
-      isK2: s.consignee?.zone_code === "K2",
+      isK2: requiresCustomsDoc(s.consignee?.zone_code, s.consignee?.area),
       arrivedQueued: q?.markArrived === true,
       podQueued: q?.photo != null || q?.photoUploaded === true,
       deliveryQueued: q?.confirmDelivered === true && s.status !== "delivered",

@@ -224,29 +224,92 @@ export function scoreDrops(
 }
 
 /**
- * Step 3 — documentation gate. A delivery cannot be finalized until the DO
- * photo is uploaded, and (only when the destination zone is K2) the K2 customs
- * form (Borang K2) has been UPLOADED as an actual document.
+ * The ONE zone whose deliveries need a customs document before they can be
+ * marked delivered.
  *
- * Mr. Teh, R1 2026-07-24 Q6 (RESOLVED — was the old "checkbox vs upload" TODO):
- * "Prefer they need upload the form … we need admin to final validate and
- * approve, only they can get pay." So the K2 gate now keys on the uploaded
- * document (`k2_photo`), NOT the legacy `k2_form_ack` tick. Admin validation +
- * approval is the existing POD/incentive-approval gate (16 Jul 2026): the K2
- * document rides in the trip payload for the admin to review before approving.
- * This is a DOCUMENT gate only — no incentive amount or rate calculation changes.
+ * ⚠ THIS IS "P1" (Penang Island), NOT the zone literally CALLED "K2".
+ *
+ * Mr. Teh, R3 2026-07-29: "Only Penang bayan Lepas area require K2, but I think
+ * you just let them upload any document will do." Bayan Lepas is on Penang
+ * Island = zone P1. The gate had been keyed on zone code "K2" (Sungai Petani +
+ * Kuala Ketil) because the FEATURE is named after Borang K2 — the customs form
+ * — and the zone code "K2" is an unrelated coincidence of naming. So the gate
+ * fired on the wrong towns from the day it shipped, blocking Delivered (and
+ * therefore pay) in Sungai Petani / Kuala Ketil while letting Bayan Lepas
+ * through. Owner decision, 29 Jul: retarget the zone, keep it zone-gated.
+ *
+ * Named, not inlined, precisely so this can never drift back to a bare string
+ * comparison that reads like it means the zone with the matching name.
+ */
+export const CUSTOMS_DOC_ZONE = "P1";
+
+/**
+ * …and the AREA inside it. Zone P1 is the whole of Penang Island — 412
+ * consignees on prod, of which only 192 are in Bayan Lepas. Gating the zone
+ * would have demanded a customs document from George Town, Jelutong, Gelugor
+ * and 220 others Mr. Teh never named, blocking Delivered (and pay) at each —
+ * the same class of bug this change exists to fix, aimed at different towns.
+ * Owner decision 29 Jul: gate the AREA, not the zone.
+ */
+export const CUSTOMS_DOC_AREA = "BAYAN LEPAS";
+
+/**
+ * `area` is FREE TEXT typed by requestors, so it is normalised before
+ * comparison — upper-cased, trimmed, and internal runs of whitespace
+ * collapsed. Matching is `includes`, not equality, because real rows read
+ * "KAWASAN PERINDUSTRIAN BAYAN LEPAS" and "BAYAN LEPAS FIZ" as often as the
+ * bare name, and a stricter test would silently un-gate them.
+ */
+function normaliseArea(area: string | null | undefined): string {
+  return (area ?? "").toUpperCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * True when this delivery must carry a customs document.
+ *
+ * FAILS OPEN by design. A blank or unrecognised area does NOT gate — owner
+ * ruling 29 Jul: "a missing document is recoverable at POD approval; a
+ * stranded driver isn't." A consignee added by a requestor who typed nothing
+ * into `area` therefore delivers normally, and the admin catches the missing
+ * document at approval, which is where a human is already looking.
+ */
+export function requiresCustomsDoc(
+  destinationZoneCode: string,
+  destinationArea?: string | null
+): boolean {
+  if (destinationZoneCode !== CUSTOMS_DOC_ZONE) return false;
+  return normaliseArea(destinationArea).includes(CUSTOMS_DOC_AREA);
+}
+
+/**
+ * Step 3 — documentation gate. A delivery cannot be finalized until the DO
+ * photo is uploaded, and (only in the customs-document zone above) a customs
+ * document has been UPLOADED.
+ *
+ * Mr. Teh, R1 2026-07-24 Q6: "Prefer they need upload the form … we need admin
+ * to final validate and approve, only they can get pay." So the gate keys on
+ * the uploaded document (`k2_photo`), NOT the legacy `k2_form_ack` tick. Admin
+ * validation + approval is the existing POD/incentive-approval gate (16 Jul
+ * 2026): the document rides in the trip payload for the admin to review.
+ *
+ * WHAT the document is, is deliberately NOT checked — R3 2026-07-29: "you just
+ * let them upload any document will do." The server has never inspected the
+ * file and must not start; the admin reviewing it at approval is the check.
+ *
+ * This is a DOCUMENT gate only — no incentive amount or rate calculation
+ * changes. `k2_photo` keeps its column name (the schema is frozen).
  */
 export function isDocumentationComplete(
   stop: { do_uploaded: boolean; k2_photo: string | null; pod_photo: string | null },
-  destinationZoneCode: string
+  destinationZoneCode: string,
+  destinationArea?: string | null
 ): boolean {
   // The gate is the actual POD PHOTO, not the do_uploaded flag alone — the
   // flag is set by the photo upload, but checking only the boolean let it be
   // self-attested via PATCH /docs with no photo behind it (audit finding).
   if (!stop.pod_photo) return false;
   if (!stop.do_uploaded) return false;
-  // K2 destinations require the uploaded Borang K2 document (not a tick).
-  if (destinationZoneCode === "K2" && !stop.k2_photo) return false;
+  if (requiresCustomsDoc(destinationZoneCode, destinationArea) && !stop.k2_photo) return false;
   return true;
 }
 

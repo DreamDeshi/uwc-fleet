@@ -1,5 +1,46 @@
 import { describe, it, expect } from "vitest";
-import { footerStage, waitingForDelivered } from "./activeTripStage";
+import {
+  footerStage,
+  waitingForDelivered,
+  requiresCustomsDoc,
+  CUSTOMS_DOC_ZONE,
+  CUSTOMS_DOC_AREA,
+} from "./activeTripStage";
+
+// The client's copy MUST match the server's (requiresCustomsDoc in
+// api/src/services/incentiveEngine.ts). If they disagree, the app offers
+// Delivered on a stop the server will refuse — or hides it on one it would
+// accept. Mr. Teh, R3 2026-07-29: "Only Penang bayan Lepas area require K2" —
+// Bayan Lepas is an AREA inside zone P1, NOT the zone called "K2".
+describe("what needs a customs document (client mirror)", () => {
+  it("is the Bayan Lepas area inside P1, matching the server constants", () => {
+    expect(CUSTOMS_DOC_ZONE).toBe("P1");
+    expect(CUSTOMS_DOC_AREA).toBe("BAYAN LEPAS");
+    expect(requiresCustomsDoc("P1", "BAYAN LEPAS")).toBe(true);
+  });
+
+  it("is NOT the zone that happens to be CALLED K2", () => {
+    expect(requiresCustomsDoc("K2", "BAYAN LEPAS")).toBe(false);
+  });
+
+  it("is NOT the rest of Penang Island", () => {
+    expect(requiresCustomsDoc("P1", "GEORGE TOWN")).toBe(false);
+    expect(requiresCustomsDoc("P1", "JELUTONG")).toBe(false);
+  });
+
+  it("survives free-text area values", () => {
+    expect(requiresCustomsDoc("P1", "  bayan   lepas ")).toBe(true);
+    expect(requiresCustomsDoc("P1", "Kawasan Perindustrian Bayan Lepas")).toBe(true);
+  });
+
+  it("FAILS OPEN on a blank, missing or unknown area", () => {
+    expect(requiresCustomsDoc("P1", "")).toBe(false);
+    expect(requiresCustomsDoc("P1", null)).toBe(false);
+    expect(requiresCustomsDoc("P1")).toBe(false);
+    expect(requiresCustomsDoc(null, "BAYAN LEPAS")).toBe(false);
+    expect(requiresCustomsDoc(undefined, "BAYAN LEPAS")).toBe(false);
+  });
+});
 
 const stop = (over: Partial<Parameters<typeof footerStage>[0]> = {}) => ({
   status: "arrived",
