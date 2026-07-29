@@ -14,7 +14,13 @@ import {
 } from "../lib/myt";
 import { ApiError } from "../lib/apiError";
 import { buildPayrollRows } from "../services/payroll";
-import { firstDeliveredAt, payAttributionInstant, payableIncentive } from "../services/tripCompletion";
+import {
+  firstDeliveredAt,
+  firstEarningInstant,
+  payAttributionInstant,
+  payableIncentive,
+} from "../services/tripCompletion";
+import { EARNING_STOP_SELECT, earnedInWindow } from "../services/undeliveredPay";
 import { attentionConfig, hoursSince } from "../services/attention";
 import { earlyTapDistanceM, isEarlyTap } from "../lib/earlyTap";
 import { consolidationSavings } from "../lib/consolidationSavings";
@@ -105,6 +111,11 @@ router.get("/dashboard", async (_req, res, next) => {
             { pickup_datetime: { gte: monthStart, lt: monthEnd } },
           ],
         },
+        // delivered_at alone is correct HERE and nowhere else: the `every`
+        // filter above already restricts this set to fully-delivered trips, so
+        // no stop in it can be a paid-undelivered one. payAttributionInstant
+        // treats the missing widening fields as "delivered-only", which is the
+        // right answer for exactly this set.
         select: { pickup_datetime: true, stops: { select: { delivered_at: true } } },
       }),
     ]);
@@ -188,11 +199,13 @@ router.get("/drivers", async (_req, res, next) => {
             incentive_final: true,
             pickup_datetime: true,
             cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } },
-            // All stops (not take:1): delivered_at across the whole trip feeds
-            // the pay-day month bucket; stops[0] still carries the route label.
+            // All stops (not take:1): the pay instants across the whole trip
+            // feed the month bucket; stops[0] still carries the route label.
+            // EARNING_STOP_SELECT, because this drives "Earned (mo.)" and it
+            // must bucket identically to the payroll sheet.
             stops: {
               orderBy: { sequence: "asc" },
-              select: { delivered_at: true, consignee: { select: { area: true, zone_code: true } } },
+              select: { ...EARNING_STOP_SELECT, consignee: { select: { area: true, zone_code: true } } },
             },
           },
         },
@@ -431,7 +444,7 @@ router.get("/monthly", async (_req, res, next) => {
       where: {
         OR: [
           { pickup_datetime: { gte: windowStart } },
-          { stops: { some: { delivered_at: { gte: windowStart } } } },
+          { stops: { some: earnedInWindow({ gte: windowStart }) } },
         ],
       },
       select: {
@@ -440,7 +453,7 @@ router.get("/monthly", async (_req, res, next) => {
         incentive_final: true,
         is_external: true,
         pickup_datetime: true,
-        stops: { select: { delivered_at: true } },
+        stops: { select: EARNING_STOP_SELECT },
       },
     });
 
@@ -513,13 +526,18 @@ router.get("/payroll", async (req, res, next) => {
         name: true,
         employee_number: true,
         trips_driven: {
-          // Superset SQL bound (delivered-in-month OR picked-up-in-month, the
+          // Superset SQL bound (EARNED-in-month OR picked-up-in-month, the
           // latter covering the legacy null-delivered_at fallback);
           // buildPayrollRows applies the precise pay-day [start, end) predicate.
+          // `earnedInWindow` (not a bare delivered_at bound) is load-bearing:
+          // a trip whose stops ALL failed and were adjudicated has no delivery
+          // confirm, so a delivered-only bound would drop it from this month
+          // AND — because its pickup can sit in another month — from every
+          // other month's sheet too. Real pay, invisible on payroll.
           where: {
             status: "completed",
             OR: [
-              { stops: { some: { delivered_at: { gte: bounds.start, lt: bounds.end } } } },
+              { stops: { some: earnedInWindow({ gte: bounds.start, lt: bounds.end }) } },
               { pickup_datetime: { gte: bounds.start, lt: bounds.end } },
             ],
           },
@@ -529,7 +547,7 @@ router.get("/payroll", async (req, res, next) => {
             pickup_datetime: true,
             incentive_earned: true,
             incentive_final: true,
-            stops: { select: { delivered_at: true } },
+            stops: { select: EARNING_STOP_SELECT },
           },
         },
       },
@@ -544,7 +562,9 @@ router.get("/payroll", async (req, res, next) => {
           id: t.id,
           ticket_number: t.ticket_number,
           pickup_datetime: t.pickup_datetime,
-          delivered_at: firstDeliveredAt(t.stops),
+          // The EARNING instant, not the delivery confirm — this is the field
+          // buildPayrollRows buckets and sorts on.
+          delivered_at: firstEarningInstant(t.stops),
           incentive_earned: t.incentive_earned,
           incentive_final: t.incentive_final,
         })),

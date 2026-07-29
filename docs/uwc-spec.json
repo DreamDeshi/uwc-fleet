@@ -205,16 +205,18 @@
     },
     {
       "topic": "failed_delivery_pay",
-      "rule": "If a driver REACHES a drop point but cannot deliver, the stop still earns incentive; if the lorry breaks down halfway, no incentive for stops not reached.",
-      "status": "WORKBOOK-PENDING (WhatsApp-only) + NOT IMPLEMENTED. Written proposal sent 2026-07-18 to upgrade to EMAIL tier.",
-      "source_tier": "whatsapp",
+      "rule": "If a driver REACHES a drop point but cannot deliver, the stop earns the SAME incentive as a delivered one (after reason + photo + admin check). If the lorry breaks down halfway, the stops he never reached earn nothing; stops delivered BEFORE the breakdown keep their pay.",
+      "status": "CONFIRMED (written answer doc, 2026-07-29) + IMPLEMENTED. Upgraded from WhatsApp tier by his answers to Q11(a)/(b).",
+      "source_tier": "document",
       "sources": [
-        { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-07-16", "quote": "if driver reach the drop point but cannot deliver, still consider entitle for incentive, if the lorry breakdown halfway, no incentive" },
-        { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-07-16", "quote": "yes will fail if lorry breakdown, i will write down the flow to you", "note": "He is authoring the failed-delivery FLOW; the strongest source (workbook) is silent. This is a MONEY rule — highest priority to get in writing." }
+        { "channel": "document", "who": "Mr. Teh", "date": "2026-07-29", "ref": "QUESTIONS_FOR_TEH_2026-07-29 [Answered], Q11(a)", "quote": "Same rate paid, although not delivered", "note": "The ruling. Answers 'a stop the driver reached but could not deliver — is it paid, and at what rate?'" },
+        { "channel": "document", "who": "Mr. Teh", "date": "2026-07-29", "ref": "QUESTIONS_FOR_TEH_2026-07-29 [Answered], Q11(b)", "quote": "Yes paid", "note": "Stops delivered before a breakdown keep their pay." },
+        { "channel": "whatsapp", "who": "Mr. Teh", "date": "2026-07-16", "quote": "if driver reach the drop point but cannot deliver, still consider entitle for incentive, if the lorry breakdown halfway, no incentive", "note": "The original off-the-cuff line. Consistent with the 29-Jul document, which supersedes it as the authority." },
+        { "channel": "email", "who": "Mr. Teh", "date": "2026-07-24", "ref": "R1 Q2a", "quote": "admin verify and approve", "note": "Where the admin's adjudication requirement comes from — this is why pay needs an explicit verify, not merely a closed report." }
       ],
-      "workbook_pending_note": "WhatsApp-only; workbook SILENT (not a conflict — a silence). The per-stop reading ('reached-but-couldn't-deliver still paid', 'delivered-before-breakdown stays paid') is an interpretation of an off-the-cuff line; do not build finalization to it as if confirmed until his written flow/proposal reply lands.",
-      "implementation": "PARTIALLY IMPLEMENTED — pay is gated strictly on 'delivered' status (POD photo required). A stop reached but not delivered is never stamped delivered_at, so it earns 0; the 'reached-but-undeliverable, still entitled' path does not exist yet. Since 2026-07-28 an admin abort of an in_progress trip with >=1 DELIVERED stop pays those delivered stops via the approval lane (see partial_pay_on_admin_cancel); an abort with zero delivered stops still ends cancelled with no pay.",
-      "verified": "2026-07-28"
+      "implementation": "IMPLEMENTED (2026-07-29, api/src/services/undeliveredPay.ts — one module, unit-tested, no clock and no Prisma). A non-delivered stop earns iff ALL THREE hold: (1) it is not already delivered (so a retried-then-delivered stop is never counted twice); (2) arrived_at is set — the driver physically REACHED it, which is the line between his (a) and his (b), taken from the arrival fact rather than the exception's category; (3) its stop-attached exception was BOTH verified by an admin AND closed with resolution 'resume'. Both halves of (3) are load-bearing: current_state 'resolved' alone is also produced by a bare 'Resume trip' (an admin unblocking a stranded truck, no adjudication) and by 'Retry' — and Retry must settle NOTHING, because the stop is still outstanding and the trip has to stay open for the driver to deliver it. 'reject' is the explicit no-pay lever. Pay attributes to arrived_at, never the admin's resolve time, so an admin's delay cannot move a driver's pay day or rate tier. The same predicate drives finalization scoring, the cross-trip day ledger, the completion gate and the abort branch (SETTLED_UNDELIVERED_WHERE — one constant, four call sites). Admin UI states the pay consequence on the buttons themselves (Verify = approve pay; Retry = settles nothing). GATED BEHIND FEATURE_EXCEPTIONS, which is still dark: with the flag off no exception can be reported, so no stop can meet condition (3) and behaviour is unchanged from delivered-only.",
+      "open_question": "R4 §A1 — does a paid-but-undelivered stop consume its zone's 'first drop of the day' slot, demoting a LATER real delivery to the 1-point repeat? Implemented as YES (his repeat rule is phrased about GOING to the zone), but he has never been asked directly and the opposite reading is defensible. ~RM33 per occurrence on a P1 pair. See QUESTIONS_FOR_TEH_R4.md.",
+      "verified": "2026-07-29"
     },
     {
       "topic": "pod_approval_gate",

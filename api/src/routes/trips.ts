@@ -56,7 +56,7 @@ import {
 } from "../services/incentiveEngine";
 import { leaveDateFilter } from "../services/driverLeave";
 import { priorDeliveredDropsWhere } from "../services/dayLedger";
-import { payAttributionInstant, SETTLED_UNDELIVERED_WHERE } from "../services/undeliveredPay";
+import { stopPayInstant, SETTLED_UNDELIVERED_WHERE } from "../services/undeliveredPay";
 import { effectiveTruckRates, effectiveZonePoints } from "../services/pendingRates";
 import { truckExpiryIssues } from "../services/truckEligibility";
 import { getRoute } from "../services/routeLegs";
@@ -1882,6 +1882,7 @@ async function proposeDeliveredStopsIncentive(
   //     delivered" — anchored on arrived_at.
   // A stop the driver never reached still earns nothing (Q11(b)), and a
   // rejected exception is the admin's no-pay lever.
+  const now = new Date();
   const candidateStops = await tx.tripStop.findMany({
     where: {
       trip_id: trip.id,
@@ -1889,14 +1890,29 @@ async function proposeDeliveredStopsIncentive(
     },
     include: {
       consignee: { select: { zone_code: true } },
-      exceptions: { select: { current_state: true } },
+      // These three fields ARE the pay predicate (undeliveredPay.ts). The WHERE
+      // above already filtered on them, but stopPayInstant re-checks in memory,
+      // so under-selecting here would make every settled stop look ineligible
+      // and silently drop it from scoring. Select exactly what the rule reads.
+      exceptions: {
+        select: {
+          current_state: true,
+          resolution: true,
+          actions: { where: { type: "verify" }, select: { type: true }, take: 1 },
+        },
+      },
     },
   });
   // Normalise to ONE pay instant per stop, then order by it — the engine's
   // per-zone-per-day scoring depends on the sequence the driver worked in, and
   // an undelivered stop's instant is its arrival, not a delivery it never had.
+  //
+  // `now` is the fallback for the legacy anomaly of a delivered stop with a
+  // NULL delivered_at (real; /reports/attention surfaces them). It matches what
+  // groupStopsByDeliveryDay already did with its own fallback — without it the
+  // filter below would drop the stop and silently zero a real drop's pay.
   const thisTripStops = candidateStops
-    .map((s) => ({ ...s, delivered_at: payAttributionInstant(s) }))
+    .map((s) => ({ ...s, delivered_at: stopPayInstant(s, now) }))
     .filter((s) => s.delivered_at !== null)
     .sort((a, b) => a.delivered_at!.getTime() - b.delivered_at!.getTime());
   const zoneCodes = [...new Set(thisTripStops.map((s) => dropZoneCode(s, s.consignee.zone_code)))];
@@ -1926,15 +1942,27 @@ async function proposeDeliveredStopsIncentive(
       select: {
         zone_code: true, zone_points: true, arrived_at: true, delivered_at: true, status: true,
         consignee: { select: { zone_code: true } },
-        exceptions: { select: { current_state: true } },
+        // Same reason as the candidate query: the pay predicate is re-checked
+        // in memory below, so it must be able to see all three fields.
+        exceptions: {
+          select: {
+            current_state: true,
+            resolution: true,
+            actions: { where: { type: "verify" }, select: { type: true }, take: 1 },
+          },
+        },
       },
     });
     // Ordered by each stop's OWN pay instant (delivered_at, or arrival for a
     // paid-undelivered one) — the same normalisation this trip's stops get.
+    // NO `now` fallback here, deliberately: `?? 0` sorts a null-instant row
+    // first, which is exactly what this ledger did before, and these rows are
+    // only ever a zone LIST for scoreDrops — changing their order would move
+    // money for an unrelated anomaly.
     const priorDrops = [...priorStopsToday]
       .sort(
         (a, b) =>
-          (payAttributionInstant(a)?.getTime() ?? 0) - (payAttributionInstant(b)?.getTime() ?? 0)
+          (stopPayInstant(a)?.getTime() ?? 0) - (stopPayInstant(b)?.getTime() ?? 0)
       )
       .map((s) => {
         const zone = dropZoneCode(s, s.consignee.zone_code);
@@ -2026,13 +2054,19 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
       }
 
       // EARNING stops, not merely delivered ones: a trip whose stops were all
-      // reached-but-undeliverable and resolved still owes pay (R3 Q11(a)), so
-      // it must take the approval lane rather than cancelling unpaid.
-      const deliveredCount = await tx.tripStop.count({
+      // reached-but-undeliverable and adjudicated still owes pay (R3 Q11(a)),
+      // so it must take the approval lane rather than cancelling unpaid.
+      //
+      // Named `earningCount`, NOT `deliveredCount` — it is no longer a count of
+      // deliveries, and the audit strings below must not claim it is.
+      const earningCount = await tx.tripStop.count({
         where: { trip_id: id, OR: [{ status: "delivered" }, SETTLED_UNDELIVERED_WHERE] },
       });
+      const deliveredCount = await tx.tripStop.count({
+        where: { trip_id: id, status: "delivered" },
+      });
 
-      if (deliveredCount === 0) {
+      if (earningCount === 0) {
         // Nothing delivered → the original abort: cancelled, no pay (breakdown /
         // never-reached stops don't pay — 16 Jul + R1-Q2b).
         // Status-guarded CAS: under the lock this cannot lose to a delivery, but
@@ -2078,7 +2112,10 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
       await tx.auditLog.create({
         data: {
           user_id: req.user!.id,
-          action: `trip.aborted_partial (${deliveredCount}/${totalStops} stops delivered — RM${proposedAmount} proposed for approval)${reason ? ` — ${reason}` : ""}`,
+          // Both numbers, because they can differ: a stop can EARN without
+          // being delivered (R3 Q11(a)). "3/5 stops delivered" for a trip that
+          // delivered 1 and had 2 adjudicated failures is a false audit record.
+          action: `trip.aborted_partial (${earningCount}/${totalStops} stops earning, ${deliveredCount} delivered — RM${proposedAmount} proposed for approval)${reason ? ` — ${reason}` : ""}`,
           table_name: "Trip",
           record_id: id,
         },
@@ -2087,7 +2124,7 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
         tripId: id,
         event: "cancelled",
         actorId: req.user!.id,
-        note: `Aborted after ${deliveredCount}/${totalStops} stops — pay for delivered stops awaiting approval`,
+        note: `Aborted after ${earningCount}/${totalStops} stops (${deliveredCount} delivered) — pay awaiting approval`,
       });
     });
 

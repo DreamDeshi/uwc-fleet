@@ -24,10 +24,29 @@
  *    16 Jul), and those stops have no arrival. We do not need to reason about
  *    the exception's CATEGORY to honour that — arrival is the physical fact.
  *
- * 3. A stop-attached exception CLOSED as `resolved`. That is the admin's
- *    adjudication ("admin verify and approve", R1 Q2a). `rejected` is the
- *    explicit no-pay lever and is the ONLY way an admin denies it; an exception
- *    still OPEN earns nothing yet (the trip cannot finalize while one is open).
+ * 3. A stop-attached exception that the admin BOTH verified AND closed with
+ *    `resume`. Two conditions, because `current_state: "resolved"` alone is
+ *    NOT an adjudication:
+ *
+ *      - `resolved` is produced by TWO different admin buttons — "Resume trip"
+ *        and "Retry" — and BOTH are reachable straight from `reported` with no
+ *        Verify at all (exceptionWorkflow.ALLOWED_FROM). Keying pay on it
+ *        would mean an admin tapping Resume merely to unblock a stranded truck
+ *        silently paid full zone points for a stop nobody adjudicated — every
+ *        category defaults to attaching to the driver's current stop, so a
+ *        `truck` breakdown reported at Ipoh would pay Ipoh.
+ *      - RETRY MUST SETTLE NOTHING. "Retry" means go back and try again; the
+ *        stop is still outstanding and the trip must stay open so the driver
+ *        CAN deliver it. Settling on retry finalized the trip under him and
+ *        left the later delivery rejected as TRIP_NOT_ACTIVE.
+ *
+ *    So: an explicit `verify` action is the admin's "this was a genuine failed
+ *    delivery" (R1 Q2a "admin verify and approve"), and `resume` is "we are
+ *    not going back for it". `reject` remains the explicit no-pay lever, and
+ *    an exception still OPEN earns nothing yet.
+ *
+ *    ⚠ The admin UI must SAY this — Verify is a pay decision, not a filing
+ *    action. See the button copy in mobile/src/admin/screens/ExceptionsScreen.
  *
  * ── THE PAY INSTANT ─────────────────────────────────────────────────────────
  * A delivered stop attributes its pay to `delivered_at` (client rule, 3 Jul:
@@ -36,14 +55,14 @@
  * nearest true analogue. Deliberately NOT the admin's verify/resolve time: that
  * would let an admin's delay move a driver's pay day and rate tier.
  *
- * ⚠ OPEN QUESTION, on the R4 list — does a paid-but-undelivered stop consume
- * its zone's "first drop of the day" slot, demoting a LATER real delivery to
- * the 1-point repeat? This module says YES (see payAttributionInstant's callers
- * and dayLedger): his repeat rule is phrased "if he GO TO P1 … subsequent
- * destination in same day, same zone will be 1 point", and a failed attempt is
- * still going there. But he has never been asked directly, and the opposite
- * reading (only a real delivery claims the zone) is defensible. Flagged rather
- * than silently assumed.
+ * ⚠ OPEN QUESTION — QUESTIONS_FOR_TEH_R4.md §A1 ($UWC_REFS_DIR). Does a
+ * paid-but-undelivered stop consume its zone's "first drop of the day" slot,
+ * demoting a LATER real delivery to the 1-point repeat? This module says YES
+ * (see stopPayInstant's callers and dayLedger): his repeat rule is phrased "if
+ * he GO TO P1 … subsequent destination in same day, same zone will be 1 point",
+ * and a failed attempt is still going there. But he has never been asked
+ * directly, and the opposite reading (only a real delivery claims the zone) is
+ * defensible — roughly RM33 per occurrence on a P1 pair. Asked, not assumed.
  */
 
 /**
@@ -61,8 +80,49 @@
 export const SETTLED_UNDELIVERED_WHERE = {
   status: { not: "delivered" as const },
   arrived_at: { not: null },
-  exceptions: { some: { current_state: "resolved" as const } },
+  exceptions: {
+    some: {
+      current_state: "resolved" as const,
+      resolution: "resume" as const, // NOT retry — retry leaves the stop outstanding
+      actions: { some: { type: "verify" as const } }, // the admin's pay decision
+    },
+  },
 };
+
+/**
+ * The Prisma SELECT that makes a stop's pay decidable. Every site that calls
+ * stopPayInstant / firstEarningInstant on DB rows must use it — the predicate is
+ * re-checked in memory, so an under-selected row looks unpaid and the stop
+ * silently drops out of the bucket. One constant, so that cannot drift.
+ */
+export const EARNING_STOP_SELECT = {
+  status: true,
+  arrived_at: true,
+  delivered_at: true,
+  exceptions: {
+    select: {
+      current_state: true,
+      resolution: true,
+      actions: { where: { type: "verify" as const }, select: { type: true }, take: 1 },
+    },
+  },
+} as const;
+
+/**
+ * SQL superset bound for "this trip EARNED something inside [gte, lt)" — the
+ * OR of a delivered stop in the window and a settled-undelivered stop whose
+ * ARRIVAL is in the window. Report queries that bounded only on `delivered_at`
+ * would drop an all-failed trip from every month: its pay instant is an
+ * arrival, and pickup can sit in a different month entirely.
+ */
+export function earnedInWindow(window: { gte: Date; lt?: Date }) {
+  return {
+    OR: [
+      { delivered_at: window },
+      { ...SETTLED_UNDELIVERED_WHERE, arrived_at: window },
+    ],
+  };
+}
 
 /** The minimum shape this decision needs. Structural, so tests need no Prisma. */
 export interface PayableStopLike {
@@ -70,7 +130,12 @@ export interface PayableStopLike {
   arrived_at: Date | null;
   delivered_at: Date | null;
   /** Exceptions ATTACHED TO THIS STOP (trip_stop_id = this stop). */
-  exceptions?: { current_state: string }[];
+  exceptions?: {
+    current_state: string;
+    resolution: string | null;
+    /** The append-only action log — `verify` is the admin's pay decision. */
+    actions?: { type: string }[];
+  }[];
 }
 
 export type PayEligibility =
@@ -78,9 +143,17 @@ export type PayEligibility =
   | "undelivered_paid" // R3 Q11(a) — reached, couldn't deliver, admin resolved
   | "unpaid"; // earns nothing
 
-/** True when a stop-attached exception was adjudicated in the driver's favour. */
+/**
+ * True when a stop-attached exception was VERIFIED by an admin and closed with
+ * `resume` — the two-part adjudication. Mirrors SETTLED_UNDELIVERED_WHERE.
+ */
 export function hasResolvedStopException(stop: PayableStopLike): boolean {
-  return (stop.exceptions ?? []).some((e) => e.current_state === "resolved");
+  return (stop.exceptions ?? []).some(
+    (e) =>
+      e.current_state === "resolved" &&
+      e.resolution === "resume" &&
+      (e.actions ?? []).some((a) => a.type === "verify")
+  );
 }
 
 /** Why (or whether) this stop earns. */
@@ -99,13 +172,23 @@ export function stopEarns(stop: PayableStopLike): boolean {
 }
 
 /**
- * The instant this stop's pay attributes to — the day-group and rate-tier
+ * The instant this STOP's pay attributes to — the day-group and rate-tier
  * anchor. Null when the stop earns nothing.
+ *
+ * Named `stopPayInstant`, NOT `payAttributionInstant`: tripCompletion.ts
+ * already exports a TRIP-level `payAttributionInstant` (the month bucket), and
+ * two identically-named functions imported side by side is a drift trap.
+ *
+ * `fallback` covers the legacy anomaly of a stop marked delivered with a NULL
+ * `delivered_at` (real — surfaced by /reports/attention). The pre-existing
+ * grouping treated those as "now" rather than dropping them, and dropping one
+ * would silently zero a whole drop's pay. Only the delivered branch can be
+ * null; an undelivered-paid stop always has an arrival by construction.
  */
-export function payAttributionInstant(stop: PayableStopLike): Date | null {
+export function stopPayInstant(stop: PayableStopLike, fallback?: Date): Date | null {
   switch (stopPayEligibility(stop)) {
     case "delivered":
-      return stop.delivered_at;
+      return stop.delivered_at ?? fallback ?? null;
     case "undelivered_paid":
       return stop.arrived_at;
     case "unpaid":

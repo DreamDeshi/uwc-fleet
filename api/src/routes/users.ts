@@ -17,6 +17,7 @@ import {
 import { estimateTripDistanceKm } from "../lib/geo";
 import { currentMytMonthBounds, inMytMonth } from "../lib/myt";
 import { payAttributionInstant, payableIncentive } from "../services/tripCompletion";
+import { EARNING_STOP_SELECT } from "../services/undeliveredPay";
 
 const router = Router();
 
@@ -78,9 +79,12 @@ async function buildDriverPerformance() {
           pickup_datetime: true,
           incentive_earned: true,
           incentive_final: true,
+          // EARNING_STOP_SELECT: payAttributionInstant below buckets this
+          // driver's month, and it must agree with the payroll sheet — which
+          // now counts a verified-and-resumed undelivered stop as earning.
           stops: {
             orderBy: { sequence: "asc" },
-            select: { delivered_at: true, consignee: { select: { zone_code: true } } },
+            select: { ...EARNING_STOP_SELECT, consignee: { select: { zone_code: true } } },
           },
         },
       },

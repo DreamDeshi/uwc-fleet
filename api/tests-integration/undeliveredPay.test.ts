@@ -213,6 +213,74 @@ describe("failed-delivery pay (R3 Q11a) — through Postgres", () => {
     expect(stops[1].points_awarded).toBe(1); // the delivered repeat
   });
 
+  // ── The two halves of the adjudication, end to end ────────────────────────
+
+  it("a BARE RESUME (no verify) pays nothing — unblocking a truck is not a pay decision", async () => {
+    // "Resume trip" is reachable straight from `reported`, and every category
+    // defaults to attaching to the driver's CURRENT stop. So an admin tapping
+    // Resume to get a broken-down truck moving would, under a
+    // current_state-only rule, have silently paid full Ipoh points for a stop
+    // nobody adjudicated. The verify action is what authorises the money.
+    const t = await startedTrip(["A2"]);
+    const stopId = t.stops[0].id;
+    const arrived = await api().patch(`/api/v1/trips/${t.id}/status`).set(auth(driver)).send({ action: "arrived", stop_id: stopId });
+    expect(arrived.status).toBe(200);
+    const reported = await reportReq(t.id, stopId);
+    expect(reported.status).toBe(201);
+    const exId = reported.body.exception.id as string;
+
+    // Straight to resume — NO verify.
+    const resumed = await api().post(`/api/v1/trips/${t.id}/exception/${exId}/resume`).set(auth(admin)).send({ client_action_id: randomUUID() });
+    expect(resumed.status, JSON.stringify(resumed.body)).toBe(200);
+    expect(resumed.body.exception.current_state).toBe("resolved");
+
+    // The stop is NOT settled, so it is still outstanding and the trip has not
+    // finalized. Closing it out is the unpaid cancel, as before.
+    const abort = await api().patch(`/api/v1/trips/${t.id}/abort`).set(auth(admin)).send({ reason: "closed out" });
+    expect(abort.status).toBe(200);
+
+    const after = await freshTrip(t.id);
+    expect(after.status).toBe("cancelled");
+    expect(after.incentive_earned).toBeNull();
+    const stop = await prisma.tripStop.findUniqueOrThrow({ where: { id: stopId } });
+    expect(stop.points_awarded).toBeNull();
+  });
+
+  it("RETRY settles nothing — the stop stays outstanding and the driver can still deliver it", async () => {
+    // "Retry" means go back and try again. If it settled the stop, the trip
+    // would finalize under the driver and his later delivery would be rejected
+    // as TRIP_NOT_ACTIVE — which the mobile outbox swallows as success, so he
+    // would never see that his delivery was lost.
+    const t = await startedTrip(["A2"]);
+    const stopId = t.stops[0].id;
+    const arrived = await api().patch(`/api/v1/trips/${t.id}/status`).set(auth(driver)).send({ action: "arrived", stop_id: stopId });
+    expect(arrived.status).toBe(200);
+    const reported = await reportReq(t.id, stopId);
+    expect(reported.status).toBe(201);
+    const exId = reported.body.exception.id as string;
+
+    const verified = await api().post(`/api/v1/trips/${t.id}/exception/${exId}/verify`).set(auth(admin)).send({ client_action_id: randomUUID() });
+    expect(verified.status).toBe(200);
+    const retried = await api().post(`/api/v1/trips/${t.id}/exception/${exId}/resolve`).set(auth(admin)).send({ client_action_id: randomUUID(), resolution: "retry", note: "customer will be back after lunch" });
+    expect(retried.status, JSON.stringify(retried.body)).toBe(200);
+    expect(retried.body.exception.current_state).toBe("resolved");
+
+    // Still in progress with the stop outstanding — NOT finalized.
+    const mid = await freshTrip(t.id);
+    expect(mid.status).toBe("in_progress");
+    expect(mid.incentive_earned).toBeNull();
+
+    // The driver goes back and delivers. It must succeed, and pay once on the
+    // normal delivered path: (6 − 2) × rate.
+    await deliverStop(t.id, stopId);
+    const after = await freshTrip(t.id);
+    expect(after.status).toBe("pending_approval");
+    expect(num(after.incentive_earned)).toBe(await expectedRm(t.id, 6));
+    const stop = await prisma.tripStop.findUniqueOrThrow({ where: { id: stopId } });
+    expect(stop.status).toBe("delivered");
+    expect(stop.points_awarded).toBe(6); // once, not twice
+  });
+
   it("an OPEN exception earns nothing yet — and still blocks the trip", async () => {
     const t = await startedTrip(["A2"]);
     const stopId = t.stops[0].id;

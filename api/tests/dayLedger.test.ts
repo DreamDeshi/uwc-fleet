@@ -10,6 +10,7 @@ import {
   getTripDayStart,
   scoreDrops,
 } from "../src/services/incentiveEngine";
+import { SETTLED_UNDELIVERED_WHERE } from "../src/services/undeliveredPay";
 
 /**
  * MONEY PATH — the finalize day-ledger (money-path review, 4 Jul 2026).
@@ -139,8 +140,20 @@ describe("priorDeliveredDropsWhere — the ledger's semantics, pinned", () => {
   it("counts delivered stops AND paid-undelivered ones (R3 Q11(a))", () => {
     expect(where.OR[0].status).toBe("delivered");
     expect(where.OR[1].status).toEqual({ not: "delivered" });
-    // The admin's resolution is what puts an undelivered stop on the ledger.
-    expect(where.OR[1].exceptions).toEqual({ some: { current_state: "resolved" } });
+    // The admin's TWO-PART adjudication is what puts an undelivered stop on the
+    // ledger, and it must be character-for-character SETTLED_UNDELIVERED_WHERE's
+    // predicate. `current_state: "resolved"` alone would also match a bare
+    // "Resume trip" (no verify) and a "Retry" — neither of which the finalizer
+    // pays. A ledger that counted a stop the finalizer doesn't pay would let a
+    // real later delivery in that zone be demoted to a 1-point repeat.
+    expect(where.OR[1].exceptions).toEqual(SETTLED_UNDELIVERED_WHERE.exceptions);
+    expect(where.OR[1].exceptions).toEqual({
+      some: {
+        current_state: "resolved",
+        resolution: "resume",
+        actions: { some: { type: "verify" } },
+      },
+    });
   });
 });
 
