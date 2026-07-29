@@ -608,6 +608,41 @@ describe("exception workflow — end-to-end through Postgres", () => {
     expect(afterResolved.body.error.code).toBe("EXCEPTION_CLOSED");
   });
 
+  it("POINTER_INCONSISTENT still rolls the whole close back", async () => {
+    // The rewritten cleared-pointer test above changed a contract; these
+    // ATOMICITY assertions were collateral and are restored here. They are the
+    // only place asserting that a refused pointer-clear leaves no partial
+    // close behind.
+    const t = await inProgressTrip();
+    const exId = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
+    // Point the trip at a FOREIGN exception id — the one state the guard exists
+    // to catch (the DB one-open index makes it unreachable in practice, which
+    // is exactly why it has to be constructed by hand). Seeded directly on a
+    // second BOOKED trip: starting one would trip the one-active-driver guard.
+    const otherTrip = await bookTrip(requestor, ["K1"], rt);
+    const foreign = await prisma.tripException.create({
+      data: {
+        trip_id: otherTrip.id,
+        client_occurrence_id: randomUUID(),
+        category: "truck",
+        reason: "seeded to create a foreign pointer",
+        reported_by: driverId,
+      },
+    });
+    await prisma.trip.update({ where: { id: t.id }, data: { open_exception_id: foreign.id } });
+
+    const resume = await api().post(`/api/v1/trips/${t.id}/exception/${exId}/resume`).set(auth(admin)).send({ client_action_id: randomUUID() });
+    expect(resume.status).toBe(409);
+    expect(resume.body.error.code).toBe("POINTER_INCONSISTENT");
+
+    // Everything rolled back: still OPEN, no resume action, no resolution.
+    const exc = (await prisma.tripException.findUnique({ where: { id: exId } }))!;
+    expect(exc.closed_at).toBeNull();
+    expect(exc.current_state).toBe("reported");
+    expect(exc.resolution).toBeNull();
+    expect(await prisma.exceptionAction.count({ where: { exception_id: exId, type: "resume" } })).toBe(0);
+  });
+
   it("a CLEARED pointer is legitimate (the driver continued) — the close succeeds", async () => {
     // CONTRACT CHANGE, 29 Jul 2026. This test previously asserted 409
     // POINTER_INCONSISTENT for a null pointer, on the invariant "open implies
@@ -850,6 +885,66 @@ describe("driver continue-trip — unblocks the truck, decides nothing", () => {
     expect(
       await prisma.auditLog.count({ where: { record_id: exId, action: { startsWith: "exception.driver_continued" } } })
     ).toBe(1);
+  });
+
+
+  // ── The guards that must NOT have been widened with the pointer ───────────
+
+  it("MONEY: an admin still cannot ABORT past a continued report", async () => {
+    // THE regression the reviewer found. Abort used to key on
+    // Trip.open_exception_id, which Continue clears — so a continued report
+    // stopped blocking abort, and the trip cancelled for RM0 while the failed
+    // stop was still unadjudicated. Worse, a later Verify + Resume returned 200
+    // and paid NOTHING, because finalization only runs on an in_progress trip.
+    // RM52 on this single Ipoh drop, with a 200 on every request.
+    const { tripId, exId } = await withOpenException();
+    expect((await carryOn(driver, tripId, exId)).status).toBe(200);
+
+    const abort = await api().patch(`/api/v1/trips/${tripId}/abort`).set(auth(admin)).send({ reason: "breakdown" });
+    expect(abort.status, JSON.stringify(abort.body)).toBe(409);
+    expect(abort.body.error.code).toBe("EXCEPTION_OPEN");
+
+    // Still out, still adjudicable — the pay is reachable.
+    expect((await prisma.trip.findUniqueOrThrow({ where: { id: tripId } })).status).toBe("in_progress");
+    expect((await api().post(`/api/v1/trips/${tripId}/exception/${exId}/verify`).set(auth(admin)).send({ client_action_id: randomUUID() })).status).toBe(200);
+    expect((await api().post(`/api/v1/trips/${tripId}/exception/${exId}/resume`).set(auth(admin)).send({ client_action_id: randomUUID() })).status).toBe(200);
+    const after = await prisma.trip.findUniqueOrThrow({ where: { id: tripId } });
+    expect(after.status).toBe("pending_approval");
+    expect(Number(after.incentive_earned)).toBeGreaterThan(0);
+  });
+
+  it("a STOP-ATTACHED open report keeps the trip from finalizing", async () => {
+    // The money is protected here by the outstanding-stop predicate, not by the
+    // open-exception guard. That is load-bearing and was untested: if
+    // remainingStops ever stopped counting a stop with an open report, the
+    // driver's Q11(a) entitlement would vanish on every multi-stop trip.
+    const { t, tripId, stopId, exId } = await withOpenException(["A2", "K1"]);
+    expect((await carryOn(driver, tripId, exId)).status).toBe(200);
+
+    // Deliver the OTHER stop. Stop 1 is still outstanding (reached, not
+    // adjudicated), so the trip must stay open and pay nothing yet.
+    await prisma.tripStop.update({ where: { id: t.stops[1].id }, data: { pod_photo: "test://pod.jpg", do_uploaded: true } });
+    expect((await patchTrip(driver, tripId, { action: "delivered", stop_id: t.stops[1].id })).status).toBe(200);
+
+    const mid = await prisma.trip.findUniqueOrThrow({ where: { id: tripId } });
+    expect(mid.status).toBe("in_progress");
+    expect(mid.incentive_earned).toBeNull();
+    expect((await prisma.tripStop.findUniqueOrThrow({ where: { id: stopId } })).points_awarded).toBeNull();
+  });
+
+  it("the requestor's redacted view never sees `blocking`", async () => {
+    // It is an operational fact about the run, and the redacted contract is
+    // category + coarse status + timestamps only.
+    const { tripId, exId } = await withOpenException();
+    expect((await carryOn(driver, tripId, exId)).status).toBe(200);
+
+    const asRequestor = await api().get(`/api/v1/trips/${tripId}/exception`).set(auth(requestor));
+    expect(asRequestor.status).toBe(200);
+    expect(asRequestor.body.exception).not.toHaveProperty("blocking");
+
+    // ...but the driver and admin do.
+    const asDriver = await api().get(`/api/v1/trips/${tripId}/exception`).set(auth(driver));
+    expect(asDriver.body.exception.blocking).toBe(false);
   });
 
   it("refuses a CLOSED report, a non-driver, and an admin", async () => {

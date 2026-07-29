@@ -81,6 +81,20 @@ async function loadException(tripId: string, exId: string) {
   if (!exc) throw new ApiError(404, "EXCEPTION_NOT_FOUND", "Exception not found.");
   return exc;
 }
+/**
+ * Attach the DERIVED `blocking` flag — but only for audiences entitled to it.
+ *
+ * `blocking` answers "is this report currently stopping the driver", which is
+ * an OPERATIONAL fact about the run, not part of the requestor's redacted view
+ * (lib/exceptionEvidence documents that contract as category + coarse status +
+ * timestamps ONLY). Spreading it on after the audience switch would put a
+ * second, competing decision about requestor visibility outside the one
+ * function that owns it — so it goes through here instead.
+ */
+function withBlocking<T extends object>(view: T, audience: ExceptionAudience, blocking: boolean): T {
+  return audience === "redacted" ? view : ({ ...view, blocking } as T);
+}
+
 async function reloadAndSend(res: import("express").Response, tripId: string, exId: string, audience: ExceptionAudience, status = 200) {
   const fresh = await loadException(tripId, exId);
   // `blocking` is DERIVED from the trip pointer, never stored: an exception can
@@ -89,7 +103,7 @@ async function reloadAndSend(res: import("express").Response, tripId: string, ex
   // from "and I am stuck here", and those became two different things.
   const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { open_exception_id: true } });
   res.status(status).json({
-    exception: { ...serializeException(fresh, audience), blocking: trip?.open_exception_id === exId },
+    exception: withBlocking(serializeException(fresh, audience), audience, trip?.open_exception_id === exId),
   });
 }
 
@@ -424,8 +438,16 @@ async function applyTransition(opts: {
         // genuine inconsistency and still rolls the whole close back.
         const ptr = await tx.trip.updateMany({ where: { id: opts.tripId, open_exception_id: opts.exId }, data: { open_exception_id: null } });
         if (ptr.count !== 1) {
+          // The ONLY legitimate reason to match 0 rows is that the driver
+          // continued past this report, which leaves the pointer NULL. Any
+          // other value means the trip is pointing at some third exception
+          // while we close this one — an inconsistency that would leave the
+          // trip permanently blocked (delivery, abort and finalization all
+          // refuse, and no route can clear a pointer to a closed exception).
+          // The DB's one-open-per-trip index makes that unreachable in theory;
+          // this is the assertion that says so out loud.
           const t2 = await tx.trip.findUnique({ where: { id: opts.tripId }, select: { open_exception_id: true } });
-          if (!t2 || t2.open_exception_id === opts.exId) {
+          if (!t2 || t2.open_exception_id !== null) {
             throw new ApiError(409, "POINTER_INCONSISTENT", "The trip's open-exception pointer was not in the expected state; the close was rolled back.");
           }
         }
@@ -661,7 +683,7 @@ router.get("/:id/exception", requireRole("driver", "admin", "requestor"), async 
     // the same thing once a driver has continued past a report.
     res.json({
       exception: exc
-        ? { ...serializeException(exc, audience), blocking: trip.open_exception_id === exc.id }
+        ? withBlocking(serializeException(exc, audience), audience, trip.open_exception_id === exc.id)
         : null,
     });
   } catch (err) {

@@ -9,7 +9,7 @@ import { capturePodPhoto } from "../lib/photo";
 import { uuidv4 } from "../lib/uuid";
 import { formatTime } from "../lib/format";
 import { exceptionStateLabelKey, canDriverAddEvidence, isOpenState } from "../lib/exceptionForm";
-import { useTripException, useAddExceptionEvidence } from "../hooks/useExceptions";
+import { useTripException, useAddExceptionEvidence, useContinueTrip } from "../hooks/useExceptions";
 import type { ExceptionFull } from "../services/exceptions";
 import { apiErrorMessage } from "../services/api";
 
@@ -34,6 +34,10 @@ const STATE_TONE: Record<string, string> = {
  * something back from him, `more_evidence`, is the only one with a button.
  *
  * He never sees verify / reject / resume / retry: those are the dispatcher's.
+ * The ONE action he gets is "Continue my trip", because an open report blocks
+ * every delivery on the trip — without it a report filed at 8pm strands a
+ * loaded truck until someone is at a screen. It decides nothing: no
+ * resolution, no action, the report stays open for the office.
  */
 export function ExceptionStatusCard({ tripId }: { tripId: string }) {
   const { t } = useTranslation();
@@ -41,6 +45,8 @@ export function ExceptionStatusCard({ tripId }: { tripId: string }) {
   const { data } = useTripException(tripId);
   const addEvidence = useAddExceptionEvidence();
   const [busy, setBusy] = useState(false);
+  const [continuing, setContinuing] = useState(false);
+  const continueTrip = useContinueTrip();
 
   const exc = data as ExceptionFull | null;
   if (!exc || !exc.category || !isOpenState(exc.current_state)) return null;
@@ -69,6 +75,22 @@ export function ExceptionStatusCard({ tripId }: { tripId: string }) {
     }
   };
 
+  const onContinue = async () => {
+    setContinuing(true);
+    try {
+      await continueTrip.mutateAsync({
+        tripId,
+        exId: exc.id,
+        input: { clientActionId: uuidv4(), expectedVersion: exc.version },
+      });
+      toast(t("exception.continueToast"), "success");
+    } catch (e) {
+      toast(apiErrorMessage(e, t("exception.continueFailed")), "error");
+    } finally {
+      setContinuing(false);
+    }
+  };
+
   const tone = STATE_TONE[exc.current_state] ?? colors.grey;
   const needsEvidence = canDriverAddEvidence(exc.current_state);
   const reportedAt = exc.reported_at ? formatTime(exc.reported_at) : null;
@@ -92,13 +114,31 @@ export function ExceptionStatusCard({ tripId }: { tripId: string }) {
           <Button title={t("exception.addEvidence")} onPress={onAddEvidence} loading={busy} />
         </View>
       ) : (
-        // No button — there is nothing for him to do. The line tells him who
-        // holds it so he stops waiting on the screen and drives on.
-        <Text style={styles.waiting}>
-          {reportedAt
-            ? t("exception.sentAtWaiting", { time: reportedAt })
-            : t("exception.waitingForOffice")}
-        </Text>
+        <>
+          <Text style={styles.waiting}>
+            {reportedAt
+              ? t("exception.sentAtWaiting", { time: reportedAt })
+              : t("exception.waitingForOffice")}
+          </Text>
+          {/* CONTINUE TRIP. Shown only while this report is actually BLOCKING
+              him — once he has carried on, the card says so instead of
+              offering the button again. `blocking` is derived server-side;
+              an older API that omits it is treated as still blocking, which
+              is the safe direction (the button 409s harmlessly). */}
+          {exc.blocking === false ? (
+            <Text style={styles.waiting}>{t("exception.continuedNote")}</Text>
+          ) : (
+            <View style={styles.action}>
+              <Button
+                variant="outline"
+                title={t("exception.continueTrip")}
+                onPress={onContinue}
+                loading={continuing}
+              />
+              <Text style={styles.prompt}>{t("exception.continueHint")}</Text>
+            </View>
+          )}
+        </>
       )}
     </View>
   );
