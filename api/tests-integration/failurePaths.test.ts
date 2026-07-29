@@ -1,4 +1,21 @@
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
+import { randomUUID } from "node:crypto";
+
+// Cloudinary is NOT configured in CI, so the document-upload tests below would
+// hit the real adapter and 500. (They passed locally only because api/.env
+// carries credentials — the same environment gap that bit the first CI run.)
+// Same hoisted stub the exception suites use: these tests care about the STATUS
+// GUARD, not about how bytes reach Cloudinary.
+vi.mock("../src/lib/cloudinary", () => ({
+  uploadBuffer: vi.fn(async (_buf: Buffer, folder: string) => ({
+    url: `https://res.cloudinary.test/${folder}/authenticated`,
+    publicId: `${folder}/pub_${randomUUID()}`,
+    resourceType: "image",
+    format: "jpg",
+  })),
+  isCloudinaryConfigured: () => true,
+  cloudinary: { url: (publicId: string) => `https://res.cloudinary.test/signed/${publicId}` },
+}));
 import { api, auth, prisma, resetDb, loginAs, ADMIN, DRIVER, REQUESTOR } from "./helpers/harness";
 import {
   firstRouteTypeId,
