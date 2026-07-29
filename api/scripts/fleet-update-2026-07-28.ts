@@ -141,32 +141,41 @@ async function main() {
       ? { user_id: admin.id, action, table_name: "FleetUpdate", record_id }
       : null;
 
-  await prisma.$transaction(async (tx) => {
-    await tx.department.upsert({ where: { name: "Store" }, update: {}, create: { name: "Store" } });
+  // ⚠ EXPLICIT TIMEOUTS. Prisma's interactive transaction defaults to a 5s
+  // budget; this body issues ~15 sequential statements and, run from a laptop
+  // against the Railway PUBLIC proxy, each round-trip costs enough that the
+  // default expires mid-way. The first real attempt (29 Jul 2026) died on
+  // P2028 "Transaction not found" — it rolled back cleanly, but a migration
+  // whose success depends on network latency is a trap for the next person.
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.department.upsert({ where: { name: "Store" }, update: {}, create: { name: "Store" } });
 
-    for (const t of NEW_TRUCKS) {
-      const exists = await tx.truck.findUnique({ where: { plate: t.plate } });
-      if (!exists) await tx.truck.create({ data: t });
-    }
+      for (const t of NEW_TRUCKS) {
+        const exists = await tx.truck.findUnique({ where: { plate: t.plate } });
+        if (!exists) await tx.truck.create({ data: t });
+      }
 
-    // Null the movers first (unique FK + a swap), then set the new pairs.
-    for (const m of MOVES) {
-      await tx.user.update({ where: { id: drivers.get(m.from)!.id }, data: { assigned_truck_plate: null } });
-    }
-    for (const m of MOVES) {
-      await tx.user.update({ where: { id: drivers.get(m.from)!.id }, data: { assigned_truck_plate: m.to } });
-      const a = audit(`fleet.driver_moved:${m.from}->${m.to}`, drivers.get(m.from)!.id);
+      // Null the movers first (unique FK + a swap), then set the new pairs.
+      for (const m of MOVES) {
+        await tx.user.update({ where: { id: drivers.get(m.from)!.id }, data: { assigned_truck_plate: null } });
+      }
+      for (const m of MOVES) {
+        await tx.user.update({ where: { id: drivers.get(m.from)!.id }, data: { assigned_truck_plate: m.to } });
+        const a = audit(`fleet.driver_moved:${m.from}->${m.to}`, drivers.get(m.from)!.id);
+        if (a) await tx.auditLog.create({ data: a });
+      }
+
+      for (const [plate, zones] of Object.entries(ZONE_UPDATES)) {
+        await tx.truck.update({ where: { plate }, data: { priority_zones: zones } });
+      }
+
+      await tx.zone.update({ where: { code: "P2" }, data: { name: "Juru & Perai & Batu Kawan" } });
+      const a = audit("fleet.revision_2026_07_28_applied", "P2");
       if (a) await tx.auditLog.create({ data: a });
-    }
-
-    for (const [plate, zones] of Object.entries(ZONE_UPDATES)) {
-      await tx.truck.update({ where: { plate }, data: { priority_zones: zones } });
-    }
-
-    await tx.zone.update({ where: { code: "P2" }, data: { name: "Juru & Perai & Batu Kawan" } });
-    const a = audit("fleet.revision_2026_07_28_applied", "P2");
-    if (a) await tx.auditLog.create({ data: a });
-  });
+    },
+    { timeout: 120_000, maxWait: 30_000 }
+  );
 
   console.log("\n✔ Fleet revision applied.");
   for (const m of MOVES) console.log(`  ${drivers.get(m.from)!.name}: ${m.from} → ${m.to}`);
