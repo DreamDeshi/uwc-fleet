@@ -1,5 +1,31 @@
 import { describe, it, expect } from "vitest";
-import { footerStage, waitingForDelivered } from "./activeTripStage";
+import {
+  footerStage,
+  waitingForDelivered,
+  requiresCustomsDoc,
+  CUSTOMS_DOC_ZONE,
+} from "./activeTripStage";
+
+// The client's copy of the zone MUST match the server's (CUSTOMS_DOC_ZONE in
+// api/src/services/incentiveEngine.ts). If they disagree, the app offers
+// Delivered on a stop the server will refuse — or hides it on one it would
+// accept. Mr. Teh, R3 2026-07-29: "Only Penang bayan Lepas area require K2" —
+// Bayan Lepas is Penang Island = zone P1, NOT the zone called "K2".
+describe("which zone needs a customs document (client mirror)", () => {
+  it("is P1, matching the server constant", () => {
+    expect(CUSTOMS_DOC_ZONE).toBe("P1");
+    expect(requiresCustomsDoc("P1")).toBe(true);
+  });
+
+  it("is NOT the zone that happens to be CALLED K2", () => {
+    expect(requiresCustomsDoc("K2")).toBe(false);
+  });
+
+  it("tolerates a stop with no zone at all", () => {
+    expect(requiresCustomsDoc(null)).toBe(false);
+    expect(requiresCustomsDoc(undefined)).toBe(false);
+  });
+});
 
 const stop = (over: Partial<Parameters<typeof footerStage>[0]> = {}) => ({
   status: "arrived",

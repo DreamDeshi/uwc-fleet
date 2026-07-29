@@ -8,6 +8,29 @@
 // Mirrors the server gate's SHAPE only — the server remains the authority;
 // this decides which button to show, never whether pay moves.
 
+/**
+ * The ONE zone whose deliveries need a customs document before Delivered.
+ *
+ * ⚠ THIS IS "P1" (Penang Island), NOT the zone literally CALLED "K2".
+ *
+ * Mr. Teh, R3 2026-07-29: "Only Penang bayan Lepas area require K2." Bayan
+ * Lepas is on Penang Island = zone P1. The gate had been keyed on zone code
+ * "K2" (Sungai Petani + Kuala Ketil) because the FEATURE is named after Borang
+ * K2 and the zone code "K2" is an unrelated coincidence — so it fired on the
+ * wrong towns from the day it shipped, blocking Delivered (and pay) in Sungai
+ * Petani while letting Bayan Lepas through.
+ *
+ * MUST mirror CUSTOMS_DOC_ZONE in api/src/services/incentiveEngine.ts. If these
+ * two disagree, the driver's app and the server disagree about whether a stop
+ * can be delivered at all.
+ */
+export const CUSTOMS_DOC_ZONE = "P1";
+
+/** True when a delivery in this zone must carry a customs document. */
+export function requiresCustomsDoc(zoneCode: string | null | undefined): boolean {
+  return zoneCode === CUSTOMS_DOC_ZONE;
+}
+
 export type FooterStage =
   | "arrived" // stop still pending → Arrived is the primary
   | "pod" // arrived, no POD yet → capture (opens the review step first)
@@ -23,7 +46,8 @@ export interface StageStop {
 }
 
 export interface StageFlags {
-  /** Stop's zone is a K2 zone → the uploaded Borang K2 gates Delivered. */
+  /** Stop needs a customs document → that upload gates Delivered.
+   *  Derive it with `requiresCustomsDoc(zone_code)`, never a bare comparison. */
   isK2: boolean;
   /** Arrived saved on-phone (offline outbox) — unlocks the POD step locally. */
   arrivedQueued?: boolean;

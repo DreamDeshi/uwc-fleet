@@ -174,19 +174,28 @@ describe("isDocumentationComplete — the documentation gate", () => {
     ).toBe(false);
   });
 
-  it("passes for non-K2 zones once the POD photo is uploaded", () => {
+  // ⚠ ZONE CORRECTED 29 Jul 2026. These two cases previously used "P1" as the
+  // no-document-needed example and "K2" as the gated one — exactly backwards.
+  // Mr. Teh, R3: "Only Penang bayan Lepas area require K2." Bayan Lepas is on
+  // Penang Island = zone P1; the zone literally CALLED "K2" is Sungai Petani +
+  // Kuala Ketil and needs nothing. See tests/customsDocZone.test.ts.
+  it("passes for zones with no customs requirement once the POD photo is uploaded", () => {
     expect(
-      isDocumentationComplete({ do_uploaded: true, k2_photo: null, pod_photo: POD }, "P1")
+      isDocumentationComplete({ do_uploaded: true, k2_photo: null, pod_photo: POD }, "P2")
+    ).toBe(true);
+    // The zone named "K2" is one of those zones.
+    expect(
+      isDocumentationComplete({ do_uploaded: true, k2_photo: null, pod_photo: POD }, "K2")
     ).toBe(true);
   });
 
-  it("requires the UPLOADED K2 document only when destination zone is K2 (Q6)", () => {
+  it("requires the UPLOADED customs document only in P1 / Bayan Lepas (Q6)", () => {
     // A tick is no longer enough — the actual document must be uploaded.
     expect(
-      isDocumentationComplete({ do_uploaded: true, k2_photo: null, pod_photo: POD }, "K2")
+      isDocumentationComplete({ do_uploaded: true, k2_photo: null, pod_photo: POD }, "P1")
     ).toBe(false);
     expect(
-      isDocumentationComplete({ do_uploaded: true, k2_photo: K2DOC, pod_photo: POD }, "K2")
+      isDocumentationComplete({ do_uploaded: true, k2_photo: K2DOC, pod_photo: POD }, "P1")
     ).toBe(true);
   });
 });

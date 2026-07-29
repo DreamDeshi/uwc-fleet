@@ -2468,7 +2468,7 @@ router.patch(
         const consigneeForGate = await tx.consignee.findUnique({ where: { id: stop2.consignee_id } });
         if (!consigneeForGate) throw new ApiError(400, "CONSIGNEE_NOT_FOUND", "Consignee for this stop no longer exists.");
         if (!isDocumentationComplete(stop2, consigneeForGate.zone_code)) {
-          throw new ApiError(400, "DOCUMENTATION_INCOMPLETE", "DO photo (and K2 form ack for K2 destinations) must be completed before marking delivered.");
+          throw new ApiError(400, "DOCUMENTATION_INCOMPLETE", "The POD photo (and a customs document, for destinations that need one) must be uploaded before marking delivered.");
         }
 
         await tx.tripStop.update({ where: { id: stop.id }, data: { status: "delivered", delivered_at: new Date() } });
