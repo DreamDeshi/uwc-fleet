@@ -93,6 +93,79 @@ export async function sweepOverdueExceptions(): Promise<void> {
   }
 }
 
+/**
+ * AT-REPORT alert — fired the moment a driver files an exception.
+ *
+ * The sweep above is a BACKSTOP, not the notification. Waiting up to 30 minutes
+ * to tell anyone that a loaded truck has stopped is the wrong default: the whole
+ * trip is paused from the instant the report commits (delivered/abort both 409
+ * EXCEPTION_OPEN), so the useful moment to reach an admin is now, not half an
+ * hour of stranded truck later.
+ *
+ * Both alerts survive on purpose and say DIFFERENT things:
+ *   - this one: "a driver just reported X" — new information;
+ *   - the sweep: "nobody has acted on this in 30 minutes" — an escalation.
+ * So the sweep deliberately does NOT skip exceptions this already alerted.
+ *
+ * Best-effort and never throws: a push failure must not fail or roll back a
+ * report the driver has already committed (his evidence photo is uploaded and
+ * the trip is already paused — losing the report would be far worse than
+ * losing the notification). Fire-and-forget from the route, AFTER the commit.
+ */
+export async function alertExceptionReported(exceptionId: string): Promise<void> {
+  try {
+    if (!exceptionsEnabled()) return;
+    const exc = await prisma.tripException.findUnique({
+      where: { id: exceptionId },
+      select: {
+        id: true,
+        category: true,
+        reason: true,
+        trip: {
+          select: {
+            id: true,
+            ticket_number: true,
+            truck_plate: true,
+            driver: { select: { name: true } },
+          },
+        },
+        trip_stop: { select: { sequence: true, consignee: { select: { company_name: true } } } },
+      },
+    });
+    if (!exc) return;
+
+    const admins = await prisma.user.findMany({
+      where: { role: "admin", status: "active", expo_push_token: { not: null } },
+      select: { expo_push_token: true },
+    });
+    // No early return on an empty admin list — sendPushNotifications handles
+    // that, and the sweep above behaves the same way. Diverging here made the
+    // two alerts behave differently on a fleet with no registered devices.
+
+    // Who and where, then what — an admin reading a lock screen needs to know
+    // which truck has stopped before anything else.
+    const who = [exc.trip.driver?.name, exc.trip.truck_plate].filter(Boolean).join(" · ");
+    const where = exc.trip_stop
+      ? ` at stop ${exc.trip_stop.sequence} (${exc.trip_stop.consignee.company_name})`
+      : "";
+    await sendPushNotifications(
+      admins.map((a) => a.expo_push_token),
+      {
+        title: `Driver reported: ${exc.category.replace(/_/g, " ")}`,
+        body: `${who || exc.trip.ticket_number}${where} — ${truncate(exc.reason, 90)}. The trip is paused until you act.`,
+        data: { type: "exception_reported", tripId: exc.trip.id, exceptionId: exc.id },
+      }
+    );
+  } catch (err) {
+    console.error("At-report exception alert failed:", err);
+  }
+}
+
+function truncate(s: string, max: number): string {
+  const clean = s.replace(/\s+/g, " ").trim();
+  return clean.length <= max ? clean : `${clean.slice(0, max - 1)}…`;
+}
+
 /** Test hook: reset the in-process one-shot marker between test cases. */
 export function resetExceptionAlertMarkers(): void {
   alertedIds.clear();

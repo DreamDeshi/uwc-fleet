@@ -9,6 +9,7 @@ import { validateBody } from "../middleware/validate";
 import { upload } from "../lib/upload";
 import { uploadBuffer } from "../lib/cloudinary";
 import { exceptionsEnabled } from "../lib/featureFlags";
+import { alertExceptionReported } from "../services/exceptionAlerts";
 import { lockTripRow } from "../lib/tripLock";
 import { testHook } from "../lib/testHooks";
 import { sha256Hex, reportFingerprint, evidenceFingerprint } from "../lib/exceptionFingerprint";
@@ -204,6 +205,13 @@ router.post("/:id/exception", requireRole("driver"), upload.single("photo"), asy
       }
       throw err;
     }
+
+    // AT-REPORT alert (best-effort, AFTER the commit, never awaited into the
+    // response): the trip is paused from this instant, so an admin should hear
+    // about it now rather than when the 30-minute sweep next runs. The sweep
+    // stays as the escalation for reports nobody actions. Only on a genuinely
+    // NEW report — an idempotent replay must not re-ping.
+    if (outcome.created) void alertExceptionReported(outcome.id);
 
     await reloadAndSend(res, tripId, outcome.id, "full", outcome.created ? 201 : 200);
   } catch (err) {

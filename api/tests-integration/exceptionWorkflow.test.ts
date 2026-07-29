@@ -16,10 +16,17 @@ vi.mock("../src/lib/cloudinary", () => ({
   cloudinary: { url: (publicId: string) => `https://res.cloudinary.test/signed/${publicId}` },
 }));
 
+// Push transport stubbed so "the admins were alerted" is a call-count assertion
+// rather than a real Expo hit. Hoisted above all imports, like the mock above.
+vi.mock("../src/lib/pushNotifications", () => ({
+  sendPushNotifications: vi.fn(async () => {}),
+}));
+
 import bcrypt from "bcrypt";
 import { api, auth, prisma, resetDb, loginAs, ADMIN, DRIVER, REQUESTOR } from "./helpers/harness";
 import { userIdByPhone, firstRouteTypeId, bookTrip, approveTrip, startTrip } from "./helpers/flow";
 import { uploadBuffer } from "../src/lib/cloudinary"; // the mocked adapter (vi.fn) — asserted for contract
+import { sendPushNotifications } from "../src/lib/pushNotifications";
 import { armBarrier } from "../src/lib/testHooks"; // deterministic interleaving for concurrency tests
 
 const PND_PLATE = "PND 1888";
@@ -642,5 +649,64 @@ describe("exception workflow — end-to-end through Postgres", () => {
     process.env.FEATURE_EXCEPTIONS = "";
     expect((await api().get("/api/v1/trips/exceptions/open").set(auth(admin))).status).toBe(404);
     process.env.FEATURE_EXCEPTIONS = "true";
+  });
+});
+
+/**
+ * The at-report alert, through the REAL report route — the unit tests above
+ * call the alert directly, which cannot catch the route forgetting to fire it.
+ */
+describe("reporting an exception alerts the admins immediately", () => {
+  beforeAll(() => {
+    process.env.FEATURE_EXCEPTIONS = "true";
+  });
+  afterAll(() => {
+    delete process.env.FEATURE_EXCEPTIONS;
+  });
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  const reportedAlerts = (exId: string) =>
+    vi.mocked(sendPushNotifications).mock.calls.filter(([, p]) => {
+      const d = p?.data as { type?: string; exceptionId?: string } | undefined;
+      return d?.type === "exception_reported" && d?.exceptionId === exId;
+    }).length;
+
+  it("fires once on a NEW report", async () => {
+    const t = await inProgressTrip();
+    vi.mocked(sendPushNotifications).mockClear();
+    const reported = await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg");
+    expect(reported.status).toBe(201);
+    const exId = reported.body.exception.id as string;
+    // Fire-and-forget: let the microtask + its two queries land.
+    await new Promise((r) => setTimeout(r, 250));
+    expect(reportedAlerts(exId)).toBe(1);
+  });
+
+  it("does NOT re-alert on an idempotent replay", async () => {
+    // Offline replay is the normal case, not an edge one — the driver's device
+    // retries the same report. Waking every admin again for it would train them
+    // to ignore the alert.
+    const t = await inProgressTrip();
+    // The SAME three op ids and the same photo bytes — an identical replay, the
+    // shape the offline outbox actually retries with. (The serialized exception
+    // does not echo these ids back, so they are pinned here.)
+    const fields = {
+      client_occurrence_id: randomUUID(),
+      client_action_id: randomUUID(),
+      client_evidence_id: randomUUID(),
+    };
+    vi.mocked(sendPushNotifications).mockClear();
+    const first = await reportReq(driver, t.id, fields).attach("photo", PHOTO, "e.jpg");
+    expect(first.status).toBe(201);
+    const exId = first.body.exception.id as string;
+    await new Promise((r) => setTimeout(r, 250));
+    expect(reportedAlerts(exId)).toBe(1);
+
+    const replay = await reportReq(driver, t.id, fields).attach("photo", PHOTO, "e.jpg");
+    expect(replay.status).toBe(200); // replay, not a new report
+    await new Promise((r) => setTimeout(r, 250));
+    expect(reportedAlerts(exId)).toBe(1); // still one
   });
 });

@@ -10,6 +10,7 @@ import { REQUESTOR, loginAs, prisma, resetDb } from "./helpers/harness";
 import { bookTrip, firstRouteTypeId } from "./helpers/flow";
 import {
   EXCEPTION_ALERT_THRESHOLD_MINUTES,
+  alertExceptionReported,
   resetExceptionAlertMarkers,
   sweepOverdueExceptions,
 } from "../src/services/exceptionAlerts";
@@ -26,6 +27,13 @@ const pushMock = vi.mocked(sendPushNotifications);
 
 const overdueInstant = () =>
   new Date(Date.now() - (EXCEPTION_ALERT_THRESHOLD_MINUTES + 1) * 60 * 1000);
+
+function reportedAlertCount(exceptionId: string): number {
+  return pushMock.mock.calls.filter(([, payload]) => {
+    const data = payload?.data as { type?: string; exceptionId?: string } | undefined;
+    return data?.type === "exception_reported" && data?.exceptionId === exceptionId;
+  }).length;
+}
 
 function overdueAlertCount(exceptionId: string): number {
   return pushMock.mock.calls.filter(([, payload]) => {
@@ -86,5 +94,76 @@ describe("overdue-exception alert sweep", () => {
     await sweepOverdueExceptions();
     expect(overdueAlertCount(fresh.id)).toBe(0);
     expect(overdueAlertCount(closed.id)).toBe(0);
+  });
+});
+
+/**
+ * AT-REPORT ALERT — the admin hears the moment a driver files, not up to 30
+ * minutes later. The trip is paused from the instant the report commits, so
+ * the sweep alone meant a loaded truck could sit stranded for half an hour
+ * before anyone was told.
+ */
+describe("at-report exception alert", () => {
+  beforeEach(async () => {
+    await resetDb();
+    resetExceptionAlertMarkers();
+    pushMock.mockClear();
+    process.env.FEATURE_EXCEPTIONS = "true";
+  });
+  afterEach(() => {
+    delete process.env.FEATURE_EXCEPTIONS;
+  });
+
+  it("fires immediately for a FRESH report — the case the sweep ignores", async () => {
+    const exc = await seedException({ reportedAt: new Date() });
+    // The sweep would do nothing with this one: it is not overdue.
+    await sweepOverdueExceptions();
+    expect(overdueAlertCount(exc.id)).toBe(0);
+
+    await alertExceptionReported(exc.id);
+    expect(reportedAlertCount(exc.id)).toBe(1);
+  });
+
+  it("carries the truck and the reason, so a lock screen is actionable", async () => {
+    const exc = await seedException({ reportedAt: new Date() });
+    await alertExceptionReported(exc.id);
+    const call = pushMock.mock.calls.find(([, p]) => {
+      const d = p?.data as { exceptionId?: string } | undefined;
+      return d?.exceptionId === exc.id;
+    });
+    expect(call).toBeDefined();
+    const [, payload] = call!;
+    expect(payload.title).toContain("truck"); // the category
+    expect(payload.body).toContain("breakdown at the gate"); // the driver's words
+    expect(payload.body).toMatch(/paused/i); // and what it means
+  });
+
+  it("is a NO-OP while the feature flag is off", async () => {
+    const exc = await seedException({ reportedAt: new Date() });
+    delete process.env.FEATURE_EXCEPTIONS;
+    await alertExceptionReported(exc.id);
+    expect(reportedAlertCount(exc.id)).toBe(0);
+  });
+
+  it("NEVER throws — a push failure must not fail a committed report", async () => {
+    // His evidence photo is uploaded and the trip is already paused; losing the
+    // report would be far worse than losing the notification.
+    const exc = await seedException({ reportedAt: new Date() });
+    pushMock.mockRejectedValueOnce(new Error("expo is down"));
+    await expect(alertExceptionReported(exc.id)).resolves.toBeUndefined();
+    // And a vanished exception is not an error either.
+    await expect(alertExceptionReported("does-not-exist")).resolves.toBeUndefined();
+  });
+
+  it("the 30-minute sweep STILL escalates one nobody actioned", async () => {
+    // Both alerts survive on purpose and say different things: "a driver just
+    // reported X" vs "nobody has acted on this in 30 minutes". The sweep must
+    // not treat the at-report ping as having handled it.
+    const exc = await seedException({ reportedAt: overdueInstant() });
+    await alertExceptionReported(exc.id);
+    expect(reportedAlertCount(exc.id)).toBe(1);
+
+    await sweepOverdueExceptions();
+    expect(overdueAlertCount(exc.id)).toBe(1);
   });
 });
