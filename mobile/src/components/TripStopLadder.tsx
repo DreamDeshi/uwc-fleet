@@ -66,7 +66,7 @@ export function TripStopLadder({ trip, running }: { trip: Trip; running: boolean
                   : t("trip.markDelivered")
                 : townOf(s)
             }
-            k2={requiresCustomsDoc(s.consignee?.zone_code)}
+            k2={requiresCustomsDoc(s.consignee?.zone_code, s.consignee?.area)}
             highlight={isNow}
             nowLabel={isNow ? t("driver.ladderNow") : undefined}
             last={last}

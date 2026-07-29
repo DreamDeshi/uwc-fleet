@@ -258,7 +258,7 @@ export function ActiveTripScreen() {
   const stageFlags = (s: TripStop): StageFlags => {
     const q = queuedFor(s);
     return {
-      isK2: requiresCustomsDoc(s.consignee?.zone_code),
+      isK2: requiresCustomsDoc(s.consignee?.zone_code, s.consignee?.area),
       arrivedQueued: q?.markArrived === true,
       podQueued: q?.photo != null || q?.photoUploaded === true,
       deliveryQueued: q?.confirmDelivered === true && s.status !== "delivered",

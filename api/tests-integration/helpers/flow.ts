@@ -43,6 +43,31 @@ export async function ensureConsigneeInZone(zone: string): Promise<{ id: string;
   });
 }
 
+/**
+ * A consignee that DOES need a customs document — zone P1, area Bayan Lepas.
+ *
+ * The gate is area-based (Mr. Teh R3 2026-07-29: "Only Penang bayan Lepas area
+ * require K2"), and it FAILS OPEN on a blank area. Every consignee from
+ * `ensureConsigneeInZone` has a null area, so none of them gate — which is why
+ * the rest of the suite is unaffected and why the gate's own spec has to ask
+ * for this one explicitly.
+ */
+export async function ensureCustomsDocConsignee(): Promise<{ id: string; zone_code: string }> {
+  const existing = await prisma.consignee.findFirst({
+    where: { zone_code: "P1", area: "BAYAN LEPAS", is_active: true },
+  });
+  if (existing) return existing;
+  return prisma.consignee.create({
+    data: {
+      company_name: "Test Consignee Bayan Lepas (customs)",
+      zone_code: "P1",
+      area: "BAYAN LEPAS",
+      is_active: true,
+      vendor_code: "TEST-BL",
+    },
+  });
+}
+
 /** Tomorrow 09:00 Malaysia time — deterministic, inside the operating window. */
 export function futurePickupIso(): string {
   const now = new Date();
@@ -79,14 +104,22 @@ export interface FlowTrip {
 
 const DEFAULT_CARGO: CargoLine[] = [{ pallet_type: "4×4", quantity: 1 }];
 
-/** Book a (multi-)stop trip owned by the requestor: one consignee per zone. */
+/**
+ * Book a (multi-)stop trip owned by the requestor: one consignee per zone.
+ *
+ * The pseudo-zone `"BAYAN_LEPAS"` books the customs-document consignee (zone
+ * P1, area Bayan Lepas) instead of a plain zone row — it is the only way to get
+ * a stop the documentation gate actually fires on.
+ */
 export async function bookTrip(
   token: string,
   zones: string[],
   routeTypeId: string,
   cargo: CargoLine[] = DEFAULT_CARGO
 ): Promise<FlowTrip> {
-  const consignees = await Promise.all(zones.map((z) => ensureConsigneeInZone(z)));
+  const consignees = await Promise.all(
+    zones.map((z) => (z === "BAYAN_LEPAS" ? ensureCustomsDocConsignee() : ensureConsigneeInZone(z)))
+  );
   const res = await api()
     .post("/api/v1/trips")
     .set(auth(token))

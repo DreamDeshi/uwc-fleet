@@ -243,9 +243,42 @@ export function scoreDrops(
  */
 export const CUSTOMS_DOC_ZONE = "P1";
 
-/** True when a delivery in this zone must carry a customs document. */
-export function requiresCustomsDoc(destinationZoneCode: string): boolean {
-  return destinationZoneCode === CUSTOMS_DOC_ZONE;
+/**
+ * …and the AREA inside it. Zone P1 is the whole of Penang Island — 412
+ * consignees on prod, of which only 192 are in Bayan Lepas. Gating the zone
+ * would have demanded a customs document from George Town, Jelutong, Gelugor
+ * and 220 others Mr. Teh never named, blocking Delivered (and pay) at each —
+ * the same class of bug this change exists to fix, aimed at different towns.
+ * Owner decision 29 Jul: gate the AREA, not the zone.
+ */
+export const CUSTOMS_DOC_AREA = "BAYAN LEPAS";
+
+/**
+ * `area` is FREE TEXT typed by requestors, so it is normalised before
+ * comparison — upper-cased, trimmed, and internal runs of whitespace
+ * collapsed. Matching is `includes`, not equality, because real rows read
+ * "KAWASAN PERINDUSTRIAN BAYAN LEPAS" and "BAYAN LEPAS FIZ" as often as the
+ * bare name, and a stricter test would silently un-gate them.
+ */
+function normaliseArea(area: string | null | undefined): string {
+  return (area ?? "").toUpperCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * True when this delivery must carry a customs document.
+ *
+ * FAILS OPEN by design. A blank or unrecognised area does NOT gate — owner
+ * ruling 29 Jul: "a missing document is recoverable at POD approval; a
+ * stranded driver isn't." A consignee added by a requestor who typed nothing
+ * into `area` therefore delivers normally, and the admin catches the missing
+ * document at approval, which is where a human is already looking.
+ */
+export function requiresCustomsDoc(
+  destinationZoneCode: string,
+  destinationArea?: string | null
+): boolean {
+  if (destinationZoneCode !== CUSTOMS_DOC_ZONE) return false;
+  return normaliseArea(destinationArea).includes(CUSTOMS_DOC_AREA);
 }
 
 /**
@@ -268,14 +301,15 @@ export function requiresCustomsDoc(destinationZoneCode: string): boolean {
  */
 export function isDocumentationComplete(
   stop: { do_uploaded: boolean; k2_photo: string | null; pod_photo: string | null },
-  destinationZoneCode: string
+  destinationZoneCode: string,
+  destinationArea?: string | null
 ): boolean {
   // The gate is the actual POD PHOTO, not the do_uploaded flag alone — the
   // flag is set by the photo upload, but checking only the boolean let it be
   // self-attested via PATCH /docs with no photo behind it (audit finding).
   if (!stop.pod_photo) return false;
   if (!stop.do_uploaded) return false;
-  if (requiresCustomsDoc(destinationZoneCode) && !stop.k2_photo) return false;
+  if (requiresCustomsDoc(destinationZoneCode, destinationArea) && !stop.k2_photo) return false;
   return true;
 }
 

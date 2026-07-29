@@ -164,38 +164,43 @@ describe("isDocumentationComplete — the documentation gate", () => {
 
   it("blocks when the DO photo is missing", () => {
     expect(
-      isDocumentationComplete({ do_uploaded: false, k2_photo: K2DOC, pod_photo: null }, "P1")
+      isDocumentationComplete({ do_uploaded: false, k2_photo: K2DOC, pod_photo: null }, "P1", "BAYAN LEPAS")
     ).toBe(false);
   });
 
   it("blocks when do_uploaded is set but no POD photo exists (self-attested flag)", () => {
     expect(
-      isDocumentationComplete({ do_uploaded: true, k2_photo: K2DOC, pod_photo: null }, "P1")
+      isDocumentationComplete({ do_uploaded: true, k2_photo: K2DOC, pod_photo: null }, "P1", "BAYAN LEPAS")
     ).toBe(false);
   });
 
-  // ⚠ ZONE CORRECTED 29 Jul 2026. These two cases previously used "P1" as the
+  // ⚠ TARGET CORRECTED 29 Jul 2026. These cases previously used "P1" as the
   // no-document-needed example and "K2" as the gated one — exactly backwards.
-  // Mr. Teh, R3: "Only Penang bayan Lepas area require K2." Bayan Lepas is on
-  // Penang Island = zone P1; the zone literally CALLED "K2" is Sungai Petani +
-  // Kuala Ketil and needs nothing. See tests/customsDocZone.test.ts.
-  it("passes for zones with no customs requirement once the POD photo is uploaded", () => {
+  // Mr. Teh, R3: "Only Penang bayan Lepas area require K2." Bayan Lepas is an
+  // AREA inside zone P1, not a zone; the zone literally CALLED "K2" is Sungai
+  // Petani + Kuala Ketil and needs nothing. Full coverage of the area matching
+  // and the fail-open rule lives in tests/customsDocZone.test.ts.
+  it("passes where no customs document is required, once the POD photo is uploaded", () => {
     expect(
-      isDocumentationComplete({ do_uploaded: true, k2_photo: null, pod_photo: POD }, "P2")
+      isDocumentationComplete({ do_uploaded: true, k2_photo: null, pod_photo: POD }, "P2", "PERAI")
     ).toBe(true);
-    // The zone named "K2" is one of those zones.
+    // The zone named "K2".
     expect(
-      isDocumentationComplete({ do_uploaded: true, k2_photo: null, pod_photo: POD }, "K2")
+      isDocumentationComplete({ do_uploaded: true, k2_photo: null, pod_photo: POD }, "K2", "SUNGAI PETANI")
+    ).toBe(true);
+    // Penang Island, but not Bayan Lepas.
+    expect(
+      isDocumentationComplete({ do_uploaded: true, k2_photo: null, pod_photo: POD }, "P1", "GEORGE TOWN")
     ).toBe(true);
   });
 
-  it("requires the UPLOADED customs document only in P1 / Bayan Lepas (Q6)", () => {
+  it("requires the UPLOADED customs document only in Bayan Lepas (Q6)", () => {
     // A tick is no longer enough — the actual document must be uploaded.
     expect(
-      isDocumentationComplete({ do_uploaded: true, k2_photo: null, pod_photo: POD }, "P1")
+      isDocumentationComplete({ do_uploaded: true, k2_photo: null, pod_photo: POD }, "P1", "BAYAN LEPAS")
     ).toBe(false);
     expect(
-      isDocumentationComplete({ do_uploaded: true, k2_photo: K2DOC, pod_photo: POD }, "P1")
+      isDocumentationComplete({ do_uploaded: true, k2_photo: K2DOC, pod_photo: POD }, "P1", "BAYAN LEPAS")
     ).toBe(true);
   });
 });

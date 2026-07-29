@@ -26,9 +26,35 @@
  */
 export const CUSTOMS_DOC_ZONE = "P1";
 
-/** True when a delivery in this zone must carry a customs document. */
-export function requiresCustomsDoc(zoneCode: string | null | undefined): boolean {
-  return zoneCode === CUSTOMS_DOC_ZONE;
+/**
+ * …and the AREA inside it. Zone P1 is the whole of Penang Island — only about
+ * half its consignees are in Bayan Lepas — so gating the zone would demand a
+ * document from George Town, Jelutong, Gelugor and the rest, blocking
+ * Delivered (and pay) at each. Owner decision 29 Jul: gate the AREA.
+ */
+export const CUSTOMS_DOC_AREA = "BAYAN LEPAS";
+
+/** `area` is free text typed by requestors — normalise before comparing. */
+function normaliseArea(area: string | null | undefined): string {
+  return (area ?? "").toUpperCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * True when this delivery must carry a customs document.
+ *
+ * FAILS OPEN: a blank or unrecognised area does NOT gate — "a missing document
+ * is recoverable at POD approval; a stranded driver isn't" (owner, 29 Jul).
+ * Matching is `includes` because real rows read "KAWASAN PERINDUSTRIAN BAYAN
+ * LEPAS" as often as the bare name.
+ *
+ * MUST mirror requiresCustomsDoc in api/src/services/incentiveEngine.ts.
+ */
+export function requiresCustomsDoc(
+  zoneCode: string | null | undefined,
+  area?: string | null
+): boolean {
+  if (zoneCode !== CUSTOMS_DOC_ZONE) return false;
+  return normaliseArea(area).includes(CUSTOMS_DOC_AREA);
 }
 
 export type FooterStage =
