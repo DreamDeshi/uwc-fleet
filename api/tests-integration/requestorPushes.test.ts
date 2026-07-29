@@ -48,7 +48,7 @@ describe("requestor lifecycle pushes (DG-R1)", () => {
     const driverId = await userIdByPhone(DRIVER.phone);
 
     const trip = await bookTrip(requestor, ["A1", "A2"], await firstRouteTypeId(requestor));
-    await approveTrip(admin, trip.id, driverId, "PLX 2406");
+    await approveTrip(admin, trip.id, driverId, "PND 1888");
 
     const start = await api()
       .patch(`/api/v1/trips/${trip.id}/status`)

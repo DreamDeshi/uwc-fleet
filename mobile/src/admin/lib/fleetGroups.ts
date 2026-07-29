@@ -1,10 +1,9 @@
 // Service-class grouping for the fleet-map truck list (28 Jul owner design).
 //
-// SHIP-EARLY CONTRACT: `INTERPLANT_PLATES` is EMPTY today, so the whole fleet
-// falls into one "customer" group and `groupFleet` returns a single group —
-// the UI renders the flat list exactly as before. The fleet-update build
-// (ON HOLD pending Mr. Teh's answers — FLEET_UPDATE_PLAN_2026-07-28.md) adds
-// "PLX 2406" and "PPE 2406" here, and the grouped UI lights up on its own.
+// LIT UP 29 Jul 2026: the fleet revision shipped (Mr. Teh's R3 answers cleared
+// the hold), so `INTERPLANT_PLATES` now names the two Batu Kawan shuttles and
+// the grouped UI renders exactly as the ship-early contract promised. Must
+// mirror the plates marked service_class "interplant" in docs/uwc-spec.json.
 //
 // RECONCILIATION INVARIANT (the owner's hard requirement): a truck that is
 // out on the map (has a live GPS fix) is NOT a list row, but it still counts
@@ -16,8 +15,8 @@
 
 export type ServiceClass = "customer" | "interplant";
 
-/** Interplant-only plates. EMPTY until the 28-Jul fleet update ships. */
-export const INTERPLANT_PLATES: readonly string[] = [];
+/** Interplant-only plates (the 28 Jul 2026 revision, live since 29 Jul). */
+export const INTERPLANT_PLATES: readonly string[] = ["PLX 2406", "PPE 2406"];
 
 /** Minimal structural slice of the admin Truck this module needs. */
 export interface GroupableTruck {

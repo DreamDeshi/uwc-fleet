@@ -24,11 +24,11 @@ import {
  * payroll. Grandfathering (pre-gate trips paid at `incentive_earned`) is
  * covered by the tripCompletion unit tests.
  *
- * PLX 2406: weekday RM11 / off-peak RM13, daily deduction 2, A-zone truck.
+ * PND 1888: weekday RM11 / off-peak RM13, daily deduction 2, A-zone truck.
  * A2 (Ipoh) = 6 points → first drop pays (6−2)×rate.
  */
 
-const PLX_PLATE = "PLX 2406";
+const PND_PLATE = "PND 1888";
 
 async function loginAll() {
   const [requestor, admin, driver] = await Promise.all([
@@ -43,7 +43,7 @@ async function loginAll() {
  *  pending_approval with its incentive proposed. Returns the trip + proposal. */
 async function deliverToPending(requestor: string, admin: string, driver: string, driverId: string, rt: string) {
   const t = await bookTrip(requestor, ["A2"], rt);
-  await approveTrip(admin, t.id, driverId, PLX_PLATE);
+  await approveTrip(admin, t.id, driverId, PND_PLATE);
   await startTrip(driver, t.id);
   await arriveAndDeliver(driver, t.id, t.stops[0].id);
   const trip = (await prisma.trip.findUnique({ where: { id: t.id }, include: { stops: true } }))!;
@@ -180,7 +180,7 @@ describe("POD approval gate — propose → approve, through Postgres", () => {
 
     // Started but not delivered → still in_progress.
     const t = await bookTrip(requestor, ["A2"], rt);
-    await approveTrip(admin, t.id, driverId, PLX_PLATE);
+    await approveTrip(admin, t.id, driverId, PND_PLATE);
     await startTrip(driver, t.id);
 
     const res = await approveIncentiveRaw(admin, t.id);

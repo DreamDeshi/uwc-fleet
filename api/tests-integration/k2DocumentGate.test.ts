@@ -13,13 +13,13 @@ import { cloudinary } from "../src/lib/cloudinary";
 // "Only Penang bayan Lepas area require K2." That is an AREA inside zone P1,
 // so the fixture below books the Bayan Lepas consignee, not a zone.
 
-const PLX = "PLX 2406";
+const PND = "PND 1888";
 let admin = "", driver = "", requestor = "", driverId = "", rt = "";
 
 /** Book a Bayan Lepas stop → assign → start → arrive → stub the POD. */
 async function readyK2Stop() {
   const t = await bookTrip(requestor, ["BAYAN_LEPAS"], rt);
-  await approveTrip(admin, t.id, driverId, PLX);
+  await approveTrip(admin, t.id, driverId, PND);
   await startTrip(driver, t.id);
   const stopId = t.stops[0].id;
   expect((await arriveRaw(driver, t.id, stopId)).status).toBe(200);
@@ -63,7 +63,7 @@ describe("customs document gate — Q6", () => {
 
   it("other zones are unaffected by the customs-document requirement", async () => {
     const t = await bookTrip(requestor, ["A2"], rt); // Ipoh
-    await approveTrip(admin, t.id, driverId, PLX);
+    await approveTrip(admin, t.id, driverId, PND);
     await startTrip(driver, t.id);
     const stopId = t.stops[0].id;
     await arriveRaw(driver, t.id, stopId);
@@ -75,7 +75,7 @@ describe("customs document gate — Q6", () => {
     // The original bug: this delivery used to be refused, stranding the driver
     // at a stop he had no way to complete.
     const t = await bookTrip(requestor, ["K2"], rt);
-    await approveTrip(admin, t.id, driverId, PLX);
+    await approveTrip(admin, t.id, driverId, PND);
     await startTrip(driver, t.id);
     const stopId = t.stops[0].id;
     await arriveRaw(driver, t.id, stopId);
@@ -87,7 +87,7 @@ describe("customs document gate — Q6", () => {
     // A requestor-added consignee with a blank area must never strand a driver;
     // a missing document is recoverable at POD approval (owner ruling, 29 Jul).
     const t = await bookTrip(requestor, ["P1"], rt); // ad-hoc P1 consignee, area null
-    await approveTrip(admin, t.id, driverId, PLX);
+    await approveTrip(admin, t.id, driverId, PND);
     await startTrip(driver, t.id);
     const stopId = t.stops[0].id;
     await arriveRaw(driver, t.id, stopId);

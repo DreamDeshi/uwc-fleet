@@ -33,7 +33,7 @@ import {
  * the real HTTP route behaves identically.)
  */
 
-const PLX_PLATE = DRIVERS.PLX.plate;
+const PND_PLATE = DRIVERS.PND.plate;
 
 async function setup() {
   const [requestor, admin, driver] = await Promise.all([
@@ -42,7 +42,7 @@ async function setup() {
     loginAs(DRIVER),
   ]);
   const rt = await firstRouteTypeId(requestor);
-  const plx = await userIdByPhone(DRIVERS.PLX.phone);
+  const plx = await userIdByPhone(DRIVERS.PND.phone);
   return { requestor, admin, driver, rt, plx };
 }
 
@@ -57,7 +57,7 @@ describe("ARRIVED-GUARD integration", () => {
   it("arrived on a NOT-STARTED (assigned) trip → 400 TRIP_NOT_STARTED", async () => {
     const { requestor, admin, driver, rt, plx } = await setup();
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX_PLATE); // assigned, NOT started
+    await approveTrip(admin, trip.id, plx, PND_PLATE); // assigned, NOT started
 
     const res = await arriveRaw(driver, trip.id, trip.stops[0].id);
     expect(res.status).toBe(400);
@@ -67,7 +67,7 @@ describe("ARRIVED-GUARD integration", () => {
   it("arrived on an in_progress trip with a pending stop → 200 (happy path)", async () => {
     const { requestor, admin, driver, rt, plx } = await setup();
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX_PLATE);
+    await approveTrip(admin, trip.id, plx, PND_PLATE);
     await startTrip(driver, trip.id);
 
     const res = await arriveRaw(driver, trip.id, trip.stops[0].id);
@@ -79,7 +79,7 @@ describe("ARRIVED-GUARD integration", () => {
   it("arrived on an already-arrived stop → 400 INVALID_STATUS", async () => {
     const { requestor, admin, driver, rt, plx } = await setup();
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX_PLATE);
+    await approveTrip(admin, trip.id, plx, PND_PLATE);
     await startTrip(driver, trip.id);
     expect((await arriveRaw(driver, trip.id, trip.stops[0].id)).status).toBe(200);
 
@@ -92,7 +92,7 @@ describe("ARRIVED-GUARD integration", () => {
   it("captures SERVER time on arrival and IGNORES a client-supplied arrived_at", async () => {
     const { requestor, admin, driver, rt, plx } = await setup();
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX_PLATE);
+    await approveTrip(admin, trip.id, plx, PND_PLATE);
     await startTrip(driver, trip.id);
 
     const before = Date.now();
@@ -119,7 +119,7 @@ describe("ARRIVED-GUARD integration", () => {
   it("repeated Arrived presses PRESERVE the first (original) timestamp", async () => {
     const { requestor, admin, driver, rt, plx } = await setup();
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX_PLATE);
+    await approveTrip(admin, trip.id, plx, PND_PLATE);
     await startTrip(driver, trip.id);
 
     expect((await arriveRaw(driver, trip.id, trip.stops[0].id)).status).toBe(200);
@@ -143,11 +143,11 @@ describe("ARRIVED-GUARD integration", () => {
   it("an UNASSIGNED driver cannot mark the stop arrived → 403 FORBIDDEN", async () => {
     const { requestor, admin, driver, rt, plx } = await setup();
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX_PLATE); // assigned to PLX (the DRIVER token)
+    await approveTrip(admin, trip.id, plx, PND_PLATE); // assigned to PLX (the DRIVER token)
     await startTrip(driver, trip.id);
 
     // A different, unassigned driver (PND) tries to mark this trip's stop arrived.
-    const otherDriver = await loginAs({ phone: DRIVERS.PND.phone, password: "Password123" });
+    const otherDriver = await loginAs({ phone: DRIVERS.PSA.phone, password: "Password123" });
     const res = await arriveRaw(otherDriver, trip.id, trip.stops[0].id);
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe("FORBIDDEN");
@@ -165,7 +165,7 @@ describe("ARRIVED-GUARD integration", () => {
     // stop-status check must win → INVALID_STATUS.
     const { requestor, admin, driver, rt, plx } = await setup();
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX_PLATE);
+    await approveTrip(admin, trip.id, plx, PND_PLATE);
     await startTrip(driver, trip.id);
     await arriveAndDeliver(driver, trip.id, trip.stops[0].id); // → pending_approval
 

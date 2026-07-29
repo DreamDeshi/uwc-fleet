@@ -115,13 +115,21 @@ if (privateSpecPath) {
 // Driver phone numbers are not in the spec; placeholders for testing only.
 // Keyed by TRUCK PLATE — stable across the public spec and the private overlay
 // (the public tree carries no real employee numbers to key on).
+//
+// Re-keyed for the 28 Jul 2026 fleet revision so each driver KEEPS their phone
+// across the truck moves (…101 was the PLX driver, who now drives PND; the two
+// NEW plates get …107/…108). ⚠ A fresh seed produces the post-revision fleet;
+// an EXISTING dev DB is untouched by re-seed (user upsert is update:{}) — run
+// scripts/fleet-update-2026-07-28.ts or reset the DB to apply the moves there.
 const DRIVER_PHONES: Record<string, string> = {
-  "PLX 2406": "+60100000101",
-  "PND 1888": "+60100000102",
+  "PND 1888": "+60100000101", // ex-PLX driver (A1/A2 primary follows him)
+  "PSA 5292": "+60100000102", // ex-PND driver
   "PRJ 5292": "+60100000103",
-  "PQL 5292": "+60100000104",
-  "PPE 1804": "+60100000105",
+  "PPE 1804": "+60100000104", // ex-PQL driver
+  "PQL 5292": "+60100000105", // ex-PPE 1804 driver
   "PRH 5292": "+60100000106",
+  "PLX 2406": "+60100000107", // NEW: STORE dept, interplant only
+  "PPE 2406": "+60100000108", // NEW: STORE dept, interplant only
 };
 
 // Document-expiry dates (demo fixtures, not spec data; keyed by plate). All
@@ -139,6 +147,10 @@ const TRUCK_EXPIRY: Record<string, { insurance: string; permit: string; roadtax:
   "PPE 1804": { insurance: "2027-03-15", permit: "2026-12-05", roadtax: "2027-01-08" },
   "PRH 5292": { insurance: "2027-01-01", permit: "2026-12-20", roadtax: "2027-02-10" },
   "4 Wheel": { insurance: "2027-04-01", permit: "2027-03-01", roadtax: "2027-02-15" },
+  // 28 Jul 2026 revision — demo fixtures like the rest (real dates unknown; a
+  // null date never blocks dispatch, but demo data keeps the alerts panel honest).
+  "PSA 5292": { insurance: "2027-05-01", permit: "2027-04-01", roadtax: "2027-03-15" },
+  "PPE 2406": { insurance: "2027-06-01", permit: "2027-05-10", roadtax: "2027-04-20" },
 };
 
 // Zone adjacency rules from Mr. Teh's email (not in the spec workbook).

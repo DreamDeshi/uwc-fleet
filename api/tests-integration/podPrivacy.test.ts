@@ -17,7 +17,7 @@ import { cloudinary } from "../src/lib/cloudinary";
  * (legacy) public photos keep working until the backfill secures them.
  */
 
-const PLX = DRIVERS.PLX;
+const PND = DRIVERS.PND;
 
 beforeAll(() => {
   // Deterministic signing so the serializer produces a checkable URL (the real
@@ -32,7 +32,7 @@ async function setup() {
     loginAs(DRIVER),
   ]);
   const rt = await firstRouteTypeId(requestor);
-  const plx = await userIdByPhone(PLX.phone);
+  const plx = await userIdByPhone(PND.phone);
   return { requestor, admin, driver, rt, plx };
 }
 
@@ -47,7 +47,7 @@ describe("POD photo privacy", () => {
   it("locks the POD once the trip is finalized → 409 POD_LOCKED (before any upload)", async () => {
     const { requestor, admin, driver, rt, plx } = await setup();
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX.plate);
+    await approveTrip(admin, trip.id, plx, PND.plate);
     await startTrip(driver, trip.id);
     await arriveAndDeliver(driver, trip.id, trip.stops[0].id); // → pending_approval
 
@@ -69,7 +69,7 @@ describe("POD photo privacy", () => {
   it("serves a SIGNED, unguessable URL for a stop that has a pod_public_id (never the stored value)", async () => {
     const { requestor, admin, driver, rt, plx } = await setup();
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX.plate);
+    await approveTrip(admin, trip.id, plx, PND.plate);
     await startTrip(driver, trip.id);
 
     // Simulate a secured upload: private asset id + the stored (non-public) URL.
@@ -92,7 +92,7 @@ describe("POD photo privacy", () => {
   it("serves a LEGACY stop (no pod_public_id) unchanged — backward compatible", async () => {
     const { requestor, admin, driver, rt, plx } = await setup();
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX.plate);
+    await approveTrip(admin, trip.id, plx, PND.plate);
     await startTrip(driver, trip.id);
 
     const legacy = "https://res.cloudinary.com/dultrxlvm/image/upload/uwc/pod/OLD-stop-1.jpg";
@@ -109,7 +109,7 @@ describe("POD photo privacy", () => {
   it("the signed URL also flows through the LIST endpoint (not only detail)", async () => {
     const { requestor, admin, driver, rt, plx } = await setup();
     const trip = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, trip.id, plx, PLX.plate);
+    await approveTrip(admin, trip.id, plx, PND.plate);
     await startTrip(driver, trip.id);
     await prisma.tripStop.update({
       where: { id: trip.stops[0].id },

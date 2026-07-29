@@ -25,12 +25,12 @@ import {
  *   OPERATING_WINDOW     — run finishes past the window; forcible → operating_window_override audit
  */
 
-const PLX = DRIVERS.PLX; // 16 pallets, roadworthy after each reset
+const PND = DRIVERS.PND; // 16 pallets, roadworthy after each reset
 
 async function ids() {
   const [requestor, admin] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN)]);
   const rt = await firstRouteTypeId(requestor);
-  const plxDriver = await userIdByPhone(PLX.phone);
+  const plxDriver = await userIdByPhone(PND.phone);
   const prhDriver = await userIdByPhone(DRIVERS.PRH.phone);
   return { requestor, admin, rt, plxDriver, prhDriver };
 }
@@ -56,11 +56,11 @@ describe("GUARD-LADDER integration — manual approve (assignTripInTx)", () => {
   it("TRUCK_UNROADWORTHY (expired insurance) is a HARD block, even with force", async () => {
     const { requestor, admin, rt, plxDriver } = await ids();
     await prisma.truck.update({
-      where: { plate: PLX.plate },
+      where: { plate: PND.plate },
       data: { insurance_expiry: new Date("2020-01-01T00:00:00Z") },
     });
     const trip = await bookTrip(requestor, ["P1"], rt);
-    const res = await approveRaw(admin, trip.id, plxDriver, PLX.plate, true); // force ignored
+    const res = await approveRaw(admin, trip.id, plxDriver, PND.plate, true); // force ignored
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("TRUCK_UNROADWORTHY");
   });
@@ -68,16 +68,16 @@ describe("GUARD-LADDER integration — manual approve (assignTripInTx)", () => {
   it("TRUCK_PERMIT_EXPIRED blocks without force, but force assigns + writes an audit row", async () => {
     const { requestor, admin, rt, plxDriver } = await ids();
     await prisma.truck.update({
-      where: { plate: PLX.plate },
+      where: { plate: PND.plate },
       data: { permit_expiry: new Date("2020-01-01T00:00:00Z") }, // insurance/road tax stay valid
     });
     const trip = await bookTrip(requestor, ["P1"], rt);
 
-    const blocked = await approveRaw(admin, trip.id, plxDriver, PLX.plate, false);
+    const blocked = await approveRaw(admin, trip.id, plxDriver, PND.plate, false);
     expect(blocked.status).toBe(409);
     expect(blocked.body.error.code).toBe("TRUCK_PERMIT_EXPIRED");
 
-    const forced = await approveRaw(admin, trip.id, plxDriver, PLX.plate, true);
+    const forced = await approveRaw(admin, trip.id, plxDriver, PND.plate, true);
     expect(forced.status).toBe(200);
     expect((await prisma.trip.findUnique({ where: { id: trip.id } }))!.status).toBe("assigned");
 
@@ -92,13 +92,13 @@ describe("GUARD-LADDER integration — manual approve (assignTripInTx)", () => {
     // Two trips at the SAME pickup time to the SAME driver.
     const t1 = await bookTrip(requestor, ["P1"], rt);
     const t2 = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, t1.id, plxDriver, PLX.plate); // first assigns cleanly
+    await approveTrip(admin, t1.id, plxDriver, PND.plate); // first assigns cleanly
 
-    const blocked = await approveRaw(admin, t2.id, plxDriver, PLX.plate, false);
+    const blocked = await approveRaw(admin, t2.id, plxDriver, PND.plate, false);
     expect(blocked.status).toBe(409);
     expect(blocked.body.error.code).toBe("SCHEDULING_CONFLICT");
 
-    const forced = await approveRaw(admin, t2.id, plxDriver, PLX.plate, true);
+    const forced = await approveRaw(admin, t2.id, plxDriver, PND.plate, true);
     expect(forced.status).toBe(200);
 
     const audit = await prisma.auditLog.findFirst({
@@ -114,11 +114,11 @@ describe("GUARD-LADDER integration — manual approve (assignTripInTx)", () => {
     });
     const trip = await bookTrip(requestor, ["P1"], rt);
 
-    const noForce = await approveRaw(admin, trip.id, plxDriver, PLX.plate, false);
+    const noForce = await approveRaw(admin, trip.id, plxDriver, PND.plate, false);
     expect(noForce.status).toBe(409);
     expect(noForce.body.error.code).toBe("DRIVER_ON_LEAVE");
 
-    const forced = await approveRaw(admin, trip.id, plxDriver, PLX.plate, true);
+    const forced = await approveRaw(admin, trip.id, plxDriver, PND.plate, true);
     expect(forced.status).toBe(409); // leave is physical unavailability — force can't override
     expect(forced.body.error.code).toBe("DRIVER_ON_LEAVE");
   });

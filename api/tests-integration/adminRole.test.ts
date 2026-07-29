@@ -32,7 +32,7 @@ async function restoreSeededAccounts() {
   });
   await prisma.user.update({
     where: { phone: DRIVER.phone },
-    data: { role: "driver", status: "active", assigned_truck_plate: "PLX 2406" },
+    data: { role: "driver", status: "active", assigned_truck_plate: "PND 1888" },
   });
 }
 
@@ -113,10 +113,10 @@ describe("PATCH /users/:id/role", () => {
 
   it("moving a driver off the driver role releases their 1:1 truck slot", async () => {
     const admin = await loginAs(ADMIN);
-    const driverId = await userIdByPhone(DRIVER.phone); // PLX 2406, assigned_truck_plate set
+    const driverId = await userIdByPhone(DRIVER.phone); // PND 1888, assigned_truck_plate set
 
     const before = await prisma.user.findUnique({ where: { id: driverId } });
-    expect(before!.assigned_truck_plate).toBe("PLX 2406");
+    expect(before!.assigned_truck_plate).toBe("PND 1888");
 
     const res = await patchRole(admin, driverId, "requestor");
     expect(res.status).toBe(200);

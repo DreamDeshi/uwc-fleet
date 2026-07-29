@@ -25,6 +25,8 @@
       "cargo.pallet_sizes[].factor is the agreed 4x4-equivalent capacity convention (mirrors api/src/lib/pallets.ts); the workbook lists the pallet sizes but not the factors.",
       "Kuala Lumpur is zone code KL (8 points, the furthest) — a real spec destination, wired like the other zones. Johor & Selangor were placeholder destinations (REQUESTOR dropdown only, no points or zone code in the rate sheet); Mr. Teh confirmed 16 Jul 2026 they won't be used, so the JH/SL placeholder zones were removed 18 Jul 2026 (this file's former 'extensions' block, the seed, and a data migration for any already-seeded rows).",
       "Rate reconciliation (2026-06-30): trucks[].weekday_rate / offpeak_rate / max_pallets were verified against Mr. Teh's authoritative INTERNAL LORRY RATE sheet — all 7 plates and both rate tiers match exactly.",
+      "FLEET REVISION 2026-07-28/29 (revised workbook + email + his R3 answers, CLIENT_ANSWERS.md): +PSA 5292 and +PPE 2406; PLX 2406 and PPE 2406 are service_class 'interplant' (out of customer/supplier AUTO dispatch; manual admin cross-assignment stays legal per email pt 6). TWO VALUES HERE DELIBERATELY DIFFER FROM THE REVISED WORKBOOK because Mr. Teh corrected his own cells in R3: PSA 5292 weekday_rate is 11, not the sheet's 13 ('Sorry My mistake, it is RM 11 for weekday' — A5), and PPE 2406 is type 5t-17.5ft, not the sheet's (10t-30ft) ('(5t-17.5ft), sorry my mistake' — A6). Do not 'fix' them back to the sheet.",
+      "PPE 2406 rates (5/7, deduction 0) are its INTERPLANT rates — the only rates the client has ever given this truck (it has no customer/supplier row). Deduction 0 is client-confirmed: 'Interplant no need deduction' (R3 A4). ⚠ Interplant PAY SEMANTICS (1 point per completed ROUND TRIP, per-truck interplant rates beside customer rates for PLX 2406) are NOT implemented — the engine still pays per delivered drop. Until that lands, a MANUAL assignment of an interplant truck to a trip pays from these Truck-row rates (PLX keeps its customer 11/13, correct for cross-assignment; PPE 2406 would pay 5/7 — reviewable at the POD-approval rate edit).",
       "daily_deduction: CONFIRMED for all 7 plates by the authoritative INTERNAL LORRY RATE sheet ('Daily Deduction POINT' column in References/'TRUCK BOOKING SYSTEM (YS).xlsx') — PLX 2, PND 2, PRJ 3, PQL 3, PPE 3, PRH 2, 4 Wheel 2. These values match the sheet exactly; not a guess.",
       "4 Wheel (Generic): weekday AND off-peak rates are both 11 — CONFIRMED by the INTERNAL LORRY RATE sheet, which lists a 4 Wheel row (= 11) in BOTH the peak and off-peak tables (not a default). Still OPEN (a genuine gap the workbook itself leaves): '4 Wheel' has no assigned driver and no priority_zones in the workbook, so whether it is a dispatchable 7th truck or an external/standby fallback is undecided.",
       "driver_assignments names/employee numbers are NEUTRAL PLACEHOLDERS: the real identities are NDA data and live in the gitignored References/uwc-spec.private.json overlay (matched by truck plate), which seed.ts applies when present. Trucks, zones and rates here are unchanged spec data."
@@ -32,18 +34,20 @@
   },
 
   "trucks": [
-    { "plate": "PLX 2406", "type": "10t-30ft",  "max_pallets": 16, "weekday_rate": 11, "offpeak_rate": 13, "daily_deduction": 2, "priority_zones": ["A1", "A2", "P1", "P2"] },
-    { "plate": "PND 1888", "type": "10t-30ft",  "max_pallets": 14, "weekday_rate": 11, "offpeak_rate": 13, "daily_deduction": 2, "priority_zones": ["P1", "P2", "P3", "K1", "K2"] },
+    { "plate": "PLX 2406", "type": "10t-30ft",  "max_pallets": 16, "weekday_rate": 11, "offpeak_rate": 13, "daily_deduction": 2, "priority_zones": [], "service_class": "interplant" },
+    { "plate": "PND 1888", "type": "10t-30ft",  "max_pallets": 14, "weekday_rate": 11, "offpeak_rate": 13, "daily_deduction": 2, "priority_zones": ["A1", "A2", "P1", "P2"] },
+    { "plate": "PSA 5292", "type": "10t-30ft",  "max_pallets": 14, "weekday_rate": 11, "offpeak_rate": 13, "daily_deduction": 2, "priority_zones": ["P1", "P2", "P3", "K1", "K2"] },
     { "plate": "PRJ 5292", "type": "5t-17.5ft", "max_pallets": 8,  "weekday_rate": 10, "offpeak_rate": 10, "daily_deduction": 3, "priority_zones": ["P1", "P2", "P3", "K1", "K2"] },
     { "plate": "PQL 5292", "type": "5t-17.5ft", "max_pallets": 8,  "weekday_rate": 10, "offpeak_rate": 10, "daily_deduction": 3, "priority_zones": ["P1", "P2", "P3", "K1", "K2"] },
     { "plate": "PPE 1804", "type": "5t-17.5ft", "max_pallets": 8,  "weekday_rate": 10, "offpeak_rate": 12, "daily_deduction": 3, "priority_zones": ["P1", "P2", "P3", "K1", "K2"] },
+    { "plate": "PPE 2406", "type": "5t-17.5ft", "max_pallets": 8,  "weekday_rate": 5,  "offpeak_rate": 7,  "daily_deduction": 0, "priority_zones": [], "service_class": "interplant" },
     { "plate": "PRH 5292", "type": "1t",        "max_pallets": 2,  "weekday_rate": 9,  "offpeak_rate": 9,  "daily_deduction": 2, "priority_zones": ["P1", "P2", "P3", "K1", "K2", "A1", "A2"] },
     { "plate": "4 Wheel",  "type": "Generic",   "max_pallets": 2,  "weekday_rate": 11, "offpeak_rate": 11, "daily_deduction": 2, "priority_zones": [] }
   ],
 
   "zones": [
     { "code": "P1", "coverage_area": "Penang (Penang Island)" },
-    { "code": "P2", "coverage_area": "Juru & Perai" },
+    { "code": "P2", "coverage_area": "Juru & Perai & Batu Kawan" },
     { "code": "P3", "coverage_area": "Tasek Gelugor" },
     { "code": "K1", "coverage_area": "Kulim" },
     { "code": "K2", "coverage_area": "Sungai Petani / Kuala Ketil" },
@@ -94,7 +98,9 @@
     ]
   },
 
+  "departments_note": "'Store' is NOT in the workbook's DEPARTMENT LIST sheet (unchanged in the 28 Jul revision) — added deliberately because the two new interplant drivers are dept STORE in the revised driver table. Do not flag as drift.",
   "departments": [
+    "Store",
     "Sheet Metal",
     "Assembly",
     "Painting",
@@ -113,12 +119,14 @@
   ],
 
   "driver_assignments": [
-    { "name": "Driver 1", "employee_no": "D001", "department": "Marketing", "truck": "PLX 2406", "priority_zones": ["A1", "A2", "P1", "P2"],             "priority_zones_raw": "A1,A2,P1,P2",        "notes": null },
-    { "name": "Driver 2", "employee_no": "D002", "department": "Marketing", "truck": "PND 1888", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": "Assign A1 & A2 if PLX 2406 is not available." },
+    { "name": "Driver 1", "employee_no": "D001", "department": "Marketing", "truck": "PND 1888", "priority_zones": ["A1", "A2", "P1", "P2"],             "priority_zones_raw": "A1,A2,P1,P2",        "notes": "Moved PLX 2406 → PND 1888 in the 28 Jul 2026 fleet revision; A1/A2 primary follows this driver." },
+    { "name": "Driver 2", "employee_no": "D002", "department": "Marketing", "truck": "PSA 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": "Moved PND 1888 → PSA 5292 (new truck) in the 28 Jul 2026 fleet revision." },
     { "name": "Driver 3", "employee_no": "D003", "department": "Marketing", "truck": "PRJ 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
-    { "name": "Driver 4", "employee_no": "D004", "department": "Marketing", "truck": "PQL 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
-    { "name": "Driver 5", "employee_no": "D005", "department": "Marketing", "truck": "PPE 1804", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": null },
-    { "name": "Driver 6", "employee_no": "D006", "department": "Marketing", "truck": "PRH 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2", "A1", "A2"], "priority_zones_raw": "ALL",            "notes": "If A1 & A2 with less than 2 pallets of 4x4, give the priority." }
+    { "name": "Driver 4", "employee_no": "D004", "department": "Marketing", "truck": "PPE 1804", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": "Moved PQL 5292 → PPE 1804 in the 28 Jul 2026 fleet revision." },
+    { "name": "Driver 5", "employee_no": "D005", "department": "Marketing", "truck": "PQL 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2"],       "priority_zones_raw": "ALL EXCEPT A1 & A2", "notes": "Moved PPE 1804 → PQL 5292 in the 28 Jul 2026 fleet revision." },
+    { "name": "Driver 6", "employee_no": "D006", "department": "Marketing", "truck": "PRH 5292", "priority_zones": ["P1", "P2", "P3", "K1", "K2", "A1", "A2"], "priority_zones_raw": "ALL",            "notes": "The old small-load A1/A2 priority note is REMOVED — Mr. Teh, R3 2026-07-29 A3: 'Remove it, PRH 5292 not priority for Taiping / Ipoh.'" },
+    { "name": "Driver 7", "employee_no": "D007", "department": "Store",     "truck": "PLX 2406", "priority_zones": [],                                    "priority_zones_raw": "BATU KAWAN (INTER PLANT ONLY)", "notes": "NEW in the 28 Jul 2026 revision (STORE dept). Interplant only — the empty coverage is deliberate: this truck never ranks for any customer zone." },
+    { "name": "Driver 8", "employee_no": "D008", "department": "Store",     "truck": "PPE 2406", "priority_zones": [],                                    "priority_zones_raw": "BATU KAWAN (INTER PLANT ONLY)", "notes": "NEW in the 28 Jul 2026 revision (STORE dept). Interplant only, as Driver 7." }
   ],
 
   "client_decisions": [
@@ -285,15 +293,32 @@
     },
     {
       "topic": "a1_a2_truck_eligibility_widened",
-      "rule": "A1 (Taiping) / A2 (Ipoh) truck eligibility is a PREFERENCE ORDERING, not a fence: PLX 2406 primary (locks the zone while free), PND 1888 backup, PRH 5292 with priority for orders under 2 pallets of 4x4; when no priority truck is free, ANY fitting truck (the 17.5ft lorries) may take the order. PRH's under-2-pallet cargo cap holds in every tier. Nothing was removed from eligibility — the change is widening only.",
-      "status": "WORKBOOK-PENDING (WhatsApp-only) — built on the owner's explicit call 2026-07-28; the workbook's priority columns are consistent (they state priorities, not a ban; the old hard fence was an implementation inference).",
-      "source_tier": "whatsapp (the widening) / workbook (the priority ordering + PRH small-load rule)",
+      "rule": "A1 (Taiping) / A2 (Ipoh): PND 1888 is the PRIMARY (Azmi's A1/A2 priority moved with him, PLX 2406 → PND 1888, 28 Jul revision) and locks the zones while free; when PND is unavailable, ANY fitting truck may take the order — no named backup and NO PRH small-load rule.",
+      "status": "CONFIRMED (R3 written answers, 2026-07-29 — document tier). Supersedes both the old PLX-primary ordering and the PRH small-load priority.",
+      "source_tier": "document (R3) / workbook (the PND move + priority column)",
       "sources": [
-        { "channel": "whatsapp", "date": "2026-07-28", "quote": "all lorry will go to taiping / ipoh, depend on arrangement and cargo size", "note": "Answer to the fast-track question whether to REMOVE PRH 5292 from A1/A2 — his answer widens instead of narrowing. Reverses the direction implied by R1-Q8 (24 Jul email: prioritize PLX 2406 / PND 1888 for Taiping/Ipoh)." },
-        { "channel": "workbook", "sheet": "INTERNAL LORRY RATE", "date": "2026-06-27", "quote": "If A1 & A2 with less than 2 pallets of 4x4, give the priority", "note": "PRH 5292's small-load priority — kept unchanged." }
+        { "channel": "document", "who": "Mr. Teh", "date": "2026-07-29", "quote": "You can assign any, sometime small lorry also will go taiping / Ipoh, depend cargo size", "note": "R3 A2 — when PND 1888 is busy there is NO fixed backup order; cargo size decides (which is what Best-Fit already does)." },
+        { "channel": "document", "who": "Mr. Teh", "date": "2026-07-29", "quote": "Remove it, PRH 5292 not priority for Taiping / Ipoh", "note": "R3 A3 — the dropped workbook remark was a REAL revocation. The strictly-under-2-pallet A1/A2 cargo cap dies with the rule; PRH's physical max_pallets (2) is the only remaining constraint." },
+        { "channel": "workbook", "sheet": "INTERNAL LORRY RATE (2026-07-28 revision)", "note": "Azmi keeps priority zones A1,A2,P1,P2 and moves to PND 1888 — the A1/A2 primary follows the driver." },
+        { "channel": "whatsapp", "date": "2026-07-28", "quote": "all lorry will go to taiping / ipoh, depend on arrangement and cargo size", "note": "The original widening, now corroborated at document tier by A2." }
       ],
-      "implementation": "api/src/services/dispatchEngine.ts filterA1A2Eligible — priority tiers unchanged (PLX lock, then PND + PRH<2), plus a new last-resort tier returning the whole fitting fleet (minus PRH at/over its cargo cap). Previously the function returned an empty set here and the booking went to manual (auto_dispatch_failed).",
-      "verified": "2026-07-28"
+      "implementation": "api/src/services/dispatchEngine.ts filterA1A2Eligible — PND 1888 locks A1/A2 while free and fitting; otherwise the whole fitting fleet ranks normally. The BACKUP and SMALL_LOAD constants and their tiers are deleted.",
+      "verified": "2026-07-29"
+    },
+    {
+      "topic": "fleet_revision_2026_07_28",
+      "rule": "Fleet revision (28 Jul workbook + email, values corrected by his 29 Jul R3 answers): +PSA 5292 (10t-30ft, 14 pallets, weekday 11 / off-peak 13, deduction 2, customer/supplier); +PPE 2406 (5t-17.5ft, 8 pallets, interplant); PLX 2406 and PPE 2406 are INTERPLANT-ONLY for AUTO dispatch (manual admin cross-assignment stays legal); five driver moves (Azmi→PND, Shahar→PSA, Fitri→PPE 1804, Zulkhairi→PQL, two new STORE drivers→PLX/PPE 2406); zone P2 relabelled 'Juru & Perai & Batu Kawan'; booking-accept ceiling stays at fleet max 16 with 15–16-pallet customer orders falling to manual.",
+      "status": "CONFIRMED (workbook + email + R3 document answers). Interplant PAY (1 point per completed round trip, no deduction, per-truck interplant rates) and the interplant BOOKING flow (pickup+delivery fenced to the UWC Plant 1–9 consignees) are CONFIRMED AS RULES but NOT BUILT — they need a schema/design pass and ship separately.",
+      "source_tier": "workbook + email (the revision) / document (R3 corrections + interplant scoring)",
+      "sources": [
+        { "channel": "document", "who": "Mr. Teh", "date": "2026-07-29", "quote": "Sorry My mistake, it is RM 11 for weekday", "note": "R3 A5 — PSA 5292's workbook weekday 13 was a typo." },
+        { "channel": "document", "who": "Mr. Teh", "date": "2026-07-29", "quote": "(5t-17.5ft) , sorry my mistake", "note": "R3 A6 — PPE 2406's workbook '(10t-30ft)' was a typo; it is a 17.5ft carrying 8 pallets." },
+        { "channel": "document", "who": "Mr. Teh", "date": "2026-07-29", "quote": "Interplant no need deduction, but please ensure they need to fulfill round trip only can consider complete 1 trip , get 1 point.", "note": "R3 A4 — interplant scoring rule (deduction 0 is in trucks[]; the round-trip point is NOT yet implemented)." },
+        { "channel": "document", "who": "Mr. Teh", "date": "2026-07-29", "quote": "OK, but need to trigger admin and requestor lorry is fully occupied, whether accept or not decide by Admin.", "note": "R3 A7 — approves the 15–16→manual design and ADDS a notify-admin-AND-requestor requirement (tracked as new work, not built in the revision)." },
+        { "channel": "email", "who": "Mr. Teh", "date": "2026-07-28", "quote": "PLX 2406 will be focus on interplant delivery only, within batu Kawan area, remove it from auto dispatch to customer / supplier delivery" }
+      ],
+      "implementation": "trucks[] + driver_assignments[] in this file are the post-revision fleet; service_class 'interplant' gates the AUTO candidate pool (api/src/services/dispatchEngine.ts); prod applies via api/scripts/fleet-update-2026-07-28.ts (guarded, audit-logged). The customer AUTO pool's largest truck is now 14 pallets — a 15–16-pallet booking is still ACCEPTED (fleet max incl. PLX is 16) and falls to manual via auto_dispatch_failed, the owner-approved design.",
+      "verified": "2026-07-29"
     },
     {
       "topic": "partial_pay_on_admin_cancel",

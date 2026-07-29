@@ -32,6 +32,7 @@ import { mytDayBoundsForKey } from "../lib/myt";
 import { roadworthyWhere } from "./truckEligibility";
 import { recordTripEvent } from "../lib/tripHistory";
 import { CONFLICT_STATUSES, ASSIGNMENT_CONFLICT_BUFFER_MS } from "./schedulingConflict";
+import { isInterplantPlate } from "../lib/uwcSpec";
 import {
   estimateOperatingWindow,
   formatMinutesToHm,
@@ -60,57 +61,40 @@ export interface TruckSelection {
   reason: string;
 }
 
-// ── A1/A2 (Taiping/Ipoh) driver-priority rules — INTERNAL LORRY RATE sheet ──
-// The sheet names who serves these zones by PREFERENCE, and the client confirmed
-// the preference is not a fence (28 Jul 2026, WhatsApp: "all lorry will go to
-// taiping / ipoh, depend on arrangement and cargo size"). Encoded as plate
-// constants so the rules read literally.
+// ── A1/A2 (Taiping/Ipoh) driver-priority rule — 28 Jul 2026 revision + R3 ──
+// The revised INTERNAL LORRY RATE sheet moves Azmi (whose priority zones are
+// A1,A2,P1,P2) from PLX 2406 to PND 1888 — the A1/A2 primary FOLLOWS THE
+// DRIVER. Mr. Teh's written R3 answers (29 Jul, document tier) settled the
+// rest: no named backup ("You can assign any, sometime small lorry also will
+// go taiping / Ipoh, depend cargo size" — A2) and the old PRH 5292 small-load
+// priority is REMOVED ("Remove it, PRH 5292 not priority for Taiping / Ipoh"
+// — A3). PRH's only remaining constraint is its physical max_pallets.
 const A1_A2_ZONES = ["A1", "A2"];
-const PRIMARY_A1_A2_PLATE = "PLX 2406"; // the primary A1/A2 driver's truck
-const BACKUP_A1_A2_PLATE = "PND 1888"; // backup — only if PLX 2406 unavailable
-const SMALL_LOAD_A1_A2_PLATE = "PRH 5292"; // priority for orders under 2 pallets
-const SMALL_LOAD_MAX_A1_A2_PALLETS = 2; // PRH 5292 may take A1/A2 only when pallets < this
+const PRIMARY_A1_A2_PLATE = "PND 1888"; // Azmi's truck since the 28 Jul revision
 
 /**
  * Narrow the fitting trucks to those *preferred* for this order's zone.
  *
  * For any zone other than A1/A2 the set is returned unchanged. For A1 (Taiping)
- * or A2 (Ipoh) the INTERNAL LORRY RATE sheet's priority applies as an ORDERING:
- *   1. PLX 2406's driver is the primary — whenever that truck fits and is
- *      available it is the ONLY truck offered (nobody else takes A1/A2 while
- *      PLX 2406 is free).
- *   2. If PLX 2406 is unavailable (busy elsewhere or not in the pool), the
- *      backups are PND 1888 (any size) and PRH 5292, but PRH only for orders
- *      strictly under 2 pallets (the sheet's cargo-size rule for the 1-tonne).
- *   3. If no priority truck is free either, ANY fitting truck may take the
- *      order (client, 28 Jul 2026 — previously the 17.5ft lorries were fenced
- *      out entirely and the booking went to manual). PRH's < 2-pallet cargo cap
- *      still holds in this tier: widening opened A1/A2 to the 17.5ft lorries,
- *      it did not lift the 1-tonne's cargo rule.
+ * or A2 (Ipoh):
+ *   1. PND 1888 is the primary — whenever it fits and is available it is the
+ *      ONLY truck offered (nobody else takes A1/A2 while the primary is free).
+ *   2. Otherwise ANY fitting truck may take the order, ranked by the normal
+ *      tier + Best-Fit ordering — "depend cargo size" is exactly what
+ *      Best-Fit-Decreasing does.
  *
- * "PLX available" is derived purely from the passed candidates (it appears in
- * the fitting set) — no DB lookup — so a busy or absent PLX both open the
- * backups, while an idle, fitting PLX locks A1/A2 to that truck.
+ * "Primary available" is derived purely from the passed candidates (it appears
+ * in the fitting set) — no DB lookup — so a busy or absent PND both open the
+ * order to the fleet, while an idle, fitting PND locks A1/A2 to that truck.
  */
 function filterA1A2Eligible(order: DispatchOrder, fitting: TruckCandidate[]): TruckCandidate[] {
   if (order.zone == null || !A1_A2_ZONES.includes(order.zone)) return fitting;
 
-  const plxAvailable = fitting.some((c) => c.plate === PRIMARY_A1_A2_PLATE);
-  if (plxAvailable) {
+  const primaryAvailable = fitting.some((c) => c.plate === PRIMARY_A1_A2_PLATE);
+  if (primaryAvailable) {
     return fitting.filter((c) => c.plate === PRIMARY_A1_A2_PLATE);
   }
-
-  const backups = fitting.filter((c) => {
-    if (c.plate === BACKUP_A1_A2_PLATE) return true; // PND 1888 backs up A1/A2, any size
-    if (c.plate === SMALL_LOAD_A1_A2_PLATE) return order.pallets < SMALL_LOAD_MAX_A1_A2_PALLETS; // PRH 5292: <2 pallets only
-    return false;
-  });
-  if (backups.length > 0) return backups;
-
-  // Last resort: the whole fitting fleet, minus PRH over its A1/A2 cargo cap.
-  return fitting.filter(
-    (c) => c.plate !== SMALL_LOAD_A1_A2_PLATE || order.pallets < SMALL_LOAD_MAX_A1_A2_PALLETS
-  );
+  return fitting;
 }
 
 /**
@@ -438,6 +422,13 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
 
         const candidates: TruckCandidate[] = trucks
           .filter((t) => t.driver) // safety: a truck with no assigned driver (e.g. "4 Wheel") can't be dispatched
+          // Service-class gate (28 Jul 2026 revision): interplant trucks
+          // (PLX 2406, PPE 2406) never enter the customer/supplier AUTO pool.
+          // Manual admin assignment is deliberately NOT gated — "all lorries
+          // may swap between interplant and customer/supplier work …
+          // ADMIN-authorized" (email pt 6). Interplant AUTO dispatch does not
+          // exist yet; when it does, it draws from exactly these plates.
+          .filter((t) => !isInterplantPlate(t.plate))
           .map((t) => ({
             plate: t.plate,
             driverId: t.driver!.id,

@@ -26,8 +26,8 @@ import {
  * contention — everything else models it with in-memory CAS fakes.
  */
 
-const PLX_PLATE = DRIVERS.PLX.plate;
 const PND_PLATE = DRIVERS.PND.plate;
+const PSA_PLATE = DRIVERS.PSA.plate;
 
 const okCount = (rs: { status: number }[]) => rs.filter((r) => r.status === 200).length;
 
@@ -42,13 +42,13 @@ describe("CONCURRENCY integration — Serializable → 409 under real contention
   it("double-assign the SAME trip: two concurrent approves → one wins, one 409", async () => {
     const [requestor, admin] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN)]);
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(DRIVERS.PLX.phone);
     const pnd = await userIdByPhone(DRIVERS.PND.phone);
+    const psa = await userIdByPhone(DRIVERS.PSA.phone);
     const trip = await bookTrip(requestor, ["P1"], rt);
 
     const [a, b] = await Promise.all([
-      approveRaw(admin, trip.id, plx, PLX_PLATE, true),
       approveRaw(admin, trip.id, pnd, PND_PLATE, true),
+      approveRaw(admin, trip.id, psa, PSA_PLATE, true),
     ]);
 
     expect(okCount([a, b])).toBe(1);
@@ -59,7 +59,7 @@ describe("CONCURRENCY integration — Serializable → 409 under real contention
     // Assigned to exactly ONE of the two drivers — never both, never neither.
     const after = (await prisma.trip.findUnique({ where: { id: trip.id } }))!;
     expect(after.status).toBe("assigned");
-    expect([plx, pnd]).toContain(after.driver_id);
+    expect([pnd, psa]).toContain(after.driver_id);
   });
 
   it("one-active-trip: a driver starting two held trips at once → one 200, one 409", async () => {
@@ -69,13 +69,13 @@ describe("CONCURRENCY integration — Serializable → 409 under real contention
       loginAs(DRIVER),
     ]);
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(DRIVERS.PLX.phone);
+    const plx = await userIdByPhone(DRIVERS.PND.phone);
 
     // A driver may HOLD several assigned trips (force past the same-pickup conflict)…
     const t1 = await bookTrip(requestor, ["P1"], rt);
     const t2 = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, t1.id, plx, PLX_PLATE);
-    await approveTrip(admin, t2.id, plx, PLX_PLATE);
+    await approveTrip(admin, t1.id, plx, PND_PLATE);
+    await approveTrip(admin, t2.id, plx, PND_PLATE);
 
     // …but may be OUT on only ONE at a time.
     const [a, b] = await Promise.all([startRaw(driver, t1.id), startRaw(driver, t2.id)]);
@@ -96,9 +96,9 @@ describe("CONCURRENCY integration — Serializable → 409 under real contention
       loginAs(DRIVER),
     ]);
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(DRIVERS.PLX.phone);
+    const plx = await userIdByPhone(DRIVERS.PND.phone);
     const t = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, t.id, plx, PLX_PLATE);
+    await approveTrip(admin, t.id, plx, PND_PLATE);
 
     const [a, b] = await Promise.all([startRaw(driver, t.id), startRaw(driver, t.id)]);
 
@@ -116,16 +116,16 @@ describe("CONCURRENCY integration — Serializable → 409 under real contention
       loginAs(DRIVER),
     ]);
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(DRIVERS.PLX.phone);
     const pnd = await userIdByPhone(DRIVERS.PND.phone);
+    const psa = await userIdByPhone(DRIVERS.PSA.phone);
     const t = await bookTrip(requestor, ["P1"], rt);
-    await approveTrip(admin, t.id, plx, PLX_PLATE); // assigned to PLX (this driver)
+    await approveTrip(admin, t.id, pnd, PND_PLATE); // assigned to PND (the DRIVER token)
 
     const [reassign, start] = await Promise.all([
       api()
         .patch(`/api/v1/trips/${t.id}/reassign`)
         .set(auth(admin))
-        .send({ driver_id: pnd, truck_plate: PND_PLATE, force: true }),
+        .send({ driver_id: psa, truck_plate: PSA_PLATE, force: true }),
       startRaw(driver, t.id),
     ]);
 
@@ -134,12 +134,12 @@ describe("CONCURRENCY integration — Serializable → 409 under real contention
     if (start.status === 200) {
       // Start won: rolling under the ORIGINAL driver; reassign lost.
       expect(after.status).toBe("in_progress");
-      expect(after.driver_id).toBe(plx);
+      expect(after.driver_id).toBe(pnd);
       expect(reassign.status).toBe(409);
     } else {
       // Reassign won: handed to the new driver, not started; start lost.
       expect(after.status).toBe("assigned");
-      expect(after.driver_id).toBe(pnd);
+      expect(after.driver_id).toBe(psa);
       expect(start.status).toBe(409);
     }
   });
@@ -147,13 +147,13 @@ describe("CONCURRENCY integration — Serializable → 409 under real contention
   it("leave granted vs assigning the same driver → no crash, consistent outcome", async () => {
     const [requestor, admin] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN)]);
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(DRIVERS.PLX.phone);
+    const plx = await userIdByPhone(DRIVERS.PND.phone);
     const trip = await bookTrip(requestor, ["A2"], rt, pallets(2)); // A2 → PLX is the only fit
     const dateKey = pickupDateKey();
 
     const [leaveRes, approveRes] = await Promise.all([
       api().post("/api/v1/leaves").set(auth(admin)).send({ driver_id: plx, start_date: dateKey, end_date: dateKey }),
-      approveRaw(admin, trip.id, plx, PLX_PLATE, true),
+      approveRaw(admin, trip.id, plx, PND_PLATE, true),
     ]);
 
     // The leave is always granted; the assignment either slipped through before
@@ -219,12 +219,12 @@ describe("CONCURRENCY integration — Serializable → 409 under real contention
   it("cancel vs approve on a pending trip → exactly one wins, no cancelled-with-driver", async () => {
     const [requestor, admin] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN)]);
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(DRIVERS.PLX.phone);
+    const plx = await userIdByPhone(DRIVERS.PND.phone);
     const trip = await bookTrip(requestor, ["P1"], rt);
 
     const [cancel, approve] = await Promise.all([
       api().patch(`/api/v1/trips/${trip.id}/cancel`).set(auth(requestor)),
-      approveRaw(admin, trip.id, plx, PLX_PLATE, true),
+      approveRaw(admin, trip.id, plx, PND_PLATE, true),
     ]);
 
     expect(okCount([cancel, approve])).toBe(1);
@@ -244,12 +244,12 @@ describe("CONCURRENCY integration — Serializable → 409 under real contention
   it("reject vs approve on a pending trip → exactly one wins, consistent state", async () => {
     const [requestor, admin] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN)]);
     const rt = await firstRouteTypeId(requestor);
-    const plx = await userIdByPhone(DRIVERS.PLX.phone);
+    const plx = await userIdByPhone(DRIVERS.PND.phone);
     const trip = await bookTrip(requestor, ["P1"], rt);
 
     const [reject, approve] = await Promise.all([
       api().patch(`/api/v1/trips/${trip.id}/reject`).set(auth(admin)).send({}),
-      approveRaw(admin, trip.id, plx, PLX_PLATE, true),
+      approveRaw(admin, trip.id, plx, PND_PLATE, true),
     ]);
 
     expect(okCount([reject, approve])).toBe(1);

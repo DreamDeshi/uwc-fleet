@@ -28,6 +28,20 @@ export interface SpecTruck {
   offpeak_rate: number;
   daily_deduction: number;
   priority_zones: string[];
+  /** "interplant" = out of the customer/supplier AUTO pool (28 Jul 2026
+   *  revision). Absent = customer/supplier. Manual admin assignment may cross
+   *  the split (email pt 6) — this gates AUTO dispatch only. */
+  service_class?: "interplant";
+}
+
+/** Plates AUTO dispatch must never offer for customer/supplier work. */
+export const INTERPLANT_PLATES: ReadonlySet<string> = new Set(
+  SPEC_TRUCKS.filter((t) => t.service_class === "interplant").map((t) => t.plate)
+);
+
+/** True for a truck the customer/supplier AUTO pool excludes. */
+export function isInterplantPlate(plate: string): boolean {
+  return INTERPLANT_PLATES.has(plate);
 }
 
 /**

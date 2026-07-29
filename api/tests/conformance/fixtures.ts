@@ -27,6 +27,7 @@ export interface FleetTruck {
   deduction: number; // daily_deduction points
   zones: string[]; // priority_zones (driver coverage)
   hasDriver: boolean; // false for "4 Wheel" (no driver in the workbook) → not dispatchable
+  interplant: boolean; // 28 Jul 2026 revision: PLX 2406 + PPE 2406 → out of the customer AUTO pool
 }
 
 // A plate is dispatchable only if the workbook binds a driver to it. "4 Wheel"
@@ -42,10 +43,17 @@ export const FLEET: FleetTruck[] = (spec.trucks as any[]).map((t) => ({
   deduction: t.daily_deduction,
   zones: t.priority_zones as string[],
   hasDriver: drivenPlates.has(t.plate),
+  interplant: t.service_class === "interplant",
 }));
 
-/** Trucks the auto-dispatcher can actually assign (driver-bound). Excludes "4 Wheel". */
-export const DISPATCHABLE: FleetTruck[] = FLEET.filter((t) => t.hasDriver);
+/**
+ * Trucks the customer/supplier auto-dispatcher can actually assign: driver-
+ * bound AND not interplant. Excludes "4 Wheel" (no driver) and, since the
+ * 28 Jul 2026 revision, PLX 2406 + PPE 2406 (interplant-only — the same
+ * filter autoDispatchTrip applies before calling selectTruck). The pool's
+ * largest truck is now 14 pallets.
+ */
+export const DISPATCHABLE: FleetTruck[] = FLEET.filter((t) => t.hasDriver && !t.interplant);
 
 export function truckByPlate(plate: string): FleetTruck {
   const t = FLEET.find((x) => x.plate === plate);

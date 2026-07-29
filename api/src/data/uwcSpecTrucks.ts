@@ -14,6 +14,16 @@ export const SPEC_TRUCKS: SpecTruck[] = [
     "weekday_rate": 11,
     "offpeak_rate": 13,
     "daily_deduction": 2,
+    "priority_zones": [],
+    "service_class": "interplant"
+  },
+  {
+    "plate": "PND 1888",
+    "type": "10t-30ft",
+    "max_pallets": 14,
+    "weekday_rate": 11,
+    "offpeak_rate": 13,
+    "daily_deduction": 2,
     "priority_zones": [
       "A1",
       "A2",
@@ -22,7 +32,7 @@ export const SPEC_TRUCKS: SpecTruck[] = [
     ]
   },
   {
-    "plate": "PND 1888",
+    "plate": "PSA 5292",
     "type": "10t-30ft",
     "max_pallets": 14,
     "weekday_rate": 11,
@@ -80,6 +90,16 @@ export const SPEC_TRUCKS: SpecTruck[] = [
       "K1",
       "K2"
     ]
+  },
+  {
+    "plate": "PPE 2406",
+    "type": "5t-17.5ft",
+    "max_pallets": 8,
+    "weekday_rate": 5,
+    "offpeak_rate": 7,
+    "daily_deduction": 0,
+    "priority_zones": [],
+    "service_class": "interplant"
   },
   {
     "plate": "PRH 5292",

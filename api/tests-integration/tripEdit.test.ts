@@ -106,7 +106,7 @@ describe("booking edit — PATCH /trips/:id", () => {
       is_external: true,
       status: "assigned",
       driver_id: "someone",
-      truck_plate: "PLX 2406",
+      truck_plate: "PND 1888",
       ticket_number: "TKT-FORGED-001",
       incentive_earned: 999,
     });

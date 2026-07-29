@@ -283,9 +283,12 @@ export const pallets = (n: number): CargoLine[] => [{ pallet_type: "4×4", quant
 
 export const num = (v: unknown): number => Number(v);
 
-// Seeded driver accounts (phone → truck), for dispatch tests.
+// Seeded driver accounts (phone → truck), for dispatch tests. Re-keyed for the
+// 28 Jul 2026 fleet revision: …101 (the harness DRIVER) moved PLX 2406 →
+// PND 1888 and is the A1/A2 primary; …102 moved PND → the new PSA 5292.
+// PLX 2406 is INTERPLANT now (driver …107) and out of the customer AUTO pool.
 export const DRIVERS = {
-  PLX: { phone: "+60100000101", plate: "PLX 2406", maxPallets: 16 },
-  PND: { phone: "+60100000102", plate: "PND 1888", maxPallets: 14 },
+  PND: { phone: "+60100000101", plate: "PND 1888", maxPallets: 14 },
+  PSA: { phone: "+60100000102", plate: "PSA 5292", maxPallets: 14 },
   PRH: { phone: "+60100000106", plate: "PRH 5292", maxPallets: 2 },
 } as const;

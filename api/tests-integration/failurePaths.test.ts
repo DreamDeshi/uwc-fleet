@@ -21,7 +21,7 @@ import {
  * HTTP API + Postgres.
  */
 
-const PLX_PLATE = DRIVERS.PLX.plate;
+const PND_PLATE = DRIVERS.PND.plate;
 const EXPIRED = new Date("2020-01-01T00:00:00Z");
 
 async function actors() {
@@ -31,7 +31,7 @@ async function actors() {
     loginAs(DRIVER),
   ]);
   const rt = await firstRouteTypeId(requestor);
-  const plx = await userIdByPhone(DRIVERS.PLX.phone);
+  const plx = await userIdByPhone(DRIVERS.PND.phone);
   return { requestor, admin, driver, rt, plx };
 }
 
@@ -48,7 +48,7 @@ describe("FAILURE PATHS integration", () => {
     it("re-delivering an already-delivered stop is rejected and never re-pays", async () => {
       const { requestor, admin, driver, rt, plx } = await actors();
       const trip = await bookTrip(requestor, ["A2"], rt);
-      await approveTrip(admin, trip.id, plx, PLX_PLATE);
+      await approveTrip(admin, trip.id, plx, PND_PLATE);
       await startTrip(driver, trip.id);
       await arriveAndDeliver(driver, trip.id, trip.stops[0].id); // → completed + paid
 
@@ -70,21 +70,23 @@ describe("FAILURE PATHS integration", () => {
   describe("expired-document enforcement", () => {
     it("expired ROAD TAX is a hard block at manual approve (even with force)", async () => {
       const { requestor, admin, rt, plx } = await actors();
-      await prisma.truck.update({ where: { plate: PLX_PLATE }, data: { road_tax_expiry: EXPIRED } });
+      await prisma.truck.update({ where: { plate: PND_PLATE }, data: { road_tax_expiry: EXPIRED } });
       const trip = await bookTrip(requestor, ["P1"], rt);
-      const res = await approveRaw(admin, trip.id, plx, PLX_PLATE, true); // force ignored
+      const res = await approveRaw(admin, trip.id, plx, PND_PLATE, true); // force ignored
       expect(res.status).toBe(409);
       expect(res.body.error.code).toBe("TRUCK_UNROADWORTHY");
     });
 
     it("an expired PERMIT excludes a truck from AUTO dispatch (auto has no force)", async () => {
       const { requestor, admin, rt } = await actors();
-      // Permit is only a WARNING on manual approve, but auto-dispatch excludes it
-      // outright — so an A2 order falls from the primary PLX to the PND backup.
-      await prisma.truck.update({ where: { plate: PLX_PLATE }, data: { permit_expiry: EXPIRED } });
+      // Permit is only a WARNING on manual approve, but auto-dispatch excludes
+      // it outright — so an A2 order falls from the primary PND to the fleet.
+      // No named backup since R3 A2; PRH covers A2 and a 2-pallet load fits it
+      // (the strictly-under-2 cap died with the removed small-load rule, A3).
+      await prisma.truck.update({ where: { plate: PND_PLATE }, data: { permit_expiry: EXPIRED } });
       const trip = await bookTrip(requestor, ["A2"], rt, pallets(2));
       expect((await autoDispatch(admin, trip.id)).status).toBe(200);
-      expect((await prisma.trip.findUnique({ where: { id: trip.id } }))!.truck_plate).toBe("PND 1888");
+      expect((await prisma.trip.findUnique({ where: { id: trip.id } }))!.truck_plate).toBe("PRH 5292");
     });
   });
 
@@ -205,7 +207,7 @@ describe("FAILURE PATHS integration", () => {
     it("surfaces internal completed trips with no pay; excludes paid + external ones", async () => {
       const admin = await loginAs(ADMIN);
       const requestorId = await userIdByPhone(REQUESTOR.phone);
-      const plx = await userIdByPhone(DRIVERS.PLX.phone);
+      const plx = await userIdByPhone(DRIVERS.PND.phone);
       const rtRow = (await prisma.routeType.findFirst())!;
       const base = {
         requestor_id: requestorId,
@@ -215,10 +217,10 @@ describe("FAILURE PATHS integration", () => {
       };
 
       const anomaly = await prisma.trip.create({
-        data: { ...base, ticket_number: "ANOM-NULL", driver_id: plx, truck_plate: PLX_PLATE, incentive_earned: null },
+        data: { ...base, ticket_number: "ANOM-NULL", driver_id: plx, truck_plate: PND_PLATE, incentive_earned: null },
       });
       await prisma.trip.create({
-        data: { ...base, ticket_number: "ANOM-PAID", driver_id: plx, truck_plate: PLX_PLATE, incentive_earned: 44 },
+        data: { ...base, ticket_number: "ANOM-PAID", driver_id: plx, truck_plate: PND_PLATE, incentive_earned: 44 },
       });
       await prisma.trip.create({
         data: { ...base, ticket_number: "ANOM-EXT", is_external: true, incentive_earned: null },
