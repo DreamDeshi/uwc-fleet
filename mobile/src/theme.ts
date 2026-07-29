@@ -9,7 +9,12 @@ export const colors = {
   yellow: "#FFCC00", // accent / pending
   navy: "#1A1F5E", // headings
   bg: "#f4f6fb", // app background
-  green: "#3DAA35", // success / completed
+  green: "#3DAA35", // success / completed — as a FILL (status pills, buttons)
+  // Green as TEXT. `green` on white is 3:1 — fine for a large pill fill, short
+  // of 4.5:1 for a figure a driver reads in sunlight. Every green NUMBER (money,
+  // percentile band) uses this darker shade instead; fills keep `green`, so the
+  // status pills are unchanged.
+  greenText: "#2A7F24",
   red: "#E53935", // error / rejected
   orange: "#F97316", // warning / offline-queued
   grey: "#64748b", // neutral / cancelled

@@ -269,7 +269,8 @@ const styles = StyleSheet.create({
   rowMetaLine: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 3, flexWrap: "wrap" },
   rowMeta: { fontSize: 12, color: colors.textFaint },
   rowDot: { fontSize: 12, color: colors.textFaint, marginHorizontal: 1 },
-  rowRm: { fontSize: 17, fontWeight: "800", color: colors.green },
+  // greenText: a money FIGURE needs 4.5:1, and `green` on white is 3:1.
+  rowRm: { fontSize: 17, fontWeight: "800", color: colors.greenText },
   // Unapproved money is muted, never the confident green of paid money.
   rowRmPending: { color: colors.textMuted },
   pendingChip: {

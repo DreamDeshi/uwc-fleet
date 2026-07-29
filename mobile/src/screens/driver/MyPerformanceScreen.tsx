@@ -79,7 +79,7 @@ function Loaded({ data }: { data: NonNullable<ReturnType<typeof useMyPerformance
       {/* Anonymous percentile band — encouragement, never a named leaderboard */}
       {data.percentile_band ? (
         <View style={styles.band}>
-          <Ionicons name="trending-up" size={16} color={colors.green} />
+          <Ionicons name="trending-up" size={16} color={colors.greenText} />
           <Text style={styles.bandText}>
             {t("myPerformance.bandLine", { band: data.percentile_band })}
           </Text>
@@ -150,7 +150,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     marginTop: 14,
   },
-  bandText: { flex: 1, color: colors.green, fontSize: 14, fontWeight: "700" },
+  // greenText on tintGreen — `green` here was 3:1 (approved contrast pass).
+  bandText: { flex: 1, color: colors.greenText, fontSize: 14, fontWeight: "700" },
 
   statGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 16 },
   statCard: {

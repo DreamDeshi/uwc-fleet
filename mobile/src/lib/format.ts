@@ -93,6 +93,27 @@ export function monthYear(ym: string): string {
   return `${monthNames("long")[m - 1]} ${y}`;
 }
 
+/** Whole minutes from `now` until `iso`. Negative once the moment has passed. */
+export function minutesUntil(iso: string | Date, now: Date = new Date()): number {
+  return Math.round((+new Date(iso) - +now) / 60000);
+}
+
+/**
+ * "in 40 min" / "in 1 h 25 min" for the pickup time on the driver's Home card.
+ * Returns null once the pickup time is past (or a day or more away) — the card
+ * always shows the absolute time too, so there is nothing to fall back to and
+ * "in -20 min" would be worse than silence.
+ */
+export function relativeStart(iso: string | Date, now: Date = new Date()): string | null {
+  const mins = minutesUntil(iso, now);
+  if (mins <= 0 || mins >= 24 * 60) return null;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return i18n.t("driver.inMinutes", { n: m });
+  if (m === 0) return i18n.t("driver.inHours", { h });
+  return i18n.t("driver.inHoursMinutes", { h, m });
+}
+
 // initials for avatar bubbles, e.g. "Mohd Ali B. Abu" -> "MA"
 export function initials(name: string): string {
   const parts = name.trim().split(/\s+/);

@@ -7,355 +7,516 @@ import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { DriverTabParamList } from "../../navigation/types";
 import { useAuth } from "../../context/AuthContext";
-import { useTrips, useHolidaySet, useMyTruckFuel } from "../../hooks/queries";
+import { useTrips, useMyTruckFuel, useUpdateTripStatus } from "../../hooks/queries";
+import { apiErrorCode, apiErrorMessage } from "../../services/api";
 import { colors, layout, radius, shadow } from "../../theme";
-import { Card } from "../../components/Card";
-import { StatusBadge } from "../../components/StatusBadge";
-import { TripCard } from "../../components/TripCard";
 import { LoadingState, ErrorState } from "../../components/States";
 import { LogFuelModal } from "../../components/LogFuelModal";
-import { formatMoney, formatDate, formatTime } from "../../lib/format";
+import { TripStopLadder } from "../../components/TripStopLadder";
+import { formatDate, formatTime, relativeStart } from "../../lib/format";
 import { daysSinceFill, fuelLogNudge } from "../../lib/fuelStats";
-import { tripDestination, cargoSummary, estimateIncentive, ORIGIN_LABEL } from "../../lib/trip";
-import { DELIVERED_STATUSES } from "../../lib/tripStatus";
+import { totalPallets } from "../../lib/trip";
+import { shouldReconcileStart } from "../../lib/startTrip";
+import { buildDriverDay, currentStopNumber, stopProgress, stopsOf } from "../../lib/driverHome";
+import type { DriverDay } from "../../lib/driverHome";
 import { Trip } from "../../types";
 
 type Nav = BottomTabNavigationProp<DriverTabParamList>;
 
+// Driver Home, rebuilt to the approved design (driver screens, 29 Jul 2026).
+//
+// The screen answers one question — what am I doing now — and answers it with
+// the WORK, never with money. Every RM figure was removed: the design puts pay
+// on My Stats (and Trip Details, where a driver checks why he was paid), so
+// nothing here can be mistaken for approved pay. The old home showed a yellow
+// "Est." pill per assignment and a green incentive on each completed card;
+// both duplicated figures that carry approval rules elsewhere.
+//
+// One trip is the subject at a time (the running one, else today's next), it
+// shows its whole stop ladder, and it offers exactly one action.
 export function DriverDashboardScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
   const { user } = useAuth();
   const [fuelOpen, setFuelOpen] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+
   const fuel = useMyTruckFuel(user?.assigned_truck?.plate);
   const lastFill = fuel.data?.logs?.[0];
-  // Gentle reminder accent on the Log Fuel card when the last fill is old
-  // (lib/fuelStats — our own 5-day threshold, never a nag, never blocks).
-  // Only once the history has actually LOADED: an amber dot on cold start
+  // Only once the history has actually LOADED: an amber nudge on cold start
   // before data arrives would flash a false reminder at every launch.
   const fuelNudge =
     Boolean(user?.assigned_truck) && fuel.data !== undefined && fuelLogNudge(lastFill?.logged_at ?? null, new Date());
   const fuelDays = daysSinceFill(lastFill?.logged_at ?? null, new Date());
-  const { data: trips, isLoading, isError, refetch, isRefetching } = useTrips();
 
-  const { active, assigned, recentCompleted, assignedToday } = useMemo(() => {
-    const list = trips ?? [];
-    const byPickupAsc = (a: Trip, b: Trip) =>
-      +new Date(a.pickup_datetime) - +new Date(b.pickup_datetime);
-    const active = list.find((tr) => tr.status === "in_progress");
-    // ALL assigned trips, earliest pickup first, so the driver sees the full
-    // workload (not just the first). The in_progress trip, if any, is pinned
-    // separately above as the Active Trip card.
-    const assigned = list.filter((tr) => tr.status === "assigned").sort(byPickupAsc);
-    const todayStr = new Date().toDateString();
-    // Greeting count = today's workload: assigned + the active in_progress trip.
-    const assignedToday = list.filter(
-      (tr) =>
-        (tr.status === "assigned" || tr.status === "in_progress") &&
-        new Date(tr.pickup_datetime).toDateString() === todayStr
-    ).length;
-    // DELIVERED_STATUSES, not `=== "completed"`: a trip awaiting POD approval is
-    // delivered. Filtering on `completed` alone meant the trip the driver had
-    // JUST finished vanished from his dashboard entirely — not active, not
-    // assigned, not recent — until an admin got around to approving it.
-    const recentCompleted = list
-      .filter((tr) => DELIVERED_STATUSES.includes(tr.status))
-      .sort((a, b) => +new Date(b.pickup_datetime) - +new Date(a.pickup_datetime))
-      .slice(0, 3);
-    return { active, assigned, recentCompleted, assignedToday };
-  }, [trips]);
+  const { data: trips, isLoading, isError, refetch, isRefetching } = useTrips();
+  const startTrip = useUpdateTripStatus();
+  const startInFlight = React.useRef(false);
+
+  // `trips` is the dependency; `new Date()` is read once per render on purpose —
+  // the day shape only has to be right at paint time, and a ticking clock here
+  // would re-render Home every second for a countdown the card shows in minutes.
+  const day = useMemo(() => buildDriverDay(trips, new Date()), [trips]);
 
   const openDetails = (tripId: string) =>
     navigation.navigate("TripsTab", { screen: "TripDetails", params: { tripId } });
   const openActive = (tripId: string) =>
     navigation.navigate("TripsTab", { screen: "ActiveTrip", params: { tripId } });
 
+  // Home's single action. Same reconcile as Trip Details (lib/startTrip): a
+  // committed-then-lost start must land the driver on the active screen, not on
+  // an error he would answer by tapping Start a second time.
+  const onStart = async (trip: Trip) => {
+    if (startInFlight.current) return;
+    startInFlight.current = true;
+    setStartError(null);
+    try {
+      await startTrip.mutateAsync({ tripId: trip.id, action: "start" });
+      openActive(trip.id);
+    } catch (err) {
+      if (shouldReconcileStart(apiErrorCode(err))) {
+        const fresh = await refetch();
+        const now = fresh.data?.find((tr) => tr.id === trip.id);
+        if (now?.status === "in_progress") {
+          openActive(trip.id);
+          return;
+        }
+      }
+      setStartError(apiErrorMessage(err));
+    } finally {
+      startInFlight.current = false;
+    }
+  };
+
   if (isLoading) return <View style={styles.fill}><LoadingState /></View>;
   if (isError) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
 
   return (
     <>
-    <ScrollView
-      style={styles.fill}
-      contentContainerStyle={{ paddingBottom: 24 }}
-      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
-    >
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <View style={styles.centerCol}>
-          <View style={styles.headerTop}>
-            <Text style={styles.brand}>UWC TRUCKING</Text>
-          </View>
-          <Text style={styles.date}>{formatDate(new Date())}</Text>
-          {/* Full name, not the first word — Mr. Teh 16 Jul: "Need show the
-              driver full name in driver page" (the split showed just "Mohd"). */}
-          <Text style={styles.greeting}>{t("driver.greeting", { name: user?.name ?? "" })} 👋</Text>
-          <Text style={styles.sub}>{t("driver.tripsToday", { count: assignedToday })}</Text>
-        </View>
-      </View>
+      <ScrollView
+        style={styles.fill}
+        contentContainerStyle={{ paddingBottom: 28 }}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+      >
+        <HomeHeader day={day} paddingTop={insets.top + 12} plate={user?.assigned_truck?.plate ?? null} name={user?.name ?? ""} />
 
-      {/* Quick action: log a fuel fill-up (moved here from Settings so it's
-          one tap from the driver's home — logged often). */}
-      <View style={styles.section}>
-        <TouchableOpacity style={styles.fuelBtn} onPress={() => setFuelOpen(true)} activeOpacity={0.85}>
-          <View style={styles.fuelIcon}>
-            <MaterialCommunityIcons name="gas-station" size={20} color={colors.blue} />
-            {fuelNudge ? <View style={styles.fuelNudgeDot} /> : null}
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.fuelTitle}>{t("profile.logFuel")}</Text>
-            <Text style={[styles.fuelSub, fuelNudge && styles.fuelSubNudge]} numberOfLines={1}>
-              {user?.assigned_truck
-                ? lastFill
-                  ? fuelNudge && fuelDays !== null
-                    ? `${user.assigned_truck.plate} · ${t("fuel.staleNudge", { count: fuelDays })}`
-                    : `${user.assigned_truck.plate} · ${t("fuel.lastFillShort", { when: formatDate(lastFill.logged_at), litres: lastFill.liters })}`
-                  : fuelNudge
-                    ? `${user.assigned_truck.plate} · ${t("fuel.neverLogged")}`
-                    : user.assigned_truck.plate
-                : t("fuel.noTruck")}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Active trip card */}
-      {active ? (
         <View style={styles.section}>
-          <TouchableOpacity activeOpacity={0.9} onPress={() => openActive(active.id)}>
-            <View style={styles.activeCard}>
-              <View style={styles.activeTop}>
-                <View>
-                  <Text style={styles.activeLabel}>{t("driver.activeTrip")}</Text>
-                  <Text style={styles.activeTicket}>{active.ticket_number}</Text>
-                </View>
-                <View style={styles.onRoute}>
-                  <Text style={styles.onRouteText}>{t("trip.statusInProgress")}</Text>
-                </View>
-              </View>
-              <View style={styles.routeMini}>
-                <View style={[styles.miniDot, { backgroundColor: colors.white }]} />
-                <Text style={styles.miniPlace}>{ORIGIN_LABEL}</Text>
-                <Text style={styles.miniArrow}>→</Text>
-                <View style={[styles.miniDot, { backgroundColor: colors.yellow }]} />
-                <Text style={styles.miniPlace}>{tripDestination(active)}</Text>
-              </View>
-              <View style={styles.viewNavBtn}>
-                <Ionicons name="navigate" size={16} color={colors.blue} />
-                <Text style={styles.viewNavText}>{t("driver.viewNavigation")}</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        </View>
-      ) : null}
+          {day.state === "finished" ? <DayFinished day={day} /> : null}
+          {day.state === "no_trips" ? <NoTrips /> : null}
 
-      {/* Today's assignments — every assigned trip, earliest pickup first.
-          The first is highlighted as "Next up"; the rest sit under an Upcoming
-          divider. When a trip is already in progress (pinned above) and nothing
-          else is assigned, the section is omitted. */}
-      {assigned.length > 0 ? (
-        <View style={styles.section}>
-          <View style={styles.sectionHead}>
-            <Text style={styles.sectionTitle}>{t("driver.todaysAssignments")}</Text>
-            <View style={styles.countPill}>
-              <Text style={styles.countText}>{assigned.length}</Text>
-            </View>
-          </View>
-          {assigned.map((tr, i) => (
-            <React.Fragment key={tr.id}>
-              {i === 1 ? <Text style={styles.upcomingLabel}>{t("driver.upcoming")}</Text> : null}
-              <AssignmentCard trip={tr} isNext={i === 0} onPress={() => openDetails(tr.id)} />
-            </React.Fragment>
+          {day.primary ? (
+            <PrimaryTripCard
+              trip={day.primary}
+              running={day.state === "running"}
+              label={
+                day.state === "running"
+                  ? t("driver.activeTrip")
+                  : day.state === "between"
+                    ? t("driver.nextTripLabel")
+                    : t("driver.firstTripLabel")
+              }
+              onPrimary={() => (day.state === "running" ? openActive(day.primary!.id) : onStart(day.primary!))}
+              onOpen={() => (day.state === "running" ? openActive(day.primary!.id) : openDetails(day.primary!.id))}
+              busy={startTrip.isPending}
+            />
+          ) : null}
+
+          {startError ? <Text style={styles.error}>{startError}</Text> : null}
+
+          <FuelBand
+            plate={user?.assigned_truck?.plate ?? null}
+            nudge={fuelNudge}
+            days={fuelDays}
+            lastFill={lastFill ?? null}
+            onPress={() => setFuelOpen(true)}
+          />
+
+          {day.receipts.map((tr) => (
+            <Receipt key={tr.id} trip={tr} onPress={() => openDetails(tr.id)} />
           ))}
-        </View>
-      ) : !active ? (
-        <View style={styles.section}>
-          <View style={styles.sectionHead}>
-            <Text style={styles.sectionTitle}>{t("driver.todaysAssignments")}</Text>
-          </View>
-          <Card>
-            <View style={styles.emptyRow}>
-              <Ionicons name="cafe-outline" size={22} color={colors.textFaint} />
-              <Text style={styles.emptyText}>{t("driver.noTripsToday")}</Text>
-            </View>
-          </Card>
-        </View>
-      ) : null}
 
-      {/* This month + recent completed */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t("driver.recentCompleted")}</Text>
-        {recentCompleted.length === 0 ? (
-          <Card style={{ marginTop: 12 }}>
-            <Text style={styles.emptyText}>{t("earnings.noEarnings")}</Text>
-          </Card>
-        ) : (
-          <View style={{ marginTop: 12 }}>
-            {recentCompleted.map((tr) => (
-              <TripCard
-                key={tr.id}
-                trip={tr}
-                meta={`${tr.ticket_number} · ${cargoSummary(tr)}`}
-                showIncentive
-                onPress={() => openDetails(tr.id)}
-              />
-            ))}
-          </View>
-        )}
-      </View>
-    </ScrollView>
-    <LogFuelModal
-      visible={fuelOpen}
-      onClose={() => setFuelOpen(false)}
-      truckPlate={user?.assigned_truck?.plate ?? null}
-      truckLabel={user?.assigned_truck ? `${user.assigned_truck.plate} · ${user.assigned_truck.type}` : null}
-    />
+          {day.upcoming.map((tr) => (
+            <UpcomingRow key={tr.id} trip={tr} onPress={() => openDetails(tr.id)} />
+          ))}
+
+          {day.nextLater ? <NextLater trip={day.nextLater} onPress={() => openDetails(day.nextLater!.id)} /> : null}
+        </View>
+      </ScrollView>
+
+      <LogFuelModal
+        visible={fuelOpen}
+        onClose={() => setFuelOpen(false)}
+        truckPlate={user?.assigned_truck?.plate ?? null}
+        truckLabel={user?.assigned_truck ? `${user.assigned_truck.plate} · ${user.assigned_truck.type}` : null}
+      />
     </>
   );
 }
 
-function AssignmentCard({
-  trip,
-  onPress,
-  isNext,
+// ── Header ────────────────────────────────────────────────────────────────
+// Greeting, the day in one line, the plate the driver is on, and a band that
+// states what is happening right now. The band is the part he reads first.
+function HomeHeader({
+  day,
+  paddingTop,
+  plate,
+  name,
 }: {
-  trip: Trip;
-  onPress: () => void;
-  isNext?: boolean;
+  day: DriverDay;
+  paddingTop: number;
+  plate: string | null;
+  name: string;
 }) {
   const { t } = useTranslation();
-  const holidays = useHolidaySet();
-  // The real incentive_earned is only set on completion (null/0 while the trip is
-  // assigned or in progress). Until then show an estimate, marked "Est.", matching
-  // TripDetailsScreen — never a bare RM 0 on an active assignment.
-  const finalized = trip.incentive_earned !== null && trip.incentive_earned !== undefined;
-  const estimate = finalized ? null : estimateIncentive(trip, holidays);
-  // No estimate computable → "—", never a green "RM 0" on an active
-  // assignment (audit 2026-07-05 #5 — TripCard's rule).
-  const rmValue = finalized
-    ? formatMoney(trip.incentive_earned)
-    : estimate !== null
-      ? formatMoney(estimate)
-      : "—";
-  const showEst = !finalized && estimate !== null;
+
+  const summary =
+    day.state === "no_trips"
+      ? formatDate(new Date())
+      : `${formatDate(new Date())} · ${t("driver.tripCount", { n: day.tripCount })}, ${t("driver.stopCount", { n: day.stopCount })}`;
+
+  const band = (() => {
+    switch (day.state) {
+      case "running": {
+        const p = stopProgress(day.primary!);
+        return {
+          icon: "navigate" as const,
+          tint: colors.yellow,
+          text: t("driver.bandRunning", {
+            n: currentStopNumber(day.primary!),
+            total: p.total,
+            delivered: p.delivered,
+          }),
+        };
+      }
+      case "before":
+        return {
+          icon: "sunny-outline" as const,
+          tint: colors.yellow,
+          text: t("driver.bandBefore", { time: formatTime(day.primary!.pickup_datetime) }),
+        };
+      case "between":
+        return {
+          icon: "cafe-outline" as const,
+          tint: colors.yellow,
+          text: t("driver.bandBetween", { time: formatTime(day.primary!.pickup_datetime) }),
+        };
+      case "finished":
+        return { icon: "checkmark-circle" as const, tint: colors.yellow, text: t("driver.bandFinished") };
+      case "no_trips":
+        return { icon: "calendar-outline" as const, tint: colors.yellow, text: t("driver.bandNoTrips") };
+    }
+  })();
+
   return (
-    <View style={[styles.assignCard, isNext && styles.assignCardNext]}>
-      <View style={styles.assignHead}>
-        <StatusBadge status={trip.status} small />
-        {isNext ? (
-          <View style={styles.nextTag}>
-            <Text style={styles.nextTagText}>{t("driver.next")}</Text>
+    <View style={[styles.header, { paddingTop }]}>
+      <View style={styles.centerCol}>
+        <View style={styles.headerTop}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            {/* Full name, not the first word — Mr. Teh 16 Jul: "Need show the
+                driver full name in driver page". */}
+            <Text style={styles.greeting} numberOfLines={1}>
+              {t("driver.greeting", { name })} 👋
+            </Text>
+            <Text style={styles.headerSub} numberOfLines={1}>{summary}</Text>
           </View>
-        ) : null}
-        {trip.truck_plate ? <Text style={styles.assignPlate}>{trip.truck_plate}</Text> : null}
-        <Text style={styles.assignType}>{trip.route_type?.name}</Text>
+          {plate ? (
+            <View style={styles.plateChip}>
+              <Ionicons name="car-outline" size={15} color={colors.white} />
+              <Text style={styles.plateText}>{plate}</Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.band}>
+          <Ionicons name={band.icon} size={17} color={band.tint} />
+          <Text style={styles.bandText} numberOfLines={2}>{band.text}</Text>
+        </View>
       </View>
-      <View style={styles.assignBody}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
-          <Ionicons name="time-outline" size={14} color={colors.orange} />
-          <Text style={styles.assignTime}>
-            {formatDate(trip.pickup_datetime)} · {formatTime(trip.pickup_datetime)}
+    </View>
+  );
+}
+
+// ── The one trip that matters ─────────────────────────────────────────────
+function PrimaryTripCard({
+  trip,
+  running,
+  label,
+  onPrimary,
+  onOpen,
+  busy,
+}: {
+  trip: Trip;
+  running: boolean;
+  label: string;
+  onPrimary: () => void;
+  onOpen: () => void;
+  busy: boolean;
+}) {
+  const { t } = useTranslation();
+  const progress = stopProgress(trip);
+  const relative = relativeStart(trip.pickup_datetime);
+  const left = progress.total - progress.delivered;
+
+  return (
+    <View style={styles.primaryCard}>
+      <TouchableOpacity activeOpacity={0.85} onPress={onOpen} accessibilityRole="button">
+        <View style={styles.primaryTop}>
+          <View style={[styles.labelPill, running && styles.labelPillRunning]}>
+            <Text style={[styles.labelPillText, running && styles.labelPillTextRunning]}>{label}</Text>
+          </View>
+          <Text style={styles.primaryTicket}>{trip.ticket_number}</Text>
+        </View>
+
+        <View style={styles.primaryHead}>
+          <Text style={styles.primaryHeadline}>
+            {running
+              ? t("driver.stopOfTotal", { n: currentStopNumber(trip), total: progress.total })
+              : formatTime(trip.pickup_datetime)}
+          </Text>
+          <Text style={styles.primaryHeadSub} numberOfLines={2}>
+            {running
+              ? t("driver.stopsLeft", { n: left })
+              : [
+                  relative,
+                  t("driver.stopCount", { n: progress.total }),
+                  t("driver.palletCount", { n: totalPallets(trip) }),
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
           </Text>
         </View>
-        <Text style={styles.assignPlace}>{ORIGIN_LABEL}</Text>
-        <Text style={styles.assignPlaceTo}>{tripDestination(trip)}</Text>
-        <View style={styles.assignFooter}>
-          <Text style={styles.assignCargo}>{cargoSummary(trip)}</Text>
-          <View style={styles.assignRmWrap}>
-            {showEst ? <Text style={styles.assignEst}>{t("trip.est")}</Text> : null}
-            <Text style={styles.assignRm}>{rmValue}</Text>
-          </View>
-        </View>
-        <TouchableOpacity style={styles.detailBtn} onPress={onPress}>
-          <Text style={styles.detailBtnText}>{t("driver.viewTripDetails")}</Text>
-          <Ionicons name="arrow-forward" size={14} color={colors.white} />
-        </TouchableOpacity>
+
+        <TripStopLadder trip={trip} running={running} />
+
+        {/* The booking's sequence is REFERENCE ONLY — Mr. Teh, 28 Jul 2026:
+            "he can choose his own stop … driver no need follow route order". */}
+        <Text style={styles.orderHint}>{t("trip.stopOrderHint")}</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.primaryAction, busy && { opacity: 0.6 }]}
+        onPress={onPrimary}
+        disabled={busy}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+      >
+        <Ionicons name={running ? "navigate" : "play"} size={22} color={colors.white} />
+        <Text style={styles.primaryActionText}>
+          {running ? t("driver.continueTrip") : t("driver.startThisTrip")}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ── Fuel ──────────────────────────────────────────────────────────────────
+// Amber (#d97706) is the owner-approved exception to the orange rule: it is a
+// reminder, not an offline state, and it never blocks anything.
+function FuelBand({
+  plate,
+  nudge,
+  days,
+  lastFill,
+  onPress,
+}: {
+  plate: string | null;
+  nudge: boolean;
+  days: number | null;
+  lastFill: { logged_at: string; liters: number } | null;
+  onPress: () => void;
+}) {
+  const { t } = useTranslation();
+  const sub = !plate
+    ? t("fuel.noTruck")
+    : nudge && days !== null
+      ? t("fuel.staleNudge", { count: days })
+      : lastFill
+        ? t("fuel.lastFillShort", { when: formatDate(lastFill.logged_at), litres: lastFill.liters })
+        : t("fuel.neverLogged");
+
+  return (
+    <TouchableOpacity
+      style={[styles.fuelBand, nudge && styles.fuelBandNudge]}
+      onPress={onPress}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+    >
+      <View style={[styles.fuelIcon, nudge && styles.fuelIconNudge]}>
+        <MaterialCommunityIcons name="gas-station" size={23} color={nudge ? "#d97706" : colors.blue} />
       </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.fuelTitle} numberOfLines={1}>
+          {plate ? t("driver.logFuelFor", { plate }) : t("profile.logFuel")}
+        </Text>
+        <Text style={[styles.fuelSub, nudge && styles.fuelSubNudge]} numberOfLines={1}>
+          {sub}
+        </Text>
+      </View>
+      <View style={[styles.fuelPill, nudge && styles.fuelPillNudge]}>
+        <Text style={styles.fuelPillText}>{t("driver.log")}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ── After the run ─────────────────────────────────────────────────────────
+// A finished trip collapses to a receipt: what it was, when it ended, and —
+// while the office still has it — a GREY chip. No amount. Grey, not orange
+// (offline only) and not green (green means paid).
+function Receipt({ trip, onPress }: { trip: Trip; onPress: () => void }) {
+  const { t } = useTranslation();
+  const stops = stopsOf(trip);
+  const finished = stops
+    .map((s) => s.delivered_at)
+    .filter((d): d is string => Boolean(d))
+    .sort()
+    .pop();
+
+  return (
+    <TouchableOpacity style={styles.receipt} onPress={onPress} activeOpacity={0.85}>
+      <View style={styles.receiptIcon}>
+        <Ionicons name="checkmark-circle" size={20} color="#2E7D32" />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.receiptTitle} numberOfLines={1}>
+          {t("driver.receiptDelivered", { ticket: trip.ticket_number })}
+        </Text>
+        <Text style={styles.receiptSub} numberOfLines={1}>
+          {[
+            t("driver.stopCount", { n: stops.length }),
+            finished ? t("driver.finishedAt", { time: formatTime(finished) }) : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </Text>
+      </View>
+      {trip.status === "pending_approval" ? (
+        <View style={styles.awaitChip}>
+          <Text style={styles.awaitChipText}>{t("trip.awaitingApproval")}</Text>
+        </View>
+      ) : null}
+    </TouchableOpacity>
+  );
+}
+
+function DayFinished({ day }: { day: DriverDay }) {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.doneCard}>
+      <Ionicons name="checkmark-circle" size={34} color="#2E7D32" />
+      <Text style={styles.doneTitle}>{t("driver.allStopsDelivered", { n: day.deliveredStops })}</Text>
+      <Text style={styles.doneBody}>{t("driver.runFinished")}</Text>
+    </View>
+  );
+}
+
+function NoTrips() {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.doneCard}>
+      <Ionicons name="cafe-outline" size={32} color={colors.textFaint} />
+      <Text style={styles.doneTitle}>{t("driver.noTripsToday")}</Text>
+      <Text style={styles.doneBody}>{t("driver.noTripsBody")}</Text>
+    </View>
+  );
+}
+
+function UpcomingRow({ trip, onPress }: { trip: Trip; onPress: () => void }) {
+  const { t } = useTranslation();
+  const stops = stopsOf(trip);
+  return (
+    <TouchableOpacity style={styles.upcoming} onPress={onPress} activeOpacity={0.85}>
+      <View style={styles.upcomingTime}>
+        <Text style={styles.upcomingHour}>{formatTime(trip.pickup_datetime)}</Text>
+        <Text style={styles.upcomingZone}>{stops[0]?.consignee?.zone_code ?? ""}</Text>
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.upcomingName} numberOfLines={1}>
+          {stops[0]?.consignee?.company_name ?? "—"}
+        </Text>
+        <Text style={styles.upcomingMeta} numberOfLines={1}>
+          {trip.ticket_number} · {t("driver.stopCount", { n: stops.length })}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={colors.blue} />
+    </TouchableOpacity>
+  );
+}
+
+// Nothing today, but something IS coming — "no trips" alone reads as "no work
+// this week" to a driver who was simply not rostered until tomorrow.
+function NextLater({ trip, onPress }: { trip: Trip; onPress: () => void }) {
+  const { t } = useTranslation();
+  const stops = stopsOf(trip);
+  return (
+    <View style={styles.nextLater}>
+      <Text style={styles.nextLaterLabel}>{t("driver.nextAssignedTrip")}</Text>
+      <TouchableOpacity style={styles.nextLaterRow} onPress={onPress} activeOpacity={0.85}>
+        <Text style={styles.nextLaterText} numberOfLines={1}>
+          {formatDate(trip.pickup_datetime)} · {formatTime(trip.pickup_datetime)} ·{" "}
+          {t("driver.stopCount", { n: stops.length })}
+        </Text>
+        <Ionicons name="chevron-forward" size={18} color={colors.blue} />
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
-  // Desktop: cap + centre the mobile column instead of stretching edge-to-edge.
   centerCol: { width: "100%", maxWidth: layout.content, alignSelf: "center" },
-  header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 20 },
-  headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  logoBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: colors.yellow,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  brand: { color: colors.white, fontSize: 14, fontWeight: "700" },
-  date: { color: "rgba(255,255,255,0.65)", fontSize: 13, marginTop: 12 },
-  // Same greeting scale as the requestor home (owner-approved balance).
-  greeting: { color: colors.white, fontSize: 26, fontWeight: "800", marginTop: 4 },
-  sub: { color: "rgba(255,255,255,0.85)", fontSize: 15, fontWeight: "600", marginTop: 3 },
-  section: { paddingHorizontal: 16, paddingTop: 16, width: "100%", maxWidth: layout.content, alignSelf: "center" },
-  sectionHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
-  countPill: { backgroundColor: colors.yellow, paddingHorizontal: 10, paddingVertical: 2, borderRadius: radius.pill },
-  countText: { color: colors.navy, fontSize: 13, fontWeight: "800" },
-  upcomingLabel: { fontSize: 12, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 16, marginBottom: -4 },
+  section: { paddingHorizontal: 16, paddingTop: 16, gap: 12, width: "100%", maxWidth: layout.content, alignSelf: "center" },
 
-  activeCard: { backgroundColor: colors.blueDark, borderRadius: radius.xl, padding: 18, ...shadow.card },
-  activeTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 },
-  activeLabel: { fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.5)", letterSpacing: 1, textTransform: "uppercase" },
-  activeTicket: { fontSize: 18, fontWeight: "800", color: colors.white, marginTop: 2 },
-  onRoute: { backgroundColor: colors.yellow, paddingHorizontal: 12, paddingVertical: 4, borderRadius: radius.pill },
-  onRouteText: { color: colors.blue, fontSize: 12, fontWeight: "800" },
-  routeMini: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" },
-  miniDot: { width: 8, height: 8, borderRadius: 4 },
-  miniPlace: { fontSize: 14, fontWeight: "600", color: colors.white },
-  miniArrow: { color: "rgba(255,255,255,0.4)" },
-  viewNavBtn: {
-    backgroundColor: colors.white,
-    height: 44,
-    borderRadius: radius.md,
+  header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 18 },
+  headerTop: { flexDirection: "row", alignItems: "center", gap: 12 },
+  greeting: { color: colors.white, fontSize: 24, fontWeight: "800" },
+  headerSub: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: "600", marginTop: 2 },
+  plateChip: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  viewNavText: { color: colors.blue, fontSize: 14, fontWeight: "700" },
-
-  assignCard: { backgroundColor: colors.white, borderRadius: radius.lg, overflow: "hidden", marginTop: 12, ...shadow.card },
-  assignCardNext: { borderWidth: 2, borderColor: colors.yellow },
-  assignHead: { backgroundColor: colors.blue, paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
-  nextTag: { backgroundColor: colors.yellow, paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill },
-  nextTagText: { color: colors.navy, fontSize: 12, fontWeight: "800", letterSpacing: 0.5, textTransform: "uppercase" },
-  assignPlate: { backgroundColor: "rgba(255,255,255,0.15)", color: colors.white, fontSize: 12, fontWeight: "600", paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.pill },
-  assignType: { marginLeft: "auto", color: colors.yellow, fontSize: 12, fontWeight: "700" },
-  assignBody: { padding: 14 },
-  assignTime: { fontSize: 13, fontWeight: "700", color: colors.orange },
-  assignPlace: { fontSize: 14, fontWeight: "600", color: colors.navy },
-  assignPlaceTo: { fontSize: 14, fontWeight: "600", color: colors.navy, marginTop: 6 },
-  assignFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 12 },
-  assignCargo: { fontSize: 13, color: colors.textMuted },
-  assignRmWrap: { flexDirection: "row", alignItems: "center", gap: 6 },
-  assignEst: { fontSize: 12, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5 },
-  assignRm: { backgroundColor: colors.yellow, color: colors.navy, fontSize: 14, fontWeight: "800", paddingHorizontal: 14, paddingVertical: 4, borderRadius: radius.pill, overflow: "hidden" },
-  detailBtn: {
-    marginTop: 12,
-    height: 48, // glove-friendly touch floor
-    backgroundColor: colors.blue,
-    borderRadius: radius.md,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
     gap: 6,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
   },
-  detailBtnText: { color: colors.white, fontSize: 14, fontWeight: "700" },
+  plateText: { color: colors.white, fontSize: 12, fontWeight: "700" },
+  band: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    marginTop: 14,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  bandText: { flex: 1, color: colors.white, fontSize: 13, fontWeight: "700" },
 
-  emptyRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  emptyText: { fontSize: 14, color: colors.textMuted },
+  primaryCard: { backgroundColor: colors.white, borderRadius: radius.xl, padding: 15, ...shadow.floating },
+  primaryTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  labelPill: { backgroundColor: colors.yellow, paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.pill },
+  labelPillRunning: { backgroundColor: colors.blue },
+  labelPillText: { fontSize: 12, fontWeight: "900", color: colors.navy, letterSpacing: 0.5 },
+  labelPillTextRunning: { color: colors.white },
+  primaryTicket: { fontSize: 12, color: colors.textFaint, flexShrink: 1 },
+  primaryHead: { flexDirection: "row", alignItems: "baseline", gap: 10, marginTop: 12 },
+  primaryHeadline: { fontSize: 26, fontWeight: "900", color: colors.navy },
+  primaryHeadSub: { flex: 1, fontSize: 13, fontWeight: "700", color: colors.grey },
+  orderHint: { fontSize: 12, color: colors.textMuted, marginTop: 8, lineHeight: 16 },
+  primaryAction: {
+    minHeight: 58,
+    marginTop: 10,
+    borderRadius: radius.lg,
+    backgroundColor: colors.blue,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  primaryActionText: { color: colors.white, fontSize: 18, fontWeight: "800" },
 
-  fuelBtn: {
+  fuelBand: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
@@ -367,21 +528,58 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     ...shadow.card,
   },
-  fuelIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
-  fuelTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
-  fuelSub: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  // Reminder accent — amber (pending semantics), deliberately NOT orange
-  // (the 7 Jul ruling reserves orange for offline/queued states).
-  fuelNudgeDot: {
-    position: "absolute",
-    top: -2,
-    right: -2,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: "#d97706",
-    borderWidth: 2,
-    borderColor: "#fff",
+  fuelBandNudge: { borderWidth: 1.5, borderColor: "#d97706" },
+  fuelIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
+  fuelIconNudge: { backgroundColor: colors.tintOrange },
+  fuelTitle: { fontSize: 15, fontWeight: "800", color: colors.navy },
+  fuelSub: { fontSize: 13, color: colors.textMuted, marginTop: 1 },
+  fuelSubNudge: { color: "#d97706", fontWeight: "700" },
+  fuelPill: { minHeight: 44, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center" },
+  fuelPillNudge: { backgroundColor: "#d97706" },
+  fuelPillText: { fontSize: 14, fontWeight: "800", color: colors.white },
+
+  receipt: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
-  fuelSubNudge: { color: "#d97706", fontWeight: "600" },
+  receiptIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.tintGreen, alignItems: "center", justifyContent: "center" },
+  receiptTitle: { fontSize: 14, fontWeight: "800", color: colors.navy },
+  receiptSub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  awaitChip: { backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
+  awaitChipText: { fontSize: 12, fontWeight: "700", color: colors.textMuted },
+
+  doneCard: { backgroundColor: colors.white, borderRadius: radius.lg, padding: 22, alignItems: "center", ...shadow.card },
+  doneTitle: { fontSize: 16, fontWeight: "800", color: colors.navy, marginTop: 10, textAlign: "center" },
+  doneBody: { fontSize: 14, color: colors.textMuted, marginTop: 6, textAlign: "center", lineHeight: 19 },
+
+  upcoming: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  upcomingTime: { width: 66 },
+  upcomingHour: { fontSize: 14, fontWeight: "800", color: colors.navy },
+  upcomingZone: { fontSize: 12, color: colors.textMuted },
+  upcomingName: { fontSize: 14, fontWeight: "800", color: colors.navy },
+  upcomingMeta: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+
+  nextLater: { backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderLight, padding: 14 },
+  nextLaterLabel: { fontSize: 12, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5 },
+  nextLaterRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8, minHeight: 44 },
+  nextLaterText: { flex: 1, fontSize: 14, fontWeight: "700", color: colors.navy },
+
+  error: { color: colors.red, fontSize: 14, fontWeight: "600" },
 });

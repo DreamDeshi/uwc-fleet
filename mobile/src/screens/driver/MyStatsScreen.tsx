@@ -69,7 +69,9 @@ const styles = StyleSheet.create({
     maxWidth: layout.content,
     alignSelf: "center",
   },
-  segmentBtn: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 9, borderRadius: radius.sm },
+  // height 44 (was paddingVertical 9 ≈ 35) — the approved design holds every
+  // driver control at the 44px touch floor.
+  segmentBtn: { flex: 1, height: 44, alignItems: "center", justifyContent: "center", borderRadius: radius.sm },
   segmentBtnActive: { backgroundColor: colors.blue },
   segmentText: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
   segmentTextActive: { color: colors.white },
