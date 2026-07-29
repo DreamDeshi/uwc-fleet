@@ -289,8 +289,12 @@ Text and layout:
 Standing owner design rulings (do not revert):
 
 \- Headers use the WHITE mark-only logo crop (`uwc-mark-white.png` via
-&#x20; `BrandLogo mark`), placed LEFT of the title; the login screen keeps the
-&#x20; full colour logo. No avatar/name blocks in headers.
+&#x20; `BrandLogo mark`), placed LEFT of the title. No avatar/name blocks in
+&#x20; headers.
+\- The LOGIN screen carries the full WHITE logo (`BrandLogo white`) on its blue
+&#x20; panel — owner ruling 29 Jul 2026, adopting the driver design pack's
+&#x20; frame 01. This REPLACES the earlier rule that login kept the full-colour
+&#x20; logo; the colour logo no longer appears on that screen at all.
 \- No yellow underline accents on mobile headers.
 \- Requestor home keeps the navy/dashed card style.
 \- Orange is reserved for offline/queued states only — never as a general

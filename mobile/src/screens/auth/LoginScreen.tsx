@@ -156,6 +156,12 @@ export function LoginScreen({ navigation }: Props) {
           <View style={styles.discBig} pointerEvents="none" />
           <View style={styles.discSmall} pointerEvents="none" />
           <View>
+            {/* WHITE logo on the blue, per frame 01 and the owner's 29 Jul
+                ruling ("use the new login, it's fine if white"). This SUPERSEDES
+                the older rule that the login screen kept the full-colour logo —
+                the colour logo that used to sit in the white sheet below is
+                gone, so the brand is stated once. */}
+            <BrandLogo white height={76} />
             <Text style={styles.welcome}>{t("login.welcome")}</Text>
             <Text style={styles.subtitle}>{t("login.subtitle")}</Text>
             {/* "FLEET MANAGEMENT PORTAL" — frame 01 carries it on the phone
@@ -165,9 +171,6 @@ export function LoginScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.form}>
-          <View style={{ alignItems: "center", marginBottom: 24 }}>
-            <BrandLogo height={92} />
-          </View>
           {fields}
           <Text style={styles.footer}>{t("login.footer")}</Text>
         </View>
@@ -203,7 +206,7 @@ const styles = StyleSheet.create({
     borderRadius: 70,
     backgroundColor: "rgba(255,204,0,0.10)",
   },
-  welcome: { color: colors.white, fontSize: 26, fontWeight: "800" },
+  welcome: { color: colors.white, fontSize: 26, fontWeight: "800", marginTop: 22 },
   subtitle: { color: "rgba(255,255,255,0.7)", fontSize: 15, marginTop: 4 },
   tagline: {
     color: "rgba(255,255,255,0.5)",
