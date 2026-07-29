@@ -60,6 +60,17 @@ async function main() {
   // TripStatusHistory has a RESTRICT FK to Trip — clear it before the trips or
   // the trip delete is blocked.
   await prisma.tripStatusHistory.deleteMany({});
+  // Same RESTRICT problem, same fix. TripChangeRequest is new (A19 Request
+  // Change); the three exception tables were an EXISTING omission that would
+  // have blocked the next prod wipe the moment FEATURE_EXCEPTIONS was turned on
+  // and a single exception existed. Deepest child first.
+  await prisma.tripChangeRequest.deleteMany({});
+  await prisma.exceptionEvidence.deleteMany({});
+  await prisma.exceptionAction.deleteMany({});
+  // Trip.open_exception_id points AT a TripException, so the pointer has to go
+  // before the rows it references.
+  await prisma.trip.updateMany({ data: { open_exception_id: null } });
+  await prisma.tripException.deleteMany({});
   await prisma.tripStop.deleteMany({});
   const delTrips = await prisma.trip.deleteMany({});
   // Trip-related audit-log rows (Trip / TripStop actions) — these reference no

@@ -148,10 +148,26 @@ export function buildPointsByZone(
  */
 export async function snapshotStopZonePoints(
   tx: Prisma.TransactionClient,
-  tripId: string
+  tripId: string,
+  opts: {
+    /**
+     * Only snapshot stops that have NO snapshot yet (zone_code null).
+     *
+     * Used by change-request approval, which deletes and recreates the stop
+     * rows: an unchanged destination carries its ASSIGNMENT-ERA snapshot
+     * forward, and only a genuinely new destination is priced here. Without
+     * this, approving a pickup-TIME change would re-price every drop against
+     * today's rates and today's consignee zones — breaking the rate lock
+     * ("running trips keep the old rate", 3 Jul) on stops the requestor never
+     * touched. Measured cost of getting it wrong: a staged 6->9 point edit
+     * turned RM44 into RM77, and a consignee zone correction turned RM44 into
+     * RM11 for a driver still driving to Ipoh.
+     */
+    onlyUnsnapshotted?: boolean;
+  } = {}
 ): Promise<void> {
   const stops = await tx.tripStop.findMany({
-    where: { trip_id: tripId },
+    where: { trip_id: tripId, ...(opts.onlyUnsnapshotted ? { zone_code: null } : {}) },
     select: { id: true, consignee: { select: { zone_code: true } } },
   });
   if (stops.length === 0) return;

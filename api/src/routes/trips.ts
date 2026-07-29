@@ -57,6 +57,7 @@ import {
 import { leaveDateFilter } from "../services/driverLeave";
 import { priorDeliveredDropsWhere } from "../services/dayLedger";
 import { SETTLED_UNDELIVERED_WHERE, isStopSettled, hasOpenException } from "../services/undeliveredPay";
+import { sha256Hex } from "../lib/exceptionFingerprint";
 import { TRIP_INCLUDE } from "../lib/tripInclude";
 import { proposeDeliveredStopsIncentive } from "../services/tripFinalize";
 import { effectiveTruckRates, effectiveZonePoints } from "../services/pendingRates";
@@ -1874,6 +1875,82 @@ router.patch("/:id/cancel", async (req, res, next) => {
   }
 });
 
+/**
+ * A human, VALUE-BEARING description of what a change request would do.
+ *
+ * summarizeTripChanges returns field NAMES ("consignees; cargo") — right for a
+ * timeline entry beside the booking, useless as an approval gate. The admin
+ * approving this is making a pay decision: Ipoh (6 pts) to Juru & Perai (1 pt)
+ * takes a weekday drop from (6-2)x11 = RM44 to max(1-2,0)x11 = RM0, and both
+ * render as the single word "consignees". Show before -> after.
+ */
+async function describeTripChange(
+  existing: Prisma.TripGetPayload<{ include: { stops: true; cargo_details: true } }>,
+  input: UpdateTripInput
+): Promise<string[]> {
+  const lines: string[] = [];
+
+  if (existing.pickup_datetime.getTime() !== input.pickup_datetime.getTime()) {
+    lines.push(`Pickup: ${existing.pickup_datetime.toISOString()} -> ${input.pickup_datetime.toISOString()}`);
+  }
+
+  const beforeIds = [...existing.stops].sort((a, b) => a.sequence - b.sequence).map((s) => s.consignee_id);
+  const afterIds = input.stops.map((s) => s.consignee_id);
+  if (beforeIds.join("|") !== afterIds.join("|")) {
+    const names = new Map(
+      (await prisma.consignee.findMany({
+        where: { id: { in: [...new Set([...beforeIds, ...afterIds])] } },
+        select: { id: true, company_name: true, zone_code: true },
+      })).map((c) => [c.id, `${c.company_name} (${c.zone_code})`])
+    );
+    lines.push(`Stops: ${beforeIds.map((i) => names.get(i) ?? "?").join(" -> ")}  ==>  ${afterIds.map((i) => names.get(i) ?? "?").join(" -> ")}`);
+  }
+
+  if (input.cargo_details !== undefined) {
+    const line = (c: { pallet_type: string; quantity: number }) => `${c.quantity}x ${c.pallet_type}`;
+    const before = existing.cargo_details.map(line).join(", ");
+    const after = input.cargo_details.map(line).join(", ");
+    if (before !== after) {
+      lines.push(`Cargo: ${before}  ==>  ${after} (${palletEquivalents(existing.cargo_details)} -> ${palletEquivalents(input.cargo_details)} pallet-equivalents)`);
+    }
+  }
+
+  return lines;
+}
+
+/**
+ * A fingerprint of the trip's EDITABLE state — the exact fields a change
+ * request proposes to replace.
+ *
+ * A stored proposal is a full-document overwrite, so it must not be applied to a
+ * booking that moved underneath it. Reachable path without this: requestor
+ * submits a change → admin unassigns → requestor edits the cargo directly (the
+ * trip is `pending` again) → trip re-assigned → admin approves the stale
+ * proposal, silently REVERTING the requestor's own later edit to the cargo
+ * captured at submission, with nothing on screen saying the proposal predates
+ * the booking.
+ *
+ * Deliberately NOT a timestamp: `Trip` has no updated_at, and a hash of the
+ * fields actually being replaced is both cheaper and more precise — a change to
+ * something a request does not touch (driver, truck) correctly does not
+ * invalidate it.
+ */
+function editableTripFingerprint(trip: {
+  route_type_id: string;
+  pickup_datetime: Date;
+  stops: { sequence: number; consignee_id: string }[];
+  cargo_details: { pallet_type: string; quantity: number; cartons: number | null; custom_size: string | null; width_ft: number | null; length_ft: number | null; estimated_pallets: number | null; remark: string | null }[];
+}): string {
+  const stops = [...trip.stops]
+    .sort((a, b) => a.sequence - b.sequence)
+    .map((s) => s.consignee_id)
+    .join("|");
+  const cargo = trip.cargo_details
+    .map((c) => [c.pallet_type, c.quantity, c.cartons ?? "", c.custom_size ?? "", c.width_ft ?? "", c.length_ft ?? "", c.estimated_pallets ?? "", c.remark ?? ""].join(","))
+    .join(";");
+  return sha256Hex(Buffer.from([trip.route_type_id, trip.pickup_datetime.toISOString(), stops, cargo].join("~")));
+}
+
 // ── Request Change (Mr. Teh A19, 29 Jul 2026 — DOCUMENT tier) ───────────────
 //
 // > "once a lorry is assigned, the requestor should not be able to directly
@@ -1983,7 +2060,16 @@ router.post(
             requested_by: req.user!.id,
             // Stored as the client sent it (post-zod), so approval re-runs the
             // same shape through the same schema.
-            payload: input as unknown as Prisma.InputJsonValue,
+            // The proposal AND the fingerprint of the booking it was written
+            // against, so approval can refuse a stale overwrite.
+            payload: {
+              input,
+              base: editableTripFingerprint(existing),
+              // Value-bearing before -> after, rendered in the admin queue. Kept
+              // with the proposal so it describes the booking as it was when the
+              // requestor wrote it, not as it is at approval time.
+              detail: await describeTripChange(existing, input),
+            } as unknown as Prisma.InputJsonValue,
             summary: changeNote,
           },
         });
@@ -2050,6 +2136,8 @@ router.get("/change-requests/open", requireRole("admin"), async (_req, res, next
         pickup_datetime: r.trip.pickup_datetime,
         requestor_name: r.trip.requestor.name,
         driver_name: r.trip.driver?.name ?? null,
+        // The value-bearing lines the dispatcher actually decides on.
+        detail: ((r.payload as { detail?: unknown } | null)?.detail as string[] | undefined) ?? [],
       })),
     });
   } catch (err) {
@@ -2147,7 +2235,8 @@ router.post(
 
       // Re-parse the stored payload through the SAME schema the requestor's
       // request was validated by. A stored payload is untrusted input.
-      const parsed = updateTripSchema.safeParse(cr.payload);
+      const stored = cr.payload as { input?: unknown; base?: unknown } | null;
+      const parsed = updateTripSchema.safeParse(stored?.input);
       if (!parsed.success) {
         throw new ApiError(400, "CHANGE_REQUEST_INVALID", "This change request is no longer valid and cannot be applied. Reject it and ask for a new one.");
       }
@@ -2161,20 +2250,72 @@ router.post(
           throw new ApiError(409, "TRIP_STATE_CHANGED", "This booking is no longer assigned — the change cannot be applied. Reject the request.");
         }
 
+        // STALENESS. Refuse to apply a proposal written against a different
+        // version of this booking — see editableTripFingerprint.
+        if (typeof stored?.base === "string" && editableTripFingerprint(trip) !== stored.base) {
+          throw new ApiError(
+            409,
+            "CHANGE_REQUEST_STALE",
+            "This booking has changed since the request was sent, so applying it would undo those changes. Reject it and ask for a new request."
+          );
+        }
+
         const { effectiveCargo, changeNote } = await validateTripEdit(trip, input);
         if (changeNote === null) {
           throw new ApiError(400, "NO_CHANGES", "This request no longer changes anything.");
         }
 
-        // (2) The assigned lorry must still fit the new cargo.
+        // (2a) MOVING THE BOOKING TO A DIFFERENT DAY is refused while a lorry is
+        // assigned. The assign path validates a date against the truck's
+        // capacity FOR THAT DAY, roadworthiness, the scheduling-conflict buffer
+        // and the driver's leave — none of which this route re-runs. Approving a
+        // date change here would put a driver and lorry on a second booking that
+        // day, possibly on a day he is on leave, with no warning. Same shape as
+        // the overload refusal below and the same owner ruling behind it: never
+        // silently change who is driving what.
+        const dayBefore = mytDateKey(trip.pickup_datetime);
+        const dayAfter = mytDateKey(input.pickup_datetime);
+        if (dayBefore !== dayAfter) {
+          throw new ApiError(
+            409,
+            "PICKUP_DAY_CHANGED",
+            `This change moves the booking from ${dayBefore} to ${dayAfter}. Unassign the lorry first, then approve — the booking will be dispatched again for the new day.`
+          );
+        }
+
+        // (2b) The assigned lorry must still fit — using the SAME maths the
+        // manual assign uses, not a bare max_pallets compare. A truck's
+        // capacity is what is left after its other committed load that day
+        // (in_progress cargo is physically aboard; other assigned trips occupy
+        // it on their own pickup day). Comparing against max_pallets alone let
+        // an approval push 27 pallet-equivalents onto a 14-pallet lorry.
         if (trip.truck_plate && !trip.is_external) {
-          const truck = await tx.truck.findUnique({ where: { plate: trip.truck_plate } });
+          const pickupDay = mytDayBoundsForKey(dayAfter)!;
+          const truck = await tx.truck.findUnique({
+            where: { plate: trip.truck_plate },
+            include: {
+              trips: {
+                where: {
+                  id: { not: id },
+                  OR: [
+                    { status: "in_progress" },
+                    { status: "assigned", pickup_datetime: { gte: pickupDay.start, lt: pickupDay.end } },
+                  ],
+                },
+                select: { cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } } },
+              },
+            },
+          });
+          // A missing truck row on an assigned trip is not "fits" — refuse
+          // rather than skip the guard.
+          if (!truck) throw new ApiError(404, "TRUCK_NOT_FOUND", "The assigned truck no longer exists. Unassign the lorry first.");
           const needed = palletEquivalents(effectiveCargo);
-          if (truck && needed > truck.max_pallets) {
+          const currentLoad = truck.trips.reduce((sum, t) => sum + palletEquivalents(t.cargo_details), 0);
+          if (currentLoad + needed > truck.max_pallets) {
             throw new ApiError(
               409,
               "TRUCK_OVERLOADED",
-              `This change needs ${needed} pallet-equivalents but ${truck.plate} holds ${truck.max_pallets}. Unassign the lorry first, then approve — the booking will be dispatched again.`
+              `${truck.plate} holds ${truck.max_pallets} pallets and already carries ${currentLoad}. This change of ${needed} would total ${currentLoad + needed}. Unassign the lorry first, then approve — the booking will be dispatched again.`
             );
           }
         }
@@ -2203,13 +2344,30 @@ router.post(
         // (those start at in_progress), so a wholesale replace is safe — but
         // they DO carry the assignment-time zone snapshot, which is why (3)
         // below is mandatory.
+        // CARRY THE ASSIGNMENT-ERA SNAPSHOT FORWARD. The stop rows are replaced
+        // wholesale, but a destination the requestor did NOT touch must keep the
+        // points it was locked to at assignment — "running trips keep the old
+        // rate" (3 Jul). Re-pricing every stop here meant a pickup-TIME change
+        // silently re-rated untouched drops against today's rates and today's
+        // consignee zones: a staged 6->9 point edit turned RM44 into RM77, and a
+        // consignee zone correction turned RM44 into RM11 for a driver still
+        // driving to Ipoh.
+        const priorSnapshot = new Map(
+          trip.stops.map((s) => [s.consignee_id, { zone_code: s.zone_code, zone_points: s.zone_points }])
+        );
         await tx.tripStop.deleteMany({ where: { trip_id: id } });
         await tx.tripStop.createMany({
-          data: input.stops.map((s, idx) => ({
-            trip_id: id,
-            consignee_id: s.consignee_id,
-            sequence: s.sequence ?? idx + 1,
-          })),
+          data: input.stops.map((s, idx) => {
+            const carried = priorSnapshot.get(s.consignee_id);
+            return {
+              trip_id: id,
+              consignee_id: s.consignee_id,
+              sequence: s.sequence ?? idx + 1,
+              // null for a genuinely NEW destination — priced just below.
+              zone_code: carried?.zone_code ?? null,
+              zone_points: carried?.zone_points ?? null,
+            };
+          }),
         });
         if (input.cargo_details !== undefined) {
           await tx.cargoDetail.deleteMany({ where: { trip_id: id } });
@@ -2218,9 +2376,17 @@ router.post(
           });
         }
 
-        // (3) MANDATORY. The new stops have no zone snapshot at all until this
-        // runs, and finalization scores against the snapshot.
-        await snapshotStopZonePoints(tx, id);
+        // (3) MANDATORY, and ONLY for destinations that are genuinely new: a
+        // new stop has no snapshot at all until this runs, and finalization
+        // scores against the snapshot. Carried-forward stops are skipped so
+        // their assignment-era lock survives (see priorSnapshot above).
+        //
+        // ⚠ OPEN QUESTION (R4): which rate era a NEWLY ADDED destination should
+        // take — the trip's assignment era, or the approval era it is priced at
+        // here. Something must be chosen (a new stop has no prior snapshot);
+        // this takes the current era, which is what a fresh assignment would do.
+        // Not inferred as settled — flagged for the owner.
+        await snapshotStopZonePoints(tx, id, { onlyUnsnapshotted: true });
 
         await tx.auditLog.create({
           data: { user_id: req.user!.id, action: `trip.change_request_approved: ${changeNote}`, table_name: "Trip", record_id: id },

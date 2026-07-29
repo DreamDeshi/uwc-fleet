@@ -162,7 +162,9 @@ describe("Request Change — assigned bookings go through admin approval", () =>
 
   it("approve applies the change once — a second approve is refused", async () => {
     const t = await assignedTrip();
-    const newPickup = new Date(Date.now() + 5 * 864e5);
+    // Same MYT day, later time — a day move is refused while a lorry is
+    // assigned (see the PICKUP_DAY_CHANGED test).
+    const newPickup = new Date(new Date(t.pickup_datetime).getTime() + 45 * 60_000);
     const cr = (await requestChange(requestor, t.id, await payloadFor(t.id, { pickup_datetime: newPickup.toISOString() }))).body.change_request;
 
     const ok = await api().post(`/api/v1/trips/${t.id}/change-request/${cr.id}/approve`).set(auth(admin)).send({});
@@ -215,6 +217,116 @@ describe("Request Change — assigned bookings go through admin approval", () =>
     expect(rateAfter.daily_deduction_points).toBe(rateBefore.daily_deduction_points);
   });
 
+
+  it("MONEY: a pickup-TIME change does NOT re-price an untouched stop", async () => {
+    // THE regression the money-reviewer found. Approve replaces the stop rows
+    // wholesale, and re-snapshotting all of them re-priced drops the requestor
+    // never touched — against TODAY's rates and TODAY's consignee zones. That
+    // breaks "running trips keep the old rate" (3 Jul). Measured: a staged
+    // 6 -> 9 point edit turned RM44 into RM77; a consignee zone correction
+    // turned RM44 into RM11 for a driver still driving to Ipoh.
+    const t = await assignedTrip(["A2"]);
+    const locked = await prisma.tripStop.findFirstOrThrow({ where: { trip_id: t.id } });
+    expect(locked.zone_points).toBe(await zonePoints("A2"));
+
+    // The world moves under the assignment, both ways at once.
+    await prisma.destinationRate.updateMany({ where: { zone_code: "A2" }, data: { points: locked.zone_points! + 3 } });
+    const consigneeId = locked.consignee_id;
+    await prisma.consignee.update({ where: { id: consigneeId }, data: { zone_code: "K1" } });
+
+    try {
+      // A change to the PICKUP TIME only — same day, same destination.
+      const newPickup = new Date(t.pickup_datetime);
+      newPickup.setUTCMinutes(newPickup.getUTCMinutes() + 30);
+      const cr = (await requestChange(requestor, t.id, await payloadFor(t.id, { pickup_datetime: newPickup.toISOString() }))).body.change_request;
+      const ok = await api().post(`/api/v1/trips/${t.id}/change-request/${cr.id}/approve`).set(auth(admin)).send({});
+      expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+
+      const after = await prisma.tripStop.findFirstOrThrow({ where: { trip_id: t.id } });
+      expect(after.zone_code).toBe(locked.zone_code); // identity lock survived
+      expect(after.zone_points).toBe(locked.zone_points); // and so did the points
+    } finally {
+      await prisma.consignee.update({ where: { id: consigneeId }, data: { zone_code: "A2" } });
+      await prisma.destinationRate.updateMany({ where: { zone_code: "A2" }, data: { points: locked.zone_points! } });
+    }
+  });
+
+  it("refuses a change that moves the booking to a DIFFERENT DAY", async () => {
+    // The assign path validates a date against that day's truck capacity,
+    // roadworthiness, the scheduling-conflict buffer and driver leave. This
+    // route re-runs none of them, so a day move must go back through assignment.
+    const t = await assignedTrip();
+    const nextDay = new Date(t.pickup_datetime);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+    const cr = (await requestChange(requestor, t.id, await payloadFor(t.id, { pickup_datetime: nextDay.toISOString() }))).body.change_request;
+
+    const approve = await api().post(`/api/v1/trips/${t.id}/change-request/${cr.id}/approve`).set(auth(admin)).send({});
+    expect(approve.status, JSON.stringify(approve.body)).toBe(409);
+    expect(approve.body.error.code).toBe("PICKUP_DAY_CHANGED");
+    expect((await prisma.tripChangeRequest.findUniqueOrThrow({ where: { id: cr.id } })).status).toBe("pending");
+  });
+
+  it("the overload guard counts the lorry's OTHER load that day", async () => {
+    // A bare max_pallets compare let an approval push 27 pallet-equivalents
+    // onto a 14-pallet lorry. Capacity is what is LEFT after the truck's other
+    // committed load — the same maths the manual assign uses.
+    const truck = await prisma.truck.findUniqueOrThrow({ where: { plate: PND_PLATE } });
+    const t = await assignedTrip();
+    // A second booking on the SAME truck and day, taking most of the capacity.
+    const other = await bookTrip(requestor, ["K1"], rt);
+    await prisma.cargoDetail.updateMany({ where: { trip_id: other.id }, data: { pallet_type: "4×4", quantity: truck.max_pallets - 1 } });
+    await prisma.trip.update({
+      where: { id: other.id },
+      data: { status: "assigned", truck_plate: PND_PLATE, pickup_datetime: t.pickup_datetime },
+    });
+
+    // Fits the truck outright, but NOT alongside the other booking.
+    const cr = (await requestChange(requestor, t.id, await payloadFor(t.id, {
+      cargo_details: [{ pallet_type: "4×4", quantity: 2 }],
+    }))).body.change_request;
+    const approve = await api().post(`/api/v1/trips/${t.id}/change-request/${cr.id}/approve`).set(auth(admin)).send({});
+    expect(approve.status, JSON.stringify(approve.body)).toBe(409);
+    expect(approve.body.error.code).toBe("TRUCK_OVERLOADED");
+    expect(approve.body.error.message).toMatch(/already carries/i);
+  });
+
+  it("refuses a STALE proposal rather than reverting a later edit", async () => {
+    // A proposal is a full-document overwrite. Without a staleness check:
+    // submit → admin unassigns → requestor edits the cargo directly → trip
+    // re-assigned → admin approves the old proposal and silently REVERTS the
+    // requestor's own later edit, with nothing on screen saying so.
+    const t = await assignedTrip();
+    const cr = (await requestChange(requestor, t.id, await payloadFor(t.id, {
+      pickup_datetime: new Date(new Date(t.pickup_datetime).getTime() + 30 * 60_000).toISOString(),
+    }))).body.change_request;
+
+    // The booking moves underneath the proposal.
+    await prisma.cargoDetail.updateMany({ where: { trip_id: t.id }, data: { quantity: 7 } });
+
+    const approve = await api().post(`/api/v1/trips/${t.id}/change-request/${cr.id}/approve`).set(auth(admin)).send({});
+    expect(approve.status, JSON.stringify(approve.body)).toBe(409);
+    expect(approve.body.error.code).toBe("CHANGE_REQUEST_STALE");
+    // The later edit stands.
+    expect((await prisma.cargoDetail.findFirstOrThrow({ where: { trip_id: t.id } })).quantity).toBe(7);
+  });
+
+  it("the queue carries VALUES, not just field names", async () => {
+    // "consignees" alone hides Ipoh (6 pts) -> Juru & Perai (1 pt), which is a
+    // weekday drop going from RM44 to RM0. An approval gate with no visible
+    // before/after is a rubber stamp.
+    const t = await assignedTrip(["A2"]);
+    await requestChange(requestor, t.id, await payloadFor(t.id, {
+      stops: [{ consignee_id: await consigneeIn("K1"), sequence: 1 }],
+    }));
+
+    const queue = await api().get("/api/v1/trips/change-requests/open").set(auth(admin));
+    const row = queue.body.change_requests[0];
+    expect(Array.isArray(row.detail)).toBe(true);
+    expect(row.detail.join(" ")).toMatch(/Stops:/);
+    expect(row.detail.join(" ")).toMatch(/\(A2\)/); // the zone it was
+    expect(row.detail.join(" ")).toMatch(/\(K1\)/); // the zone it becomes
+  });
+
   it("approve RE-VALIDATES: a consignee deactivated after submission is caught", async () => {
     // A stored payload is untrusted input — it may have been written before the
     // world changed. Better a loud refusal than a booking to a dead consignee.
@@ -226,8 +338,16 @@ describe("Request Change — assigned bookings go through admin approval", () =>
 
     await prisma.consignee.update({ where: { id: target }, data: { is_active: false } });
 
-    const approve = await api().post(`/api/v1/trips/${t.id}/change-request/${cr.id}/approve`).set(auth(admin)).send({});
-    expect(approve.status).toBe(400);
+    let approveStatus = 0;
+    try {
+      const approve = await api().post(`/api/v1/trips/${t.id}/change-request/${cr.id}/approve`).set(auth(admin)).send({});
+      approveStatus = approve.status;
+    } finally {
+      // resetDb() only truncates TRANSACTIONAL tables, so a deactivated
+      // consignee would leak into every later integration file sharing this DB.
+      await prisma.consignee.update({ where: { id: target }, data: { is_active: true } });
+    }
+    expect(approveStatus).toBe(400);
     // Still pending, trip untouched.
     expect((await prisma.tripChangeRequest.findUniqueOrThrow({ where: { id: cr.id } })).status).toBe("pending");
     expect((await prisma.tripStop.findFirstOrThrow({ where: { trip_id: t.id } })).zone_code).toBe("A2");

@@ -148,7 +148,17 @@ function RequestCard({ row }: { row: ChangeRequestRow }) {
         <Text style={{ fontSize: font.xs, color: colors.textMuted, fontWeight: "700", marginBottom: 4 }}>
           {t("changeRequest.whatChanged")}
         </Text>
-        <Text style={{ fontSize: font.md, color: colors.text }}>{row.summary}</Text>
+        {row.detail?.length ? (
+          // The values, not just the field names — this is a pay decision and
+          // "consignees" alone hides Ipoh 6pts -> Juru 1pt.
+          row.detail.map((line, i) => (
+            <Text key={i} style={{ fontSize: font.md, color: colors.text, marginBottom: i === row.detail.length - 1 ? 0 : 6 }}>
+              {line}
+            </Text>
+          ))
+        ) : (
+          <Text style={{ fontSize: font.md, color: colors.text }}>{row.summary}</Text>
+        )}
       </View>
 
       <Text style={{ fontSize: font.xs, color: colors.textMuted, lineHeight: 17 }}>

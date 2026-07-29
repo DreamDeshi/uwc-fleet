@@ -730,6 +730,8 @@ export interface ChangeRequestRow {
   pickup_datetime: string;
   requestor_name: string;
   driver_name: string | null;
+  /** Value-bearing before -> after lines; the summary alone is field names. */
+  detail: string[];
 }
 
 /** The dispatcher's Request Change queue — oldest pending first. */
