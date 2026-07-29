@@ -2285,6 +2285,34 @@ router.post(
         throw new ApiError(403, "FORBIDDEN", "You do not have permission to add documents to this trip.");
       }
 
+      // FINALIZE LOCK for the REQUESTOR. This route had no status guard at all,
+      // so the owning requestor could attach paperwork to a trip that was
+      // already delivered, paid or cancelled — the one place Mr. Teh's A19
+      // matrix ("DELIVERED / CANCELLED → requestor cannot edit") leaked.
+      //
+      // The three statuses are not a new rule: they are exactly the POD and K2
+      // finalize lock a few routes above (POD_LOCKED). Once a trip is proposed,
+      // paid or cancelled its evidence is frozen, and paperwork appearing
+      // against a settled trip is the same problem whichever door it came in.
+      //
+      // ADMINS ARE DELIBERATELY NOT BLOCKED: the same matrix grants them
+      // "correct records with audit trail" at DELIVERED and "reopen if
+      // necessary" at CANCELLED, and this route already writes an audit row for
+      // every upload. Correcting the paperwork on a finished trip is the
+      // clerical job the client asked for.
+      if (
+        isOwner &&
+        (trip.status === "pending_approval" ||
+          trip.status === "completed" ||
+          trip.status === "cancelled")
+      ) {
+        throw new ApiError(
+          409,
+          "TRIP_FINALIZED",
+          "This booking is finished — documents can no longer be added. Ask an admin if a record needs correcting."
+        );
+      }
+
       // Authenticated (private) upload: the delivery URL 401s without a
       // signature, so DO/invoice paperwork is no longer publicly accessible.
       // Store the handles; the trips-router serializer signs file_url on read.

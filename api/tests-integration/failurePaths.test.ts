@@ -237,3 +237,52 @@ describe("FAILURE PATHS integration", () => {
     });
   });
 });
+
+/**
+ * DOCUMENT UPLOAD FINALIZE LOCK.
+ *
+ * POST /trips/:id/documents had NO status guard, so the owning requestor could
+ * attach paperwork to a delivered, paid or cancelled booking — the one place
+ * Mr. Teh's A19 matrix ("DELIVERED / CANCELLED → requestor cannot edit")
+ * leaked. Admins stay unrestricted: the same matrix gives them "correct records
+ * with audit trail", and every upload already writes an audit row.
+ */
+describe("document upload finalize lock", () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  const upload = (token: string, tripId: string) =>
+    api()
+      .post(`/api/v1/trips/${tripId}/documents`)
+      .set(auth(token))
+      .field("type", "other")
+      .attach("file", Buffer.from("paperwork"), "doc.jpg");
+
+  it("the REQUESTOR is blocked once the trip is cancelled", async () => {
+    const { requestor, rt } = await actors();
+    const t = await bookTrip(requestor, ["A2"], rt);
+    // Allowed while the booking is still live — the guard must not over-reach.
+    expect((await upload(requestor, t.id)).status).toBe(201);
+
+    expect((await api().patch(`/api/v1/trips/${t.id}/cancel`).set(auth(requestor)).send({})).status).toBe(200);
+
+    const after = await upload(requestor, t.id);
+    expect(after.status).toBe(409);
+    expect(after.body.error.code).toBe("TRIP_FINALIZED");
+  });
+
+  it("an ADMIN can still attach to the same cancelled trip — records get corrected", async () => {
+    const { requestor, admin, rt } = await actors();
+    const t = await bookTrip(requestor, ["A2"], rt);
+    expect((await api().patch(`/api/v1/trips/${t.id}/cancel`).set(auth(requestor)).send({})).status).toBe(200);
+
+    const asAdmin = await upload(admin, t.id);
+    expect(asAdmin.status, JSON.stringify(asAdmin.body)).toBe(201);
+    // ...and it is audited, which is the condition the client attached to it.
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: "trip.document_uploaded", record_id: t.id },
+    });
+    expect(audit).not.toBeNull();
+  });
+});
