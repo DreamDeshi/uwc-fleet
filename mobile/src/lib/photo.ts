@@ -92,6 +92,26 @@ export async function pickDocumentImage(): Promise<PickedPhoto | null> {
   return finalizePhoto(result.assets[0], "document.jpg");
 }
 
+/**
+ * Pick a screenshot to attach to "Report a problem or idea". Library only —
+ * the point is a screenshot the user already took of the bug, not a fresh
+ * camera shot. Returns null on cancel or a refused permission; feedback must
+ * still send without it, so callers treat "no image" as normal.
+ */
+export async function pickFeedbackImage(): Promise<PickedPhoto | null> {
+  const lib = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!lib.granted) return null;
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ["images"],
+    quality: 0.8,
+    allowsEditing: false,
+  });
+  if (result.canceled || !result.assets?.length) return null;
+
+  return finalizePhoto(result.assets[0], "feedback.jpg");
+}
+
 // Turn a picked asset into the { uri, name, type } the upload hook expects.
 // On native we compress first (drivers on weak rural data). On web we skip it:
 // expo-image-manipulator and expo-file-system are unreliable in the browser, and

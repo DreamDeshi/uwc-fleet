@@ -8,7 +8,7 @@
 // across every screen via react-i18next) + PATCH /users/me (persisted per
 // account, re-applied on next login by AuthContext.fetchMe). No parallel i18n.
 import React, { useState } from "react";
-import { ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { Image, Linking, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { useNavigation } from "@react-navigation/native";
@@ -214,7 +214,16 @@ export function AdminSettingsScreen() {
 function FeedbackInboxCard() {
   const { t } = useTranslation();
   const [rows, setRows] = useState<
-    { id: string; category: string; message: string; user_name: string; role: string; at: string }[] | null
+    {
+      id: string;
+      category: string;
+      message: string;
+      /** Freshly-signed URL of the sender's screenshot, or null. */
+      image_url?: string | null;
+      user_name: string;
+      role: string;
+      at: string;
+    }[] | null
   >(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -300,6 +309,22 @@ function FeedbackInboxCard() {
                   </Text>
                 </View>
                 <Text style={{ fontSize: font.sm, color: colors.text, marginTop: 6, lineHeight: 19 }}>{r.message}</Text>
+                {/* The sender's screenshot. The URL is signed per read (the
+                    asset is private), so it is only valid for this response —
+                    never cache or store it. Tap to open full size. */}
+                {r.image_url ? (
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL(r.image_url!)}
+                    activeOpacity={0.85}
+                    style={{ marginTop: 8, alignSelf: "flex-start" }}
+                  >
+                    <Image
+                      source={{ uri: r.image_url }}
+                      style={{ width: 148, height: 148, borderRadius: radius.sm, backgroundColor: colors.bg }}
+                      resizeMode="cover"
+                    />
+                  </TouchableOpacity>
+                ) : null}
               </View>
             );
           })}

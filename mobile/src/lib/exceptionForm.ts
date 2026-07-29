@@ -15,6 +15,18 @@ export const EXCEPTION_CATEGORIES = [
 export type ExceptionCategory = (typeof EXCEPTION_CATEGORIES)[number]["key"];
 const CATEGORY_KEYS = EXCEPTION_CATEGORIES.map((c) => c.key) as readonly string[];
 
+// The four canned phrases (design frame 19). They cover what a driver actually
+// reports from a kerbside, one tap instead of typing at a locked gate. They
+// APPEND to the note rather than replacing it, so "Gate locked" plus his own
+// words both survive — the reason field stays free text and the server is
+// unchanged.
+export const CANNED_REASONS = [
+  { key: "gate_locked", i18nKey: "exception.canned.gateLocked" },
+  { key: "nobody_at_site", i18nKey: "exception.canned.nobodyAtSite" },
+  { key: "site_closed", i18nKey: "exception.canned.siteClosed" },
+  { key: "wrong_address", i18nKey: "exception.canned.wrongAddress" },
+] as const;
+
 export type ExceptionState = "reported" | "more_evidence" | "verified" | "rejected" | "resolved";
 
 const OPEN_STATES: ReadonlySet<ExceptionState> = new Set(["reported", "more_evidence", "verified"]);

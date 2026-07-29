@@ -8,11 +8,15 @@
 // Status is shown inline (no useToast) so the same component renders in
 // either navigation tree — the same rule AccountModals follows.
 import React, { useState } from "react";
-import { Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Image, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { colors, radius } from "../theme";
 import { Button } from "./Button";
 import { api, apiErrorMessage } from "../services/api";
+import { appendPhoto, UPLOAD_HEADERS } from "../hooks/queries";
+import { pickFeedbackImage } from "../lib/photo";
+import type { PickedPhoto } from "../lib/photo";
 
 const CATEGORIES = ["bug", "idea", "other"] as const;
 type Category = (typeof CATEGORIES)[number];
@@ -30,13 +34,24 @@ export function FeedbackModal({
   const { t } = useTranslation();
   const [category, setCategory] = useState<Category>("bug");
   const [message, setMessage] = useState("");
+  const [image, setImage] = useState<PickedPhoto | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const close = () => {
     setStatus(null);
     setMessage("");
+    setImage(null);
     onClose();
+  };
+
+  const attach = async () => {
+    setStatus(null);
+    const picked = await pickFeedbackImage();
+    // Cancel and a refused permission both land here. Feedback sends fine
+    // without a picture, so neither is worth an error — the button simply
+    // does nothing visible.
+    if (picked) setImage(picked);
   };
 
   const submit = async () => {
@@ -47,10 +62,22 @@ export function FeedbackModal({
     setBusy(true);
     setStatus(null);
     try {
-      await api.post("/feedback", { category, message: message.trim(), screen });
+      if (image) {
+        // Multipart only when there IS a picture; the plain JSON path is
+        // untouched for everyone who just types.
+        const form = new FormData();
+        form.append("category", category);
+        form.append("message", message.trim());
+        form.append("screen", screen);
+        await appendPhoto(form, "image", image);
+        await api.post("/feedback", form, { headers: UPLOAD_HEADERS, timeout: 60_000 });
+      } else {
+        await api.post("/feedback", { category, message: message.trim(), screen });
+      }
       // Keep the modal open on the success note so the sender sees it landed;
-      // the text is cleared so a second idea can follow immediately.
+      // the text and picture clear so a second report can follow immediately.
       setMessage("");
+      setImage(null);
       setStatus({ kind: "ok", text: t("feedback.sent") });
     } catch (err) {
       setStatus({ kind: "err", text: apiErrorMessage(err) || t("feedback.failed") });
@@ -99,6 +126,28 @@ export function FeedbackModal({
             maxLength={1000}
           />
 
+          {/* Optional screenshot — "a small area to show bugs for the dev to
+              know" (owner, 29 Jul). A thumbnail once picked, so the sender can
+              see WHICH shot is attached and swap it before sending. */}
+          {image ? (
+            <View style={styles.imageRow}>
+              <Image source={{ uri: image.uri }} style={styles.thumb} resizeMode="cover" />
+              <Text style={styles.imageName} numberOfLines={1}>{image.name}</Text>
+              <TouchableOpacity
+                onPress={() => setImage(null)}
+                hitSlop={10}
+                accessibilityLabel={t("feedback.removeImage")}
+              >
+                <Ionicons name="close-circle" size={22} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.attachBtn} onPress={attach} activeOpacity={0.8}>
+              <Ionicons name="image-outline" size={18} color={colors.blue} />
+              <Text style={styles.attachText}>{t("feedback.addImage")}</Text>
+            </TouchableOpacity>
+          )}
+
           {status ? (
             <Text style={[styles.status, { color: status.kind === "ok" ? colors.greenText : colors.red }]}>
               {status.text}
@@ -137,4 +186,31 @@ const styles = StyleSheet.create({
     backgroundColor: colors.fieldBg,
   },
   status: { fontSize: 13, fontWeight: "700", marginTop: 10 },
+  attachBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 10,
+    minHeight: 44,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderColor: colors.border,
+  },
+  attachText: { fontSize: 14, fontWeight: "700", color: colors.blue },
+  imageRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 10,
+    minHeight: 44,
+    paddingHorizontal: 10,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    backgroundColor: colors.fieldBg,
+  },
+  thumb: { width: 34, height: 34, borderRadius: 6, backgroundColor: colors.border },
+  imageName: { flex: 1, fontSize: 13, color: colors.textMuted },
 });

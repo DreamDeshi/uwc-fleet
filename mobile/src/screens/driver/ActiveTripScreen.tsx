@@ -936,6 +936,9 @@ export function ActiveTripScreen() {
             id: s.id,
             label: t("exception.stopN", { n: s.sequence, name: s.consignee?.company_name ?? "" }),
           }))}
+          // The stop he is standing at, so the sheet names it instead of
+          // asking him to pick it out of a list (design frame 19).
+          activeStopId={activeStop?.id ?? null}
           onClose={() => setShowReport(false)}
         />
       )}

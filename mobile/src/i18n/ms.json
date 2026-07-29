@@ -336,7 +336,9 @@
     "submit": "Hantar",
     "sent": "Terima kasih — maklum balas anda telah dihantar.",
     "failed": "Tidak dapat menghantar maklum balas.",
-    "tooShort": "Sila tulis beberapa perkataan lagi."
+    "tooShort": "Sila tulis beberapa perkataan lagi.",
+    "addImage": "Tambah tangkapan skrin",
+    "removeImage": "Buang tangkapan skrin"
   },
   "fuel": {
     "title": "Rekod Isi Minyak",
@@ -1456,5 +1458,90 @@
     "pallet": "Palet {{size}} × {{qty}}",
     "custom": "Tersuai",
     "more": "(+{{qty}} lagi)"
+  },
+  "exception": {
+    "reportButton": "Laporkan masalah",
+    "reportTitle": "Laporkan pengecualian",
+    "whatWentWrong": "Apa yang berlaku?",
+    "pickOrType": "Pilih satu, atau taip sendiri",
+    "notePlaceholderDriver": "Apa-apa lagi yang pejabat patut tahu…",
+    "tellTheOffice": "Beritahu pejabat",
+    "autoAttached": "Lokasi dan masa anda dilampirkan secara automatik",
+    "waitingForOffice": "Menunggu pejabat",
+    "sentAtWaiting": "Dihantar {{time}} · pejabat sedang menyemaknya",
+    "canned": {
+      "gateLocked": "Pagar berkunci",
+      "nobodyAtSite": "Tiada sesiapa di tapak",
+      "siteClosed": "Tapak ditutup",
+      "wrongAddress": "Alamat salah"
+    },
+    "categoryLabel": "Apa masalahnya?",
+    "stopLabel": "Hentian terlibat (pilihan)",
+    "stopN": "Hentian {{n}} — {{name}}",
+    "reasonLabel": "Terangkan apa yang berlaku",
+    "reasonPlaceholder": "cth. pagar berkunci, tiada sesiapa di tapak untuk menerima",
+    "photoLabel": "Bukti foto",
+    "capturePhoto": "Ambil foto",
+    "submit": "Hantar laporan",
+    "reportedToast": "Pengecualian dilaporkan — penghantar telah dimaklumkan",
+    "queuedToast": "Disimpan — akan dihantar apabila anda dalam talian semula",
+    "reportFailed": "Tidak dapat melaporkan pengecualian",
+    "photoPermissionDenied": "Akses kamera dan foto ditolak — benarkan dalam Tetapan.",
+    "bannerTitle": "Pengecualian dilaporkan",
+    "moreEvidencePrompt": "Penghantar meminta bukti tambahan.",
+    "addEvidence": "Tambah bukti",
+    "evidenceAddedToast": "Bukti ditambah",
+    "evidenceFailed": "Tidak dapat menambah bukti",
+    "requestorTitle": "Pengecualian penghantaran",
+    "affectedStop": "Hentian terlibat: {{n}}",
+    "reportedAt": "Dilaporkan {{time}}",
+    "laneTitle": "Pengecualian",
+    "noneOpen": "Tiada pengecualian terbuka.",
+    "evidenceLabel": "Bukti",
+    "timelineLabel": "Aktiviti",
+    "noteLabel": "Nota",
+    "notePlaceholder": "Tambah nota (wajib untuk menolak atau meminta bukti tambahan)",
+    "verify": "Sahkan",
+    "requestMore": "Minta bukti tambahan",
+    "reject": "Tolak",
+    "resume": "Sambung perjalanan",
+    "retry": "Cuba lagi",
+    "noteRequired": "Nota diperlukan untuk tindakan ini.",
+    "actionDone": "Selesai",
+    "conflictRefreshed": "Pengecualian ini telah berubah — dimuat semula kepada yang terkini. Sila semak dan cuba lagi.",
+    "actionFailed": "Tidak dapat menyelesaikan tindakan",
+    "category": {
+      "customer_site": "Pelanggan / Tapak",
+      "truck": "Trak",
+      "cargo": "Kargo",
+      "external": "Luaran",
+      "documentation": "Dokumentasi"
+    },
+    "state": {
+      "reported": "Dilaporkan",
+      "more_evidence": "Perlu bukti tambahan",
+      "verified": "Disahkan",
+      "rejected": "Ditolak",
+      "resolved": "Selesai"
+    },
+    "publicStatus": {
+      "open": "Dalam semakan",
+      "resolved": "Selesai"
+    },
+    "action": {
+      "report": "Dilaporkan",
+      "request_more_evidence": "Bukti tambahan diminta",
+      "verify": "Disahkan",
+      "reject": "Ditolak",
+      "resume": "Disambung",
+      "resolve": "Diselesaikan",
+      "evidence_added": "Bukti ditambah"
+    },
+    "validation": {
+      "categoryRequired": "Sila pilih kategori.",
+      "reasonRequired": "Sila terangkan apa yang berlaku.",
+      "reasonTooLong": "Sebab terlalu panjang.",
+      "photoRequired": "Foto diperlukan."
+    }
   }
 }

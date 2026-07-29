@@ -336,7 +336,9 @@
     "submit": "发送",
     "sent": "谢谢——您的反馈已发送。",
     "failed": "无法发送反馈。",
-    "tooShort": "请再多写几个字。"
+    "tooShort": "请再多写几个字。",
+    "addImage": "添加截图",
+    "removeImage": "移除截图"
   },
   "fuel": {
     "title": "记录加油",
@@ -1456,5 +1458,90 @@
     "pallet": "托盘 {{size}} × {{qty}}",
     "custom": "自定义",
     "more": "（另 {{qty}} 项）"
+  },
+  "exception": {
+    "reportButton": "报告问题",
+    "reportTitle": "报告异常",
+    "whatWentWrong": "出了什么问题？",
+    "pickOrType": "选一个，或自行输入",
+    "notePlaceholderDriver": "办公室还需要知道什么…",
+    "tellTheOffice": "通知办公室",
+    "autoAttached": "您的位置和时间会自动附上",
+    "waitingForOffice": "等待办公室处理",
+    "sentAtWaiting": "{{time}} 已发送 · 办公室正在查看",
+    "canned": {
+      "gateLocked": "大门上锁",
+      "nobodyAtSite": "现场无人",
+      "siteClosed": "现场关闭",
+      "wrongAddress": "地址错误"
+    },
+    "categoryLabel": "问题是什么？",
+    "stopLabel": "受影响的站点（选填）",
+    "stopN": "第 {{n}} 站 — {{name}}",
+    "reasonLabel": "描述发生了什么",
+    "reasonPlaceholder": "例如：大门上锁，现场无人接收",
+    "photoLabel": "照片证据",
+    "capturePhoto": "拍照",
+    "submit": "提交报告",
+    "reportedToast": "异常已报告 — 调度员已收到通知",
+    "queuedToast": "已保存 — 恢复联网后将自动发送",
+    "reportFailed": "无法报告异常",
+    "photoPermissionDenied": "相机和照片权限被拒绝 — 请在设置中开启。",
+    "bannerTitle": "异常已报告",
+    "moreEvidencePrompt": "调度员要求补充证据。",
+    "addEvidence": "补充证据",
+    "evidenceAddedToast": "证据已添加",
+    "evidenceFailed": "无法添加证据",
+    "requestorTitle": "配送异常",
+    "affectedStop": "受影响的站点：{{n}}",
+    "reportedAt": "{{time}} 报告",
+    "laneTitle": "异常",
+    "noneOpen": "没有待处理的异常。",
+    "evidenceLabel": "证据",
+    "timelineLabel": "活动记录",
+    "noteLabel": "备注",
+    "notePlaceholder": "添加备注（拒绝或要求补充证据时必填）",
+    "verify": "核实",
+    "requestMore": "要求补充证据",
+    "reject": "拒绝",
+    "resume": "继续行程",
+    "retry": "重试",
+    "noteRequired": "此操作需要填写备注。",
+    "actionDone": "完成",
+    "conflictRefreshed": "该异常已变更 — 已刷新为最新状态。请查看后重试。",
+    "actionFailed": "无法完成操作",
+    "category": {
+      "customer_site": "客户 / 现场",
+      "truck": "罗里",
+      "cargo": "货物",
+      "external": "外部因素",
+      "documentation": "文件"
+    },
+    "state": {
+      "reported": "已报告",
+      "more_evidence": "需要补充证据",
+      "verified": "已核实",
+      "rejected": "已拒绝",
+      "resolved": "已解决"
+    },
+    "publicStatus": {
+      "open": "审核中",
+      "resolved": "已解决"
+    },
+    "action": {
+      "report": "已报告",
+      "request_more_evidence": "已要求补充证据",
+      "verify": "已核实",
+      "reject": "已拒绝",
+      "resume": "已继续",
+      "resolve": "已解决",
+      "evidence_added": "已添加证据"
+    },
+    "validation": {
+      "categoryRequired": "请选择一个类别。",
+      "reasonRequired": "请描述发生了什么。",
+      "reasonTooLong": "原因过长。",
+      "photoRequired": "需要一张照片。"
+    }
   }
 }

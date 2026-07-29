@@ -1,18 +1,24 @@
 import React, { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
-import { colors, radius, spacing } from "../theme";
+import { colors, radius } from "../theme";
 import { Button } from "./Button";
 import { useToast } from "./Toast";
 import { capturePodPhoto } from "../lib/photo";
 import { uuidv4 } from "../lib/uuid";
+import { formatTime } from "../lib/format";
 import { exceptionStateLabelKey, canDriverAddEvidence, isOpenState } from "../lib/exceptionForm";
 import { useTripException, useAddExceptionEvidence } from "../hooks/useExceptions";
 import type { ExceptionFull } from "../services/exceptions";
 import { apiErrorMessage } from "../services/api";
 
+// Tone per state. `reported` is deliberately NOT orange: orange is reserved for
+// offline/queued (owner ruling, 7 Jul), and a reported exception is neither —
+// it reached the office. Amber carries "pending, someone is looking at it",
+// the same semantics the fuel nudge and the awaiting-approval chip use.
 const STATE_TONE: Record<string, string> = {
-  reported: colors.orange,
+  reported: "#d97706",
   more_evidence: colors.yellow,
   verified: colors.teal,
   rejected: colors.red,
@@ -20,9 +26,14 @@ const STATE_TONE: Record<string, string> = {
 };
 
 /**
- * Driver-facing current-exception card: shows the state + category + reason, and
- * — only when the admin has requested more evidence — an "Add evidence" button.
- * The driver never sees verify/reject/resume/retry controls.
+ * The driver's view of the exception he just reported (design frames 21 and 22).
+ *
+ * It answers the only two questions he has while standing there: does the
+ * office have this, and is there anything left for me to do. So the card ends
+ * in a plain sentence about who holds it — and the ONE state that wants
+ * something back from him, `more_evidence`, is the only one with a button.
+ *
+ * He never sees verify / reject / resume / retry: those are the dispatcher's.
  */
 export function ExceptionStatusCard({ tripId }: { tripId: string }) {
   const { t } = useTranslation();
@@ -36,11 +47,20 @@ export function ExceptionStatusCard({ tripId }: { tripId: string }) {
 
   const onAddEvidence = async () => {
     const res = await capturePodPhoto();
-    if (res === "permission_denied") { toast(t("exception.photoPermissionDenied"), "error"); return; }
+    if (res === "permission_denied") {
+      toast(t("exception.photoPermissionDenied"), "error");
+      return;
+    }
     if (!res) return;
     setBusy(true);
     try {
-      await addEvidence.mutateAsync({ tripId, exId: exc.id, photo: res, clientEvidenceId: uuidv4(), capturedClientAt: new Date().toISOString() });
+      await addEvidence.mutateAsync({
+        tripId,
+        exId: exc.id,
+        photo: res,
+        clientEvidenceId: uuidv4(),
+        capturedClientAt: new Date().toISOString(),
+      });
       toast(t("exception.evidenceAddedToast"), "success");
     } catch (e) {
       toast(apiErrorMessage(e, t("exception.evidenceFailed")), "error");
@@ -50,34 +70,57 @@ export function ExceptionStatusCard({ tripId }: { tripId: string }) {
   };
 
   const tone = STATE_TONE[exc.current_state] ?? colors.grey;
+  const needsEvidence = canDriverAddEvidence(exc.current_state);
+  const reportedAt = exc.reported_at ? formatTime(exc.reported_at) : null;
+
   return (
     <View style={[styles.card, { borderLeftColor: tone }]}>
       <View style={styles.row}>
+        <Ionicons name="alert-circle" size={17} color={tone} />
         <Text style={styles.title}>{t("exception.bannerTitle")}</Text>
         <View style={[styles.badge, { backgroundColor: tone }]}>
           <Text style={styles.badgeText}>{t(exceptionStateLabelKey(exc.current_state))}</Text>
         </View>
       </View>
+
       <Text style={styles.category}>{t(`exception.category.${exc.category}`)}</Text>
-      <Text style={styles.reason}>{exc.reason}</Text>
-      {canDriverAddEvidence(exc.current_state) && (
+      {exc.reason ? <Text style={styles.reason}>{exc.reason}</Text> : null}
+
+      {needsEvidence ? (
         <View style={styles.action}>
           <Text style={styles.prompt}>{t("exception.moreEvidencePrompt")}</Text>
           <Button title={t("exception.addEvidence")} onPress={onAddEvidence} loading={busy} />
         </View>
+      ) : (
+        // No button — there is nothing for him to do. The line tells him who
+        // holds it so he stops waiting on the screen and drives on.
+        <Text style={styles.waiting}>
+          {reportedAt
+            ? t("exception.sentAtWaiting", { time: reportedAt })
+            : t("exception.waitingForOffice")}
+        </Text>
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: colors.white, borderRadius: radius.md, borderLeftWidth: 4, padding: spacing.md, marginBottom: spacing.md },
-  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  title: { fontWeight: "700", color: colors.text },
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderLeftWidth: 4,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    padding: 14,
+    marginBottom: 12,
+  },
+  row: { flexDirection: "row", alignItems: "center", gap: 8 },
+  title: { flex: 1, fontSize: 14, fontWeight: "800", color: colors.navy },
   badge: { paddingVertical: 3, paddingHorizontal: 10, borderRadius: radius.pill },
-  badgeText: { color: colors.white, fontSize: 11, fontWeight: "700" },
-  category: { color: colors.text, fontWeight: "600", marginTop: spacing.xs },
-  reason: { color: colors.textMuted, marginTop: 2 },
-  action: { marginTop: spacing.md, gap: spacing.xs },
-  prompt: { color: colors.textMuted, fontSize: 13 },
+  badgeText: { color: colors.white, fontSize: 12, fontWeight: "800" },
+  category: { fontSize: 13, color: colors.textMuted, fontWeight: "700", marginTop: 8 },
+  reason: { fontSize: 14, color: colors.navy, marginTop: 3, lineHeight: 19 },
+  action: { marginTop: 12, gap: 8 },
+  prompt: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
+  waiting: { fontSize: 12, color: colors.textMuted, marginTop: 10 },
 });
