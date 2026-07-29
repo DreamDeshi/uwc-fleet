@@ -608,22 +608,30 @@ describe("exception workflow — end-to-end through Postgres", () => {
     expect(afterResolved.body.error.code).toBe("EXCEPTION_CLOSED");
   });
 
-  it("pointer-clear failure rolls back the action, projection AND resolution", async () => {
+  it("a CLEARED pointer is legitimate (the driver continued) — the close succeeds", async () => {
+    // CONTRACT CHANGE, 29 Jul 2026. This test previously asserted 409
+    // POINTER_INCONSISTENT for a null pointer, on the invariant "open implies
+    // pointed-to". POST /continue breaks that invariant on purpose: it clears
+    // the trip's BLOCK and leaves the report open, so that the driver can carry
+    // on without deciding anything about the stop or the pay.
+    //
+    // A null pointer is therefore the NORMAL state for a continued report, and
+    // the office must still be able to close it. What must never happen is the
+    // trip being left pointing at an exception we just closed — that is what
+    // the guard now asserts.
     const t = await inProgressTrip();
     const exId = (await reportReq(driver, t.id).attach("photo", PHOTO, "e.jpg")).body.exception.id;
-    // Deliberately break the cache pointer so the close-time CAS matches 0 rows.
     await prisma.trip.update({ where: { id: t.id }, data: { open_exception_id: null } });
 
     const resume = await api().post(`/api/v1/trips/${t.id}/exception/${exId}/resume`).set(auth(admin)).send({ client_action_id: randomUUID() });
-    expect(resume.status).toBe(409);
-    expect(resume.body.error.code).toBe("POINTER_INCONSISTENT");
+    expect(resume.status, JSON.stringify(resume.body)).toBe(200);
 
-    // Everything rolled back: exception still OPEN, no resume action, version unchanged.
     const exc = (await prisma.tripException.findUnique({ where: { id: exId } }))!;
-    expect(exc.closed_at).toBeNull();
-    expect(exc.current_state).toBe("reported");
-    expect(exc.resolution).toBeNull();
-    expect(await prisma.exceptionAction.count({ where: { exception_id: exId, type: "resume" } })).toBe(0);
+    expect(exc.closed_at).not.toBeNull();
+    expect(exc.current_state).toBe("resolved");
+    expect(exc.resolution).toBe("resume");
+    // And the trip is not left pointing at the exception we just closed.
+    expect((await prisma.trip.findUniqueOrThrow({ where: { id: t.id } })).open_exception_id).toBeNull();
   });
 
   it("admin open-exceptions list: admin-only, open-only, 404 when feature off", async () => {
@@ -708,5 +716,152 @@ describe("reporting an exception alerts the admins immediately", () => {
     expect(replay.status).toBe(200); // replay, not a new report
     await new Promise((r) => setTimeout(r, 250));
     expect(reportedAlerts(exId)).toBe(1); // still one
+  });
+});
+
+/**
+ * DRIVER "CONTINUE TRIP" — the flag-on blocker, rebuilt on the owner's ruling
+ * (29 Jul 2026): the driver carries on and SETTLES NOTHING; an admin marking a
+ * stop undeliverable is the ONLY thing that pays.
+ *
+ * The route therefore writes no resolution and no action — it clears the trip's
+ * BLOCK and leaves the report open for the office. These tests pin both halves:
+ * he can never move money, and he can never destroy his own entitlement either.
+ */
+describe("driver continue-trip — unblocks the truck, decides nothing", () => {
+  beforeAll(() => {
+    process.env.FEATURE_EXCEPTIONS = "true";
+  });
+  afterAll(() => {
+    delete process.env.FEATURE_EXCEPTIONS;
+  });
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  async function withOpenException(zones = ["A2"]) {
+    const t = await inProgressTripZones(zones);
+    const stopId = t.stops[0].id;
+    expect((await patchTrip(driver, t.id, { action: "arrived", stop_id: stopId })).status).toBe(200);
+    const reported = await reportReq(driver, t.id, { trip_stop_id: stopId }).attach("photo", PHOTO, "e.jpg");
+    expect(reported.status, JSON.stringify(reported.body)).toBe(201);
+    return { t, tripId: t.id as string, stopId: stopId as string, exId: reported.body.exception.id as string };
+  }
+  const carryOn = (token: string, tripId: string, exId: string) =>
+    api().post(`/api/v1/trips/${tripId}/exception/${exId}/continue`).set(auth(token)).send({ client_action_id: randomUUID() });
+
+  it("clears the block but leaves the report OPEN and untouched", async () => {
+    const { tripId, exId } = await withOpenException();
+    const res = await carryOn(driver, tripId, exId);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    // Open, unadjudicated, no resolution — the office still holds it.
+    expect(res.body.exception.current_state).toBe("reported");
+    expect(res.body.exception.is_open).toBe(true);
+    expect(res.body.exception.resolution ?? null).toBeNull();
+    expect(res.body.exception.blocking).toBe(false); // ...but no longer blocking
+
+    const exc = await prisma.tripException.findUniqueOrThrow({ where: { id: exId }, include: { actions: true } });
+    expect(exc.closed_at).toBeNull();
+    // NO ExceptionAction was appended: the action log is the adjudication
+    // trail, and continuing is not an adjudication.
+    expect(exc.actions.map((a) => a.type)).toEqual(["report"]);
+
+    expect((await prisma.trip.findUniqueOrThrow({ where: { id: tripId } })).open_exception_id).toBeNull();
+  });
+
+  it("he can DELIVER again straight after — the actual point of the feature", async () => {
+    const { tripId, stopId, exId } = await withOpenException();
+    await prisma.tripStop.update({ where: { id: stopId }, data: { pod_photo: "test://pod.jpg", do_uploaded: true } });
+
+    const blocked = await patchTrip(driver, tripId, { action: "delivered", stop_id: stopId });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error.code).toBe("EXCEPTION_OPEN");
+
+    expect((await carryOn(driver, tripId, exId)).status).toBe(200);
+
+    const ok = await patchTrip(driver, tripId, { action: "delivered", stop_id: stopId });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+  });
+
+  it("MONEY: continuing pays nothing, even after an admin has verified", async () => {
+    // THE regression this rebuild exists for. Under the withdrawn design the
+    // driver closed with `resume`, which is the half that PAYS — so tapping
+    // continue after a verify (while the admin intended Retry or Reject) moved
+    // RM77 by winning a race against the admin's own CAS. Now he writes no
+    // resolution at all, so the pay predicate cannot match whatever he does.
+    const { tripId, stopId, exId } = await withOpenException();
+    expect((await api().post(`/api/v1/trips/${tripId}/exception/${exId}/verify`).set(auth(admin)).send({ client_action_id: randomUUID() })).status).toBe(200);
+
+    expect((await carryOn(driver, tripId, exId)).status).toBe(200);
+
+    const trip = await prisma.trip.findUniqueOrThrow({ where: { id: tripId } });
+    expect(trip.incentive_earned).toBeNull();
+    expect(trip.status).toBe("in_progress"); // and he did NOT finalize his own trip
+    expect((await prisma.tripStop.findUniqueOrThrow({ where: { id: stopId } })).points_awarded).toBeNull();
+  });
+
+  it("the admin can STILL adjudicate afterwards — no self-forfeit", async () => {
+    // The other half. Under the withdrawn design a driver who continued closed
+    // the exception terminally, so no admin could ever verify it and he
+    // silently destroyed his own R3-Q11(a) entitlement. Here the report is
+    // still open, so the office's decision is unaffected — and it pays.
+    const { tripId, stopId, exId } = await withOpenException();
+    expect((await carryOn(driver, tripId, exId)).status).toBe(200);
+
+    expect((await api().post(`/api/v1/trips/${tripId}/exception/${exId}/verify`).set(auth(admin)).send({ client_action_id: randomUUID() })).status).toBe(200);
+    const resumed = await api().post(`/api/v1/trips/${tripId}/exception/${exId}/resume`).set(auth(admin)).send({ client_action_id: randomUUID() });
+    expect(resumed.status, JSON.stringify(resumed.body)).toBe(200);
+
+    // Verify + resume = the admin marking it undeliverable → it pays, and with
+    // nothing outstanding the trip finalizes.
+    const after = await prisma.trip.findUniqueOrThrow({ where: { id: tripId } });
+    expect(after.status).toBe("pending_approval");
+    expect(Number(after.incentive_earned)).toBeGreaterThan(0);
+    expect((await prisma.tripStop.findUniqueOrThrow({ where: { id: stopId } })).points_awarded).toBe(6);
+  });
+
+  it("KNOWN LIMITATION: he cannot file a SECOND report while the first is open", async () => {
+    // Not this route's choice — the DB enforces one OPEN exception per trip
+    // (partial unique index TripException_one_open_per_trip). Leaving the
+    // report open is what keeps the driver from deciding anything about pay,
+    // and relaxing the index to one-BLOCKING-per-trip is a migration, which is
+    // frozen. Pinned here so the trade-off is visible rather than discovered
+    // by a driver at the roadside.
+    const { t, tripId, exId } = await withOpenException(["A2", "K1"]);
+    expect((await carryOn(driver, tripId, exId)).status).toBe(200);
+
+    const second = await reportReq(driver, tripId, { trip_stop_id: t.stops[1].id }).attach("photo", PHOTO, "e.jpg");
+    expect(second.status).toBe(409);
+    expect(second.body.error.code).toBe("EXCEPTION_ALREADY_OPEN");
+
+    // Closing the first restores it.
+    expect((await api().post(`/api/v1/trips/${tripId}/exception/${exId}/reject`).set(auth(admin)).send({ client_action_id: randomUUID(), note: "not a real failure" })).status).toBe(200);
+    const third = await reportReq(driver, tripId, { trip_stop_id: t.stops[1].id }).attach("photo", PHOTO, "e.jpg");
+    expect(third.status, JSON.stringify(third.body)).toBe(201);
+  });
+
+  it("is idempotent, and a second call is a harmless no-op", async () => {
+    const { tripId, exId } = await withOpenException();
+    expect((await carryOn(driver, tripId, exId)).status).toBe(200);
+    // The pointer no longer matches, so the CAS no-ops rather than erroring —
+    // he is unblocked either way, which is all he asked for.
+    expect((await carryOn(driver, tripId, exId)).status).toBe(200);
+    expect(
+      await prisma.auditLog.count({ where: { record_id: exId, action: { startsWith: "exception.driver_continued" } } })
+    ).toBe(1);
+  });
+
+  it("refuses a CLOSED report, a non-driver, and an admin", async () => {
+    const { tripId, exId } = await withOpenException();
+    expect((await carryOn(requestor, tripId, exId)).status).toBe(403);
+    expect((await carryOn(admin, tripId, exId)).status).toBe(403);
+
+    expect(
+      (await api().post(`/api/v1/trips/${tripId}/exception/${exId}/reject`).set(auth(admin)).send({ client_action_id: randomUUID(), note: "no" })).status
+    ).toBe(200);
+    const closed = await carryOn(driver, tripId, exId);
+    expect(closed.status).toBe(409);
+    expect(closed.body.error.code).toBe("EXCEPTION_CLOSED");
   });
 });

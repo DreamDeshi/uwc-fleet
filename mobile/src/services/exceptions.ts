@@ -41,6 +41,9 @@ export interface ExceptionFull {
   resolved_at: string | null;
   closed_at: string | null;
   is_open: boolean;
+  /** DERIVED server-side: is this exception still blocking the trip? An open
+   *  report the driver has continued past is open but NOT blocking. */
+  blocking?: boolean;
   version: number;
   created_at: string;
   actions: ExceptionActionRow[];
@@ -150,6 +153,20 @@ export const verifyException = adminAction("verify");
 export const requestMoreEvidence = adminAction("request-more-evidence");
 export const rejectException = adminAction("reject");
 export const resumeException = adminAction("resume");
+/**
+ * DRIVER "Continue trip" — unblocks HIS OWN trip and decides nothing.
+ *
+ * Writes no resolution and no action: it clears the trip's block and leaves the
+ * report open for the office. Owner ruling 29 Jul 2026 — the driver carries on
+ * and settles nothing; an admin marking a stop undeliverable is the only thing
+ * that pays. See the route comment in api/src/routes/exceptions.ts for why
+ * closing it (either way) was wrong.
+ */
+export async function continueTripPastException(tripId: string, exId: string, input: AdminActionInput): Promise<ExceptionFull> {
+  const res = await api.post<{ exception: ExceptionFull }>(`/trips/${tripId}/exception/${exId}/continue`, actionBody(input));
+  return res.data.exception;
+}
+
 export async function resolveException(tripId: string, exId: string, input: AdminActionInput & { resolution: string }): Promise<ExceptionFull> {
   const res = await api.post<{ exception: ExceptionFull }>(`/trips/${tripId}/exception/${exId}/resolve`, { ...actionBody(input), resolution: input.resolution });
   return res.data.exception;
