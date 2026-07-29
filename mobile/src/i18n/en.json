@@ -336,7 +336,9 @@
     "submit": "Send",
     "sent": "Thanks — your feedback was sent.",
     "failed": "Could not send feedback.",
-    "tooShort": "Please write a few more words."
+    "tooShort": "Please write a few more words.",
+    "addImage": "Add a screenshot",
+    "removeImage": "Remove screenshot"
   },
   "fuel": {
     "title": "Log Fuel Fill-up",

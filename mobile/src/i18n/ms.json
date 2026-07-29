@@ -336,7 +336,9 @@
     "submit": "Hantar",
     "sent": "Terima kasih — maklum balas anda telah dihantar.",
     "failed": "Tidak dapat menghantar maklum balas.",
-    "tooShort": "Sila tulis beberapa perkataan lagi."
+    "tooShort": "Sila tulis beberapa perkataan lagi.",
+    "addImage": "Tambah tangkapan skrin",
+    "removeImage": "Buang tangkapan skrin"
   },
   "fuel": {
     "title": "Rekod Isi Minyak",
