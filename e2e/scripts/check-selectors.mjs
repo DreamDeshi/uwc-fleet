@@ -231,3 +231,5 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 }
 
 process.exit(findings.length > 0 ? 1 : 0);
+
+// ci-trigger probe: confirms a PR based on a NON-main branch gets checks.
