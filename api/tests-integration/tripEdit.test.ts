@@ -19,7 +19,7 @@ import {
 
 const OTHER = { phone: "+60188880002", password: "OtherReq123" };
 
-const editTrip = (token: string, tripId: string, body: unknown) =>
+const editTrip = (token: string, tripId: string, body: object) =>
   api().patch(`/api/v1/trips/${tripId}`).set(auth(token)).send(body);
 
 /** The create payload that reproduces bookTrip()'s single-P1-stop booking. */

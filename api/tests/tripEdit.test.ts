@@ -28,6 +28,8 @@ const existing: TripEditSnapshot = {
       quantity: 2,
       cartons: null,
       custom_size: null,
+      width_ft: null,
+      length_ft: null,
       estimated_pallets: null,
       remark: "fragile",
     },

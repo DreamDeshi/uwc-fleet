@@ -144,9 +144,24 @@ async function geoapify(q: string): Promise<GeoResult | null> {
   if (res.status === 401 || res.status === 403) throw new Error(`Geoapify rejected the key (HTTP ${res.status})`);
   if (res.status === 429) throw new Error("Geoapify rate limit / daily quota hit (HTTP 429)");
   if (!res.ok) throw new Error(`Geoapify HTTP ${res.status}`);
-  const f = (await res.json())?.features?.[0];
+  // fetch().json() is `unknown`; name the one shape we read rather than `any`.
+  // fetch().json() is `unknown`. Name the FOUR fields this reads rather than
+  // reaching for `any` — the shape is the contract with Geoapify, and
+  // rank.confidence is deliberately absent (see rule 3 below).
+  type GeoapifyProps = {
+    lat?: number;
+    lon?: number;
+    formatted?: string;
+    rank?: { match_type?: string };
+  };
+  const body = (await res.json()) as { features?: { properties?: GeoapifyProps }[] };
+  const f = body?.features?.[0];
   if (!f) return null;
-  const p = f.properties ?? {};
+  const p: GeoapifyProps = f.properties ?? {};
+  // A feature with no coordinates is not a geocode. Previously `p` was untyped
+  // so these flowed through as undefined and were written to the DB as a
+  // "successful" match with null lat/lng.
+  if (typeof p.lat !== "number" || typeof p.lon !== "number") return null;
   return {
     lat: p.lat, lng: p.lon,
     // Deliberately NOT reading p.rank.confidence — see rule 3.

@@ -4,6 +4,7 @@ import {
   hoursSince,
   isOverdueAssigned,
   isStaleInProgress,
+  type AttentionConfig,
 } from "../src/services/attention";
 
 /**
@@ -13,7 +14,15 @@ import {
  */
 
 const NOW = new Date("2026-07-02T10:00:00Z");
-const cfg = { staleInProgressHours: 8, overdueAssignedHours: 2 };
+// The full AttentionConfig — the early-tap fields are unused by these cases
+// but required by the type, and omitting them is what the typecheck caught.
+// Values mirror attentionConfig()'s own defaults.
+const cfg: AttentionConfig = {
+  staleInProgressHours: 8,
+  overdueAssignedHours: 2,
+  earlyTapRadiusM: 500,
+  earlyTapWindowMin: 10,
+};
 const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 60 * 60 * 1000);
 
 describe("isStaleInProgress", () => {

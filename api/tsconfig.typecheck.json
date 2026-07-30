@@ -1,0 +1,21 @@
+{
+  // TYPECHECK-ONLY config. `tsconfig.json` stays the BUILD config: it emits to
+  // dist/ with rootDir "src", so widening its `include` would compile the test
+  // suites into the shipped bundle.
+  //
+  // Why this exists: CI's typecheck step ran against `include: ["src"]`, so it
+  // never saw tests/, tests-integration/, scripts/ or prisma/. A wrong helper
+  // signature in an integration test surfaced only when the DB-backed job got
+  // that far — or not at all, for a file no test happened to import.
+  //
+  // rootDir is the REPO ROOT because tests/palletsMirror.test.ts deliberately
+  // imports mobile/src/lib/pallets.ts to prove the two implementations agree.
+  // Harmless here: noEmit means rootDir only decides what tsc is willing to
+  // include, not any output layout.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".."
+  },
+  "include": ["src", "tests", "tests-integration", "scripts", "prisma"]
+}
