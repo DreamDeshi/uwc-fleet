@@ -26,11 +26,22 @@ import { userIdByPhone, firstRouteTypeId, bookTrip, approveTrip, startTrip, appr
  * and an interpreter that agrees with my assumptions proves only that I am
  * self-consistent. These run against Postgres.
  *
- * ⚠ EVERY CASE HERE MUST FAIL ON `main`. An earlier version of this file had
- * three of four passing unmodified, because they exercised the ledger's
- * DELIVERED branch — which this change does not touch — while claiming to
- * exercise the undelivered fallback. A test that cannot fail is documentation
- * wearing a test's clothes.
+ * ⚠ WHICH OF THESE ACTUALLY DISCRIMINATE — stated, because an earlier version of
+ * this file had three of four passing unmodified on `main` while claiming to
+ * cover the change, and the header then claimed ALL of them failed on main,
+ * which was also untrue. A test that cannot fail is documentation wearing a
+ * test's clothes; a header that says otherwise is worse.
+ *
+ *   PERSISTED WINS ................ FAILS on main. The regression.
+ *   ZEROING DOES NOT FREE THE ZONE  FAILS on main (the rejected sibling is what
+ *                                   makes it discriminate — without it the stop
+ *                                   is plainly settled and main agrees).
+ *   NOT-YET-SCORED fallback ....... passes on main. It is not a discriminator:
+ *                                   it guards the FALLBACK ARM of the new
+ *                                   predicate, and fails if that arm is dropped.
+ *   never-settled ................. passes on main. A negative guard: it fails
+ *                                   if the persisted arm is widened to match
+ *                                   stops that were never scored.
  *
  * Seeded PND 1888: Ipoh (A2) 6 pts, Kulim (K1) 3 pts, deduction 2.
  */
@@ -145,6 +156,18 @@ describe("day ledger — persisted evidence vs the live rule", () => {
     const a = await startedTrip(["A2"]);
     await failAndSettle(a.id, a.stops[0].id);
     expect(await pointsOf(a.stops[0].id)).toBe(6);
+
+    // The sibling REJECTION this case is about. The comment used to describe it
+    // and the code never did it, which quietly made the case pass on main: a
+    // plainly-settled stop counts under the live rule too. Created directly
+    // because the trip has already finalized and the report route refuses.
+    await prisma.tripException.create({
+      data: {
+        trip_id: a.id, trip_stop_id: a.stops[0].id, client_occurrence_id: randomUUID(),
+        category: "customer_site", reason: "rejected sibling", reported_by: driverId,
+        current_state: "rejected", closed_at: new Date(),
+      },
+    });
 
     // Approve at ZERO through the real route — the documented remedy for a bad
     // reject. An earlier draft guessed the path and tolerated a 404, which would
