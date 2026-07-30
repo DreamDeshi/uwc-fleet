@@ -35,6 +35,10 @@
  */
 
 import type { Prisma } from "@prisma/client";
+// Type-only: the ledger's undelivered branch DERIVES its exception filter from
+// the finalizer's constant so the two cannot describe different stops. Adding
+// the reject veto to one and not the other is exactly the drift this prevents.
+import type { SETTLED_UNDELIVERED_WHERE } from "./undeliveredPay";
 
 // Trip statuses whose delivered drops feed the day ledger. `pending_approval`
 // is included (16 Jul 2026): a trip whose last stop is delivered but whose
@@ -78,13 +82,11 @@ export interface PriorDeliveredDropsWhere {
     {
       status: { not: "delivered" };
       arrived_at: { gte: Date; lt: Date };
-      exceptions: {
-        some: {
-          current_state: "resolved";
-          resolution: "resume";
-          actions: { some: { type: "verify" } };
-        };
-      };
+      // DERIVED from the finalizer's constant, not re-typed. Spelling the shape
+      // out a second time is how the reject veto came to be added in one place
+      // and not the other; now the type itself refuses the drift, and the value
+      // below still has to match because tests/dayLedger.ts compares them.
+      exceptions: (typeof SETTLED_UNDELIVERED_WHERE)["exceptions"];
     },
   ];
   trip: {
@@ -113,6 +115,13 @@ export function priorDeliveredDropsWhere(params: {
       // Same predicate as SETTLED_UNDELIVERED_WHERE (services/undeliveredPay),
       // with its arrival bounded to this group's window — spelled out here
       // because the concrete shape is what the pinned tests assert.
+      //
+      // ⚠ THIS IS A HAND COPY, not a reuse, so it can drift from the constant.
+      // It just did: adding the reject veto to undeliveredPay left this one
+      // behind, and tests/dayLedger.ts caught it. That drift would have paid a
+      // rejected stop NOTHING while still letting it consume its zone's
+      // first-drop slot — demoting a real later delivery to a 1-point repeat on
+      // the strength of a stop nobody was paid for.
       {
         status: { not: "delivered" },
         arrived_at: window,
@@ -122,6 +131,8 @@ export function priorDeliveredDropsWhere(params: {
             resolution: "resume",
             actions: { some: { type: "verify" } },
           },
+          // An explicit reject wins (owner ruling, 30 Jul 2026).
+          none: { current_state: "rejected" },
         },
       },
     ],

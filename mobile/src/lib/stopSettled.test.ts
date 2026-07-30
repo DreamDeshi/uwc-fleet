@@ -111,6 +111,22 @@ describe("a stop carrying SEVERAL exceptions", () => {
     expect(isStopSettled({ status: "arrived", arrived_at: ARRIVED, exceptions: [OPEN, REJECTED] })).toBe(false);
   });
 
+  it("an explicit REJECT beats an approval on the same stop — not settled", () => {
+    // Owner ruling, 30 Jul 2026; mirrors the server's reject veto. If this
+    // drifts from services/undeliveredPay.ts the driver's rail hides a stop the
+    // server still counts outstanding.
+    expect(isStopSettled({ status: "arrived", arrived_at: ARRIVED, exceptions: [REJECTED, SETTLED] })).toBe(false);
+    expect(isStopSettled({ status: "arrived", arrived_at: ARRIVED, exceptions: [SETTLED, REJECTED] })).toBe(false);
+  });
+
+  it("a rejected stop stays OUTSTANDING on the rail, so he can still deliver it", () => {
+    const stops = [
+      { id: "a", status: "arrived", arrived_at: ARRIVED, exceptions: [REJECTED, SETTLED] },
+      { id: "b", status: "arrived", arrived_at: ARRIVED, exceptions: [SETTLED] },
+    ];
+    expect(outstandingStops(stops).map((s) => s.id)).toEqual(["a"]);
+  });
+
   it("a settled stop with a second open report is NOT outstanding", () => {
     // The driver's rail must not re-show a stop the office has already paid for
     // just because he filed another report about it.

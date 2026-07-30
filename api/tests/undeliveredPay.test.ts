@@ -140,7 +140,11 @@ describe("the admin's levers", () => {
   });
 
   it("one fully-adjudicated exception among several is enough", () => {
-    const s = stop({ exceptions: [...rejected, ...verifiedThenResumed] });
+    // Intent unchanged: an approval does not need every sibling report to agree.
+    // The fixture used to pair it with a REJECTED sibling, which quietly made
+    // this the pin for OR-of-adjudications; that case now has its own test and
+    // the opposite expectation (owner ruling, 30 Jul 2026 — reject wins).
+    const s = stop({ exceptions: [...stillOpen, ...verifiedThenResumed] });
     expect(stopPayEligibility(s)).toBe("undelivered_paid");
   });
 
@@ -182,6 +186,10 @@ describe("the SQL predicate and the in-memory rule are the same rule", () => {
           resolution: "resume",
           actions: { some: { type: "verify" } },
         },
+        // The reject veto. Asserted structurally so dropping it — which would
+        // silently restore OR-of-adjudications and pay rejected stops — fails
+        // here rather than in a payroll run.
+        none: { current_state: "rejected" },
       },
     });
   });
@@ -214,22 +222,31 @@ describe("a stop carrying SEVERAL exceptions", () => {
     expect(stopPayEligibility(stop({ exceptions: [...verifiedThenResumed, ...stillOpen] }))).toBe("undelivered_paid");
   });
 
-  it("DOCUMENTS current behaviour: a rejected report alongside a settled one does not cancel the pay", () => {
-    // ⚠ NOT AN AUTHORISED RULE — this records what the code does, so a change
-    // is visible, and must not be read as Mr. Teh having decided it.
-    //
-    // The predicate is OR-of-adjudications: any one verified+resumed exception
-    // pays the stop in full even where the admin explicitly REJECTED another
-    // report on the same stop — and undeliveredPay's own header calls reject
-    // "the explicit no-pay lever". Those two decisions conflict, and the tie is
-    // currently broken in favour of paying.
-    //
-    // Pre-existing (two exceptions on one stop were already reachable
-    // sequentially — the dropped index only ever constrained OPEN rows), but
-    // dropping it makes the state routine. AGENTS.md freezes "failed-delivery
-    // payment behaviour not explicitly confirmed in writing", so this goes to
-    // Mr. Teh alongside the still-open R4 §A1 rather than being settled here.
-    expect(stopPayEligibility(stop({ exceptions: [...rejected, ...verifiedThenResumed] }))).toBe("undelivered_paid");
+  it("an explicit REJECT beats an approval on the same stop — no pay", () => {
+    // Owner ruling, 30 Jul 2026. This was OR-of-adjudications: one approval
+    // paid the stop in full even where an admin had explicitly rejected another
+    // report on it, which made `reject` mean nothing whenever a second report
+    // existed — while this module's header calls it "the explicit no-pay
+    // lever". Two decisions contradicted each other and the tie broke toward
+    // paying. Reject now wins, in either order.
+    expect(stopPayEligibility(stop({ exceptions: [...rejected, ...verifiedThenResumed] }))).toBe("unpaid");
+    expect(stopPayEligibility(stop({ exceptions: [...verifiedThenResumed, ...rejected] }))).toBe("unpaid");
+    expect(stopEarns(stop({ exceptions: [...rejected, ...verifiedThenResumed] }))).toBe(false);
+  });
+
+  it("the veto needs a REJECT, not merely a non-approval", () => {
+    // Only an explicit rejection vetoes. A report still open, or one closed as
+    // retry, leaves an approval on the same stop standing — otherwise a driver
+    // could lose settled pay just by filing a second report nobody has read.
+    expect(stopPayEligibility(stop({ exceptions: [...stillOpen, ...verifiedThenResumed] }))).toBe("undelivered_paid");
+    expect(stopPayEligibility(stop({ exceptions: [...verifiedThenRetried, ...verifiedThenResumed] }))).toBe("undelivered_paid");
+  });
+
+  it("a DELIVERED stop is unaffected by a reject — it earns on the delivered path", () => {
+    // The veto is about the UNDELIVERED (Q11a) path only. A stop that was
+    // actually delivered is paid for the delivery, whatever reports it collected.
+    const s = stop({ status: "delivered", delivered_at: DELIVERED, exceptions: [...rejected] });
+    expect(stopPayEligibility(s)).toBe("delivered");
   });
 
   it("several UNadjudicated reports earn nothing", () => {

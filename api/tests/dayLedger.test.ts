@@ -153,6 +153,11 @@ describe("priorDeliveredDropsWhere — the ledger's semantics, pinned", () => {
         resolution: "resume",
         actions: { some: { type: "verify" } },
       },
+      // Reject veto (owner ruling, 30 Jul 2026). It matters HERE as much as in
+      // the finalizer: a rejected stop must not be paid AND must not consume
+      // its zone's first-drop slot, or a real later delivery to that zone is
+      // demoted to a 1-point repeat on the strength of a stop nobody paid for.
+      none: { current_state: "rejected" },
     });
   });
 });

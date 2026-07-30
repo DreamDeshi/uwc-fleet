@@ -44,8 +44,29 @@ import type { PrismaClient, Prisma } from "@prisma/client";
  *
  *    So: an explicit `verify` action is the admin's "this was a genuine failed
  *    delivery" (R1 Q2a "admin verify and approve"), and `resume` is "we are
- *    not going back for it". `reject` remains the explicit no-pay lever, and
- *    an exception still OPEN earns nothing yet.
+ *    not going back for it". `reject` is the explicit no-pay lever, and an
+ *    exception still OPEN earns nothing yet.
+ *
+ * 4. NO exception on the stop was REJECTED. A stop can carry several reports
+ *    (a driver may continue past one and file another), and the office decides
+ *    each separately — so one stop can hold an approval AND a rejection.
+ *
+ *    Owner ruling, 30 Jul 2026: the REJECTION WINS. Until then the predicate
+ *    was `some` alone, so any single approval paid the stop in full and reject
+ *    meant nothing whenever a second report existed — which contradicts calling
+ *    it the no-pay lever three lines above. Two admin decisions cannot both be
+ *    honoured; the safe tie-break is the one that withholds money, because an
+ *    unpaid stop is a conversation and an overpaid one is a clawback.
+ *
+ *    ⚠ CONSEQUENCE, accepted deliberately: a bogus first report that an admin
+ *    rejects will veto pay for a LATER genuine failure on the same stop. The
+ *    office's remedy is the same one it already has for any mis-adjudication —
+ *    the reject was a decision, and a decision it wants to undo is a decision
+ *    to revisit. Flagged on the PR rather than silently designed around.
+ *
+ *    ⚠ Only an explicit `rejected` vetoes. A report still OPEN, or one closed
+ *    as `retry`, must NOT withhold settled pay — otherwise a driver loses money
+ *    by filing a second report nobody has read yet.
  *
  *    ⚠ The admin UI must SAY this — Verify is a pay decision, not a filing
  *    action. See the button copy in mobile/src/admin/screens/ExceptionsScreen.
@@ -88,6 +109,18 @@ export const SETTLED_UNDELIVERED_WHERE = {
       resolution: "resume" as const, // NOT retry — retry leaves the stop outstanding
       actions: { some: { type: "verify" as const } }, // the admin's pay decision
     },
+    // AN EXPLICIT REJECT WINS (owner ruling, 30 Jul 2026).
+    //
+    // This used to be `some` alone — OR-of-adjudications — so one approval paid
+    // the stop in full even where an admin had explicitly REJECTED another
+    // report on it. That made `reject` mean nothing whenever a second report
+    // existed, while this module's own header calls it "the explicit no-pay
+    // lever". Two decisions contradicted each other and the tie broke toward
+    // paying, silently.
+    //
+    // Reachable in the ordinary course since 20260730120000 let a driver hold
+    // several open reports at once, and reachable sequentially before that.
+    none: { current_state: "rejected" as const },
   },
 };
 
@@ -168,7 +201,11 @@ export type PayEligibility =
  * `resume` — the two-part adjudication. Mirrors SETTLED_UNDELIVERED_WHERE.
  */
 export function hasResolvedStopException(stop: PayableStopLike): boolean {
-  return (stop.exceptions ?? []).some(
+  const exceptions = stop.exceptions ?? [];
+  // An explicit reject on THIS stop vetoes pay, whatever else was approved —
+  // the SQL twin's `none: { current_state: "rejected" }`. See the note there.
+  if (exceptions.some((e) => e.current_state === "rejected")) return false;
+  return exceptions.some(
     (e) =>
       e.current_state === "resolved" &&
       e.resolution === "resume" &&

@@ -38,7 +38,15 @@ export function isStopSettled(stop: SettleableStop): boolean {
   // rail while the server still counted it outstanding — the trip could never
   // finalize and he was never offered a way to deliver it.
   if (!stop.arrived_at) return false;
-  return (stop.exceptions ?? []).some(
+  const exceptions = stop.exceptions ?? [];
+  // AN EXPLICIT REJECT WINS (owner ruling, 30 Jul 2026) — mirrors the server's
+  // `none: { current_state: "rejected" }`. A stop an admin rejected is NOT
+  // settled, even if another report on it was verified and resumed; otherwise
+  // reject means nothing whenever a second report exists. Keeping this in step
+  // with services/undeliveredPay.ts matters: if the client thinks a stop is
+  // settled and the server does not, the driver's rail hides work he still owes.
+  if (exceptions.some((e) => e.current_state === "rejected")) return false;
+  return exceptions.some(
     (e) =>
       e.current_state === "resolved" &&
       e.resolution === "resume" &&
