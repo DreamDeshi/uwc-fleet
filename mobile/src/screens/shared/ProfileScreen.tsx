@@ -139,7 +139,10 @@ export function ProfileScreen() {
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
               >
-                <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+                <Text
+                  style={[styles.segmentText, active && styles.segmentTextActive]}
+                  numberOfLines={1}
+                >
                   {langLabels[l]}
                 </Text>
               </TouchableOpacity>
@@ -235,10 +238,35 @@ const styles = StyleSheet.create({
     padding: 4,
     ...shadow.card,
   },
-  segmentBtn: { flex: 1, minHeight: 44, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
+  // Three things keep this row one line and one height at every phone width.
+  //
+  // 1. flexBasis "auto" + flexGrow, NOT flex: 1. Equal thirds starve the longest
+  //    label: at 320px a third is ~91px and "Bahasa Malaysia" needs ~95px at
+  //    14px/700, so it wrapped in EVERY state on small Androids. Sizing from
+  //    content and sharing only the SLACK gives the long label the room it needs
+  //    and still fills the row.
+  // 2. Fixed height, not minHeight. minHeight is a floor, so a wrapped label
+  //    grew its pill and broke the row's alignment instead of being clipped.
+  // 3. The selected state changes COLOUR ONLY. It used to bump fontWeight
+  //    700 -> 800, which widened the text on selection — at 375px (iPhone SE /
+  //    8 / X / 13 mini) "Bahasa Malaysia" fitted unselected and wrapped the
+  //    moment you picked it. The blue fill and white text are already an
+  //    unmistakable selected affordance; a weight change that reflows the
+  //    layout is not worth the extra emphasis.
+  segmentBtn: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: "auto",
+    minWidth: 0,
+    height: 44,
+    paddingHorizontal: 6,
+    borderRadius: radius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   segmentBtnActive: { backgroundColor: colors.blue },
   segmentText: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
-  segmentTextActive: { color: colors.white, fontWeight: "800" },
+  segmentTextActive: { color: colors.white },
 
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center", padding: 24 },
   modal: { backgroundColor: colors.white, borderRadius: 20, padding: 24, width: "100%" },
