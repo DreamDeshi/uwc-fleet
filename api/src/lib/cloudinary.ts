@@ -40,6 +40,27 @@ export interface UploadResult {
  * hole for POD photos. Returns both the url and the public_id so the caller can
  * store the id and sign on read.
  */
+/**
+ * TEST-ONLY upload stub, for the CI browser suite.
+ *
+ * The e2e suite uploads for real — resetState pushes a POD photo to close out a
+ * stop, and the exception flow posts evidence — but a CI runner has no
+ * Cloudinary credentials, and giving it real ones would write junk into the
+ * live asset account on every push. With no credentials uploadBuffer rejects,
+ * so every one of those paths fails.
+ *
+ * Enabling this is deliberately hard to do by accident and IMPOSSIBLE in
+ * production: the flag must be exactly "true" AND NODE_ENV must not be
+ * "production". If it ever did switch on in production, PODs would silently
+ * stop being stored — proof of delivery is the evidence a payment dispute turns
+ * on — so the environment check is not a nicety.
+ */
+export function uploadStubEnabled(): boolean {
+  return process.env.E2E_STUB_UPLOADS === "true" && process.env.NODE_ENV !== "production";
+}
+
+let stubWarned = false;
+
 export function uploadBuffer(
   buffer: Buffer,
   folder: string,
@@ -49,6 +70,24 @@ export function uploadBuffer(
     type?: "upload" | "authenticated";
   } = {}
 ): Promise<UploadResult> {
+  if (uploadStubEnabled()) {
+    if (!stubWarned) {
+      stubWarned = true;
+      // eslint-disable-next-line no-console
+      console.warn(
+        "⚠ E2E_STUB_UPLOADS is on — uploads are FAKED and nothing reaches Cloudinary. " +
+          "This must never be set outside a test environment."
+      );
+    }
+    const id = options.publicId ?? `stub_${Date.now()}_${Math.round(Math.random() * 1e9)}`;
+    return Promise.resolve({
+      url: `https://res.cloudinary.stub/${folder}/${options.type ?? "upload"}/${id}`,
+      publicId: `${folder}/${id}`,
+      resourceType: options.resourceType === "auto" ? "raw" : "image",
+      format: "jpg",
+    });
+  }
+
   if (!isCloudinaryConfigured()) {
     return Promise.reject(
       new Error("Cloudinary is not configured (missing CLOUDINARY_* environment variables).")

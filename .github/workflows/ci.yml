@@ -179,6 +179,22 @@ jobs:
       SENSITIVE_RATE_LIMIT_MAX: "0"
       CORS_ORIGIN: http://localhost:8081
 
+      # The API reads these at TOKEN-SIGNING time, not at startup — which is why
+      # the health check passed and every login then 500'd. Locally they come
+      # from api/.env, which does not exist on a runner; the integration tier
+      # never hit this because tests-integration/setup.ts sets its own. Values
+      # are throwaway: this database is created and destroyed with the job.
+      JWT_ACCESS_SECRET: e2e-access-secret-not-a-real-key
+      JWT_REFRESH_SECRET: e2e-refresh-secret-not-a-real-key
+
+      # The suite uploads for real — resetState pushes a POD to close out a stop,
+      # and the exception flow posts evidence — but a runner has no Cloudinary
+      # credentials, and giving it real ones would write junk into the live asset
+      # account on every push. This fakes the adapter. It cannot switch on in
+      # production: uploadStubEnabled() also requires NODE_ENV !== "production",
+      # which tests/uploadStubGuard.test.ts pins.
+      E2E_STUB_UPLOADS: "true"
+
       # The web build reads this at EXPORT time (see mobile/src/services/api.ts).
       # It exists so CI never has to edit the committed app.json, whose value is
       # the production URL.
