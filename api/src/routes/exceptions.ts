@@ -438,17 +438,39 @@ async function applyTransition(opts: {
         // genuine inconsistency and still rolls the whole close back.
         const ptr = await tx.trip.updateMany({ where: { id: opts.tripId, open_exception_id: opts.exId }, data: { open_exception_id: null } });
         if (ptr.count !== 1) {
-          // The ONLY legitimate reason to match 0 rows is that the driver
-          // continued past this report, which leaves the pointer NULL. Any
-          // other value means the trip is pointing at some third exception
-          // while we close this one — an inconsistency that would leave the
-          // trip permanently blocked (delivery, abort and finalization all
-          // refuse, and no route can clear a pointer to a closed exception).
-          // The DB's one-open-per-trip index makes that unreachable in theory;
-          // this is the assertion that says so out loud.
+          // Matching 0 rows means the trip was not pointing at THIS exception.
+          // Two legitimate reasons now, not one:
+          //
+          //   • the pointer is NULL — the driver continued past this report;
+          //   • the pointer is a DIFFERENT, still-OPEN exception — he continued
+          //     past this one and then filed another. Since the one-OPEN-per-trip
+          //     index was dropped (20260730120000) that is an ordinary state, and
+          //     the admin lane lists OLDEST FIRST, so adjudicating the earlier
+          //     report while a later one blocks is the COMMON path, not an edge.
+          //
+          // The genuine inconsistency is narrower than "pointer not null": it is
+          // the trip pointing at a CLOSED exception. Nothing can clear that —
+          // delivery, abort and finalization all refuse, and no route clears a
+          // pointer to an already-closed row — so the trip would be stranded.
+          //
+          // ⚠ This assertion USED to read `open_exception_id !== null`, which the
+          // one-open index made equivalent. Dropping the index made the two
+          // conditions different, and the old form rejected the very state the
+          // relaxation exists to create: closing the older of two open reports
+          // 409'd and rolled back, withholding a stop's R3-Q11(a) pay until
+          // someone happened to close the newer one first.
           const t2 = await tx.trip.findUnique({ where: { id: opts.tripId }, select: { open_exception_id: true } });
-          if (!t2 || t2.open_exception_id !== null) {
+          const blocker = t2?.open_exception_id ?? null;
+          if (!t2) {
             throw new ApiError(409, "POINTER_INCONSISTENT", "The trip's open-exception pointer was not in the expected state; the close was rolled back.");
+          }
+          if (blocker !== null) {
+            const blockerIsOpen = await tx.tripException.count({
+              where: { id: blocker, trip_id: opts.tripId, closed_at: null },
+            });
+            if (blockerIsOpen !== 1) {
+              throw new ApiError(409, "POINTER_INCONSISTENT", "The trip's open-exception pointer was not in the expected state; the close was rolled back.");
+            }
           }
         }
       }

@@ -472,14 +472,28 @@ model TripStop {
 // upload whose request never commits still needs the standard 7-day unattached-
 // asset cleanup (out of scope here; tracked separately).
 //
-// ⚠ ONE-OPEN-PER-TRIP is enforced by a PARTIAL UNIQUE INDEX in
-// prisma/migrations/20260725130000_exception_hardening (UNIQUE ON (trip_id)
-// WHERE closed_at IS NULL) — that DB index, NOT Trip.open_exception_id, is the
-// CANONICAL invariant. Prisma cannot express partial indexes in this schema, so
-// it is added by raw SQL and is intentionally NOT represented here (a future
-// `prisma migrate dev` will surface it as drift — keep it). Trip.open_exception_id
-// is a CACHE/pointer for cheap board queries + the report CAS, kept transactionally
-// consistent with the header's closed_at.
+// ⚠ THE RULE IS ONE **BLOCKING** EXCEPTION PER TRIP — not one open one.
+//
+// A trip may carry SEVERAL open (unadjudicated) exceptions: the driver's
+// Continue route clears the block and deliberately leaves the report open, and
+// he may then hit a second problem. What cannot happen is two exceptions
+// BLOCKING one trip, and that is structural — `Trip.open_exception_id` is a
+// single nullable column, itself @unique, claimed by a CAS on
+// `open_exception_id: null` in routes/exceptions.ts.
+//
+// So `Trip.open_exception_id` IS the canonical blocking invariant. It is not a
+// mere cache, and "is anything open?" is a DIFFERENT question — answer that with
+// TripException.closed_at (services/undeliveredPay.hasOpenException), never with
+// this pointer.
+//
+// HISTORY, because this comment previously said the opposite and told the next
+// reader to preserve it: a partial unique index
+// `TripException_one_open_per_trip` (UNIQUE ON (trip_id) WHERE closed_at IS NULL)
+// was added by 20260725130100_exception_hardening_constraints and DROPPED by
+// 20260730120000_relax_one_open_exception_per_trip. Do NOT re-create it — on a
+// database that has since accumulated two open rows for one trip the CREATE
+// fails, and it would run inside Railway's preDeployCommand, blocking that
+// deploy and every migration after it.
 model TripException {
   id                   String               @id @default(cuid())
   trip_id              String

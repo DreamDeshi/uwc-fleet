@@ -149,10 +149,12 @@ export type ExceptionCategoryT = (typeof EXCEPTION_CATEGORIES)[number];
 
 /**
  * A driver may open an exception only on THEIR OWN trip that is actually out
- * (in_progress), and only one open exception per trip. The one-open guard is
- * ENFORCED atomically at the DB layer (CAS on Trip.open_exception_id); this pure
- * guard covers the cheap up-front checks so they are unit-testable and produce
- * the canonical errors.
+ * (in_progress), and only one BLOCKING exception per trip — a trip may carry
+ * several OPEN ones, since Continue leaves a report open while unblocking the
+ * trip (20260730120000 dropped the old one-open-per-trip index). The blocking
+ * guard is ENFORCED atomically at the DB layer (CAS on Trip.open_exception_id);
+ * this pure guard covers the cheap up-front checks so they are unit-testable and
+ * produce the canonical errors.
  */
 export function assertCanReport(
   trip: { status: string; driver_id: string | null },

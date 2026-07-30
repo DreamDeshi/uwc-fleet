@@ -207,14 +207,28 @@ describe("a stop carrying SEVERAL exceptions", () => {
   });
 
   it("settles when only ONE of several is adjudicated", () => {
-    // Deliberate: one admin decision of "genuine failed delivery, not going
-    // back" settles the stop. A second report still open alongside it does not
-    // withhold pay the office has already granted.
+    // One admin decision of "genuine failed delivery, not going back" settles
+    // the stop; a second report still open alongside it does not withhold pay
+    // the office has already granted.
     expect(stopPayEligibility(stop({ exceptions: [...stillOpen, ...verifiedThenResumed] }))).toBe("undelivered_paid");
     expect(stopPayEligibility(stop({ exceptions: [...verifiedThenResumed, ...stillOpen] }))).toBe("undelivered_paid");
   });
 
-  it("a rejected report alongside a settled one does not cancel the pay", () => {
+  it("DOCUMENTS current behaviour: a rejected report alongside a settled one does not cancel the pay", () => {
+    // ⚠ NOT AN AUTHORISED RULE — this records what the code does, so a change
+    // is visible, and must not be read as Mr. Teh having decided it.
+    //
+    // The predicate is OR-of-adjudications: any one verified+resumed exception
+    // pays the stop in full even where the admin explicitly REJECTED another
+    // report on the same stop — and undeliveredPay's own header calls reject
+    // "the explicit no-pay lever". Those two decisions conflict, and the tie is
+    // currently broken in favour of paying.
+    //
+    // Pre-existing (two exceptions on one stop were already reachable
+    // sequentially — the dropped index only ever constrained OPEN rows), but
+    // dropping it makes the state routine. AGENTS.md freezes "failed-delivery
+    // payment behaviour not explicitly confirmed in writing", so this goes to
+    // Mr. Teh alongside the still-open R4 §A1 rather than being settled here.
     expect(stopPayEligibility(stop({ exceptions: [...rejected, ...verifiedThenResumed] }))).toBe("undelivered_paid");
   });
 

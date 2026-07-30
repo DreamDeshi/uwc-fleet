@@ -34,6 +34,20 @@
 -- `count(...) > 0` in hasOpenException, `none: { closed_at: null }` in the
 -- dispatch guard, and list queries in the admin lane.
 
+-- LOCKING / REVERSIBILITY, the two things the destructive-SQL guard does NOT
+-- check (AGENTS.md "KNOWN UNCOVERED"):
+--   • `DROP INDEX` without CONCURRENTLY takes an ACCESS EXCLUSIVE lock on
+--     TripException for the duration. Negligible here — the feature is dark
+--     (FEATURE_EXCEPTIONS off) and the table is effectively empty on prod — but
+--     note that the flag does NOT gate this DDL: preDeployCommand runs it on
+--     merge regardless.
+--   • There is NO down-migration, and re-creating the index is NOT idempotent:
+--     once any trip has accumulated two open rows the CREATE fails, and it
+--     would fail inside preDeployCommand, blocking that deploy and every
+--     migration after it. schema.prisma has been corrected accordingly — it
+--     previously described this index as the canonical invariant and told the
+--     reader to keep it.
+
 -- DESTRUCTIVE-OK: drops a constraint that is stricter than the rule it was meant
 -- to encode. The one-BLOCKING-per-trip invariant survives structurally in
 -- Trip.open_exception_id (a single column, itself unique) plus the report

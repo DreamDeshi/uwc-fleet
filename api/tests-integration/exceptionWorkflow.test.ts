@@ -877,6 +877,48 @@ describe("driver continue-trip — unblocks the truck, decides nothing", () => {
     expect(trip.open_exception_id).toBe(second.body.exception.id);
   });
 
+  it("the OLDER of two open reports can still be adjudicated while the newer one blocks", async () => {
+    // REGRESSION. The close path clears the trip pointer with a CAS and, when it
+    // matches 0 rows, used to assert `open_exception_id === null` — an assertion
+    // the dropped one-open index had made equivalent to "not pointing at a
+    // closed exception". With two open reports the pointer legitimately holds
+    // the NEWER one, so closing the older 409'd POINTER_INCONSISTENT and rolled
+    // back, withholding that stop's R3-Q11(a) pay.
+    //
+    // Not an edge case: the admin lane orders `created_at: asc`, so the older
+    // report is the top row and the natural first click.
+    const { t, tripId, stopId, exId } = await withOpenException(["A2", "K1"]);
+    expect((await carryOn(driver, tripId, exId)).status).toBe(200);
+
+    const second = await reportReq(driver, tripId, { trip_stop_id: t.stops[1].id }).attach("photo", PHOTO, "e.jpg");
+    expect(second.status, JSON.stringify(second.body)).toBe(201);
+    const exId2 = second.body.exception.id;
+
+    // Adjudicate the OLDER one: verify (the pay decision) then resume.
+    expect((await api().post(`/api/v1/trips/${tripId}/exception/${exId}/verify`).set(auth(admin)).send({ client_action_id: randomUUID() })).status).toBe(200);
+    const resumed = await api().post(`/api/v1/trips/${tripId}/exception/${exId}/resume`).set(auth(admin)).send({ client_action_id: randomUUID() });
+    expect(resumed.status, JSON.stringify(resumed.body)).toBe(200);
+
+    // It really closed, and the newer report still blocks the trip.
+    const older = await prisma.tripException.findUniqueOrThrow({ where: { id: exId } });
+    expect(older.closed_at).not.toBeNull();
+    expect(older.resolution).toBe("resume");
+    const trip = await prisma.trip.findUniqueOrThrow({ where: { id: tripId } });
+    expect(trip.open_exception_id).toBe(exId2);
+    expect(trip.status).toBe("in_progress"); // stop 2 still outstanding
+
+    // And the settled stop is recorded as such — the pay this used to withhold.
+    const stop = await prisma.tripStop.findUniqueOrThrow({
+      where: { id: stopId },
+      include: { exceptions: { include: { actions: true } } },
+    });
+    expect(
+      stop.exceptions.some(
+        (e) => e.current_state === "resolved" && e.resolution === "resume" && e.actions.some((a) => a.type === "verify")
+      )
+    ).toBe(true);
+  });
+
   it("still refuses a second report while one is BLOCKING (he has not continued)", async () => {
     // The relaxation must not have opened the gate entirely: without Continue,
     // the pointer is still set and the report route refuses.
