@@ -131,7 +131,10 @@ export function ActiveTripScreen() {
   // own stop, the order in booking is just for reference only").
   const [focusStopId, setFocusStopId] = useState<string | null>(null);
   // The captured-but-not-yet-uploaded POD awaiting review (design screen 3).
-  const [review, setReview] = useState<{ photo: PickedPhoto; stop: TripStop } | null>(null);
+  // `capturedAt` is stamped the instant the camera returns, NOT at upload:
+  // between the two sit the review sheet and possibly hours of no signal, and
+  // this value is the answer to "when was the POD taken".
+  const [review, setReview] = useState<{ photo: PickedPhoto; stop: TripStop; capturedAt: string } | null>(null);
   // When THIS session uploaded each stop's POD, so the green line can read
   // "POD uploaded · 9:47 AM" the instant it happens.
   //
@@ -394,7 +397,7 @@ export function ActiveTripScreen() {
           return;
         }
         if (!photo) return; // cancelled
-        setReview({ photo, stop });
+        setReview({ photo, stop, capturedAt: new Date().toISOString() });
       } catch (err) {
         const msg = apiErrorMessage(err);
         setError(msg);
@@ -407,10 +410,10 @@ export function ActiveTripScreen() {
   const confirmPod = () =>
     oncePerAction(async () => {
       if (!review) return;
-      const { photo, stop } = review;
+      const { photo, stop, capturedAt } = review;
       setError(null);
       try {
-        await uploadPod.mutateAsync({ tripId: trip.id, stopId: stop.id, photo });
+        await uploadPod.mutateAsync({ tripId: trip.id, stopId: stop.id, photo, capturedAt });
         // A direct upload supersedes any queued offline shot for this stop.
         await noteDirectPodUpload(stop.id);
         setPodTimes((m) => ({ ...m, [stop.id]: new Date().toISOString() }));
@@ -430,7 +433,14 @@ export function ActiveTripScreen() {
         if (isNetworkError(err)) {
           try {
             const durable = await toDurablePhotoUri(photo);
-            await enqueuePodItem({ tripId: trip.id, stopId: stop.id, photo: durable });
+            await enqueuePodItem({
+              tripId: trip.id,
+              stopId: stop.id,
+              photo: durable,
+              // Carry the CAPTURE time into the queue — this is the branch
+              // where the server receipt will be hours late.
+              photoCapturedAt: capturedAt,
+            });
             setReview(null);
             toast(t("trip.savedOffline"), "info");
             return;

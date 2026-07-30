@@ -112,6 +112,9 @@ export interface TripStop {
   // stop whose POD predates the column — render the untimed string, never a
   // substituted time.
   pod_uploaded_at?: string | null;
+  // DEVICE-reported capture time (IM6 pair). Untrusted evidence, never a
+  // pay input; NULL when the device did not say. Label it as device-reported.
+  pod_captured_client_at?: string | null;
   do_uploaded: boolean;
   // K2 (Borang K2) customs document — uploaded for K2-zone stops (Q6). The
   // signed URL is set when the driver has uploaded it; `k2_form_ack` is the

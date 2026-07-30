@@ -442,6 +442,24 @@ model TripStop {
   // the delivery confirm, so this must never be read as a pay instant. The
   // admin approval row labels it "POD uploaded" for exactly that reason.
   pod_uploaded_at DateTime?
+  // DEVICE capture time — the offline half of the pair above, same shape as
+  // TripException.client_reported_at beside the server's reported_at.
+  //
+  // pod_uploaded_at is the server's receipt, which for a POD queued offline is
+  // the REPLAY instant: a photo taken at 16:45 with no signal and flushed at
+  // 19:10 reads 19:10, in the one population the evidence matters most for.
+  // This column carries what the device says it was.
+  //
+  // ⚠ CLIENT-SUPPLIED AND THEREFORE UNTRUSTED — the driver's device is a party
+  // to any dispute this helps settle. It is EVIDENCE, never an input: nothing
+  // in pay, dispatch or the trip lifecycle may read it, and the UI must label
+  // it as device-reported. The server refuses a value later than its own
+  // receipt (you cannot photograph a POD after it arrives), so an obviously
+  // wrong clock stores NULL rather than a confident lie.
+  //
+  // NULL = the device did not say. Every pre-column stop, and any upload from a
+  // client that does not send it.
+  pod_captured_client_at DateTime?
   do_uploaded    Boolean         @default(false)
   // K2 customs form (Borang K2). Mr. Teh, R1 2026-07-24 Q6: "Prefer they need
   // upload the form … we need admin to final validate and approve, only they can

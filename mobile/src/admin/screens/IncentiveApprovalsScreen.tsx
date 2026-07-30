@@ -29,6 +29,16 @@ import { isStopSettled } from "../../lib/stopSettled";
 // The engine proposal stored on the trip (what pay defaults to at approval).
 const proposedAmount = (trip: Trip): number => Number(trip.incentive_earned ?? 0);
 
+/** A POD whose DEVICE capture time is meaningfully earlier than the server's
+ *  receipt — i.e. it was queued offline and replayed. Only then is showing both
+ *  worth the row space; online the two are seconds apart. */
+const OFFLINE_GAP_MS = 2 * 60 * 1000;
+function podCapturedApart(stop: TripStop): boolean {
+  if (!stop.pod_captured_client_at || !stop.pod_uploaded_at) return false;
+  const gap = new Date(stop.pod_uploaded_at).getTime() - new Date(stop.pod_captured_client_at).getTime();
+  return Number.isFinite(gap) && gap >= OFFLINE_GAP_MS;
+}
+
 // The trip's first EARNING instant — the anchor finalization actually scored
 // against, and the instant the trip flipped to pending_approval. Mirrors the
 // server's firstEarningInstant: since R3 Q11(a) a stop can be PAID without a
@@ -240,6 +250,14 @@ function StopRow({ stop }: { stop: TripStop }) {
     stop.points_awarded != null && stop.zone_code ? stop.zone_code : null,
     stop.delivered_at ? t("admin.incentiveApprovals.stopDelivered", { time: formatTime(stop.delivered_at) }) : null,
     stop.pod_uploaded_at ? t("admin.incentiveApprovals.podTime", { time: formatTime(stop.pod_uploaded_at) }) : null,
+    // Device capture time, shown ONLY when it materially differs from the
+    // upload — i.e. the POD was queued offline and replayed later. Online the
+    // gap is seconds and repeating it would just be noise. Labelled "(device)"
+    // because it is client-supplied and therefore weaker evidence than the
+    // server's own receipt beside it.
+    podCapturedApart(stop)
+      ? t("admin.incentiveApprovals.podTaken", { time: formatTime(stop.pod_captured_client_at!) })
+      : null,
   ].filter((p): p is string => Boolean(p));
   return (
     <View

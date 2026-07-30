@@ -688,6 +688,7 @@
       "dropPoints": "{{pts}} mata",
       "repeat": "ulangan",
       "podTime": "POD dimuat naik {{time}}",
+      "podTaken": "diambil {{time}} (peranti)",
       "stopDelivered": "dihantar {{time}}",
       "noPod": "Tiada POD",
       "notDelivered": "Tidak dihantar",

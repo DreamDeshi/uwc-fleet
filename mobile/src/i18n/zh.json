@@ -688,6 +688,7 @@
       "dropPoints": "{{pts}} 分",
       "repeat": "重复",
       "podTime": "POD 上传 {{time}}",
+      "podTaken": "拍摄 {{time}}（设备）",
       "stopDelivered": "送达 {{time}}",
       "noPod": "无 POD",
       "notDelivered": "未送达",

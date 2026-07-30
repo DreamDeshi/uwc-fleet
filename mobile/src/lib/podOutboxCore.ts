@@ -37,6 +37,16 @@ export interface PodOutboxItem {
   photo: OutboxPhoto | null;
   /** The photo step committed server-side — a re-flush must NOT repeat it. */
   photoUploaded: boolean;
+  /**
+   * When the CURRENT photo was captured, ISO. Sent to the server as
+   * `captured_client_at` so an offline POD is not stamped with its replay time.
+   *
+   * Deliberately NOT `queuedAt`: that is the first time anything was queued for
+   * the stop and survives a retake, so a driver who tapped Arrived at 15:00 and
+   * photographed at 16:45 would report 15:00. This resets with every new photo,
+   * exactly like `photoUploaded`.
+   */
+  photoCapturedAt: string | null;
   /** Driver ticked the K2 customs ack while offline. */
   k2FormAck: boolean;
   /** The K2 step committed server-side. */
@@ -86,6 +96,8 @@ export interface OutboxPatch {
   stopId: string;
   markArrived?: boolean;
   photo?: OutboxPhoto;
+  /** Capture time of `photo`, ISO. Defaults to the merge instant when omitted. */
+  photoCapturedAt?: string;
   k2FormAck?: boolean;
   confirmDelivered?: boolean;
 }
@@ -108,6 +120,10 @@ export function mergeOutboxItem(
     arrivedMarked: existing?.arrivedMarked ?? false, // re-tapping Arrived is idempotent
     photo: patch.photo ?? existing?.photo ?? null,
     photoUploaded: patch.photo ? false : existing?.photoUploaded ?? false,
+    // A NEW photo re-times the capture; anything else leaves it alone.
+    photoCapturedAt: patch.photo
+      ? patch.photoCapturedAt ?? queuedAt
+      : existing?.photoCapturedAt ?? null,
     k2FormAck: patch.k2FormAck ?? existing?.k2FormAck ?? false,
     k2Acked: patch.k2FormAck ? false : existing?.k2Acked ?? false,
     confirmDelivered: patch.confirmDelivered ?? existing?.confirmDelivered ?? false,
