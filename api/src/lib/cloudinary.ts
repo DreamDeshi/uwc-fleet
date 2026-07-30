@@ -1,4 +1,5 @@
 import { v2 as cloudinary } from "cloudinary";
+import { uploadStubEnabled } from "./uploadStub";
 
 // Configured from .env (CLOUDINARY_CLOUD_NAME / _API_KEY / _API_SECRET).
 // These are set on Railway in production. If they're missing the upload helper
@@ -9,6 +10,8 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
   secure: true,
 });
+
+export { uploadStubEnabled };
 
 export function isCloudinaryConfigured(): boolean {
   return Boolean(
@@ -40,6 +43,8 @@ export interface UploadResult {
  * hole for POD photos. Returns both the url and the public_id so the caller can
  * store the id and sign on read.
  */
+let stubWarned = false;
+
 export function uploadBuffer(
   buffer: Buffer,
   folder: string,
@@ -49,6 +54,24 @@ export function uploadBuffer(
     type?: "upload" | "authenticated";
   } = {}
 ): Promise<UploadResult> {
+  if (uploadStubEnabled()) {
+    if (!stubWarned) {
+      stubWarned = true;
+      // eslint-disable-next-line no-console
+      console.warn(
+        "⚠ E2E_STUB_UPLOADS is on — uploads are FAKED and nothing reaches Cloudinary. " +
+          "This must never be set outside a test environment."
+      );
+    }
+    const id = options.publicId ?? `stub_${Date.now()}_${Math.round(Math.random() * 1e9)}`;
+    return Promise.resolve({
+      url: `https://res.cloudinary.stub/${folder}/${options.type ?? "upload"}/${id}`,
+      publicId: `${folder}/${id}`,
+      resourceType: options.resourceType === "auto" ? "raw" : "image",
+      format: "jpg",
+    });
+  }
+
   if (!isCloudinaryConfigured()) {
     return Promise.reject(
       new Error("Cloudinary is not configured (missing CLOUDINARY_* environment variables).")

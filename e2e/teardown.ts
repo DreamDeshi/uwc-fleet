@@ -14,7 +14,7 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { ADMIN } from "./helpers/accounts";
-import { login, setDispatchMode } from "./helpers/api";
+import { login, setDispatchMode, setTruckWindow } from "./helpers/api";
 
 export const DISPATCH_MODE_STATE_FILE = join(
   __dirname,
@@ -22,7 +22,40 @@ export const DISPATCH_MODE_STATE_FILE = join(
   ".dispatch-mode-before-run.json"
 );
 
+export const TRUCK_WINDOW_STATE_FILE = join(
+  __dirname,
+  "test-results",
+  ".truck-window-before-run.json"
+);
+
+/**
+ * Put the fixture truck's operating window back. setup.ts widens it to 24h so
+ * the suite is not hostage to the wall clock (see the note there); leaving a
+ * truck permanently 24h would quietly disable a real dispatch guard.
+ */
+async function restoreTruckWindow(): Promise<void> {
+  if (!existsSync(TRUCK_WINDOW_STATE_FILE)) return;
+  try {
+    const { plate, start, end } = JSON.parse(readFileSync(TRUCK_WINDOW_STATE_FILE, "utf8")) as {
+      plate: string;
+      start: string;
+      end: string;
+    };
+    const { accessToken } = await login(ADMIN);
+    await setTruckWindow(accessToken, plate, { start, end });
+    rmSync(TRUCK_WINDOW_STATE_FILE, { force: true });
+    // eslint-disable-next-line no-console
+    console.log(`teardown: ${plate} operating window restored to ${start}-${end}`);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `teardown: could not restore the truck window (${(err as Error).message}) — restore it manually.`
+    );
+  }
+}
+
 export default async function globalTeardown(): Promise<void> {
+  await restoreTruckWindow();
   if (!existsSync(DISPATCH_MODE_STATE_FILE)) {
     // eslint-disable-next-line no-console
     console.warn(

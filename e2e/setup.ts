@@ -8,8 +8,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { ADMIN, DRIVER, REQUESTOR } from "./helpers/accounts";
-import { getDispatchMode, login, setLanguage } from "./helpers/api";
-import { DISPATCH_MODE_STATE_FILE } from "./teardown";
+import { driverIdentity, getDispatchMode, getTruckWindow, login, setLanguage, setTruckWindow } from "./helpers/api";
+import { DISPATCH_MODE_STATE_FILE, TRUCK_WINDOW_STATE_FILE } from "./teardown";
 
 /**
  * Put every shared account back into English before the run starts.
@@ -35,8 +35,84 @@ async function normaliseLanguages(): Promise<void> {
   }
 }
 
+/**
+ * Widen the fixture truck's operating window to 24h for the run, capturing the
+ * real one so teardown can put it back.
+ *
+ * WHY THIS AND NOT A FAKE CLOCK. Assignment rejects a pickup outside the
+ * truck's window with a hard 409 OPERATING_WINDOW, and the seeded window is
+ * 07:00-02:00 MYT — which wraps midnight, so the dead zone is 02:00-07:00 MYT,
+ * i.e. 18:00-23:00 UTC. CI runners are UTC, so about a fifth of the day a
+ * today-scheduled seed would 409 and the run would look broken.
+ *
+ * Freezing the clock instead would have been worse, not easier. The server
+ * derives the window, the rate tier, the daily ledger reset and every arrival
+ * timestamp from ITS clock, while the driver Home decides "today" from the
+ * BROWSER's. Freezing one invents a skew production never has; freezing both
+ * makes every stored timestamp synthetic and hides the very defects — off-peak
+ * boundary, midnight reset — the suite exists to catch, because CI would always
+ * sit at the same safe hour.
+ *
+ * A truck that operates around the clock is DATA, not a lie about time: the
+ * same production code path runs, the same 409 logic, against a configuration
+ * the admin UI already supports. The window RULE keeps its own coverage in
+ * operatingWindow.spec.ts, which narrows a truck deliberately and asserts the
+ * 409 — cover the rule had none of before.
+ */
+/**
+ * A window that is open all day AND leaves a full day of completion slack.
+ *
+ * Getting here took two wrong answers, both caught by measuring:
+ *
+ *   00:00-23:59 — covers every minute (isWithinWindow says so), but the window
+ *     also bounds the estimated COMPLETION against an ABSOLUTE end instant. A
+ *     run picked up late in the MYT day finishes after 23:59 and is refused.
+ *     CI: "Est. completion 01:05 is past the 23:59 operating window."
+ *   00:01-00:00 — wraps, so it covers every minute too, but the end instant is
+ *     still the next 00:00. A 23:00 pickup gets one hour of slack.
+ *
+ * A fixed wall-clock end can always be minutes away from a late pickup, so the
+ * end has to be positioned relative to the run. windowEndInstant rolls to the
+ * NEXT day when the window wraps and the pickup is at or after the start — so a
+ * wrapping window that began an HOUR AGO puts every pickup (the seed books five
+ * minutes back, well inside PICKUP_GRACE_MS) in that roll-forward branch, ~23
+ * hours from its end.
+ *
+ * end = start - 1 minute keeps it wrapping, which is what makes it all-day.
+ */
+function alwaysOpenWindow(now: Date): { start: string; end: string } {
+  const mytMinutes = Math.floor((now.getTime() + 8 * 60 * 60 * 1000) / 60000) % 1440;
+  const start = (mytMinutes - 60 + 1440) % 1440;
+  const end = (start - 1 + 1440) % 1440;
+  const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  return { start: hhmm(start), end: hhmm(end) };
+}
+
+async function widenFixtureTruckWindow(): Promise<void> {
+  try {
+    const { accessToken } = await login(ADMIN);
+    const { plate } = await driverIdentity(DRIVER);
+    const before = await getTruckWindow(accessToken, plate);
+    mkdirSync(dirname(TRUCK_WINDOW_STATE_FILE), { recursive: true });
+    writeFileSync(TRUCK_WINDOW_STATE_FILE, JSON.stringify({ plate, ...before }));
+    const open = alwaysOpenWindow(new Date());
+    await setTruckWindow(accessToken, plate, open);
+    // eslint-disable-next-line no-console
+    console.log(
+      `setup: ${plate} window ${before.start}-${before.end} -> ${open.start}-${open.end} (always open) for this run`
+    );
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `setup: could not widen the truck window (${(err as Error).message}) — ` +
+        "today-scheduled specs may 409 between 02:00 and 07:00 MYT."
+    );
+  }
+}
+
 export default async function globalSetup(): Promise<void> {
   await normaliseLanguages();
+  await widenFixtureTruckWindow();
   try {
     const { accessToken } = await login(ADMIN);
     const { dispatch_mode } = await getDispatchMode(accessToken);

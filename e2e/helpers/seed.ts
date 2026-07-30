@@ -197,7 +197,12 @@ export async function seedAssignedTrip(adminToken: string): Promise<Trip> {
  * from either side and keeps the pickup on today's date at any hour.
  */
 function todayPickupIso(): string {
-  return new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  // Five minutes AGO, not ahead. Both satisfy PICKUP_GRACE_MS (15 min either
+  // side), but a future instant can cross local midnight and land on tomorrow,
+  // breaking the very sameDay grouping these specs assert. Reaching backwards
+  // shrinks that hole from ~10 minutes a day to the ~5 minutes right after
+  // midnight, and it is realistic: a driver starting a little late.
+  return new Date(Date.now() - 5 * 60 * 1000).toISOString();
 }
 
 /** Pending trip scheduled for TODAY — use when the assertion is about Home. */
@@ -214,7 +219,25 @@ export async function seedPendingTripToday(requestorToken: string): Promise<Trip
   });
 }
 
-/** Assigned trip scheduled for TODAY, so the driver Home shows its start card. */
+/**
+ * Assigned trip scheduled for TODAY, so the driver Home shows its start card.
+ *
+ * Deliberately NOT forced. `force: true` suppresses exactly three assignment
+ * guards — TRUCK_PERMIT_EXPIRED, SCHEDULING_CONFLICT and OPERATING_WINDOW — so
+ * using it to dodge the window silently switched off the other two as well, and
+ * every spec built on this seed stopped asserting that the fixture truck is
+ * roadworthy-on-paper and that the driver is actually free. The window is
+ * handled where it belongs instead: globalSetup widens the FIXTURE TRUCK's
+ * operating hours for the run (real data, restored in teardown), so the
+ * un-forced path is the one under test at any hour.
+ *
+ * ⚠ CONSEQUENCE, measured: two of these for the SAME driver now 409
+ * SCHEDULING_CONFLICT, because both pickups land minutes apart inside the
+ * conflict window. That is the guard working — under `force` the suite would
+ * have double-booked a driver and said nothing — but a spec that needs two
+ * concurrent today-trips must use two drivers, or pass force deliberately and
+ * say why.
+ */
 export async function seedAssignedTripToday(adminToken: string): Promise<Trip> {
   const requestor = await login(REQUESTOR);
   const trip = await seedPendingTripToday(requestor.accessToken);
@@ -222,7 +245,6 @@ export async function seedAssignedTripToday(adminToken: string): Promise<Trip> {
   return approveTrip(adminToken, trip.id, {
     driver_id: driver.id,
     truck_plate: driver.plate,
-    force: true,
   });
 }
 

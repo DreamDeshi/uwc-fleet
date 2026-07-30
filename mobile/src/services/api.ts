@@ -7,7 +7,17 @@ import { LoginResponse } from "../types";
 // Reads `extra.apiUrl` from app.json. On a physical phone via Expo Go,
 // localhost points at the phone itself — set apiUrl to your machine's LAN IP.
 const API_URL =
-  (Constants.expoConfig?.extra?.apiUrl as string | undefined) ?? "http://localhost:3000";
+  // EXPO_PUBLIC_API_URL wins when set. It is inlined at BUILD time, so a normal
+  // APK or OTA build (where it is unset) falls through to extra.apiUrl exactly
+  // as before — this cannot change what production points at.
+  //
+  // It exists so local runs and CI stop having to EDIT app.json. That edit is a
+  // live hazard: the file is committed, the override is a production URL, and a
+  // run that dies before its revert leaves "http://localhost:3000" staged for
+  // release. An env var cannot be committed by accident.
+  process.env.EXPO_PUBLIC_API_URL?.trim() ||
+  (Constants.expoConfig?.extra?.apiUrl as string | undefined) ||
+  "http://localhost:3000";
 
 export const api = axios.create({
   baseURL: `${API_URL}/api/v1`,

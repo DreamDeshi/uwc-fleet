@@ -292,6 +292,76 @@ KNOWN UNCOVERED — the guard does not see these, so they remain your judgement:
 
 
 
+\#### CI runs the browser suite with the FEATURE FLAGS ON — green is not "what prod does"
+
+
+
+The `E2E (Playwright, real browser — FEATURE FLAGS ON)` job sets
+
+`FEATURE_EXCEPTIONS` and `FEATURE_CHANGE_REQUESTS` (and their `EXPO_PUBLIC_`
+
+twins) to `true`. **Production has them unset**, so those surfaces are dark for
+
+real users today. A green tick on that job tells you the FLAG-ON world works; it
+
+tells you nothing about what a requestor or driver sees right now.
+
+
+
+This is deliberate, not an oversight. Flags-off behaviour is already covered
+
+where it belongs — the API's own gating tests assert every gated route 404s
+
+while its flag is off. The exception workflow's driver sheet, admin lane and
+
+requestor banner have no other cover at all, and they are the next thing due to
+
+be switched on; running them dark would mean flipping a flag in production with
+
+five specs that had never once executed.
+
+
+
+If you are using CI to decide whether a change is safe to deploy, read the
+
+flag-gating tests in the fast job for prod behaviour, and this job for what
+
+happens after the switch.
+
+
+
+Two other things that job does on purpose, so nobody "fixes" them:
+
+
+
+\- It widens the FIXTURE TRUCK's operating window to 24h for the run
+
+&#x20; (restored in teardown) rather than freezing the clock. Assignment 409s on a
+
+&#x20; pickup outside the truck's hours, the seeded window is 07:00–02:00 MYT, and
+
+&#x20; runners are UTC — so a fifth of the day a today-scheduled seed would fail.
+
+&#x20; The window RULE keeps its own cover in `operatingWindow.spec.ts`, which
+
+&#x20; narrows a truck deliberately. Never reach for a fake clock here: the server
+
+&#x20; derives the window, the rate tier, the daily reset and every arrival stamp
+
+&#x20; from its clock while the driver Home decides "today" from the browser's, so
+
+&#x20; freezing one invents a skew production never has, and freezing both hides the
+
+&#x20; off-peak and midnight defects the suite exists to catch.
+
+\- It builds a STATIC web export rather than running `expo start --web`. The dev
+
+&#x20; server rebuilds lazily — on a cold runner the first navigation can outlive
+
+&#x20; the test timeout — and it has served a stale bundle before.
+
+
+
 \#### Prove every guard by breaking the thing it guards
 
 

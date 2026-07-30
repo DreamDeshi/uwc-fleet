@@ -30,9 +30,21 @@ const SEED_PASSWORD = "Password123"; // same placeholder as the main seed
 export const TEST_REQUESTOR_PHONE = "+60199990001";
 
 // Synthetic consignees, one or two per real zone. zone_code must reference a
-// Zone row (seeded by seed.ts, which runs first). area/state are cosmetic.
+// Zone row (seeded by seed.ts, which runs first).
+//
+// `area` is NOT cosmetic for every row. The customs-document gate is zone "P1"
+// AND an area containing "BAYAN LEPAS" (owner decision 29 Jul), so the Bayan
+// Lepas row below is what makes that gate reachable at all. Without it the e2e
+// customs spec fails with "test DB should hold P1 consignees in BAYAN LEPAS" —
+// which is what happened the first time the suite ran on CI, where the 1581
+// real consignees do not exist because the workbook they come from is NDA data
+// that is gitignored. A public test must not depend on private rows.
 const SYNTHETIC_CONSIGNEES: { company_name: string; zone_code: string; area: string; state: string }[] = [
   { company_name: "Test Consignee P1 Alpha", zone_code: "P1", area: "Penang Island", state: "Penang" },
+  // Needs the customs document — see the note above. The real rows read
+  // "KAWASAN PERINDUSTRIAN BAYAN LEPAS" as often as the bare name, and the rule
+  // matches on `includes`, so the longer form is the honest fixture.
+  { company_name: "Test Consignee P1 Customs", zone_code: "P1", area: "Kawasan Perindustrian Bayan Lepas", state: "Penang" },
   { company_name: "Test Consignee P2 Beta", zone_code: "P2", area: "Juru", state: "Penang" },
   { company_name: "Test Consignee P2 Gamma", zone_code: "P2", area: "Perai", state: "Penang" },
   { company_name: "Test Consignee P3 Delta", zone_code: "P3", area: "Tasek Gelugor", state: "Penang" },

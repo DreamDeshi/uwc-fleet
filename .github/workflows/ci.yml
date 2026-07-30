@@ -63,6 +63,24 @@ jobs:
       - name: Mobile typecheck
         run: npm run typecheck --workspace mobile
 
+      # The e2e workspace was never typechecked anywhere, so a type error could
+      # sit on main indefinitely — one did: reset.ts read `consignee.area` (the
+      # customs-document rule needs it) against a type that did not declare it.
+      # It ran fine, because the API really does return the field, and nothing
+      # ever compiled the file. Cheap to check, and it is real source.
+      # e2e is NOT an npm workspace (root workspaces are api + mobile), so the
+      # root `npm ci` above installs none of its dependencies. It has its own
+      # lockfile and stays standalone on purpose — it can be pointed at a
+      # deployed environment without dragging the monorepo along, and Playwright
+      # stays out of every other job's install.
+      - name: Install e2e dependencies
+        run: npm ci
+        working-directory: e2e
+
+      - name: E2E typecheck
+        run: npx tsc --noEmit
+        working-directory: e2e
+
       - name: Mobile unit suite
         run: npm test --workspace mobile
 
@@ -115,6 +133,146 @@ jobs:
       # the browser download or the test database is having a bad time.
       - name: Check e2e selectors against renderable copy
         run: node e2e/scripts/check-selectors.mjs
+
+  e2e:
+    name: E2E (Playwright, real browser — FEATURE FLAGS ON)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: uwc
+          POSTGRES_PASSWORD: uwc
+          POSTGRES_DB: uwc_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U uwc -d uwc_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://uwc:uwc@localhost:5432/uwc_test?schema=public
+
+      # ⚠ THIS JOB RUNS WITH THE FEATURE FLAGS ON. GREEN HERE IS NOT "WHAT PROD
+      # DOES". Production has FEATURE_EXCEPTIONS and FEATURE_CHANGE_REQUESTS
+      # UNSET, so those surfaces are dark for real users today.
+      #
+      # Flags-on is the deliberate choice because the flags-off behaviour is
+      # already covered where it belongs — the API's own gating tests assert the
+      # routes 404 while a flag is off — whereas the exception workflow's driver
+      # sheet, admin lane and requestor banner have NO other cover at all, and
+      # they are the next thing due to be switched on. Running them dark would
+      # mean shipping a flag-on with five specs that have never executed.
+      #
+      # If you are reading a green tick here to decide whether production is
+      # safe: it tells you the flag-on world works. It tells you nothing about
+      # what a requestor sees today.
+      FEATURE_EXCEPTIONS: "true"
+      FEATURE_CHANGE_REQUESTS: "true"
+      EXPO_PUBLIC_FEATURE_EXCEPTIONS: "true"
+      EXPO_PUBLIC_FEATURE_CHANGE_REQUESTS: "true"
+
+      # The suite drives hundreds of requests in a few minutes; the production
+      # limiter would 429 the run. Both limiters off, per the documented switch.
+      RATE_LIMIT_MAX: "0"
+      SENSITIVE_RATE_LIMIT_MAX: "0"
+      CORS_ORIGIN: http://localhost:8081
+
+      # The API reads these at TOKEN-SIGNING time, not at startup — which is why
+      # the health check passed and every login then 500'd. Locally they come
+      # from api/.env, which does not exist on a runner; the integration tier
+      # never hit this because tests-integration/setup.ts sets its own. Values
+      # are throwaway: this database is created and destroyed with the job.
+      JWT_ACCESS_SECRET: e2e-access-secret-not-a-real-key
+      JWT_REFRESH_SECRET: e2e-refresh-secret-not-a-real-key
+
+      # The suite uploads for real — resetState pushes a POD to close out a stop,
+      # and the exception flow posts evidence — but a runner has no Cloudinary
+      # credentials, and giving it real ones would write junk into the live asset
+      # account on every push. This fakes the adapter. It cannot switch on in
+      # production: uploadStubEnabled() also requires NODE_ENV !== "production",
+      # which tests/uploadStubGuard.test.ts pins.
+      E2E_STUB_UPLOADS: "true"
+
+      # The web build reads this at EXPORT time (see mobile/src/services/api.ts).
+      # It exists so CI never has to edit the committed app.json, whose value is
+      # the production URL.
+      EXPO_PUBLIC_API_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate --workspace api
+
+      - name: Apply migrations + seed
+        run: |
+          npm run migrate:deploy --workspace api
+          npm run seed --workspace api
+          npm run seed:test --workspace api
+
+      - name: Start the API
+        run: |
+          npx tsx api/src/index.ts > api.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3000/api/v1/health && break
+            sleep 2
+          done
+          curl -sf http://localhost:3000/api/v1/health || { echo "API did not start:"; cat api.log; exit 1; }
+        env:
+          PORT: "3000"
+          NODE_ENV: development
+
+      # A STATIC EXPORT, not `expo start --web`. The dev server rebuilds lazily,
+      # which on a cold runner means the first navigation can outlive the test
+      # timeout, and it has burned captures before by serving a stale bundle.
+      # An export is built once, deterministically, and cannot go stale mid-run.
+      - name: Build the web app
+        run: npx expo export --platform web --output-dir dist
+        working-directory: mobile
+
+      - name: Serve the web app
+        run: |
+          npx --yes serve -s mobile/dist -l 8081 > serve.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8081 >/dev/null && break
+            sleep 2
+          done
+          curl -sf http://localhost:8081 >/dev/null || { echo "web app did not serve:"; cat serve.log; exit 1; }
+
+      # See the note in the `checks` job: e2e is standalone, so the root npm ci
+      # does not cover it. Without this, `npx playwright test` dies with
+      # "Cannot find module '@playwright/test'".
+      - name: Install e2e dependencies
+        run: npm ci
+        working-directory: e2e
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: e2e
+
+      - name: Playwright suite
+        run: npx playwright test --reporter=line
+        working-directory: e2e
+
+      - name: Upload traces and screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failures
+          path: |
+            e2e/test-results/**
+            api.log
+            serve.log
+          retention-days: 7
 
   integration:
     name: Integration tier (Postgres) + migration drift
