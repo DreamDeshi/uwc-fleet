@@ -158,4 +158,70 @@ describe("POD photo privacy", () => {
     expect(res.status).toBe(200);
     expect(res.body.documents[0].file_url).toBe(legacy);
   });
+  it("never hands out the stored asset id itself — to ANY role", async () => {
+    // The signing pipeline exists because asset ids were published and, for
+    // PODs, were deterministic (`<ticket>-stop-<n>`) and enumerable by ticket.
+    // It stopped the URLs being guessable but kept shipping the id, on every
+    // trip read, to every role — the exact string the work was meant to
+    // withhold. No client reads it; the signed URL is the only usable artefact.
+    const { requestor, admin, driver, rt, plx } = await setup();
+    const trip = await bookTrip(requestor, ["P1"], rt);
+    await approveTrip(admin, trip.id, plx, PND.plate);
+    await startTrip(driver, trip.id);
+
+    await prisma.tripStop.update({
+      where: { id: trip.stops[0].id },
+      data: {
+        pod_public_id: "uwc/pod/TKT-C-stop-1",
+        k2_public_id: "uwc/k2/TKT-C-stop-1",
+        pod_photo: "https://res.cloudinary.com/testcloud/image/authenticated/uwc/pod/TKT-C-stop-1",
+        k2_photo: "https://res.cloudinary.com/testcloud/image/authenticated/uwc/k2/TKT-C-stop-1",
+        do_uploaded: true,
+      },
+    });
+
+    for (const [role, token] of [["admin", admin], ["driver", driver], ["requestor", requestor]] as const) {
+      const res = await api().get(`/api/v1/trips/${trip.id}`).set(auth(token));
+      expect(res.status, role).toBe(200);
+      const stop = res.body.stops[0];
+
+      // The identifier is gone…
+      expect(stop.pod_public_id, `${role} still receives pod_public_id`).toBeUndefined();
+      expect(stop.k2_public_id, `${role} still receives k2_public_id`).toBeUndefined();
+      // …and it is not hiding anywhere else in the payload either.
+      expect(JSON.stringify(res.body)).not.toContain('"pod_public_id"');
+      expect(JSON.stringify(res.body)).not.toContain('"k2_public_id"');
+
+      // …while the thing the client actually uses still works. Dropping the id
+      // must not cost the signed URL, which is derived from it.
+      expect(stop.pod_photo, `${role} lost the signed POD url`).toContain("s--");
+      expect(stop.pod_photo).toContain("/authenticated/");
+      expect(stop.k2_photo, `${role} lost the signed K2 url`).toContain("s--");
+    }
+  });
+
+  it("never hands out a DOCUMENT's public_id, while still signing its url", async () => {
+    const { requestor, admin, rt, plx } = await setup();
+    const trip = await bookTrip(requestor, ["P1"], rt);
+    await approveTrip(admin, trip.id, plx, PND.plate);
+    await prisma.tripDocument.create({
+      data: {
+        trip_id: trip.id,
+        type: "do_photo",
+        public_id: "uwc/docs/TKT-C-do",
+        resource_type: "image",
+        format: "jpg",
+        file_url: "https://res.cloudinary.com/testcloud/image/authenticated/uwc/docs/TKT-C-do.jpg",
+      },
+    });
+
+    const res = await api().get(`/api/v1/trips/${trip.id}`).set(auth(admin));
+    expect(res.status).toBe(200);
+    const doc = res.body.documents[0];
+    expect(doc.public_id).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toContain('"public_id"');
+    expect(doc.file_url).toContain("s--");
+    expect(doc.file_url).toContain(".jpg"); // extension still preserved
+  });
+
 });
