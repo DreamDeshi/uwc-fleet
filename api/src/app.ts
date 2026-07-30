@@ -83,10 +83,13 @@ app.use("/api/v1/users", usersRoutes);
 // prefix, ahead of both routers mounted on it.
 //
 // It lives here rather than inside tripsRoutes because exceptionsRoutes shares
-// this prefix: a wrapper installed in one router looks like it covers the path
-// and does not. The argument for a choke point is "anything added later is
-// covered without anyone remembering", and a router-local wrapper quietly fails
-// that on its own URL.
+// this prefix. A router-local `router.use()` IS prefix-level, so it does cover
+// the exceptions router's paths — but only because tripsRoutes happens to be
+// mounted above it. Swap the two app.use lines below and redaction silently
+// disappears from every exceptions-router response, with no test going red.
+// The argument for a choke point is "anything added later is covered without
+// anyone remembering"; a guarantee that depends on the order of two mount
+// lines is not that.
 //
 // The role is read when res.json is CALLED, not when this middleware runs:
 // requireAuth lives inside each router, so req.user does not exist yet at

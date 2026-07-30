@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { Prisma } from "@prisma/client";
 import { api, auth, prisma, resetDb, loginAs, ADMIN, DRIVER, REQUESTOR } from "./helpers/harness";
 import { bookTrip, approveTrip, startTrip, arriveAndDeliver, firstRouteTypeId, userIdByPhone, DRIVERS } from "./helpers/flow";
 import { REQUESTOR_HIDDEN_MONEY_FIELDS } from "../src/lib/requestorMoney";
@@ -129,70 +130,95 @@ describe("requestors never receive driver pay", () => {
    * Every other case here derives its oracle from REQUESTOR_HIDDEN_MONEY_FIELDS,
    * which makes them tautologies over my own constant: they prove "the names I
    * chose to strip are stripped". Reverting the middleware turns them red — but
-   * ADDING a money column to Trip, Truck or TripStop, or merging the interplant
-   * branch with a differently-named column, leaves them green forever. The
-   * commit message's claim that naming interplant_* now "means that merge cannot
-   * silently re-open this" is not enforced by an implementation-derived oracle;
-   * it is enforced only by whoever remembers to edit the set.
+   * ADDING a money column leaves them green forever, so the interplant_* names
+   * listed "so that merge cannot silently re-open this" were enforced by nothing
+   * except someone remembering.
    *
-   * So this case inverts the direction: it reads the SCHEMA, and every scalar a
-   * requestor receives must be on an explicit allow-list. A new column is
-   * unknown, therefore refused, and the person adding it has to decide.
+   * This case inverts the direction: every scalar a requestor receives must
+   * appear on a hand-written allow-list, so an unclassified column fails until a
+   * human decides.
+   *
+   * Classification comes from the Prisma DMMF, NOT from `typeof`. The first cut
+   * skipped anything where `typeof value === "object"`, meaning to skip
+   * relations — but `typeof [] === "object"` and `typeof {json} === "object"`,
+   * so it also skipped every array and Json column. It shipped green with a live
+   * counter-example already in the payload: `truck.priority_zones` (String[]) is
+   * sent to requestors and was on nobody's list. A Decimal[] rate matrix or a
+   * Json breakdown — exactly what the interplant branch might add — would have
+   * sailed straight through the guard written to catch it. The DMMF knows
+   * `priority_zones` is `kind: "scalar", isList: true`; `typeof` cannot.
    */
   it("fail-closed: every scalar a requestor receives is explicitly allowed", async () => {
-    // Deliberately hand-written, one line per field, so widening it is a
-    // conscious act that shows up in review — never a wildcard.
+    const scalarsOf = (model: string): Set<string> => {
+      const m = Prisma.dmmf.datamodel.models.find((x) => x.name === model);
+      if (!m) throw new Error(`No such model in the schema: ${model}`);
+      return new Set(m.fields.filter((f) => f.kind === "scalar" || f.kind === "enum").map((f) => f.name));
+    };
+
+    // Hand-written, one entry per real column, so widening it is a conscious act
+    // visible in review. The stale-entry assertion below forbids speculative
+    // names: a list padded with columns nobody has designed is a blank cheque,
+    // and would have pre-allowed `pod_approved_at` while we deliberately hid the
+    // real approval timestamp `incentive_approved_at`.
     const ALLOWED: Record<string, Set<string>> = {
       Trip: new Set([
-        "id", "ticket_number", "status", "requestor_id", "driver_id", "truck_id",
-        "route_type_id", "pickup_datetime", "created_at", "updated_at",
-        "notes", "remarks", "is_external", "forwarder_name", "cancelled_at",
-        "cancel_reason", "abort_reason", "aborted_at", "started_at", "completed_at",
-        "client_request_id", "auto_dispatch_failed", "auto_dispatch_note",
-        "auto_dispatch_paused", "pickup_consignee_id", "open_exception_id",
-        "delivery_confirmed_at", "rejected_at", "rejection_reason",
-        "tracking_token", "unassigned_at", "assigned_at", "pod_approved_at",
-        // Operational, not money: which lorry is coming, and whether the
-        // "still pending" nudge has already gone out.
-        "truck_plate", "pending_alert_sent",
+        "id", "ticket_number", "requestor_id", "driver_id", "truck_plate",
+        "route_type_id", "status", "pickup_datetime", "is_external",
+        "rejection_reason", "pending_alert_sent", "auto_dispatch_failed",
+        "auto_dispatch_note", "auto_dispatch_paused", "client_request_id",
+        "open_exception_id", "created_at",
       ]),
       Truck: new Set([
-        "id", "plate", "type", "max_pallets", "created_at", "updated_at",
-        "retired_at", "status", "driver_id", "assigned_driver_id",
-        "road_tax_expiry", "insurance_expiry", "permit_expiry", "puspakom_expiry",
-        "odometer_km", "plate_number", "model", "capacity_kg", "notes",
-        // Scheduling attributes, not pricing.
-        "operating_hours_start", "operating_hours_end", "is_available",
+        "plate", "type", "max_pallets", "priority_zones",
+        "operating_hours_start", "operating_hours_end",
+        "insurance_expiry", "permit_expiry", "road_tax_expiry",
+        "is_available", "retired_at",
       ]),
       TripStop: new Set([
-        "id", "trip_id", "consignee_id", "sequence", "status", "arrived_at",
-        "delivered_at", "pod_photo", "pod_public_id", "pod_uploaded_at",
-        "pod_captured_client_at", "k2_photo", "k2_public_id", "k2_form_ack",
-        "do_uploaded", "created_at", "updated_at", "notes", "zone_code",
-        "delivery_note", "failed_at",
+        "id", "trip_id", "sequence", "consignee_id", "status",
+        "arrived_at", "delivered_at", "pod_photo", "pod_public_id",
+        "pod_uploaded_at", "pod_captured_client_at", "do_uploaded",
+        "k2_photo", "k2_public_id", "k2_form_ack", "zone_code",
       ]),
+      Consignee: new Set([
+        "id", "company_name", "vendor_code", "contact_person", "phone",
+        "address_1", "address_2", "area", "state", "postal_code", "zone_code",
+        "is_active", "created_by", "latitude", "longitude", "geocode_match_type",
+      ]),
+      CargoDetail: new Set([
+        "id", "trip_id", "pallet_type", "quantity", "cartons",
+        "width_ft", "length_ft", "custom_size", "estimated_pallets", "remark",
+      ]),
+      TripDocument: new Set([
+        "id", "trip_id", "type", "file_url", "public_id", "resource_type",
+        "format", "uploaded_at",
+      ]),
+      RouteType: new Set(["id", "name"]),
+      TripStatusHistory: new Set(["id", "trip_id", "event", "stop_id", "actor_id", "note", "created_at"]),
     };
 
+    // The first cut swept 3 of the 9 models a requestor actually receives.
     const one = (await api().get(`/api/v1/trips/${tripId}`).set(auth(requestor))).body;
-    const seen: Record<string, Set<string>> = {
-      Trip: new Set(Object.keys(one)),
-      Truck: new Set(Object.keys(one.truck ?? {})),
-      TripStop: new Set(Object.keys(one.stops?.[0] ?? {})),
-    };
+    const SURFACES: { model: string; value: unknown }[] = [
+      { model: "Trip", value: one },
+      { model: "Truck", value: one.truck },
+      { model: "TripStop", value: one.stops?.[0] },
+      { model: "Consignee", value: one.stops?.[0]?.consignee },
+      { model: "CargoDetail", value: one.cargo_details?.[0] },
+      { model: "TripDocument", value: one.documents?.[0] },
+      { model: "RouteType", value: one.route_type },
+      { model: "TripStatusHistory", value: one.status_history?.[0] },
+    ];
 
     const unexpected: string[] = [];
-    for (const model of ["Trip", "Truck", "TripStop"]) {
-      for (const field of seen[model]) {
-        // Relations are objects/arrays, not scalars — they carry their own rules
-        // and are covered by the nested assertions above.
-        const value = model === "Trip" ? one[field]
-          : model === "Truck" ? one.truck[field]
-          : one.stops[0][field];
-        if (value !== null && typeof value === "object") continue;
-        if (!ALLOWED[model].has(field)) unexpected.push(`${model}.${field}`);
+    for (const { model, value } of SURFACES) {
+      if (!value || typeof value !== "object") continue;
+      const scalars = scalarsOf(model);
+      for (const key of Object.keys(value as Record<string, unknown>)) {
+        if (!scalars.has(key)) continue; // a relation — it has its own entry above
+        if (!ALLOWED[model].has(key)) unexpected.push(`${model}.${key}`);
       }
     }
-
     expect(
       unexpected,
       [
@@ -202,6 +228,24 @@ describe("requestors never receive driver pay", () => {
         "",
         "If it is money or rate data, add it to REQUESTOR_HIDDEN_MONEY_FIELDS.",
         "If a requestor legitimately needs it, add it to ALLOWED in this test.",
+        "",
+      ].join("\n")
+    ).toEqual([]);
+
+    // No blank cheques: every allow-list entry must be a column that exists.
+    const stale: string[] = [];
+    for (const [model, fields] of Object.entries(ALLOWED)) {
+      const scalars = scalarsOf(model);
+      for (const f of fields) if (!scalars.has(f)) stale.push(`${model}.${f}`);
+    }
+    expect(
+      stale,
+      [
+        "",
+        "ALLOWED names column(s) that do not exist in the schema:",
+        ...stale.map((f) => `  ${f}`),
+        "",
+        "Speculative entries pre-approve fields nobody has designed. Remove them.",
         "",
       ].join("\n")
     ).toEqual([]);
