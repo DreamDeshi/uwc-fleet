@@ -32,13 +32,59 @@ function notify() {
   listeners.forEach((fn) => fn());
 }
 
-async function readOutbox(): Promise<PodOutboxItem[]> {
+// Reading the queue can fail in two very different ways, and collapsing them
+// into "[]" is how a driver loses delivered work.
+//
+// Every mutation below is read-modify-write. When a read error became an empty
+// array, the very next enqueue wrote a ONE-ITEM array over a queue that might
+// have held a day of deliveries — silently, permanently, and reported to the
+// driver as "saved offline". The file already had the right instinct one
+// function down ("write errors PROPAGATE ... rather than telling the driver
+// 'saved' when nothing was"); the read path contradicted it.
+//
+//   STORAGE FAILURE (AsyncStorage threw) — we do not know what is stored, so no
+//   caller may write. Mutators refuse; the display path shows an empty list.
+//   CORRUPT / NON-ARRAY VALUE — the stored bytes are unusable, so the queue has
+//   to start clean or the driver can never queue anything again. The raw value
+//   is QUARANTINED under its own key first, so it is recoverable rather than
+//   overwritten by the next write.
+type ReadOutcome =
+  | { ok: true; items: PodOutboxItem[] }
+  | { ok: false; error: unknown };
+
+const CORRUPT_KEY_PREFIX = "uwc.podOutbox.corrupt";
+
+/** Keep unparseable bytes instead of destroying them. Best effort by design. */
+async function quarantineCorrupt(raw: string): Promise<void> {
   try {
-    const raw = await AsyncStorage.getItem(OUTBOX_KEY);
-    return raw ? (JSON.parse(raw) as PodOutboxItem[]) : [];
+    await AsyncStorage.setItem(`${CORRUPT_KEY_PREFIX}.${Date.now()}`, raw);
   } catch {
-    return []; // corrupt JSON — start clean rather than crash the driver flow
+    // Storage is already misbehaving; failing to quarantine must not also block
+    // the driver from queueing the delivery in front of them.
   }
+}
+
+async function readOutboxOutcome(): Promise<ReadOutcome> {
+  let raw: string | null;
+  try {
+    raw = await AsyncStorage.getItem(OUTBOX_KEY);
+  } catch (error) {
+    return { ok: false, error };
+  }
+  if (!raw) return { ok: true, items: [] };
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) return { ok: true, items: parsed as PodOutboxItem[] };
+  } catch {
+    // fall through — unparseable is handled the same as a non-array value
+  }
+  await quarantineCorrupt(raw);
+  return { ok: true, items: [] };
+}
+
+async function readOutbox(): Promise<PodOutboxItem[]> {
+  const outcome = await readOutboxOutcome();
+  return outcome.ok ? outcome.items : [];
 }
 
 // Write errors (e.g. web localStorage quota) PROPAGATE: the caller must fall
@@ -53,17 +99,29 @@ export async function getPodOutbox(): Promise<PodOutboxItem[]> {
   return readOutbox();
 }
 
-/** Queue (or merge into) a stop's pending delivery. Throws if storage fails. */
+/**
+ * Queue (or merge into) a stop's pending delivery. Throws if storage fails —
+ * on the READ as well as the write. Callers already treat a throw as "storage
+ * full/unavailable, show the normal error" (ActiveTripScreen.queueDeliveredOffline),
+ * which is exactly right: refusing to queue is recoverable, overwriting the
+ * queue is not.
+ */
 export async function enqueuePodItem(patch: OutboxPatch): Promise<void> {
-  const items = await readOutbox();
-  await writeOutbox(mergeOutboxItem(items, patch, new Date().toISOString()));
+  const outcome = await readOutboxOutcome();
+  if (!outcome.ok) {
+    throw outcome.error instanceof Error
+      ? outcome.error
+      : new Error("POD outbox unreadable — refusing to overwrite it");
+  }
+  await writeOutbox(mergeOutboxItem(outcome.items, patch, new Date().toISOString()));
 }
 
 /** Drop a stop's item (the stop completed through the normal online path). */
 export async function removePodItem(stopId: string): Promise<void> {
-  const items = await readOutbox();
-  if (!items.some((i) => i.stopId === stopId)) return;
-  await writeOutbox(items.filter((i) => i.stopId !== stopId));
+  const outcome = await readOutboxOutcome();
+  if (!outcome.ok) return; // unreadable — a stale item replays idempotently; a lost queue does not
+  if (!outcome.items.some((i) => i.stopId === stopId)) return;
+  await writeOutbox(outcome.items.filter((i) => i.stopId !== stopId));
 }
 
 /**
@@ -72,7 +130,9 @@ export async function removePodItem(stopId: string): Promise<void> {
  * pending on the item, remove it entirely.
  */
 export async function noteDirectPodUpload(stopId: string): Promise<void> {
-  const items = await readOutbox();
+  const outcome = await readOutboxOutcome();
+  if (!outcome.ok) return; // same reasoning as removePodItem — never write blind
+  const items = outcome.items;
   const item = items.find((i) => i.stopId === stopId);
   if (!item) return;
   if (!item.confirmDelivered && !(item.k2FormAck && !item.k2Acked)) {
@@ -93,12 +153,20 @@ export async function flushPodOutbox(api: PodOutboxApi): Promise<FlushResult> {
   if (flushing) return { outcomes: [], synced: 0, dropped: 0 };
   flushing = true;
   try {
-    const snapshot = await readOutbox();
+    const read = await readOutboxOutcome();
+    // Unreadable: replaying nothing is safe, guessing is not.
+    if (!read.ok) return { outcomes: [], synced: 0, dropped: 0 };
+    const snapshot = read.items;
     if (snapshot.length === 0) return { outcomes: [], synced: 0, dropped: 0 };
     // Checkpoint after every item: progress (e.g. photoUploaded) survives the
     // app being killed mid-flush, and completed items leave the queue at once.
     const checkpoint = async (outcomes: ItemOutcome[]) => {
-      await writeOutbox(reconcileOutboxAfterFlush(await readOutbox(), outcomes));
+      // Re-read so a concurrently queued item is not clobbered — but if THAT
+      // read fails, reconciling against [] would drop every kept item. Skip the
+      // checkpoint instead; the work stays queued and replays next flush.
+      const current = await readOutboxOutcome();
+      if (!current.ok) return;
+      await writeOutbox(reconcileOutboxAfterFlush(current.items, outcomes));
     };
     return await flushOutboxItems(snapshot, { ...api, persist: checkpoint });
   } finally {
