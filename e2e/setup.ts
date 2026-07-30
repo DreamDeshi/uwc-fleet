@@ -7,11 +7,36 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { ADMIN } from "./helpers/accounts";
-import { getDispatchMode, login } from "./helpers/api";
+import { ADMIN, DRIVER, REQUESTOR } from "./helpers/accounts";
+import { getDispatchMode, login, setLanguage } from "./helpers/api";
 import { DISPATCH_MODE_STATE_FILE } from "./teardown";
 
+/**
+ * Put every shared account back into English before the run starts.
+ *
+ * language_pref is SERVER state on accounts every spec shares, and the whole
+ * suite locates by English copy. The i18n sweep restores it in an afterAll,
+ * but cleanup that only runs at the END cannot help a run that was killed,
+ * timed out, or failed before reaching it — and exactly that happened: one
+ * aborted run left the accounts in Chinese, and the NEXT run's driver specs
+ * failed against a UI whose English labels no longer existed. Normalising at
+ * startup makes the suite self-healing instead of dependent on the previous
+ * run having exited cleanly.
+ */
+async function normaliseLanguages(): Promise<void> {
+  for (const account of [ADMIN, DRIVER, REQUESTOR]) {
+    try {
+      const { accessToken } = await login(account);
+      await setLanguage(accessToken, "en");
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`setup: could not reset language for ${account.phone} (${(err as Error).message})`);
+    }
+  }
+}
+
 export default async function globalSetup(): Promise<void> {
+  await normaliseLanguages();
   try {
     const { accessToken } = await login(ADMIN);
     const { dispatch_mode } = await getDispatchMode(accessToken);

@@ -107,6 +107,24 @@ async function auditScreen(page: Page, label: string): Promise<string[]> {
   return problems;
 }
 
+/**
+ * language_pref is SERVER state on a shared account, so it outlives the spec
+ * that set it. Leaving the sweep's last pass in place put every account into
+ * Chinese, and the specs that run after this file — requestor, screenshots —
+ * met a UI whose English selectors no longer existed. Always hand the accounts
+ * back in English, whether the sweep passed or blew up.
+ */
+test.afterAll(async () => {
+  for (const { account } of ROLES) {
+    try {
+      const { accessToken } = await login(account);
+      await setLanguage(accessToken, "en");
+    } catch {
+      /* best effort — a failed restore must not mask the real failure */
+    }
+  }
+});
+
 for (const { name, account, ...nav } of ROLES) {
   for (const [layout, viewport] of [["phone", PHONE], ["desktop", DESKTOP]] as const) {
     const tabKeys = nav[layout];
@@ -148,6 +166,11 @@ for (const { name, account, ...nav } of ROLES) {
           problems.push(...(await auditScreen(page, `${lang}/${layout}/${name}/${key}`)));
         }
       }
+
+      // Restore before asserting: a failing sweep must not also strand the
+      // shared account in the last language it tried.
+      const restore = await login(account);
+      await setLanguage(restore.accessToken, "en");
 
       expect(problems, `\n${problems.join("\n")}\n`).toEqual([]);
     });
