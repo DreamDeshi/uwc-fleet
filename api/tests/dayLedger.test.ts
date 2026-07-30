@@ -10,7 +10,6 @@ import {
   getTripDayStart,
   scoreDrops,
 } from "../src/services/incentiveEngine";
-import { SCORED_UNDELIVERED_WHERE } from "../src/services/undeliveredPay";
 
 /**
  * MONEY PATH — the finalize day-ledger (money-path review, 4 Jul 2026).
@@ -80,14 +79,14 @@ function ledgerDrops(stops: StopRow[], where: PriorDeliveredDropsWhere) {
       // from what Prisma actually emits. It is kept for the scoring-arithmetic
       // cases it already covers; the persisted-vs-live behaviour itself is
       // proven against Postgres in tests-integration/dayLedgerPersisted.test.ts.
-      const [persistedArm, liveArm] = undeliveredBranch.OR;
-      const scored = s.points_awarded != null;
+      const [, liveArm] = undeliveredBranch.OR;
       const asUndelivered =
         s.stop_status !== "delivered" &&
         inWindow(s.arrived_at, undeliveredBranch.arrived_at) &&
-        (scored
-          ? persistedArm.points_awarded !== undefined
-          : s.exception_state === liveArm.exceptions?.some.current_state);
+        // Persisted arm: SCORED at finalization, so it counts whatever the
+        // exceptions say now. Live arm: only consulted when nothing was scored.
+        (s.points_awarded != null ||
+          s.exception_state === liveArm.exceptions?.some.current_state);
       return asDelivered || asUndelivered;
     })
     .filter((s) => s.driver_id === where.trip.driver_id)
@@ -165,7 +164,9 @@ describe("priorDeliveredDropsWhere — the ledger's semantics, pinned", () => {
     // "Resume trip" (no verify) and a "Retry" — neither of which the finalizer
     // pays. A ledger that counted a stop the finalizer doesn't pay would let a
     // real later delivery in that zone be demoted to a 1-point repeat.
-    expect(where.OR[1].OR).toEqual(SCORED_UNDELIVERED_WHERE.OR);
+    // NOT `toEqual(SCORED_UNDELIVERED_WHERE.OR)` — dayLedger assigns that array
+    // BY REFERENCE, so comparing them is an object compared to itself. Only the
+    // literal below pins anything.
     expect(where.OR[1].OR).toEqual([
       // PERSISTED first: what finalization actually scored. Immune to a later
       // adjudication, so paid money cannot leave the ledger afterwards.

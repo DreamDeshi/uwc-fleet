@@ -13,12 +13,12 @@ vi.mock("../src/lib/cloudinary", () => ({
 }));
 
 import { api, auth, prisma, resetDb, loginAs, ADMIN, DRIVER, REQUESTOR } from "./helpers/harness";
-import { userIdByPhone, firstRouteTypeId, bookTrip, approveTrip, startTrip, num } from "./helpers/flow";
+import { userIdByPhone, firstRouteTypeId, bookTrip, approveTrip, startTrip, approveIncentive, num } from "./helpers/flow";
 
 /**
- * THE DAY LEDGER READS WHAT WAS **PAID**, NOT WHAT THE LIVE RULE WOULD PAY NOW.
- * MONEY PATH, and the one the owner asked be covered at DB level rather than
- * with unit tests.
+ * THE DAY LEDGER READS WHAT FINALIZATION **SCORED**, NOT WHAT THE LIVE RULE
+ * WOULD SCORE NOW. MONEY PATH, and the one the owner asked be covered at DB
+ * level rather than with unit tests.
  *
  * `tests/dayLedger.test.ts` evaluates the where-clause with a HAND-WRITTEN
  * interpreter. That is fine for scoring arithmetic and worthless for this: the
@@ -26,19 +26,14 @@ import { userIdByPhone, firstRouteTypeId, bookTrip, approveTrip, startTrip, num 
  * and an interpreter that agrees with my assumptions proves only that I am
  * self-consistent. These run against Postgres.
  *
- * TWO fallback populations share one rule, which is why it needs real coverage:
- *
- *   1. IN-FLIGHT stops. Scoring happens at finalization, but the ledger spans
- *      `in_progress` trips on purpose (overlapping trips — the RM88→RM55 hole).
- *      Those stops have no `points_awarded` and MUST still occupy their zone.
- *   2. LEGACY stops finalized before the breakdown feature wrote the column.
- *
- * Getting the fallback wrong silently drops trips out of the ledger and lets the
- * same zone pay a full first drop twice in one MYT day.
+ * ⚠ EVERY CASE HERE MUST FAIL ON `main`. An earlier version of this file had
+ * three of four passing unmodified, because they exercised the ledger's
+ * DELIVERED branch — which this change does not touch — while claiming to
+ * exercise the undelivered fallback. A test that cannot fail is documentation
+ * wearing a test's clothes.
  *
  * Seeded PND 1888: Ipoh (A2) 6 pts, Kulim (K1) 3 pts, deduction 2.
  */
-
 const PND_PLATE = "PND 1888";
 const PHOTO = Buffer.from("fake-jpeg-bytes");
 
@@ -136,39 +131,48 @@ describe("day ledger — persisted evidence vs the live rule", () => {
     expect(num((await prisma.trip.findUniqueOrThrow({ where: { id: b.id } })).incentive_earned)).toBeGreaterThan(0);
   });
 
-  it("IN-FLIGHT FALLBACK: a delivered stop on a still-running trip occupies its zone", async () => {
-    // Population 1. `points_awarded` is null because trip A has not finalized,
-    // so ONLY the live fallback can see it. Keying purely on persisted evidence
-    // would reopen the RM88→RM55 double-first-drop hole for every overlap.
-    const a = await startedTrip(["A2", "K1"]);
-    await deliverStop(a.id, a.stops[0].id); // Ipoh delivered; Kulim still open
-    expect(await pointsOf(a.stops[0].id)).toBeNull(); // NOT scored yet
-    expect((await prisma.trip.findUniqueOrThrow({ where: { id: a.id } })).status).toBe("in_progress");
-
-    // Second trip, same driver, same day, same zone. The guard normally refuses
-    // a second active trip, so the ledger's own overlap case is built directly.
-    const b = await bookTrip(requestor, ["A2"], rt);
-    await prisma.trip.update({
-      where: { id: b.id },
-      data: { status: "in_progress", driver_id: driverId, truck_plate: PND_PLATE },
-    });
-    await deliverStop(b.id, b.stops[0].id);
-
-    expect(await pointsOf(b.stops[0].id)).toBe(1); // repeat, via the fallback
-  });
-
-  it("LEGACY FALLBACK: a settled stop with NO persisted points still occupies its zone", async () => {
-    // Population 2. Simulates a trip finalized before the breakdown feature
-    // wrote points_awarded: settled by the live rule, no persisted evidence.
+  it("ZEROING THE TRIP DOES NOT FREE THE ZONE — the slot follows the journey", async () => {
+    // THE RULING, pinned. An admin rejects a sibling report AND edits the trip's
+    // incentive to RM0. The stop was still SCORED, so it keeps its zone slot and
+    // a later same-zone drop is a 1-pt repeat.
+    //
+    // Deliberate, and consistent: the ledger's DELIVERED branch has never had a
+    // pay condition, so a zeroed delivered stop already keeps its slot. Making
+    // the undelivered branch follow the money instead would leave the two
+    // branches contradicting each other with nothing to justify the difference.
+    // Costs the driver ~RM33 on the later drop; recorded in undeliveredPay's
+    // header as an accepted consequence, and adjacent to the open R4 §A1.
     const a = await startedTrip(["A2"]);
     await failAndSettle(a.id, a.stops[0].id);
-    await prisma.tripStop.update({ where: { id: a.stops[0].id }, data: { points_awarded: null } });
-    expect(await pointsOf(a.stops[0].id)).toBeNull();
+    expect(await pointsOf(a.stops[0].id)).toBe(6);
+
+    // Approve at ZERO through the real route — the documented remedy for a bad
+    // reject. An earlier draft guessed the path and tolerated a 404, which would
+    // have let the test pass without ever exercising the approval.
+    await approveIncentive(admin, a.id, { final_amount: 0, reason: "sibling report rejected" });
+    const paid = await prisma.trip.findUniqueOrThrow({ where: { id: a.id } });
+    expect(paid.status).toBe("completed");
+    expect(num(paid.incentive_final)).toBe(0);
 
     const b = await startedTrip(["A2"]);
     await deliverStop(b.id, b.stops[0].id);
 
-    expect(await pointsOf(b.stops[0].id)).toBe(1); // repeat — fallback saw it
+    expect(await pointsOf(b.stops[0].id)).toBe(1); // repeat — the slot held
+  });
+
+  it("a NOT-YET-SCORED settled stop still occupies its zone (the fallback arm)", async () => {
+    // The fallback arm, exercised on an UNDELIVERED stop — the previous version
+    // of this test used a DELIVERED one, which is matched by the ledger's
+    // delivered branch and therefore passed identically on main. Null the
+    // persisted points so ONLY the live rule can see it.
+    const a = await startedTrip(["A2"]);
+    await failAndSettle(a.id, a.stops[0].id);
+    await prisma.tripStop.update({ where: { id: a.stops[0].id }, data: { points_awarded: null } });
+
+    const b = await startedTrip(["A2"]);
+    await deliverStop(b.id, b.stops[0].id);
+
+    expect(await pointsOf(b.stops[0].id)).toBe(1); // repeat, via the fallback
   });
 
   it("a legacy stop that was NEVER settled does not occupy its zone", async () => {
