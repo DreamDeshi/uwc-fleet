@@ -196,6 +196,13 @@ export interface EarningStopLike {
   delivered_at: Date | null;
   status?: string;
   arrived_at?: Date | null;
+  /**
+   * Points persisted at finalization. MUST be threaded through to
+   * stopPayEligibility — omitting it silently reverts this stop to the live
+   * exception rule, and the SQL superset (earnedInWindow) and this in-memory
+   * bucket then disagree about which MONTH a paid trip belongs to.
+   */
+  points_awarded?: number | null;
   exceptions?: {
     current_state: string;
     resolution: string | null;
@@ -213,6 +220,12 @@ export function firstEarningInstant(stops: EarningStopLike[]): Date | null {
         arrived_at: s.arrived_at ?? null,
         delivered_at: s.delivered_at,
         exceptions: s.exceptions,
+        // ⚠ LOAD-BEARING. This object is built by hand, so a field added to
+        // PayableStopLike is NOT automatically passed on. points_awarded was
+        // added and not threaded here, which left every payroll path on the
+        // live rule while earnedInWindow had moved to the persisted one — the
+        // two then disagreed about a paid trip's month.
+        points_awarded: s.points_awarded,
       }) === "undelivered_paid"
         ? (s.arrived_at ?? null)
         : null);

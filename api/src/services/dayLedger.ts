@@ -38,7 +38,7 @@ import type { Prisma } from "@prisma/client";
 // Type-only: the ledger's undelivered branch DERIVES its exception filter from
 // the finalizer's constant so the two cannot describe different stops. Adding
 // the reject veto to one and not the other is exactly the drift this prevents.
-import type { SETTLED_UNDELIVERED_WHERE } from "./undeliveredPay";
+import { SCORED_UNDELIVERED_WHERE } from "./undeliveredPay";
 
 // Trip statuses whose delivered drops feed the day ledger. `pending_approval`
 // is included (16 Jul 2026): a trip whose last stop is delivered but whose
@@ -86,7 +86,7 @@ export interface PriorDeliveredDropsWhere {
       // out a second time is how the reject veto came to be added in one place
       // and not the other; now the type itself refuses the drift, and the value
       // below still has to match because tests/dayLedger.ts compares them.
-      exceptions: (typeof SETTLED_UNDELIVERED_WHERE)["exceptions"];
+      OR: (typeof SCORED_UNDELIVERED_WHERE)["OR"];
     },
   ];
   trip: {
@@ -125,15 +125,18 @@ export function priorDeliveredDropsWhere(params: {
       {
         status: { not: "delivered" },
         arrived_at: window,
-        exceptions: {
-          some: {
-            current_state: "resolved",
-            resolution: "resume",
-            actions: { some: { type: "verify" } },
-          },
-          // An explicit reject wins (owner ruling, 30 Jul 2026).
-          none: { current_state: "rejected" },
-        },
+        // SCORED, not SETTLED — see the long note on SCORED_UNDELIVERED_WHERE.
+        // The ledger asks a HISTORICAL question ("what did this driver already
+        // earn today"), so it must read what was PAID, not what the live
+        // exception state would pay if asked again now. Otherwise a reject
+        // landing after a stop was paid removes it from the ledger and the next
+        // same-zone drop scores 6 instead of 1 — the double-first-drop hole
+        // this file exists to prevent, reopened from the other end.
+        //
+        // The `points_awarded: null` fallback is NOT just for legacy rows: this
+        // ledger deliberately spans `in_progress` trips (overlapping trips, the
+        // RM88→RM55 case below), whose stops are not scored yet.
+        OR: SCORED_UNDELIVERED_WHERE.OR,
       },
     ],
     trip: {

@@ -10,7 +10,6 @@ import {
   getTripDayStart,
   scoreDrops,
 } from "../src/services/incentiveEngine";
-import { SETTLED_UNDELIVERED_WHERE } from "../src/services/undeliveredPay";
 
 /**
  * MONEY PATH — the finalize day-ledger (money-path review, 4 Jul 2026).
@@ -43,6 +42,13 @@ interface StopRow {
   arrived_at?: Date | null;
   /** current_state of a stop-attached exception, if any. */
   exception_state?: string | null;
+  /**
+   * Points persisted at finalization. Non-null ⇒ this stop WAS scored, and the
+   * ledger must count it whatever the exceptions say now. Undefined here means
+   * "not scored yet", which is the ordinary state of a stop on a still-running
+   * trip — not merely a legacy row.
+   */
+  points_awarded?: number | null;
 }
 
 /** The instant a row's pay attributes to — mirrors undeliveredPay. */
@@ -65,10 +71,22 @@ function ledgerDrops(stops: StopRow[], where: PriorDeliveredDropsWhere) {
     .filter((s) => {
       const asDelivered =
         s.stop_status === deliveredBranch.status && inWindow(s.delivered_at, deliveredBranch.delivered_at);
+      // The undelivered branch is now an OR: PERSISTED evidence first, live
+      // exception state only when nothing was persisted. Mirrors
+      // SCORED_UNDELIVERED_WHERE.
+      //
+      // ⚠ This is a HAND-WRITTEN interpreter of a SQL predicate and can drift
+      // from what Prisma actually emits. It is kept for the scoring-arithmetic
+      // cases it already covers; the persisted-vs-live behaviour itself is
+      // proven against Postgres in tests-integration/dayLedgerPersisted.test.ts.
+      const [, liveArm] = undeliveredBranch.OR;
       const asUndelivered =
         s.stop_status !== "delivered" &&
         inWindow(s.arrived_at, undeliveredBranch.arrived_at) &&
-        s.exception_state === undeliveredBranch.exceptions.some.current_state;
+        // Persisted arm: SCORED at finalization, so it counts whatever the
+        // exceptions say now. Live arm: only consulted when nothing was scored.
+        (s.points_awarded != null ||
+          s.exception_state === liveArm.exceptions?.some.current_state);
       return asDelivered || asUndelivered;
     })
     .filter((s) => s.driver_id === where.trip.driver_id)
@@ -146,19 +164,27 @@ describe("priorDeliveredDropsWhere — the ledger's semantics, pinned", () => {
     // "Resume trip" (no verify) and a "Retry" — neither of which the finalizer
     // pays. A ledger that counted a stop the finalizer doesn't pay would let a
     // real later delivery in that zone be demoted to a 1-point repeat.
-    expect(where.OR[1].exceptions).toEqual(SETTLED_UNDELIVERED_WHERE.exceptions);
-    expect(where.OR[1].exceptions).toEqual({
-      some: {
-        current_state: "resolved",
-        resolution: "resume",
-        actions: { some: { type: "verify" } },
+    // NOT `toEqual(SCORED_UNDELIVERED_WHERE.OR)` — dayLedger assigns that array
+    // BY REFERENCE, so comparing them is an object compared to itself. Only the
+    // literal below pins anything.
+    expect(where.OR[1].OR).toEqual([
+      // PERSISTED first: what finalization actually scored. Immune to a later
+      // adjudication, so paid money cannot leave the ledger afterwards.
+      { points_awarded: { not: null } },
+      // Only when nothing was persisted — an in-flight trip's stop, or a legacy
+      // row — does the live rule decide, veto included.
+      {
+        points_awarded: null,
+        exceptions: {
+          some: {
+            current_state: "resolved",
+            resolution: "resume",
+            actions: { some: { type: "verify" } },
+          },
+          none: { current_state: "rejected" },
+        },
       },
-      // Reject veto (owner ruling, 30 Jul 2026). It matters HERE as much as in
-      // the finalizer: a rejected stop must not be paid AND must not consume
-      // its zone's first-drop slot, or a real later delivery to that zone is
-      // demoted to a 1-point repeat on the strength of a stop nobody paid for.
-      none: { current_state: "rejected" },
-    });
+    ]);
   });
 });
 
