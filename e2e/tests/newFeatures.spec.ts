@@ -259,12 +259,18 @@ test.describe("K2 destination gate (driver, mobile web)", () => {
     await uploadK2(driver.token, pending.id, stopId, POD_FILE);
     await page.reload();
     await openActiveTrip(page);
-    // NOTE: unlike POD (which keeps a green "POD uploaded - HH:MM" row plus a
-    // Retake button), an uploaded customs document leaves NO persistent mark on
-    // this screen - trip.k2Uploaded is only a transient toast on the in-app
-    // upload. The observable proof that the gate opened is the footer advancing
-    // from the locked row to a real Delivered control.
+    // The gate has opened: the footer advances from the locked row to a real
+    // Delivered control.
     await expect(page.getByText("Delivered", { exact: true })).toBeVisible({ timeout: 20_000 });
+
+    // And the document leaves a PERSISTENT mark with a way back. It used to
+    // leave none: the upload button is a footer stage that vanishes the moment
+    // k2_photo is set, and trip.k2Uploaded was only a toast — so the driver
+    // could not confirm the upload had landed, and a wrong or unreadable scan
+    // was unfixable, because pressing Delivered moves the trip to
+    // pending_approval where the finalize-lock freezes its documents.
+    await expect(page.getByText("Customs document uploaded")).toBeVisible();
+    await expect(page.getByText("Replace", { exact: true })).toBeVisible();
     await expect(async () => {
       if (await completed.isVisible()) return;
       // force: the live map animates continuously on a real network, so strict
