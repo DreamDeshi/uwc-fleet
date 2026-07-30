@@ -448,10 +448,12 @@ describe("failed-delivery pay (R3 Q11a) — through Postgres", () => {
       // the first time a trip-level report was rejected. Prisma guards it; proved.
       const t = await startedTrip(["A2"]);
       const [ipoh] = t.stops;
-      // Arrive + approve first (failStopAndResolve owns the arrival), then file
-      // the trip-level report against the now-unblocked trip.
-      await failStopAndResolve(t.id, ipoh.id);
-
+      // ORDER: the trip-level report must be filed and rejected BEFORE the stop
+      // is resolved. This trip has ONE stop, so resolving it leaves nothing
+      // outstanding and the trip finalizes to `pending_approval` — after which
+      // the report route correctly refuses with TRIP_NOT_IN_PROGRESS. (Fixing
+      // the earlier double-arrive by moving failStopAndResolve first is what
+      // introduced that; CI caught it.)
       const reported = await api()
         .post(`/api/v1/trips/${t.id}/exception`)
         .set(auth(driver))
@@ -468,6 +470,10 @@ describe("failed-delivery pay (R3 Q11a) — through Postgres", () => {
 
       await api().post(`/api/v1/trips/${t.id}/exception/${tripLevelId}/reject`)
         .set(auth(admin)).send({ client_action_id: randomUUID(), note: "not real" });
+
+      // Now arrive + approve the stop. failStopAndResolve owns the arrival, so
+      // the stop must still be `pending` here — no pre-arrival above.
+      await failStopAndResolve(t.id, ipoh.id);
 
       const trip = await freshTrip(t.id);
       expect(trip.status).toBe("pending_approval");
