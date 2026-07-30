@@ -110,6 +110,8 @@ export function priorDeliveredDropsWhere(params: {
   excludeTripId: string;
   dayStart: Date;
   anchor: Date;
+  /** FEATURE_INTERPLANT. False ⇒ the pre-feature ledger, unchanged. */
+  excludeInterplant: boolean;
 }): PriorDeliveredDropsWhere {
   const window = { gte: params.dayStart, lt: params.anchor };
   return {
@@ -158,7 +160,9 @@ export function priorDeliveredDropsWhere(params: {
       //
       // The converse needs no code: the interplant branch of
       // calculateDeliveryIncentive returns before it reads the ledger at all.
-      route_type: { name: { notIn: [...INTERPLANT_ROUTE_TYPES] } },
+      // FLAG-GATED so flag-off is byte-identical to the pre-feature ledger.
+      // `notIn: []` matches every row, i.e. excludes nothing.
+      route_type: { name: { notIn: params.excludeInterplant ? [...INTERPLANT_ROUTE_TYPES] : [] } },
     },
   };
 }

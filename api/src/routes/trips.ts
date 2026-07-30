@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
 import { assertInterplantBooking } from "../services/interplant";
+import { interplantEnabled } from "../lib/featureFlags";
 import {
   isSerializationConflict,
   isUniqueViolation,
@@ -212,6 +213,11 @@ async function assertInterplantOrThrow(
   pickupConsigneeId: string | null | undefined,
   stopConsignees: { company_name: string }[]
 ): Promise<string | null> {
+  // FLAG-GATED. While off this is a no-op, so an interplant booking behaves
+  // exactly as it did before the feature existed. Without this the first cut
+  // would have 400'd every interplant booking from the app — the requestor UI
+  // sends no pickup point — and locked existing ones out of editing forever.
+  if (!interplantEnabled()) return null;
   const routeType = await prisma.routeType.findUnique({ where: { id: routeTypeId } });
   const pickupConsignee = pickupConsigneeId
     ? await prisma.consignee.findFirst({ where: bookableConsigneesWhere([pickupConsigneeId]) })

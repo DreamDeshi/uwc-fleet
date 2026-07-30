@@ -21,6 +21,18 @@ import { isInterplantRouteType, isUwcPlantName } from "../lib/uwcSpec";
  * the consignee name"). All nine sit in zone P2 alongside Juru and Perai, so a
  * zone check would wrongly admit any Juru customer — the name is the identity.
  *
+ * ⚠ OPEN QUESTION THAT DECIDES THE DATA MODEL — DO NOT TURN THE FLAG ON UNTIL
+ * IT IS ANSWERED. Is a round trip ONE booking with two legs, or TWO bookings
+ * ("Inter-Plant Delivery" + "Inter-Plant Return", both in the requestor's route
+ * dropdown) that pay ONE point between them?
+ *
+ * Nothing here detects a round trip: this fence accepts a single stop, and
+ * tripFinalize's `roundTripComplete` only means "no undelivered stop on this
+ * trip". So today a one-way leg pays a full point, and the two-booking shape
+ * pays twice for one physical round trip — against a workbook remark that says
+ * "ONLY CAN CONSIDER 1 TRIP COUNT". Which is wrong depends entirely on the
+ * answer, so neither is fixed here.
+ *
  * ⚠ BOTH DIRECTIONS ARE ENFORCED. An interplant trip must be plant-to-plant, AND
  * a customer/supplier trip must NOT carry a plant pickup point. Without the
  * second half a requestor could set a pickup on an ordinary booking and quietly

@@ -168,11 +168,25 @@ Unless a latest written client answer explicitly resolves it, keep these frozen:
 
 &#x20; retired R2 doc).
 
-\- The 28 Jul 2026 fleet / interplant workbook changes (new trucks, driver
+\\- ✅ UNFROZEN 29 Jul 2026 — the 28 Jul fleet / interplant workbook changes.
 
-&#x20; reassignments, A1/A2 primary move, interplant rates) — build ON HOLD until
+Mr. Teh answered all twenty R3 questions that day (CLIENT_ANSWERS.md), which
 
-&#x20; Mr. Teh answers the R3 §A questions (per the owner, 28 Jul).
+was the stated condition. The fleet update shipped in PR #37; interplant pay is
+
+built behind `FEATURE_INTERPLANT`.
+
+\- ⚠ STILL FROZEN, and it is NOT the whole feature: whether an interplant round
+
+trip is ONE booking with two legs or TWO bookings paid once between them.
+
+Nothing in the code detects a round trip, so a one-way leg pays a full point
+
+and the two-booking shape pays twice. `FEATURE_INTERPLANT` must stay OFF until
+
+Mr. Teh answers. What a SWAPPED-IN lorry earns on a plant run is also
+
+unpublished — only PLX 2406 and PPE 2406 have interplant rates.
 
 \- Prisma schema changes and database migrations.
 
