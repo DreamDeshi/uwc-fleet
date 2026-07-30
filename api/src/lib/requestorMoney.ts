@@ -41,14 +41,38 @@ export const REQUESTOR_HIDDEN_MONEY_FIELDS: ReadonlySet<string> = new Set([
   "entitled_claim_offpeak",
   "daily_deduction_points",
   "deduction_applied",
-  // Truck (`truck: true` returns the full row) — the rate card itself.
+  // Trip: the APPROVAL story. `incentive_override_reason` is required whenever
+  // the approved figure differs from the proposal (POD-approval gate, 16 Jul
+  // 2026), so it is free-text disciplinary judgement — "driver damaged pallet,
+  // pay reduced" — sitting in the same payload as driver.name and driver.phone.
+  // Redacting the amount and leaving the reason for it was the wrong half.
+  // `incentive_approved_by` also hands an internal admin user id outward.
+  "incentive_override_reason",
+  "incentive_approved_at",
+  "incentive_approved_by",
+  // Trip: the tier that paid. Combined with was_repeat below it reconstructs
+  // the scoring shape of every drop.
+  "off_peak",
+  // Truck (`truck: true` returns the full row) — the rate card itself, in both
+  // its current and its STAGED form. The pending_* columns carry a rate edit
+  // that takes effect next MYT day (Mr. Teh, 3 Jul 2026): on the day an edit is
+  // staged they are the only place the new figure lives, so omitting them would
+  // have leaked forward-looking commercial pricing — strictly worse than the
+  // historical amount this function exists to hide.
+  "pending_claim_weekday",
+  "pending_claim_offpeak",
+  "pending_deduction_points",
+  "pending_rates_effective",
   // interplant_* do not exist on main yet; they arrive with the interplant pay
   // branch, and naming them now means that merge cannot silently re-open this.
   "interplant_claim_weekday",
   "interplant_claim_offpeak",
-  // TripStop: per-stop scoring.
+  // TripStop: per-stop scoring, and the finalize-time evidence written beside
+  // it. `was_repeat` plus `zone_code` reconstructs full-points-vs-flat-1 for
+  // every drop, which is the scoring rule itself.
   "points_awarded",
   "zone_points",
+  "was_repeat",
 ]);
 
 /** A value we should walk into: a plain object or array, never a Date/Decimal. */

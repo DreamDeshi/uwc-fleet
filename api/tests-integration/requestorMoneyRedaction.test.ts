@@ -123,4 +123,88 @@ describe("requestors never receive driver pay", () => {
     expect(one.driver.name).toBeTruthy();      // who is bringing it — legitimate
     expect(one.stops[0].consignee).toBeTruthy(); // where it is going — legitimate
   });
+  /**
+   * FAIL-CLOSED COVERAGE.
+   *
+   * Every other case here derives its oracle from REQUESTOR_HIDDEN_MONEY_FIELDS,
+   * which makes them tautologies over my own constant: they prove "the names I
+   * chose to strip are stripped". Reverting the middleware turns them red — but
+   * ADDING a money column to Trip, Truck or TripStop, or merging the interplant
+   * branch with a differently-named column, leaves them green forever. The
+   * commit message's claim that naming interplant_* now "means that merge cannot
+   * silently re-open this" is not enforced by an implementation-derived oracle;
+   * it is enforced only by whoever remembers to edit the set.
+   *
+   * So this case inverts the direction: it reads the SCHEMA, and every scalar a
+   * requestor receives must be on an explicit allow-list. A new column is
+   * unknown, therefore refused, and the person adding it has to decide.
+   */
+  it("fail-closed: every scalar a requestor receives is explicitly allowed", async () => {
+    // Deliberately hand-written, one line per field, so widening it is a
+    // conscious act that shows up in review — never a wildcard.
+    const ALLOWED: Record<string, Set<string>> = {
+      Trip: new Set([
+        "id", "ticket_number", "status", "requestor_id", "driver_id", "truck_id",
+        "route_type_id", "pickup_datetime", "created_at", "updated_at",
+        "notes", "remarks", "is_external", "forwarder_name", "cancelled_at",
+        "cancel_reason", "abort_reason", "aborted_at", "started_at", "completed_at",
+        "client_request_id", "auto_dispatch_failed", "auto_dispatch_note",
+        "auto_dispatch_paused", "pickup_consignee_id", "open_exception_id",
+        "delivery_confirmed_at", "rejected_at", "rejection_reason",
+        "tracking_token", "unassigned_at", "assigned_at", "pod_approved_at",
+        // Operational, not money: which lorry is coming, and whether the
+        // "still pending" nudge has already gone out.
+        "truck_plate", "pending_alert_sent",
+      ]),
+      Truck: new Set([
+        "id", "plate", "type", "max_pallets", "created_at", "updated_at",
+        "retired_at", "status", "driver_id", "assigned_driver_id",
+        "road_tax_expiry", "insurance_expiry", "permit_expiry", "puspakom_expiry",
+        "odometer_km", "plate_number", "model", "capacity_kg", "notes",
+        // Scheduling attributes, not pricing.
+        "operating_hours_start", "operating_hours_end", "is_available",
+      ]),
+      TripStop: new Set([
+        "id", "trip_id", "consignee_id", "sequence", "status", "arrived_at",
+        "delivered_at", "pod_photo", "pod_public_id", "pod_uploaded_at",
+        "pod_captured_client_at", "k2_photo", "k2_public_id", "k2_form_ack",
+        "do_uploaded", "created_at", "updated_at", "notes", "zone_code",
+        "delivery_note", "failed_at",
+      ]),
+    };
+
+    const one = (await api().get(`/api/v1/trips/${tripId}`).set(auth(requestor))).body;
+    const seen: Record<string, Set<string>> = {
+      Trip: new Set(Object.keys(one)),
+      Truck: new Set(Object.keys(one.truck ?? {})),
+      TripStop: new Set(Object.keys(one.stops?.[0] ?? {})),
+    };
+
+    const unexpected: string[] = [];
+    for (const model of ["Trip", "Truck", "TripStop"]) {
+      for (const field of seen[model]) {
+        // Relations are objects/arrays, not scalars — they carry their own rules
+        // and are covered by the nested assertions above.
+        const value = model === "Trip" ? one[field]
+          : model === "Truck" ? one.truck[field]
+          : one.stops[0][field];
+        if (value !== null && typeof value === "object") continue;
+        if (!ALLOWED[model].has(field)) unexpected.push(`${model}.${field}`);
+      }
+    }
+
+    expect(
+      unexpected,
+      [
+        "",
+        "A requestor is receiving field(s) nobody has classified:",
+        ...unexpected.map((f) => `  ${f}`),
+        "",
+        "If it is money or rate data, add it to REQUESTOR_HIDDEN_MONEY_FIELDS.",
+        "If a requestor legitimately needs it, add it to ALLOWED in this test.",
+        "",
+      ].join("\n")
+    ).toEqual([]);
+  });
+
 });

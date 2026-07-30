@@ -8,6 +8,7 @@ import usersRoutes from "./routes/users";
 import meRoutes from "./routes/me";
 import tripsRoutes from "./routes/trips";
 import exceptionsRoutes from "./routes/exceptions";
+import { redactRequestorMoney } from "./lib/requestorMoney";
 import metaRoutes from "./routes/meta";
 import consigneesRoutes from "./routes/consignees";
 import incentivesRoutes from "./routes/incentives";
@@ -78,6 +79,26 @@ app.use("/api/v1/auth", authRoutes);
 // handler (any authenticated user) before the admin-only users router.
 app.use("/api/v1/users", meRoutes);
 app.use("/api/v1/users", usersRoutes);
+// Driver pay is not requestor-visible — one choke point for the WHOLE /trips
+// prefix, ahead of both routers mounted on it.
+//
+// It lives here rather than inside tripsRoutes because exceptionsRoutes shares
+// this prefix: a wrapper installed in one router looks like it covers the path
+// and does not. The argument for a choke point is "anything added later is
+// covered without anyone remembering", and a router-local wrapper quietly fails
+// that on its own URL.
+//
+// The role is read when res.json is CALLED, not when this middleware runs:
+// requireAuth lives inside each router, so req.user does not exist yet at
+// registration time. Registered before the routers, so it is the LAST transform
+// applied (each wrapper captures the res.json it finds) — nothing downstream,
+// including the POD-signing wrapper, can put an amount back.
+app.use("/api/v1/trips", (req, res, next) => {
+  const json = res.json.bind(res);
+  res.json = (body: unknown) =>
+    req.user?.role === "requestor" ? json(redactRequestorMoney(body)) : json(body);
+  next();
+});
 app.use("/api/v1/trips", tripsRoutes);
 // Failed-delivery / exception workflow (Phase 1, feature-flagged off by default).
 // Mounted on the same /trips prefix; its paths (/:id/exception*) don't collide
