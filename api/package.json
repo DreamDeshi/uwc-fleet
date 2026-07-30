@@ -12,6 +12,7 @@
     "gen:spec": "node scripts/gen-spec.mjs",
     "start": "node dist/index.js",
     "migrate:deploy": "prisma migrate deploy",
+    "check:migrations": "tsx scripts/check-migrations.ts",
     "seed": "tsx prisma/seed.ts",
     "seed:test": "tsx prisma/seed-test.ts",
     "seed:map-fixture": "tsx prisma/seed-map-fixture.ts",

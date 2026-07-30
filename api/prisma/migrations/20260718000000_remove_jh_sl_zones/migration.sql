@@ -22,6 +22,13 @@
 -- violation) rather than silently orphaning or skipping it. That is intended —
 -- a real JH/SL consignee is a surprise we want the deploy to surface, not hide.
 
+-- DESTRUCTIVE-OK: JH/SL were 8-point placeholders never in the INTERNAL LORRY
+-- RATE sheet; Mr. Teh confirmed on 16 Jul 2026 they will not be used. Deleting
+-- their rate rows removes no points any real booking could have scored, and a
+-- database that never had them matches zero rows.
 DELETE FROM "DestinationRate" WHERE "zone_code" IN ('JH', 'SL');
 
+-- DESTRUCTIVE-OK: the JH/SL Zone rows themselves, after their dependent rate
+-- rows above. Intentionally NOT force-guarded — a Consignee sitting in either
+-- zone makes this fail loudly on the FK rather than being silently orphaned.
 DELETE FROM "Zone" WHERE "code" IN ('JH', 'SL');

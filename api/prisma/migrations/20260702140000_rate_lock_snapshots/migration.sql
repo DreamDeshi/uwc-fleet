@@ -14,6 +14,9 @@ ALTER TABLE "TripStop" ADD COLUMN     "zone_points" INTEGER;
 -- the CURRENT live values — the best available stand-in for their assignment-
 -- time rates. Completed trips keep their stored incentive_earned and need no
 -- snapshot; pending trips are snapshotted when they are assigned.
+-- DESTRUCTIVE-OK: fills the three snapshot columns ADDED by this same migration
+-- above, so every target value is NULL when this runs — no existing pay figure
+-- is overwritten, and completed trips are excluded by the status filter.
 UPDATE "Trip" AS t
 SET "entitled_claim_weekday" = tr."entitled_claim_weekday",
     "entitled_claim_offpeak" = tr."entitled_claim_offpeak",
@@ -22,6 +25,8 @@ FROM "Truck" AS tr
 WHERE t."truck_plate" = tr."plate"
   AND t."status" IN ('assigned', 'in_progress');
 
+-- DESTRUCTIVE-OK: same shape as above — fills TripStop.zone_points, the column
+-- added by this migration, which is NULL on every row until this statement runs.
 UPDATE "TripStop" AS s
 SET "zone_points" = dr."points"
 FROM "Trip" AS t,
