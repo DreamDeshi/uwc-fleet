@@ -20,8 +20,13 @@ name: CI
 on:
   push:
     branches: [main]
+  # Deliberately NOT scoped to `branches: [main]`. A stacked pull request — one
+  # whose base is another feature branch — got no CI at all under that filter,
+  # and stayed uncovered until its parent merged and it retargeted. Branch
+  # protection still blocked the eventual merge, so nothing unchecked could
+  # reach main, but "the gate will catch it later" is not the same as knowing
+  # now: the whole point of CI on a PR is feedback while the work is open.
   pull_request:
-    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
