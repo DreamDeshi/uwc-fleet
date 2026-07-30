@@ -504,13 +504,21 @@ describe("failed-delivery pay (R3 Q11a) — through Postgres", () => {
       return exId;
     }
 
+    // ⚠ ORDER: REJECT FIRST, THEN SETTLE. A stop is only vetoed once BOTH exist,
+    // and on a single-stop trip settling is what finalizes it — so approving
+    // first leaves nothing in_progress to reject against and the report route
+    // returns TRIP_NOT_IN_PROGRESS. (CI caught exactly that; it is the third
+    // time this session a single-stop trip finalizing mid-sequence has broken a
+    // test, so: do the thing that keeps the trip open last.)
+    // `failStopAndResolve` performs the arrival itself and asserts 200, so
+    // nothing above it may arrive at the same stop.
+
     it("reaches pending_approval with a ZERO proposal, so the driver is not stranded", async () => {
       const t = await startedTrip(["A2"]);
       const [ipoh] = t.stops;
 
-      // Approve one report, then reject a sibling on the same stop → vetoed.
-      await failStopAndResolve(t.id, ipoh.id);
-      await reportAndRejectAt(t.id, ipoh.id);
+      await reportAndRejectAt(t.id, ipoh.id); // the veto
+      await failStopAndResolve(t.id, ipoh.id); // the approval — finalizes here
 
       const trip = await freshTrip(t.id);
       expect(trip.status).toBe("pending_approval"); // NOT in_progress
@@ -525,8 +533,8 @@ describe("failed-delivery pay (R3 Q11a) — through Postgres", () => {
       // the only fix is a hand-written DB update.
       const t = await startedTrip(["A2"]);
       const [ipoh] = t.stops;
-      await failStopAndResolve(t.id, ipoh.id);
       await reportAndRejectAt(t.id, ipoh.id);
+      await failStopAndResolve(t.id, ipoh.id);
       expect((await freshTrip(t.id)).status).toBe("pending_approval");
 
       const approved = await api()
@@ -546,8 +554,8 @@ describe("failed-delivery pay (R3 Q11a) — through Postgres", () => {
       // path), so this is a regression guard, not a discriminator.
       const t = await startedTrip(["A2", "K1"]);
       const [ipoh, kulim] = t.stops;
-      await failStopAndResolve(t.id, ipoh.id);
       await reportAndRejectAt(t.id, ipoh.id);
+      await failStopAndResolve(t.id, ipoh.id);
       await deliverStop(t.id, kulim.id);
 
       const trip = await freshTrip(t.id);
