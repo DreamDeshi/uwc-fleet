@@ -60,6 +60,7 @@ import { SETTLED_UNDELIVERED_WHERE, isStopSettled, hasOpenException, ADJUDICATED
 import { sha256Hex } from "../lib/exceptionFingerprint";
 import { changeRequestsEnabled } from "../lib/featureFlags";
 import { TRIP_INCLUDE } from "../lib/tripInclude";
+import { redactRequestorMoney } from "../lib/requestorMoney";
 import { proposeDeliveredStopsIncentive } from "../services/tripFinalize";
 import { effectiveTruckRates, effectiveZonePoints } from "../services/pendingRates";
 import { truckExpiryIssues } from "../services/truckEligibility";
@@ -124,6 +125,21 @@ import { estimateOperatingWindow, formatMinutesToHm } from "../services/operatin
 // ──────────────────────────────────────────────────────────────────────────
 const router = Router();
 router.use(requireAuth);
+
+// Driver pay is not requestor-visible. Same choke-point discipline as the POD
+// signing below, and for the same reason: this router has two dozen endpoints
+// that return a trip, so redacting at call sites would guarantee one is missed.
+//
+// Registered BEFORE the POD wrapper on purpose. Each wrapper captures the
+// res.json it finds and installs its own, so the LAST registered runs FIRST —
+// making this the final transform before serialization. Nothing downstream can
+// put an amount back.
+router.use((req, res, next) => {
+  if (req.user?.role !== "requestor") return next();
+  const json = res.json.bind(res);
+  res.json = (body: unknown) => json(redactRequestorMoney(body));
+  next();
+});
 
 // POD photos are private (authenticated Cloudinary assets). This wraps res.json
 // so EVERY trip payload leaving this router serves POD photos as freshly-signed,
