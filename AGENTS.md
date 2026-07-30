@@ -292,6 +292,50 @@ KNOWN UNCOVERED — the guard does not see these, so they remain your judgement:
 
 
 
+\#### Prove every guard by breaking the thing it guards
+
+
+
+A guard that has never gone red is not a guard, it is a decoration. Before you
+
+rely on one — a CI check, a lint rule, an assertion, a schema constraint —
+
+REINTRODUCE THE BUG IT EXISTS FOR and confirm it fails. Then undo that.
+
+
+
+This is not hypothetical. The e2e selector-drift guard was written after the
+
+driver suite sat red for a week because a redesign renamed every label it
+
+clicked. The first version checked that each selector matched a string in
+
+`en.json` — and it PASSED the broken selectors, because `driver.todaysAssignments`
+
+("Assignments") and `driver.viewNavigation` ("View Navigation") were still sitting
+
+in all three locale files after the code that rendered them was deleted. It would
+
+have shipped green and guarded nothing. Putting the two old selectors back was
+
+what exposed it; the fix was to match only copy whose key is REFERENCED in
+
+`mobile/src`.
+
+
+
+The same rule caught tests that could not fail: a `not.toBeVisible()` assertion
+
+against `"Trip Completed!"`, a dead key that can never render, so it passed no
+
+matter what the app did. Ask of any test or guard: WOULD THIS GO RED IF THE
+
+THING IT PROTECTS WERE REVERTED? If you cannot say yes from having watched it,
+
+you do not know.
+
+
+
 When a task touches frozen work, explain the missing decision and stop.
 
 
