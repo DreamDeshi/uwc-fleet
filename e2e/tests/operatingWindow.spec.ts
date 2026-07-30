@@ -28,7 +28,19 @@ function windowExcludingNow(): { start: string; end: string } {
   return { start: pad(mytHour + 3), end: pad(mytHour + 4) };
 }
 
-const RUN_WIDE_WINDOW = { start: "00:00", end: "23:59" };
+/**
+ * Mirrors setup.ts's alwaysOpenWindow — a wrapping window that began an hour
+ * ago, so every pickup lands in windowEndInstant's roll-forward branch with
+ * ~23 hours of completion slack. See the long note there; a fixed wall-clock
+ * end cannot give that guarantee at every hour.
+ */
+function runWideWindow(): { start: string; end: string } {
+  const mytMinutes = Math.floor((Date.now() + 8 * 60 * 60 * 1000) / 60000) % 1440;
+  const start = (mytMinutes - 60 + 1440) % 1440;
+  const end = (start - 1 + 1440) % 1440;
+  const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  return { start: hhmm(start), end: hhmm(end) };
+}
 
 test.describe("operating window", () => {
   test.beforeEach(async () => {
@@ -67,7 +79,7 @@ test.describe("operating window", () => {
     } finally {
       // Hand the run-wide window back even if the assertions blew up, or every
       // later spec inherits a one-hour truck.
-      await setTruckWindow(admin.accessToken, driver.plate, RUN_WIDE_WINDOW).catch(() => {});
+      await setTruckWindow(admin.accessToken, driver.plate, runWideWindow()).catch(() => {});
     }
   });
 
@@ -79,7 +91,7 @@ test.describe("operating window", () => {
     const requestor = await login(REQUESTOR);
     const driver = await driverIdentity(DRIVER);
 
-    await setTruckWindow(admin.accessToken, driver.plate, RUN_WIDE_WINDOW);
+    await setTruckWindow(admin.accessToken, driver.plate, runWideWindow());
     const trip = await seedPendingTripToday(requestor.accessToken);
 
     const assigned = await approveTrip(admin.accessToken, trip.id, {

@@ -59,6 +59,35 @@ async function normaliseLanguages(): Promise<void> {
  * operatingWindow.spec.ts, which narrows a truck deliberately and asserts the
  * 409 — cover the rule had none of before.
  */
+/**
+ * A window that is open all day AND leaves a full day of completion slack.
+ *
+ * Getting here took two wrong answers, both caught by measuring:
+ *
+ *   00:00-23:59 — covers every minute (isWithinWindow says so), but the window
+ *     also bounds the estimated COMPLETION against an ABSOLUTE end instant. A
+ *     run picked up late in the MYT day finishes after 23:59 and is refused.
+ *     CI: "Est. completion 01:05 is past the 23:59 operating window."
+ *   00:01-00:00 — wraps, so it covers every minute too, but the end instant is
+ *     still the next 00:00. A 23:00 pickup gets one hour of slack.
+ *
+ * A fixed wall-clock end can always be minutes away from a late pickup, so the
+ * end has to be positioned relative to the run. windowEndInstant rolls to the
+ * NEXT day when the window wraps and the pickup is at or after the start — so a
+ * wrapping window that began an HOUR AGO puts every pickup (the seed books five
+ * minutes back, well inside PICKUP_GRACE_MS) in that roll-forward branch, ~23
+ * hours from its end.
+ *
+ * end = start - 1 minute keeps it wrapping, which is what makes it all-day.
+ */
+function alwaysOpenWindow(now: Date): { start: string; end: string } {
+  const mytMinutes = Math.floor((now.getTime() + 8 * 60 * 60 * 1000) / 60000) % 1440;
+  const start = (mytMinutes - 60 + 1440) % 1440;
+  const end = (start - 1 + 1440) % 1440;
+  const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  return { start: hhmm(start), end: hhmm(end) };
+}
+
 async function widenFixtureTruckWindow(): Promise<void> {
   try {
     const { accessToken } = await login(ADMIN);
@@ -66,9 +95,12 @@ async function widenFixtureTruckWindow(): Promise<void> {
     const before = await getTruckWindow(accessToken, plate);
     mkdirSync(dirname(TRUCK_WINDOW_STATE_FILE), { recursive: true });
     writeFileSync(TRUCK_WINDOW_STATE_FILE, JSON.stringify({ plate, ...before }));
-    await setTruckWindow(accessToken, plate, { start: "00:00", end: "23:59" });
+    const open = alwaysOpenWindow(new Date());
+    await setTruckWindow(accessToken, plate, open);
     // eslint-disable-next-line no-console
-    console.log(`setup: ${plate} window ${before.start}-${before.end} -> 00:00-23:59 for this run`);
+    console.log(
+      `setup: ${plate} window ${before.start}-${before.end} -> ${open.start}-${open.end} (always open) for this run`
+    );
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn(

@@ -10,6 +10,7 @@
 // the API secret, so URLs can't be forged; they're only ever produced inside
 // trip payloads, already role-scoped (admin / owner-requestor / assigned-driver).
 import { cloudinary } from "./cloudinary";
+import { uploadStubEnabled } from "./uploadStub";
 
 // Optional expiry via Cloudinary token-based auth (an account add-on). When
 // CLOUDINARY_POD_TOKEN_KEY is set we mint time-limited tokens; otherwise
@@ -27,6 +28,15 @@ export function signedAssetUrl(
   publicId: string,
   opts: { resourceType?: string; format?: string } = {}
 ): string {
+  // Stubbed uploads produce stubbed ids, and signing one needs a configured
+  // Cloudinary — so without this every trip payload carrying a stubbed asset
+  // 500s on READ, not on upload. CI showed exactly that: the POD upload failed
+  // and then GET /trips failed for the whole suite. Same guard as the upload
+  // side: impossible in production (see uploadStubEnabled).
+  if (uploadStubEnabled()) {
+    const q = opts.format ? `.${opts.format}` : "";
+    return `https://res.cloudinary.stub/signed/${publicId}${q}?s--stub--`;
+  }
   const resource_type = opts.resourceType || "image";
   const base: Record<string, unknown> = { type: "authenticated", resource_type, secure: true };
   if (opts.format && resource_type !== "raw") base.format = opts.format;

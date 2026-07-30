@@ -1,4 +1,5 @@
 import { v2 as cloudinary } from "cloudinary";
+import { uploadStubEnabled } from "./uploadStub";
 
 // Configured from .env (CLOUDINARY_CLOUD_NAME / _API_KEY / _API_SECRET).
 // These are set on Railway in production. If they're missing the upload helper
@@ -9,6 +10,8 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
   secure: true,
 });
+
+export { uploadStubEnabled };
 
 export function isCloudinaryConfigured(): boolean {
   return Boolean(
@@ -40,25 +43,6 @@ export interface UploadResult {
  * hole for POD photos. Returns both the url and the public_id so the caller can
  * store the id and sign on read.
  */
-/**
- * TEST-ONLY upload stub, for the CI browser suite.
- *
- * The e2e suite uploads for real — resetState pushes a POD photo to close out a
- * stop, and the exception flow posts evidence — but a CI runner has no
- * Cloudinary credentials, and giving it real ones would write junk into the
- * live asset account on every push. With no credentials uploadBuffer rejects,
- * so every one of those paths fails.
- *
- * Enabling this is deliberately hard to do by accident and IMPOSSIBLE in
- * production: the flag must be exactly "true" AND NODE_ENV must not be
- * "production". If it ever did switch on in production, PODs would silently
- * stop being stored — proof of delivery is the evidence a payment dispute turns
- * on — so the environment check is not a nicety.
- */
-export function uploadStubEnabled(): boolean {
-  return process.env.E2E_STUB_UPLOADS === "true" && process.env.NODE_ENV !== "production";
-}
-
 let stubWarned = false;
 
 export function uploadBuffer(

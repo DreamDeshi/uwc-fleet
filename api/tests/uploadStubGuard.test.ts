@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { uploadStubEnabled } from "../src/lib/cloudinary";
+import { uploadStubEnabled } from "../src/lib/uploadStub";
 
 /**
  * The upload stub exists so the CI browser suite can exercise POD and exception
