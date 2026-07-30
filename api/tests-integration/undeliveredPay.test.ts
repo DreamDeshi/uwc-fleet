@@ -480,4 +480,80 @@ describe("failed-delivery pay (R3 Q11a) — through Postgres", () => {
       expect(num(trip.incentive_earned)).toBe(await expectedRm(t.id, 6)); // Ipoh pays in full
     });
   });
+  describe("an ALL-VETOED trip finalizes at RM0 instead of hanging", () => {
+    // Before this, `finalizeIfNothingOutstanding` returned false when nothing
+    // was outstanding AND nothing earning, leaving the trip `in_progress`
+    // forever: no open exception so nothing alerts, the driver locked out by the
+    // one-active guard, and the only exit an Abort that lands in `cancelled`
+    // with a null incentive — where assertIncentiveApprovable refuses, so the
+    // amount edit (the ONLY correction route for a bad reject) is unreachable.
+    //
+    // DISCRIMINATION: both cases below FAIL on main — there the trip stays
+    // `in_progress` and `incentive_earned` stays null.
+
+    /** Report on an already-arrived stop and reject it. */
+    async function reportAndRejectAt(tripId: string, stopId: string) {
+      const reported = await reportReq(tripId, stopId);
+      expect(reported.status, JSON.stringify(reported.body)).toBe(201);
+      const exId = reported.body.exception.id as string;
+      const rejected = await api()
+        .post(`/api/v1/trips/${tripId}/exception/${exId}/reject`)
+        .set(auth(admin))
+        .send({ client_action_id: randomUUID(), note: "not genuine" });
+      expect(rejected.status, JSON.stringify(rejected.body)).toBe(200);
+      return exId;
+    }
+
+    it("reaches pending_approval with a ZERO proposal, so the driver is not stranded", async () => {
+      const t = await startedTrip(["A2"]);
+      const [ipoh] = t.stops;
+
+      // Approve one report, then reject a sibling on the same stop → vetoed.
+      await failStopAndResolve(t.id, ipoh.id);
+      await reportAndRejectAt(t.id, ipoh.id);
+
+      const trip = await freshTrip(t.id);
+      expect(trip.status).toBe("pending_approval"); // NOT in_progress
+      expect(num(trip.incentive_earned)).toBe(0); // RM0 is the right amount
+      // Nothing was scored — the veto held.
+      expect((await prisma.tripStop.findUniqueOrThrow({ where: { id: ipoh.id } })).points_awarded).toBeNull();
+    });
+
+    it("...and the admin can now EDIT THE AMOUNT UP — the correction route a bad reject needs", async () => {
+      // The point of routing here rather than to `cancelled`. On main this trip
+      // never reaches pending_approval, so assertIncentiveApprovable throws and
+      // the only fix is a hand-written DB update.
+      const t = await startedTrip(["A2"]);
+      const [ipoh] = t.stops;
+      await failStopAndResolve(t.id, ipoh.id);
+      await reportAndRejectAt(t.id, ipoh.id);
+      expect((await freshTrip(t.id)).status).toBe("pending_approval");
+
+      const approved = await api()
+        .patch(`/api/v1/trips/${t.id}/approve-incentive`)
+        .set(auth(admin))
+        .send({ final_amount: 44, reason: "reject was mistaken — genuine failed delivery" });
+      expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+
+      const paid = await freshTrip(t.id);
+      expect(paid.status).toBe("completed");
+      expect(num(paid.incentive_final)).toBe(44);
+    });
+
+    it("a MIXED trip still pays the stops that earned", async () => {
+      // Guard against over-applying the change: one vetoed stop must not zero a
+      // sibling's pay. Passes on main too (main finalizes via the delivered
+      // path), so this is a regression guard, not a discriminator.
+      const t = await startedTrip(["A2", "K1"]);
+      const [ipoh, kulim] = t.stops;
+      await failStopAndResolve(t.id, ipoh.id);
+      await reportAndRejectAt(t.id, ipoh.id);
+      await deliverStop(t.id, kulim.id);
+
+      const trip = await freshTrip(t.id);
+      expect(trip.status).toBe("pending_approval");
+      expect(num(trip.incentive_earned)).toBe(await expectedRm(t.id, 3)); // Kulim only
+    });
+  });
+
 });

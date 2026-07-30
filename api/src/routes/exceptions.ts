@@ -361,21 +361,44 @@ async function finalizeIfNothingOutstanding(
   });
   if (remainingStops > 0) return false;
 
-  // Nothing left to deliver. If NOTHING earned either (e.g. the exception was
-  // rejected, or resumed without a verify), there is no incentive to propose —
-  // leave the trip alone for the admin to abort, which is the existing unpaid
-  // path. Only a trip with at least one earning stop finalizes here.
+  // Nothing left to deliver. FINALIZE EVEN IF NOTHING EARNED.
+  //
+  // This used to `return false` when the earning count was zero, on the reasoning
+  // that there is no incentive to propose so the admin should abort instead. That
+  // branch was DEAD CODE until the reject veto: while ADJUDICATED === SETTLED,
+  // "nothing outstanding" implied "everything earned". The veto made it live, and
+  // live it is a trap — an ALL-VETOED trip has nothing outstanding and nothing
+  // earning, so the trip sat `in_progress` indefinitely:
+  //
+  //   • nothing surfaces it. No exception is open, so no alert fires, and the
+  //     3am sweep only touches `pending`. It hangs silently.
+  //   • the driver is locked out of every other trip by the one-active guard and
+  //     the truck's capacity stays held — a driver bearing the cost of an office
+  //     decision, with no signal to anyone that intervention is needed.
+  //   • the only exit was an admin Abort, which lands the trip in `cancelled`
+  //     with a null incentive and therefore NO `pending_approval` — so
+  //     assertIncentiveApprovable refuses, and the amount edit, which is the ONLY
+  //     correction route for a bad reject, is unreachable. Correcting it meant a
+  //     hand-written DB update.
+  //
+  // Finalizing to `pending_approval` with a ZERO proposal fixes all three. RM0 is
+  // the correct amount — every stop was rejected — and it is now an AUDITED zero
+  // the admin confirms, on a screen where they can edit it upward if the veto was
+  // wrong. proposeDeliveredStopsIncentive handles the empty candidate set
+  // naturally: no groups, so the accumulator stays at 0.
   const earning = await tx.tripStop.count({
     where: { trip_id: tripId, OR: [{ status: "delivered" }, SETTLED_UNDELIVERED_WHERE] },
   });
-  if (earning === 0) return false;
 
   const proposed = await proposeDeliveredStopsIncentive(tx, trip, trip.driver_id);
   if (proposed === null) return false; // CAS lost — someone else finalized it
   await tx.auditLog.create({
     data: {
       user_id: actorId,
-      action: `trip.settled_pending_approval — no stops outstanding after the exception closed (RM${proposed} proposed)`,
+      action:
+        earning === 0
+          ? `trip.settled_pending_approval — every stop adjudicated, NONE earning (RM0 proposed; admin may edit at approval)`
+          : `trip.settled_pending_approval — no stops outstanding after the exception closed (RM${proposed} proposed)`,
       table_name: "Trip",
       record_id: tripId,
     },
