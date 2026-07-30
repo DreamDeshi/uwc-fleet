@@ -25,6 +25,10 @@ export const TRANSACTIONAL_TABLES = [
   "ExceptionEvidence",
   "ExceptionAction",
   "TripException",
+  // Change requests are per-trip proposals — they must clear with the trips
+  // they belong to, or a leftover pending row trips the one-pending-per-trip
+  // partial unique index in the NEXT test.
+  "TripChangeRequest",
   "TripStatusHistory",
   "LocationLog",
   "TripDocument",

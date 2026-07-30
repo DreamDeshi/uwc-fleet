@@ -57,6 +57,8 @@ import {
 import { leaveDateFilter } from "../services/driverLeave";
 import { priorDeliveredDropsWhere } from "../services/dayLedger";
 import { SETTLED_UNDELIVERED_WHERE, isStopSettled, hasOpenException } from "../services/undeliveredPay";
+import { sha256Hex } from "../lib/exceptionFingerprint";
+import { changeRequestsEnabled } from "../lib/featureFlags";
 import { TRIP_INCLUDE } from "../lib/tripInclude";
 import { proposeDeliveredStopsIncentive } from "../services/tripFinalize";
 import { effectiveTruckRates, effectiveZonePoints } from "../services/pendingRates";
@@ -601,6 +603,100 @@ export function summarizeTripChanges(existing: TripEditSnapshot, next: TripEditI
   return changed.length > 0 ? changed.join("; ") : null;
 }
 
+/**
+ * Validate a proposed trip edit against the live booking. Pure of side effects:
+ * it reads reference data and throws, but writes nothing.
+ *
+ * ONE definition, TWO callers, and that is the whole point:
+ *   - PATCH /trips/:id — the requestor editing a still-PENDING booking;
+ *   - the change-request APPROVAL — an admin applying a proposal to an ASSIGNED
+ *     booking (Mr. Teh's A19 flow).
+ *
+ * A stored change-request payload is re-validated through this at APPROVAL time,
+ * not at submission time, so a proposal written before a rule changed can never
+ * bypass the new rule. If these two paths ever validated separately they would
+ * drift, and the drift would show up as an admin approving something a requestor
+ * could not have typed.
+ *
+ * Returns the resolved cargo (submitted lines, or the existing ones when the
+ * client omitted cargo entirely) and the human change summary — `null` summary
+ * means nothing actually changed, which each caller handles its own way.
+ */
+async function validateTripEdit(
+  existing: Prisma.TripGetPayload<{ include: { stops: true; cargo_details: true } }>,
+  input: UpdateTripInput
+): Promise<{ effectiveCargo: TripEditInput["cargo_details"]; changeNote: string | null }> {
+  const { route_type_id, pickup_datetime, stops, cargo_details } = input;
+
+  // Cargo is OPTIONAL: when omitted, preserve the existing cargo unchanged
+  // (resolved from the stored rows). When present, it replaces the cargo — but
+  // only after the deprecated-size guard below.
+  const cargoProvided = cargo_details !== undefined;
+  const existingCargoInput = existing.cargo_details.map((c) => ({
+    pallet_type: c.pallet_type,
+    quantity: c.quantity,
+    cartons: c.cartons ?? undefined,
+    custom_size: c.custom_size ?? undefined,
+    width_ft: c.width_ft ?? undefined,
+    length_ft: c.length_ft ?? undefined,
+    estimated_pallets: c.estimated_pallets ?? undefined,
+    remark: c.remark ?? undefined,
+  }));
+  const effectiveCargo = cargoProvided ? cargo_details! : existingCargoInput;
+
+  // A deprecated footprint (1×1/1×2) may only be preserved/reduced/removed on
+  // an edit — never introduced or increased.
+  if (cargoProvided) {
+    const violations = deprecatedCargoViolations(existing.cargo_details, cargo_details!);
+    if (violations.length > 0) {
+      const sizes = violations.map((v) => v.pallet_type).join(", ");
+      throw new ApiError(
+        400,
+        "DEPRECATED_CARGO_ADDED",
+        `${sizes} is no longer a bookable cargo size and cannot be added or increased. Existing quantities may only be kept or reduced.`
+      );
+    }
+  }
+
+  // Same checks as create, against the NEW values.
+  if (pickup_datetime.getTime() !== existing.pickup_datetime.getTime()) {
+    if (pickup_datetime.getTime() < Date.now() - PICKUP_GRACE_MS) {
+      throw new ApiError(400, "PICKUP_IN_PAST", "Pickup time is in the past.");
+    }
+  }
+  const routeType = await prisma.routeType.findUnique({ where: { id: route_type_id } });
+  if (!routeType) {
+    throw new ApiError(400, "ROUTE_TYPE_NOT_FOUND", "Route type does not exist.");
+  }
+  const consigneeIds = stops.map((s) => s.consignee_id);
+  const foundConsignees = await prisma.consignee.findMany({
+    where: bookableConsigneesWhere(consigneeIds),
+  });
+  if (foundConsignees.length !== new Set(consigneeIds).size) {
+    throw consigneesNotFoundError(stops, foundConsignees);
+  }
+  if (!existing.is_external) {
+    const orderPallets = palletEquivalents(effectiveCargo);
+    const largest = await prisma.truck.aggregate({ _max: { max_pallets: true } });
+    const fleetMax = largest._max.max_pallets;
+    if (fleetMax !== null && orderPallets > fleetMax) {
+      throw new ApiError(
+        400,
+        "CARGO_EXCEEDS_FLEET",
+        `This order is ${orderPallets} pallet-equivalents, but the largest truck holds ${fleetMax}. Split the order or book an external forwarder.`
+      );
+    }
+  }
+
+  const changeNote = summarizeTripChanges(existing, {
+    route_type_id,
+    pickup_datetime,
+    stops,
+    cargo_details: effectiveCargo,
+  });
+  return { effectiveCargo, changeNote };
+}
+
 router.patch(
   "/:id",
   requireRole("requestor"),
@@ -628,73 +724,13 @@ router.patch(
         );
       }
 
-      // Cargo is OPTIONAL on edit: when omitted, preserve the existing cargo
-      // unchanged (resolved from the stored rows). When present, it replaces the
-      // cargo — but only after the deprecated-size guard below.
-      const cargoProvided = cargo_details !== undefined;
-      const existingCargoInput = existing.cargo_details.map((c) => ({
-        pallet_type: c.pallet_type,
-        quantity: c.quantity,
-        cartons: c.cartons ?? undefined,
-        custom_size: c.custom_size ?? undefined,
-        width_ft: c.width_ft ?? undefined,
-        length_ft: c.length_ft ?? undefined,
-        estimated_pallets: c.estimated_pallets ?? undefined,
-        remark: c.remark ?? undefined,
-      }));
-      const effectiveCargo = cargoProvided ? cargo_details! : existingCargoInput;
-
-      // A deprecated footprint (1×1/1×2) may only be preserved/reduced/removed on
-      // an edit — never introduced or increased. Runs AFTER authorization (owner
-      // + pending) and BEFORE any write, comparing normalized aggregates.
-      if (cargoProvided) {
-        const violations = deprecatedCargoViolations(existing.cargo_details, cargo_details!);
-        if (violations.length > 0) {
-          const sizes = violations.map((v) => v.pallet_type).join(", ");
-          throw new ApiError(
-            400,
-            "DEPRECATED_CARGO_ADDED",
-            `${sizes} is no longer a bookable cargo size and cannot be added or increased. Existing quantities may only be kept or reduced.`
-          );
-        }
-      }
-
-      // Same checks as create, against the NEW values.
-      if (pickup_datetime.getTime() !== existing.pickup_datetime.getTime()) {
-        if (pickup_datetime.getTime() < Date.now() - PICKUP_GRACE_MS) {
-          throw new ApiError(400, "PICKUP_IN_PAST", "Pickup time is in the past.");
-        }
-      }
-      const routeType = await prisma.routeType.findUnique({ where: { id: route_type_id } });
-      if (!routeType) {
-        throw new ApiError(400, "ROUTE_TYPE_NOT_FOUND", "Route type does not exist.");
-      }
-      const consigneeIds = stops.map((s) => s.consignee_id);
-      const foundConsignees = await prisma.consignee.findMany({
-        where: bookableConsigneesWhere(consigneeIds),
-      });
-      if (foundConsignees.length !== new Set(consigneeIds).size) {
-        throw consigneesNotFoundError(stops, foundConsignees);
-      }
-      if (!existing.is_external) {
-        const orderPallets = palletEquivalents(effectiveCargo);
-        const largest = await prisma.truck.aggregate({ _max: { max_pallets: true } });
-        const fleetMax = largest._max.max_pallets;
-        if (fleetMax !== null && orderPallets > fleetMax) {
-          throw new ApiError(
-            400,
-            "CARGO_EXCEEDS_FLEET",
-            `This order is ${orderPallets} pallet-equivalents, but the largest truck holds ${fleetMax}. Split the order or book an external forwarder.`
-          );
-        }
-      }
-
-      const changeNote = summarizeTripChanges(existing, {
+      const { effectiveCargo, changeNote } = await validateTripEdit(existing, {
         route_type_id,
         pickup_datetime,
         stops,
-        cargo_details: effectiveCargo,
+        cargo_details,
       });
+      const cargoProvided = cargo_details !== undefined;
       if (changeNote === null) {
         // Nothing changed — don't write, don't audit, don't poke dispatch.
         const unchanged = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
@@ -1839,6 +1875,571 @@ router.patch("/:id/cancel", async (req, res, next) => {
     next(err);
   }
 });
+
+/**
+ * A human, VALUE-BEARING description of what a change request would do.
+ *
+ * summarizeTripChanges returns field NAMES ("consignees; cargo") — right for a
+ * timeline entry beside the booking, useless as an approval gate. The admin
+ * approving this is making a pay decision: Ipoh (6 pts) to Juru & Perai (1 pt)
+ * takes a weekday drop from (6-2)x11 = RM44 to max(1-2,0)x11 = RM0, and both
+ * render as the single word "consignees". Show before -> after.
+ */
+async function describeTripChange(
+  existing: Prisma.TripGetPayload<{ include: { stops: true; cargo_details: true } }>,
+  input: UpdateTripInput
+): Promise<string[]> {
+  const lines: string[] = [];
+
+  if (existing.pickup_datetime.getTime() !== input.pickup_datetime.getTime()) {
+    lines.push(`Pickup: ${existing.pickup_datetime.toISOString()} -> ${input.pickup_datetime.toISOString()}`);
+  }
+
+  const beforeIds = [...existing.stops].sort((a, b) => a.sequence - b.sequence).map((s) => s.consignee_id);
+  const afterIds = input.stops.map((s) => s.consignee_id);
+  if (beforeIds.join("|") !== afterIds.join("|")) {
+    const names = new Map(
+      (await prisma.consignee.findMany({
+        where: { id: { in: [...new Set([...beforeIds, ...afterIds])] } },
+        select: { id: true, company_name: true, zone_code: true },
+      })).map((c) => [c.id, `${c.company_name} (${c.zone_code})`])
+    );
+    lines.push(`Stops: ${beforeIds.map((i) => names.get(i) ?? "?").join(" -> ")}  ==>  ${afterIds.map((i) => names.get(i) ?? "?").join(" -> ")}`);
+  }
+
+  if (input.cargo_details !== undefined) {
+    const line = (c: { pallet_type: string; quantity: number }) => `${c.quantity}x ${c.pallet_type}`;
+    const before = existing.cargo_details.map(line).join(", ");
+    const after = input.cargo_details.map(line).join(", ");
+    if (before !== after) {
+      lines.push(`Cargo: ${before}  ==>  ${after} (${palletEquivalents(existing.cargo_details)} -> ${palletEquivalents(input.cargo_details)} pallet-equivalents)`);
+    }
+  }
+
+  return lines;
+}
+
+/**
+ * A fingerprint of the trip's EDITABLE state — the exact fields a change
+ * request proposes to replace.
+ *
+ * A stored proposal is a full-document overwrite, so it must not be applied to a
+ * booking that moved underneath it. Reachable path without this: requestor
+ * submits a change → admin unassigns → requestor edits the cargo directly (the
+ * trip is `pending` again) → trip re-assigned → admin approves the stale
+ * proposal, silently REVERTING the requestor's own later edit to the cargo
+ * captured at submission, with nothing on screen saying the proposal predates
+ * the booking.
+ *
+ * Deliberately NOT a timestamp: `Trip` has no updated_at, and a hash of the
+ * fields actually being replaced is both cheaper and more precise — a change to
+ * something a request does not touch (driver, truck) correctly does not
+ * invalidate it.
+ */
+function editableTripFingerprint(trip: {
+  route_type_id: string;
+  pickup_datetime: Date;
+  stops: { sequence: number; consignee_id: string }[];
+  cargo_details: { pallet_type: string; quantity: number; cartons: number | null; custom_size: string | null; width_ft: number | null; length_ft: number | null; estimated_pallets: number | null; remark: string | null }[];
+}): string {
+  const stops = [...trip.stops]
+    .sort((a, b) => a.sequence - b.sequence)
+    .map((s) => s.consignee_id)
+    .join("|");
+  const cargo = trip.cargo_details
+    .map((c) => [c.pallet_type, c.quantity, c.cartons ?? "", c.custom_size ?? "", c.width_ft ?? "", c.length_ft ?? "", c.estimated_pallets ?? "", c.remark ?? ""].join(","))
+    .join(";");
+  return sha256Hex(Buffer.from([trip.route_type_id, trip.pickup_datetime.toISOString(), stops, cargo].join("~")));
+}
+
+/**
+ * Feature gate for the four Request Change routes. 404 rather than 403: while
+ * the feature is off it should be invisible, not merely forbidden — the same
+ * discipline the exception router uses.
+ */
+function assertChangeRequestsEnabled(): void {
+  if (!changeRequestsEnabled()) throw new ApiError(404, "NOT_FOUND", "Not found.");
+}
+
+// ── Request Change (Mr. Teh A19, 29 Jul 2026 — DOCUMENT tier) ───────────────
+//
+// > "once a lorry is assigned, the requestor should not be able to directly
+// >  change information that affects auto-dispatch... Instead, the requestor
+// >  can click 'Request Change', and the system sends the change to the
+// >  dispatcher/admin for approval."
+//
+// A change request is a PROPOSAL, never a partial write: nothing on the trip
+// moves until an admin approves, and approval replays the stored payload
+// through validateTripEdit — the SAME validation a requestor's own edit uses.
+//
+// Every field the edit route accepts is on his critical list (delivery
+// location, date/time, pallet quantity/size, customer), so on an ASSIGNED
+// booking this route is the only way to change anything.
+
+/** The trip shape both change-request handlers need. */
+const changeRequestTripInclude = { stops: true, cargo_details: true } as const;
+
+/** Serialised for the admin queue + the requestor's own view. */
+function serializeChangeRequest(cr: {
+  id: string;
+  trip_id: string;
+  requested_by: string;
+  requested_at: Date;
+  payload: unknown;
+  summary: string;
+  status: string;
+  decided_by: string | null;
+  decided_at: Date | null;
+  decision_note: string | null;
+  version: number;
+}) {
+  return {
+    id: cr.id,
+    trip_id: cr.trip_id,
+    requested_by: cr.requested_by,
+    requested_at: cr.requested_at,
+    payload: cr.payload,
+    summary: cr.summary,
+    status: cr.status,
+    decided_by: cr.decided_by,
+    decided_at: cr.decided_at,
+    decision_note: cr.decision_note,
+    version: cr.version,
+  };
+}
+
+// ── POST /trips/:id/change-request — requestor proposes a change ─────────────
+router.post(
+  "/:id/change-request",
+  requireRole("requestor"),
+  validateBody(updateTripSchema),
+  async (req, res, next) => {
+    try {
+      assertChangeRequestsEnabled();
+      const { id } = req.params;
+      const input = req.body as UpdateTripInput;
+
+      const existing = await prisma.trip.findUnique({
+        where: { id },
+        include: changeRequestTripInclude,
+      });
+      if (!existing) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      if (existing.requestor_id !== req.user!.id) {
+        throw new ApiError(403, "FORBIDDEN", "You cannot change this booking.");
+      }
+      // ASSIGNED only. A `pending` booking is still the requestor's to edit
+      // directly (PATCH /trips/:id) — routing that through an approval queue
+      // would be strictly worse for them and is not what he asked for. Anything
+      // in transit or finished is not changeable by anyone (his matrix).
+      if (existing.status !== "assigned") {
+        throw new ApiError(
+          409,
+          "INVALID_STATUS",
+          existing.status === "pending"
+            ? "This booking has no lorry yet — edit it directly instead."
+            : "This booking can no longer be changed. Contact the office."
+        );
+      }
+
+      // Re-validated at approval too; this is the fast feedback so a requestor
+      // never queues a proposal an admin could not possibly approve.
+      const { changeNote } = await validateTripEdit(existing, input);
+      if (changeNote === null) {
+        throw new ApiError(400, "NO_CHANGES", "Nothing was changed in this request.");
+      }
+
+      const created = await prisma.$transaction(async (tx) => {
+        await lockTripRow(tx, id);
+        // Re-read under the lock: a driver may have started the trip between
+        // the check above and here, which would make the proposal meaningless.
+        const t2 = await tx.trip.findUnique({ where: { id }, select: { status: true } });
+        if (!t2 || t2.status !== "assigned") {
+          throw new ApiError(409, "TRIP_STATE_CHANGED", "This booking just changed state. Refresh and try again.");
+        }
+        // A newer proposal REPLACES an undecided older one — the requestor
+        // changed their mind, and two pending rows could otherwise both be
+        // approved into conflicting bookings. The DB partial unique index
+        // (TripChangeRequest_one_pending_per_trip) is the hard guarantee; this
+        // is the explicit, auditable transition.
+        await tx.tripChangeRequest.updateMany({
+          where: { trip_id: id, status: "pending" },
+          data: { status: "superseded", decided_at: new Date() },
+        });
+        return tx.tripChangeRequest.create({
+          data: {
+            trip_id: id,
+            requested_by: req.user!.id,
+            // Stored as the client sent it (post-zod), so approval re-runs the
+            // same shape through the same schema.
+            // The proposal AND the fingerprint of the booking it was written
+            // against, so approval can refuse a stale overwrite.
+            payload: {
+              input,
+              base: editableTripFingerprint(existing),
+              // Value-bearing before -> after, rendered in the admin queue. Kept
+              // with the proposal so it describes the booking as it was when the
+              // requestor wrote it, not as it is at approval time.
+              detail: await describeTripChange(existing, input),
+            } as unknown as Prisma.InputJsonValue,
+            summary: changeNote,
+          },
+        });
+      });
+
+      await tx_notifyAdminsOfChangeRequest(id, changeNote);
+      res.status(201).json({ change_request: serializeChangeRequest(created) });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/** Admins hear immediately — an assigned lorry is time-critical, same reasoning
+ *  as the at-report exception alert. Best-effort; never fails the request. */
+async function tx_notifyAdminsOfChangeRequest(tripId: string, summary: string): Promise<void> {
+  try {
+    const trip = await prisma.trip.findUnique({
+      where: { id: tripId },
+      select: { ticket_number: true, truck_plate: true },
+    });
+    const admins = await prisma.user.findMany({
+      where: { role: "admin", status: "active", expo_push_token: { not: null } },
+      select: { expo_push_token: true },
+    });
+    await sendPushNotifications(admins.map((a) => a.expo_push_token), {
+      title: "Change requested on an assigned booking",
+      body: `${trip?.ticket_number ?? ""}${trip?.truck_plate ? ` (${trip.truck_plate})` : ""} — ${summary}`,
+      data: { type: "change_request", tripId },
+    });
+  } catch (err) {
+    console.error("Change-request admin alert failed:", err);
+  }
+}
+
+// ── GET /trips/change-requests/open — the dispatcher's queue ─────────────────
+// Two segments with a literal second, like /trips/exceptions/open, so it cannot
+// collide with /trips/:id/change-request.
+router.get("/change-requests/open", requireRole("admin"), async (_req, res, next) => {
+  try {
+    assertChangeRequestsEnabled();
+    const rows = await prisma.tripChangeRequest.findMany({
+      where: { status: "pending" },
+      orderBy: { requested_at: "asc" }, // oldest first — longest wait served first
+      include: {
+        trip: {
+          select: {
+            id: true,
+            ticket_number: true,
+            status: true,
+            truck_plate: true,
+            pickup_datetime: true,
+            requestor: { select: { id: true, name: true } },
+            driver: { select: { name: true } },
+          },
+        },
+      },
+    });
+    res.json({
+      change_requests: rows.map((r) => ({
+        ...serializeChangeRequest(r),
+        ticket_number: r.trip.ticket_number,
+        trip_status: r.trip.status,
+        truck_plate: r.trip.truck_plate,
+        pickup_datetime: r.trip.pickup_datetime,
+        requestor_name: r.trip.requestor.name,
+        driver_name: r.trip.driver?.name ?? null,
+        // The value-bearing lines the dispatcher actually decides on.
+        detail: ((r.payload as { detail?: unknown } | null)?.detail as string[] | undefined) ?? [],
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const changeDecisionSchema = z.object({
+  note: z.string().max(2000).optional(),
+  expected_version: z.number().int().min(0).optional(),
+});
+
+// ── POST /trips/:id/change-request/:crId/reject ──────────────────────────────
+router.post(
+  "/:id/change-request/:crId/reject",
+  requireRole("admin"),
+  validateBody(changeDecisionSchema),
+  async (req, res, next) => {
+    try {
+      assertChangeRequestsEnabled();
+      const { id, crId } = req.params;
+      const { note, expected_version } = req.body as { note?: string; expected_version?: number };
+      if (!note || note.trim() === "") {
+        throw new ApiError(400, "NOTE_REQUIRED", "A note is required when rejecting a change request.");
+      }
+      const decided = await prisma.tripChangeRequest.updateMany({
+        where: {
+          id: crId,
+          trip_id: id,
+          status: "pending",
+          ...(expected_version !== undefined ? { version: expected_version } : {}),
+        },
+        data: {
+          status: "rejected",
+          decided_by: req.user!.id,
+          decided_at: new Date(),
+          decision_note: note.trim(),
+          version: { increment: 1 },
+        },
+      });
+      if (decided.count !== 1) {
+        throw new ApiError(409, "CHANGE_REQUEST_STATE_CHANGED", "This change request was already decided. Refresh and try again.");
+      }
+      await prisma.auditLog.create({
+        data: { user_id: req.user!.id, action: `trip.change_request_rejected: ${note.trim()}`, table_name: "TripChangeRequest", record_id: crId },
+      });
+      const fresh = await prisma.tripChangeRequest.findUniqueOrThrow({ where: { id: crId } });
+      res.json({ change_request: serializeChangeRequest(fresh) });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ── POST /trips/:id/change-request/:crId/approve ─────────────────────────────
+//
+// Applies the proposal to an ASSIGNED booking. Three things make this safe:
+//
+//  1. RE-VALIDATION. The stored payload goes back through updateTripSchema and
+//     validateTripEdit, so a proposal written before a rule changed cannot
+//     bypass the new rule, and a consignee deactivated since submission is
+//     caught here rather than written.
+//
+//  2. THE ASSIGNED LORRY MUST STILL FIT (owner ruling, 29 Jul: refuse; never
+//     silently swap a lorry). A change from 6 to 14 pallets on an 8-pallet
+//     truck is refused with the failing guard named, and the admin frees the
+//     lorry first. Auto-unassign was considered and rejected: it changes who is
+//     driving what as a side effect of an approval.
+//
+//  3. ZONE POINTS ARE RE-SNAPSHOTTED. TripStop.zone_points/zone_code are
+//     written at ASSIGNMENT, and finalization scores against that snapshot. The
+//     stops here are deleted and recreated, so without this call the new rows
+//     have NO snapshot at all (verified: zone_code comes back null) and the
+//     per-drop pay evidence is simply missing. The client rule is that the ZONE
+//     supplies the POINTS while the TRUCK supplies the RM-per-point RATE, so
+//     the points must follow the destination — while the truck's rate snapshot
+//     is deliberately NOT touched (rates lock at assignment; approving a change
+//     does not re-price the lorry).
+router.post(
+  "/:id/change-request/:crId/approve",
+  requireRole("admin"),
+  validateBody(changeDecisionSchema),
+  async (req, res, next) => {
+    try {
+      assertChangeRequestsEnabled();
+      const { id, crId } = req.params;
+      const { note, expected_version } = req.body as { note?: string; expected_version?: number };
+
+      const cr = await prisma.tripChangeRequest.findFirst({ where: { id: crId, trip_id: id } });
+      if (!cr) throw new ApiError(404, "CHANGE_REQUEST_NOT_FOUND", "Change request not found.");
+      if (cr.status !== "pending") {
+        throw new ApiError(409, "CHANGE_REQUEST_STATE_CHANGED", "This change request was already decided.");
+      }
+      if (expected_version !== undefined && cr.version !== expected_version) {
+        throw new ApiError(409, "VERSION_CONFLICT", "This change request was updated by someone else. Refresh and try again.");
+      }
+
+      // Re-parse the stored payload through the SAME schema the requestor's
+      // request was validated by. A stored payload is untrusted input.
+      const stored = cr.payload as { input?: unknown; base?: unknown } | null;
+      const parsed = updateTripSchema.safeParse(stored?.input);
+      if (!parsed.success) {
+        throw new ApiError(400, "CHANGE_REQUEST_INVALID", "This change request is no longer valid and cannot be applied. Reject it and ask for a new one.");
+      }
+      const input = parsed.data;
+
+      const updated = await prisma.$transaction(async (tx) => {
+        await lockTripRow(tx, id);
+        const trip = await tx.trip.findUnique({ where: { id }, include: changeRequestTripInclude });
+        if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+        if (trip.status !== "assigned") {
+          throw new ApiError(409, "TRIP_STATE_CHANGED", "This booking is no longer assigned — the change cannot be applied. Reject the request.");
+        }
+
+        // STALENESS. Refuse to apply a proposal written against a different
+        // version of this booking — see editableTripFingerprint.
+        if (typeof stored?.base === "string" && editableTripFingerprint(trip) !== stored.base) {
+          throw new ApiError(
+            409,
+            "CHANGE_REQUEST_STALE",
+            "This booking has changed since the request was sent, so applying it would undo those changes. Reject it and ask for a new request."
+          );
+        }
+
+        const { effectiveCargo, changeNote } = await validateTripEdit(trip, input);
+        if (changeNote === null) {
+          throw new ApiError(400, "NO_CHANGES", "This request no longer changes anything.");
+        }
+
+        // (2a) MOVING THE BOOKING TO A DIFFERENT DAY is refused while a lorry is
+        // assigned. The assign path validates a date against the truck's
+        // capacity FOR THAT DAY, roadworthiness, the scheduling-conflict buffer
+        // and the driver's leave — none of which this route re-runs. Approving a
+        // date change here would put a driver and lorry on a second booking that
+        // day, possibly on a day he is on leave, with no warning. Same shape as
+        // the overload refusal below and the same owner ruling behind it: never
+        // silently change who is driving what.
+        const dayBefore = mytDateKey(trip.pickup_datetime);
+        const dayAfter = mytDateKey(input.pickup_datetime);
+        if (dayBefore !== dayAfter) {
+          throw new ApiError(
+            409,
+            "PICKUP_DAY_CHANGED",
+            `This change moves the booking from ${dayBefore} to ${dayAfter}. Unassign the lorry first, then approve — the booking will be dispatched again for the new day.`
+          );
+        }
+
+        // (2b) The assigned lorry must still fit — using the SAME maths the
+        // manual assign uses, not a bare max_pallets compare. A truck's
+        // capacity is what is left after its other committed load that day
+        // (in_progress cargo is physically aboard; other assigned trips occupy
+        // it on their own pickup day). Comparing against max_pallets alone let
+        // an approval push 27 pallet-equivalents onto a 14-pallet lorry.
+        if (trip.truck_plate && !trip.is_external) {
+          const pickupDay = mytDayBoundsForKey(dayAfter)!;
+          const truck = await tx.truck.findUnique({
+            where: { plate: trip.truck_plate },
+            include: {
+              trips: {
+                where: {
+                  id: { not: id },
+                  OR: [
+                    { status: "in_progress" },
+                    { status: "assigned", pickup_datetime: { gte: pickupDay.start, lt: pickupDay.end } },
+                  ],
+                },
+                select: { cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } } },
+              },
+            },
+          });
+          // A missing truck row on an assigned trip is not "fits" — refuse
+          // rather than skip the guard.
+          if (!truck) throw new ApiError(404, "TRUCK_NOT_FOUND", "The assigned truck no longer exists. Unassign the lorry first.");
+          const needed = palletEquivalents(effectiveCargo);
+          const currentLoad = truck.trips.reduce((sum, t) => sum + palletEquivalents(t.cargo_details), 0);
+          if (currentLoad + needed > truck.max_pallets) {
+            throw new ApiError(
+              409,
+              "TRUCK_OVERLOADED",
+              `${truck.plate} holds ${truck.max_pallets} pallets and already carries ${currentLoad}. This change of ${needed} would total ${currentLoad + needed}. Unassign the lorry first, then approve — the booking will be dispatched again.`
+            );
+          }
+        }
+
+        // Claim the request FIRST: write-once, so two admins racing approve
+        // cannot both apply the payload.
+        const claimed = await tx.tripChangeRequest.updateMany({
+          where: { id: crId, status: "pending" },
+          data: {
+            status: "approved",
+            decided_by: req.user!.id,
+            decided_at: new Date(),
+            decision_note: note?.trim() || null,
+            version: { increment: 1 },
+          },
+        });
+        if (claimed.count !== 1) {
+          throw new ApiError(409, "CHANGE_REQUEST_STATE_CHANGED", "This change request was already decided. Refresh and try again.");
+        }
+
+        await tx.trip.update({
+          where: { id },
+          data: { route_type_id: input.route_type_id, pickup_datetime: input.pickup_datetime },
+        });
+        // An assigned booking's stops carry no arrival, POD or history refs
+        // (those start at in_progress), so a wholesale replace is safe — but
+        // they DO carry the assignment-time zone snapshot, which is why (3)
+        // below is mandatory.
+        // CARRY THE ASSIGNMENT-ERA SNAPSHOT FORWARD. The stop rows are replaced
+        // wholesale, but a destination the requestor did NOT touch must keep the
+        // points it was locked to at assignment — "running trips keep the old
+        // rate" (3 Jul). Re-pricing every stop here meant a pickup-TIME change
+        // silently re-rated untouched drops against today's rates and today's
+        // consignee zones: a staged 6->9 point edit turned RM44 into RM77, and a
+        // consignee zone correction turned RM44 into RM11 for a driver still
+        // driving to Ipoh.
+        const priorSnapshot = new Map(
+          trip.stops.map((s) => [s.consignee_id, { zone_code: s.zone_code, zone_points: s.zone_points }])
+        );
+        await tx.tripStop.deleteMany({ where: { trip_id: id } });
+        await tx.tripStop.createMany({
+          data: input.stops.map((s, idx) => {
+            const carried = priorSnapshot.get(s.consignee_id);
+            return {
+              trip_id: id,
+              consignee_id: s.consignee_id,
+              sequence: s.sequence ?? idx + 1,
+              // null for a genuinely NEW destination — priced just below.
+              zone_code: carried?.zone_code ?? null,
+              zone_points: carried?.zone_points ?? null,
+            };
+          }),
+        });
+        if (input.cargo_details !== undefined) {
+          await tx.cargoDetail.deleteMany({ where: { trip_id: id } });
+          await tx.cargoDetail.createMany({
+            data: input.cargo_details.map((c) => ({ ...withCanonicalCargoSize(c), trip_id: id })),
+          });
+        }
+
+        // (3) MANDATORY, and ONLY for destinations that are genuinely new: a
+        // new stop has no snapshot at all until this runs, and finalization
+        // scores against the snapshot. Carried-forward stops are skipped so
+        // their assignment-era lock survives (see priorSnapshot above).
+        //
+        // A destination ADDED by this change takes the trip's ASSIGNMENT era,
+        // not today's (owner ruling, 29 Jul 2026): consistency WITHIN a trip
+        // beats matching a fresh assignment. Otherwise one approval could leave
+        // a trip carrying two stops priced from two different rate eras, and
+        // nobody reading the pay breakdown could tell why.
+        //
+        // The instant comes from the trip's own history. Falls back to now only
+        // for a trip with no recorded assignment (pre-history rows) — the same
+        // answer as before this ruling, and the only honest default.
+        const assignedEvent = await tx.tripStatusHistory.findFirst({
+          where: { trip_id: id, event: { in: ["assigned", "reassigned"] } },
+          orderBy: { created_at: "desc" },
+          select: { created_at: true },
+        });
+        await snapshotStopZonePoints(tx, id, {
+          onlyUnsnapshotted: true,
+          era: assignedEvent?.created_at,
+        });
+
+        await tx.auditLog.create({
+          data: { user_id: req.user!.id, action: `trip.change_request_approved: ${changeNote}`, table_name: "Trip", record_id: id },
+        });
+        await recordTripEvent(tx, { tripId: id, event: "edited", actorId: req.user!.id, note: `Change approved — ${changeNote}` });
+        return changeNote;
+      });
+
+      // Best-effort: tell the requestor their change went through.
+      try {
+        const trip = await prisma.trip.findUnique({ where: { id }, select: { ticket_number: true, requestor: { select: { expo_push_token: true } } } });
+        await sendPushNotifications([trip?.requestor.expo_push_token], {
+          title: "Change approved",
+          body: `Your change to ${trip?.ticket_number ?? "your booking"} was approved — ${updated}`,
+          data: { type: "change_request_approved", tripId: id },
+        });
+      } catch (err) {
+        console.error("Change-request requestor notify failed:", err);
+      }
+
+      const fresh = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
+      res.json(fresh);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 // ── PATCH /trips/:id/abort — admin aborts an IN-PROGRESS trip (de-orphan) ──
 // The only exit for an in_progress trip: unassign/reassign are `assigned`-only

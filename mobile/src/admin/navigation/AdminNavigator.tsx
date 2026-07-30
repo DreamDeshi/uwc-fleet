@@ -32,13 +32,14 @@ import { ReportsScreen } from "../screens/ReportsScreen";
 import { SustainabilityScreen } from "../screens/SustainabilityScreen";
 import { IncentivesScreen } from "../screens/IncentivesScreen";
 import { IncentiveApprovalsScreen } from "../screens/IncentiveApprovalsScreen";
+import { ChangeRequestsScreen } from "../screens/ChangeRequestsScreen";
 import { TripsScreen } from "../screens/TripsScreen";
 import { AdminSettingsScreen } from "../screens/AdminSettingsScreen";
 import { AuditLogScreen } from "../screens/AuditLogScreen";
 import { AdminSearchScreen } from "../screens/AdminSearchScreen";
 import { CalendarScreen } from "../screens/CalendarScreen";
 import { ExceptionsScreen } from "../screens/ExceptionsScreen";
-import { exceptionsEnabled } from "../../lib/featureFlags";
+import { exceptionsEnabled, changeRequestsEnabled } from "../../lib/featureFlags";
 import { AdminSearchButton } from "../components/AdminSearchButton";
 import { AdminAlertsBell } from "../components/AdminAlertsBell";
 import { BrandLogo } from "../../components/BrandLogo";
@@ -72,6 +73,9 @@ const NAV_GROUPS: { headingKey: string; items: NavItem[] }[] = [
         ? [{ route: "AdminExceptions", labelKey: "exception.laneTitle", icon: "warning-outline" as IoniconName }]
         : []),
       { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline" },
+      ...(changeRequestsEnabled()
+        ? [{ route: "AdminChangeRequests", labelKey: "admin.nav.changeRequests", icon: "git-pull-request-outline" as const }]
+        : []),
       { route: "AdminDrivers", labelKey: "admin.nav.drivers", icon: "person-outline" },
       { route: "AdminTrucks", labelKey: "admin.nav.trucks", icon: "bus-outline" },
       { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },
@@ -262,6 +266,7 @@ const SUBTITLE_KEYS: Record<string, string> = {
   AdminDashboard: "admin.subtitles.dashboard",
   AdminTrips: "admin.subtitles.trips",
   AdminIncentiveApprovals: "admin.subtitles.incentiveApprovals",
+  AdminChangeRequests: "admin.subtitles.changeRequests",
   AdminDrivers: "admin.subtitles.drivers",
   AdminPerformance: "admin.subtitles.performance",
   AdminTrucks: "admin.subtitles.trucks",
@@ -464,6 +469,11 @@ function AdminDrawerWide() {
         name="AdminIncentiveApprovals"
         component={IncentiveApprovalsScreen}
         options={{ title: t("admin.titles.incentiveApprovals") }}
+      />
+      <Drawer.Screen
+        name="AdminChangeRequests"
+        component={ChangeRequestsScreen}
+        options={{ title: t("admin.titles.changeRequests") }}
       />
       <Drawer.Screen
         name="AdminSearch"

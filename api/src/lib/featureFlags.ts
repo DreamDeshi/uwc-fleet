@@ -11,3 +11,17 @@
 export function exceptionsEnabled(): boolean {
   return process.env.FEATURE_EXCEPTIONS === "true";
 }
+
+/**
+ * Request Change — the A19 approval flow for ASSIGNED bookings. Off by default.
+ * Enable with FEATURE_CHANGE_REQUESTS=true.
+ *
+ * Gated because, unlike the rest of this batch, it changes REQUESTOR behaviour
+ * the moment it deploys: an assigned booking gains a new button and a new way
+ * for the office to be interrupted. While off, all four /change-request* routes
+ * 404 as if they do not exist and the mobile surfaces are hidden, so the table
+ * simply sits empty.
+ */
+export function changeRequestsEnabled(): boolean {
+  return process.env.FEATURE_CHANGE_REQUESTS === "true";
+}
