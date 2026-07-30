@@ -1,0 +1,57 @@
+-- Relax one-OPEN-exception-per-trip to one-BLOCKING-exception-per-trip.
+--
+-- THE PROBLEM. Since the driver's Continue-trip route (PR #46), "open" and
+-- "blocking" are no longer the same thing: Continue clears Trip.open_exception_id
+-- and deliberately leaves the report OPEN and unadjudicated, because the driver
+-- must not decide anything that pays. But the partial unique index created in
+-- 20260725130100_exception_hardening_constraints enforces at most one row per
+-- trip with closed_at IS NULL — so a driver who carried on past a customer-site
+-- problem and then broke down could not file the second report at all. He had to
+-- phone the office. That limitation was shipped knowingly and pinned by a test.
+--
+-- WHAT STILL ENFORCES THE REAL INVARIANT. One BLOCKING exception per trip is
+-- structural and needs no index: Trip.open_exception_id is a SINGLE nullable
+-- column, so a trip cannot point at two exceptions at once, and it carries its
+-- own unique constraint (Trip_open_exception_id_key) so two trips cannot point
+-- at the same one. routes/exceptions.ts additionally refuses to report while
+-- that pointer is set, and claims it with a CAS on `open_exception_id: null`.
+-- Dropping this index therefore removes NO guarantee the system relies on; it
+-- removes a stricter one that was never the intended rule.
+--
+-- WHY NOT A NARROWER REPLACEMENT (considered, deliberately not done). A unique
+-- index on (trip_id, trip_stop_id) WHERE closed_at IS NULL would still allow the
+-- second report while blocking two open reports on the SAME stop. Rejected for
+-- now: trip_stop_id is NULL for trip-level exceptions (a breakdown), and
+-- Postgres treats NULLs as distinct, so it would not constrain the breakdown
+-- case anyway — while it WOULD block a legitimate second, different problem at
+-- one stop. Adding an invariant nobody asked for, in a migration whose purpose
+-- is to relax one, is how the original over-tight rule happened.
+--
+-- MONEY: none. Pay is decided PER STOP by a boolean — SETTLED_UNDELIVERED_WHERE
+-- uses `exceptions: { some: … } ` (and mobile/src/lib/stopSettled.ts mirrors it
+-- with `.some`), so a stop with two settled exceptions is still one settled stop
+-- and earns once. Every other open-exception read is already multiplicity-safe:
+-- `count(...) > 0` in hasOpenException, `none: { closed_at: null }` in the
+-- dispatch guard, and list queries in the admin lane.
+
+-- LOCKING / REVERSIBILITY, the two things the destructive-SQL guard does NOT
+-- check (AGENTS.md "KNOWN UNCOVERED"):
+--   • `DROP INDEX` without CONCURRENTLY takes an ACCESS EXCLUSIVE lock on
+--     TripException for the duration. Negligible here — the feature is dark
+--     (FEATURE_EXCEPTIONS off) and the table is effectively empty on prod — but
+--     note that the flag does NOT gate this DDL: preDeployCommand runs it on
+--     merge regardless.
+--   • There is NO down-migration, and re-creating the index is NOT idempotent:
+--     once any trip has accumulated two open rows the CREATE fails, and it
+--     would fail inside preDeployCommand, blocking that deploy and every
+--     migration after it. schema.prisma has been corrected accordingly — it
+--     previously described this index as the canonical invariant and told the
+--     reader to keep it.
+
+-- DESTRUCTIVE-OK: drops a constraint that is stricter than the rule it was meant
+-- to encode. The one-BLOCKING-per-trip invariant survives structurally in
+-- Trip.open_exception_id (a single column, itself unique) plus the report
+-- route's CAS; no data is touched and no row is deleted. IF EXISTS so a database
+-- restored from a pre-hardening dump cannot fail the deploy and block every
+-- later migration.
+DROP INDEX IF EXISTS "TripException_one_open_per_trip";

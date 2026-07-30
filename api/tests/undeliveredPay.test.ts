@@ -186,3 +186,67 @@ describe("the SQL predicate and the in-memory rule are the same rule", () => {
     });
   });
 });
+
+describe("a stop carrying SEVERAL exceptions", () => {
+  // Reachable since migration 20260730120000_relax_one_open_exception_per_trip
+  // dropped the one-OPEN-exception-per-trip index: a driver who continues past
+  // one report can file another, including on the same stop.
+  //
+  // The rule is `some`, on BOTH sides (SETTLED_UNDELIVERED_WHERE above and
+  // isStopSettled here), which makes settlement a BOOLEAN PER STOP. That is the
+  // property that stops the relaxation turning into double pay: a stop is
+  // settled or it is not, however many exceptions it accumulated.
+
+  it("two settled exceptions still make ONE settled stop", () => {
+    const s = stop({ exceptions: [...verifiedThenResumed, ...verifiedThenResumed] });
+    expect(stopPayEligibility(s)).toBe("undelivered_paid");
+    expect(stopEarns(s)).toBe(true);
+    // The pay instant is the ARRIVAL, unchanged — it cannot be doubled or moved
+    // by a second report, because it is a property of the stop, not the report.
+    expect(stopPayInstant(s)).toEqual(ARRIVED);
+  });
+
+  it("settles when only ONE of several is adjudicated", () => {
+    // One admin decision of "genuine failed delivery, not going back" settles
+    // the stop; a second report still open alongside it does not withhold pay
+    // the office has already granted.
+    expect(stopPayEligibility(stop({ exceptions: [...stillOpen, ...verifiedThenResumed] }))).toBe("undelivered_paid");
+    expect(stopPayEligibility(stop({ exceptions: [...verifiedThenResumed, ...stillOpen] }))).toBe("undelivered_paid");
+  });
+
+  it("DOCUMENTS current behaviour: a rejected report alongside a settled one does not cancel the pay", () => {
+    // ⚠ NOT AN AUTHORISED RULE — this records what the code does, so a change
+    // is visible, and must not be read as Mr. Teh having decided it.
+    //
+    // The predicate is OR-of-adjudications: any one verified+resumed exception
+    // pays the stop in full even where the admin explicitly REJECTED another
+    // report on the same stop — and undeliveredPay's own header calls reject
+    // "the explicit no-pay lever". Those two decisions conflict, and the tie is
+    // currently broken in favour of paying.
+    //
+    // Pre-existing (two exceptions on one stop were already reachable
+    // sequentially — the dropped index only ever constrained OPEN rows), but
+    // dropping it makes the state routine. AGENTS.md freezes "failed-delivery
+    // payment behaviour not explicitly confirmed in writing", so this goes to
+    // Mr. Teh alongside the still-open R4 §A1 rather than being settled here.
+    expect(stopPayEligibility(stop({ exceptions: [...rejected, ...verifiedThenResumed] }))).toBe("undelivered_paid");
+  });
+
+  it("several UNadjudicated reports earn nothing", () => {
+    expect(stopPayEligibility(stop({ exceptions: [...stillOpen, ...stillOpen] }))).toBe("unpaid");
+    expect(stopPayEligibility(stop({ exceptions: [...stillOpen, ...verifiedStillOpen] }))).toBe("unpaid");
+    expect(stopPayEligibility(stop({ exceptions: [...rejected, ...verifiedThenRetried] }))).toBe("unpaid");
+  });
+
+  it("a DELIVERED stop still earns on the delivered path, whatever it accumulated", () => {
+    // Condition 1 (not delivered) is what stops a retried-then-delivered stop
+    // being counted twice; extra exceptions must not change that.
+    const s = stop({
+      status: "delivered",
+      delivered_at: DELIVERED,
+      exceptions: [...verifiedThenResumed, ...verifiedThenResumed],
+    });
+    expect(stopPayEligibility(s)).toBe("delivered");
+    expect(stopPayInstant(s)).toEqual(DELIVERED);
+  });
+});

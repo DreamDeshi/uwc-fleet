@@ -170,9 +170,17 @@ export function firstDeliveredAt(stops: { delivered_at: Date | null }[]): Date |
  * (routes/trips proposeDeliveredStopsIncentive). A month key that disagreed
  * with the ledger would put the payroll sheet and the pay in different months —
  * the failure this helper exists to prevent. It shifts a pay PERIOD, never an
- * amount, and it cannot double-pay: a stop's settled-ness is frozen at
- * finalization (a closed exception cannot transition, and an open one blocks
- * finalization outright).
+ * amount, and it cannot double-pay: `proposeTripIncentiveOnce` requires
+ * `status: "in_progress"` AND `incentive_earned: null`, so a second payment is
+ * impossible whatever the exceptions do afterwards.
+ *
+ * ⚠ This used to say settled-ness is "frozen at finalization … an open one
+ * blocks finalization outright". That is no longer strictly true — since the
+ * driver's Continue route an OPEN exception need not block, and since
+ * 20260730120000 a trip can hold several. Finalization is still gated
+ * (`remainingStops > 0` on the delivered path, `hasOpenException` on the abort
+ * path), so an exception adjudicated after finalization is not reachable today;
+ * the write-once guard above, not the freezing claim, is what makes it safe.
  *
  * Within ONE stop a non-null `delivered_at` always wins, so a delivered stop is
  * never re-keyed to its own arrival. The widening fields are OPTIONAL — a caller

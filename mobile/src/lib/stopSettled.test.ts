@@ -84,3 +84,40 @@ describe("outstandingStops", () => {
     expect(outstandingStops([{ id: "a", ...settled }])).toEqual([]);
   });
 });
+
+describe("a stop carrying SEVERAL exceptions", () => {
+  // The api side gained equivalent cases in api/tests/undeliveredPay.test.ts.
+  // These two predicates are asserted to be the same rule only by keeping the
+  // parallel tests in step, so the mobile mirror must move with it.
+  //
+  // Reachable since migration 20260730120000 dropped the one-OPEN-per-trip
+  // index: a driver who continues past one report can file another, including
+  // on the same stop.
+  const SETTLED = { current_state: "resolved", resolution: "resume", actions: [{ type: "verify" }] };
+  const OPEN = { current_state: "reported", resolution: null, actions: [{ type: "report" }] };
+  const REJECTED = { current_state: "rejected", resolution: null, actions: [{ type: "reject" }] };
+
+  it("two settled exceptions still make ONE settled stop", () => {
+    expect(isStopSettled({ status: "arrived", arrived_at: ARRIVED, exceptions: [SETTLED, SETTLED] })).toBe(true);
+  });
+
+  it("settles when only ONE of several is adjudicated, in either order", () => {
+    expect(isStopSettled({ status: "arrived", arrived_at: ARRIVED, exceptions: [OPEN, SETTLED] })).toBe(true);
+    expect(isStopSettled({ status: "arrived", arrived_at: ARRIVED, exceptions: [SETTLED, OPEN] })).toBe(true);
+  });
+
+  it("several UNadjudicated reports leave the stop outstanding", () => {
+    expect(isStopSettled({ status: "arrived", arrived_at: ARRIVED, exceptions: [OPEN, OPEN] })).toBe(false);
+    expect(isStopSettled({ status: "arrived", arrived_at: ARRIVED, exceptions: [OPEN, REJECTED] })).toBe(false);
+  });
+
+  it("a settled stop with a second open report is NOT outstanding", () => {
+    // The driver's rail must not re-show a stop the office has already paid for
+    // just because he filed another report about it.
+    const stops = [
+      { id: "a", status: "arrived", arrived_at: ARRIVED, exceptions: [SETTLED, OPEN] },
+      { id: "b", status: "arrived", arrived_at: ARRIVED, exceptions: [OPEN] },
+    ];
+    expect(outstandingStops(stops).map((s) => s.id)).toEqual(["b"]);
+  });
+});
