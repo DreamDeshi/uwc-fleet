@@ -93,8 +93,16 @@ const appSource = filesUnder(
 
 // Keys assembled at runtime, e.g. t(`exception.category.${c}`) — the whole
 // namespace counts as referenced, since no single key appears literally.
+//
+// Capture ANY literal prefix preceding a `${`, not only one ending in a dot.
+// Requiring the dot missed the UNDERSCORE form — t(`admin.trips.undo_${type}_failed`),
+// t(`admin.trips.stop_${s}`), t(`admin.dashboard.doc_${d}`) — and wrongly called
+// about a dozen live keys dead. Not cosmetic: dead keys are excluded from the
+// valid-copy set, so a false-dead key fails a perfectly good selector in CI.
+// Found by chasing one of this script's own "dead" keys and discovering the
+// copy was rendered after all.
 const dynamicPrefixes = [
-  ...new Set([...appSource.matchAll(/[`"']([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)\.\$\{/g)].map((m) => m[1])),
+  ...new Set([...appSource.matchAll(/[`"']([A-Za-z0-9_.]+?)\$\{/g)].map((m) => m[1])),
 ];
 const PLURAL = ["_zero", "_one", "_two", "_few", "_many", "_other"];
 const literallyReferenced = (k) =>
@@ -106,7 +114,7 @@ function isLive(key) {
   const suffix = PLURAL.find((s) => key.endsWith(s));
   const base = suffix ? key.slice(0, -suffix.length) : key;
   if (literallyReferenced(key) || (base !== key && literallyReferenced(base))) return true;
-  return dynamicPrefixes.some((p) => key.startsWith(p + "."));
+  return dynamicPrefixes.some((p) => key.startsWith(p.endsWith(".") ? p : p + "") && key.length > p.length);
 }
 
 const liveEntries = entries.filter(([k]) => isLive(k));
