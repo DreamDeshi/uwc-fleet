@@ -134,17 +134,14 @@ import type { PrismaClient, Prisma } from "@prisma/client";
  *
  * A rejected stop is ADJUDICATED — the office decided. It just does not pay.
  *
- * ⚠ WHAT THIS SPLIT DOES **NOT** FIX, stated plainly because an earlier draft of
- * this comment wrongly claimed it did. On a trip where EVERY stop is vetoed,
- * `finalizeIfNothingOutstanding` finds nothing outstanding but nothing earning
- * either, so it declines (routes/exceptions.ts) and the trip sits `in_progress`
- * until an admin aborts — which lands it in `cancelled` with a null incentive
- * and therefore no `pending_approval`, so no amount-edit route. RM0 is the
- * INTENDED amount there (every stop was rejected), but the trip hanging and the
- * driver being locked out of other work by the one-active guard is a real
- * operational dead-end, and it is NEW: before the split ADJUDICATED === SETTLED,
- * so `earning === 0` with nothing outstanding was unreachable dead code.
- * Raised for a decision rather than papered over.
+ * ✅ THE ALL-VETOED TRIP, since fixed. The split briefly left one hole: on a trip
+ * where EVERY stop is vetoed, `finalizeIfNothingOutstanding` found nothing
+ * outstanding and nothing earning, so it declined and the trip sat `in_progress`
+ * indefinitely — nothing alerted, the driver was locked out by the one-active
+ * guard, and the only exit (Abort) reached `cancelled` with a null incentive,
+ * where the amount edit is unreachable. It now finalizes to `pending_approval`
+ * with a ZERO proposal: RM0 is the right amount, and it is an AUDITED zero the
+ * admin can edit upward if the veto was wrong. See routes/exceptions.ts.
  *
  * Use this for outstandingness: the completion gate, the default stop picker,
  * and the client's outstanding-stops rail.
