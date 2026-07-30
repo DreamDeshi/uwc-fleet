@@ -20,7 +20,7 @@ import { useTranslation } from "react-i18next";
 import { useApproveIncentive, usePendingApprovals } from "../hooks/queries";
 import { colors, font, radius } from "../theme";
 import { Button, Card, EmptyState, ErrorState, Input, Loading, Modal, Pill } from "../components/ui";
-import { formatMoney, formatDateTime } from "../lib/format";
+import { formatMoney, formatDateTime, formatTime } from "../lib/format";
 import { apiErrorMessage } from "../services/api";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import type { Trip, TripStop } from "../types";
@@ -226,6 +226,21 @@ function ApprovalCard({ trip }: { trip: Trip }) {
 
 function StopRow({ stop }: { stop: TripStop }) {
   const { t } = useTranslation();
+  // ⚠ ORDER AND LABELS ARE LOAD-BEARING ON THIS SCREEN. The admin can override
+  // the paid amount here, and the rate tier keys on the DELIVERY CONFIRM (3 Jul
+  // 2026; refined by R1 Q4). The POD upload necessarily PRECEDES the delivered
+  // tap — delivery is gated on pod_photo — so an upload at 17:58 can belong to a
+  // delivery at 18:03 that correctly rated OFF-PEAK. Showing the upload time as
+  // the only per-drop time, unlabelled, invited exactly the wrong correction:
+  // a 7-point drop "fixed" from RM91 to RM77. So the POD time says "uploaded",
+  // and the delivery confirm sits beside it as the instant that actually paid.
+  const evidenceParts = [
+    stop.points_awarded != null ? t("admin.incentiveApprovals.dropPoints", { pts: stop.points_awarded }) : null,
+    stop.points_awarded != null && stop.was_repeat ? t("admin.incentiveApprovals.repeat") : null,
+    stop.points_awarded != null && stop.zone_code ? stop.zone_code : null,
+    stop.delivered_at ? t("admin.incentiveApprovals.stopDelivered", { time: formatTime(stop.delivered_at) }) : null,
+    stop.pod_uploaded_at ? t("admin.incentiveApprovals.podTime", { time: formatTime(stop.pod_uploaded_at) }) : null,
+  ].filter((p): p is string => Boolean(p));
   return (
     <View
       style={{
@@ -246,12 +261,14 @@ function StopRow({ stop }: { stop: TripStop }) {
           {stop.consignee.company_name}
         </Text>
         {/* Per-drop pay evidence: points + repeat flag, so the admin sees WHY
-            the proposal is what it is before approving. Null on pre-feature trips. */}
-        {stop.points_awarded != null ? (
+            the proposal is what it is before approving. Null on pre-feature trips.
+            The POD time (IM6) rides the same line — it is the evidence a
+            contested approval is argued over, and it was previously stored
+            nowhere. Absent on any POD that predates the column; shown only when
+            genuinely known, never substituted from delivered_at. */}
+        {evidenceParts.length > 0 ? (
           <Text style={{ fontSize: font.xs, color: colors.textMuted, marginTop: 1 }}>
-            {t("admin.incentiveApprovals.dropPoints", { pts: stop.points_awarded })}
-            {stop.was_repeat ? ` · ${t("admin.incentiveApprovals.repeat")}` : ""}
-            {stop.zone_code ? ` · ${stop.zone_code}` : ""}
+            {evidenceParts.join(" · ")}
           </Text>
         ) : null}
       </View>

@@ -104,6 +104,9 @@ export interface TripStop {
   // (Q2, 3 Jul 2026): pay is automatic once the mandatory photo is uploaded;
   // admin only does random SPOT-CHECKS — this link is that view.
   pod_photo: string | null;
+  // Server receipt time of the POD upload (IM6) — the timestamp a contested
+  // approval is argued over. NULL = unknown (POD predates the column).
+  pod_uploaded_at?: string | null;
   // Finalize-time scoring evidence (per-drop points, repeat flag, zone
   // snapshot). Null = trip completed before the breakdown feature.
   points_awarded?: number | null;
