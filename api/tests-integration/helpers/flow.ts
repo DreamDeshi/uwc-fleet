@@ -30,7 +30,9 @@ export async function firstRouteTypeId(token: string): Promise<string> {
  * Kedah/Perak zones + KL; any other zone is materialised on demand. The zone
  * must exist as a Zone row (all spec zones are seeded, incl. KL).
  */
-export async function ensureConsigneeInZone(zone: string): Promise<{ id: string; zone_code: string }> {
+export async function ensureConsigneeInZone(
+  zone: string
+): Promise<{ id: string; zone_code: string; company_name: string }> {
   const existing = await prisma.consignee.findFirst({ where: { zone_code: zone, is_active: true } });
   if (existing) return existing;
   return prisma.consignee.create({
@@ -98,6 +100,10 @@ export interface FlowStop {
 export interface FlowTrip {
   id: string;
   status: string;
+  /** ISO. Named explicitly: several specs read it, and under the index
+   *  signature below it typed as `unknown` and poisoned every call it fed. */
+  pickup_datetime: string;
+  ticket_number: string;
   stops: FlowStop[];
   [k: string]: unknown;
 }

@@ -28,7 +28,7 @@ async function createTarget() {
   targetId = t.id;
 }
 
-const patchUser = (token: string, id: string, body: unknown) =>
+const patchUser = (token: string, id: string, body: object) =>
   api().patch(`/api/v1/users/${id}`).set(auth(token)).send(body);
 const setStatus = (token: string, id: string, status: string) =>
   api().patch(`/api/v1/users/${id}/approve`).set(auth(token)).send({ status });

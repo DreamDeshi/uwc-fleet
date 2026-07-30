@@ -27,7 +27,7 @@ const bookRaw = async (token: string, rt: string, cargo: unknown) => {
     });
 };
 
-const editRaw = (token: string, tripId: string, body: unknown) =>
+const editRaw = (token: string, tripId: string, body: object) =>
   api().patch(`/api/v1/trips/${tripId}`).set(auth(token)).send(body);
 
 describe("pallet_type vocabulary is closed (capacity safety)", () => {

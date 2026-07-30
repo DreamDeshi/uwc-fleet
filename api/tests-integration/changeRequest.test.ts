@@ -47,7 +47,7 @@ async function payloadFor(tripId: string, over: Record<string, unknown> = {}) {
   };
 }
 
-const requestChange = (token: string, tripId: string, body: unknown) =>
+const requestChange = (token: string, tripId: string, body: object) =>
   api().post(`/api/v1/trips/${tripId}/change-request`).set(auth(token)).send(body);
 
 describe("Request Change — assigned bookings go through admin approval", () => {

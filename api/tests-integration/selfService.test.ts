@@ -19,9 +19,9 @@ async function ensureSelfUser() {
   });
 }
 
-const patchMe = (token: string, body: unknown) =>
+const patchMe = (token: string, body: object) =>
   api().patch("/api/v1/users/me").set(auth(token)).send(body);
-const patchPassword = (token: string, body: unknown) =>
+const patchPassword = (token: string, body: object) =>
   api().patch("/api/v1/users/me/password").set(auth(token)).send(body);
 
 describe("self-service /users/me", () => {
