@@ -16,7 +16,7 @@ import {
 } from "../helpers/api";
 import { pickRouteType, pickSearchableConsignee, seedAssignedTrip, seedPendingTrip } from "../helpers/seed";
 import { resetState } from "../helpers/reset";
-import { mobileLogin } from "../helpers/ui";
+import { dismissGpsConsent, mobileLogin } from "../helpers/ui";
 import { POD_FILE } from "../helpers/pod";
 
 /**
@@ -82,8 +82,7 @@ async function assignToTestDriver(adminToken: string, tripId: string): Promise<T
 /** Enter the ActiveTrip screen from the driver home and clear the GPS-consent modal. */
 async function openActiveTrip(page: Page): Promise<void> {
   await page.getByText("Continue trip", { exact: true }).click();
-  const notNow = page.getByText("Not now", { exact: true });
-  if (await notNow.isVisible().catch(() => false)) await notNow.click();
+  await dismissGpsConsent(page);
 }
 
 // ── Requestor: structured cargo + templates (phone layout) ───────────────
@@ -242,7 +241,9 @@ test.describe("K2 destination gate (driver, mobile web)", () => {
     // Delivered must NOT complete the trip (the gate holds).
     await expect(page.getByText(/POD (photo )?uploaded/).first()).toBeVisible();
     await expect(page.getByText(/Upload (Borang K2 form|customs document)/)).toBeVisible();
-    const completed = page.getByText("Trip Completed!");
+    // See driver.spec: "Trip Completed!" (trip.completedTitle) is a dead key, so
+    // the not-visible assertion below only means something against the real title.
+    const completed = page.getByText(/All \d+ stops? delivered/).last();
     // The gate is a LOCK, not a dimmed button: while the customs document is
     // outstanding the footer offers the upload and states why Delivered is
     // unavailable, so there is no bare "Delivered" control to press at all.

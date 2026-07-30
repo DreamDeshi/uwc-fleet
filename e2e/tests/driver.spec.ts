@@ -1,9 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { DRIVER } from "../helpers/accounts";
 import { driverIdentity, getTrip, login, uploadPod } from "../helpers/api";
-import { seedAssignedTrip, seedArrivedTrip } from "../helpers/seed";
+import { seedAssignedTripToday, seedArrivedTrip } from "../helpers/seed";
 import { resetState } from "../helpers/reset";
-import { mobileLogin } from "../helpers/ui";
+import { dismissGpsConsent, mobileLogin } from "../helpers/ui";
 import { POD_FILE } from "../helpers/pod";
 
 /**
@@ -23,7 +23,7 @@ test.describe("Driver (mobile web)", () => {
   });
 
   test("9. logs in and sees the assigned trip on the home screen", async ({ page }) => {
-    await seedAssignedTrip(adminToken);
+    await seedAssignedTripToday(adminToken);
 
     await mobileLogin(page, DRIVER);
 
@@ -37,7 +37,7 @@ test.describe("Driver (mobile web)", () => {
   });
 
   test("10. starts the trip → status changes to in progress", async ({ page }) => {
-    const trip = await seedAssignedTrip(adminToken);
+    const trip = await seedAssignedTripToday(adminToken);
 
     await mobileLogin(page, DRIVER);
     // Redesigned Home: the start action sits on the Home card itself — the
@@ -45,10 +45,12 @@ test.describe("Driver (mobile web)", () => {
     await page.getByText("Start this trip", { exact: true }).click();
 
     // Starting lands on the live ActiveTrip view, which raises the GPS-consent
-    // overlay on first entry; dismiss it, then assert the delivery control.
-    const notNow = page.getByText("Not now", { exact: true });
-    if (await notNow.isVisible().catch(() => false)) await notNow.click();
-    await expect(page.getByText("Delivered", { exact: true }).first()).toBeVisible();
+    // overlay on first entry. The footer runs one primary at a time: a stop
+    // that is still PENDING is at stage "arrived", so the control here is
+    // "Arrived at Pickup" (step 1 of 3) — Delivered only appears two stages
+    // later, once arrival and POD are done.
+    await dismissGpsConsent(page);
+    await expect(page.getByText("Arrived at Pickup", { exact: true })).toBeVisible();
 
     // Confirm the backend transition too.
     const driver = await login(DRIVER);
@@ -82,8 +84,7 @@ test.describe("Driver (mobile web)", () => {
     // intercepts pointer events" failure). A real driver answers it; dismiss
     // with "Not now" so tracking stays off and the POD/Delivered controls
     // become clickable.
-    const notNow = page.getByText("Not now", { exact: true });
-    if (await notNow.isVisible().catch(() => false)) await notNow.click();
+    await dismissGpsConsent(page);
 
     // POD already uploaded (above), so the gate is satisfied and Delivered is
     // enabled. The inline label confirms it before we act.
@@ -95,7 +96,12 @@ test.describe("Driver (mobile web)", () => {
     // animating on a real (prod) network, so strict stability never settles and
     // an unforced click times out; the modal + API poll below still verify the
     // click actually delivered.
-    const completed = page.getByText("Trip Completed!");
+  // The completion modal is titled by trip.allStopsDelivered ("All N stops
+  // delivered"). It used to be trip.completedTitle ("Trip Completed!"), which is
+  // now a DEAD key — matching it made this a locator that can never resolve, so
+  // the positive check below never short-circuited and the negative one in N4
+  // passed vacuously.
+    const completed = page.getByText(/All \d+ stops? delivered/).last();
     await expect(async () => {
       if (await completed.isVisible()) return;
       await page.getByText("Delivered", { exact: true }).click({ force: true });
@@ -107,8 +113,12 @@ test.describe("Driver (mobile web)", () => {
     // incentive is flagged awaiting admin approval, not earned, and the trip
     // lands in pending_approval (an admin approves the POD before it completes).
     await expect(completed).toBeVisible();
-    await expect(page.getByText("Incentive — Pending Approval")).toBeVisible();
-    await expect(page.getByText("Incentive Earned")).not.toBeVisible();
+    // The amount is shown under a PENDING APPROVAL chip (trip.pendingApprovalChip)
+    // with copy saying the office must approve it. The old assertions used
+    // trip.incentivePending / trip.incentiveEarned, both dead keys — so the
+    // "not paid" half was checking a string that can no longer render either way.
+    await expect(page.getByText("PENDING APPROVAL")).toBeVisible();
+    await expect(page.getByText(/will review your POD and approve/)).toBeVisible();
     await expect(page.getByText(/RM\s?\d/).first()).toBeVisible();
 
     // And the backend holds it at pending_approval — NOT completed, and NOT paid.

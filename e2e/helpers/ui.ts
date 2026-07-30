@@ -21,3 +21,26 @@ export async function mobileLogin(page: Page, account: Account): Promise<void> {
   await page.getByPlaceholder("Enter your password").fill(account.password);
   await page.getByText("Sign In", { exact: true }).click();
 }
+
+/**
+ * Dismiss the GPS-consent overlay that ActiveTrip raises on first entry to an
+ * in-progress trip.
+ *
+ * It is a full-screen overlay: until it goes, every tap on the controls beneath
+ * it is intercepted. Callers used to probe it with a bare `isVisible()`, which
+ * does NOT wait — the check ran before the modal had mounted, found nothing,
+ * skipped the click, and the very next action timed out against an overlay that
+ * had appeared in the meantime. That race is why the driver specs failed in a
+ * full run but passed in isolation. Wait for it, then dismiss; a trip that
+ * never raises it (consent already recorded) just falls through.
+ */
+export async function dismissGpsConsent(page: Page): Promise<void> {
+  const notNow = page.getByText("Not now", { exact: true });
+  try {
+    await notNow.waitFor({ state: "visible", timeout: 5_000 });
+  } catch {
+    return; // never appeared — consent already answered for this session
+  }
+  await notNow.click();
+  await notNow.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {});
+}

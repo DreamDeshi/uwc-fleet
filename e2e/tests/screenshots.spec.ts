@@ -110,7 +110,11 @@ test("REQUESTOR — all screens", async ({ page }) => {
   await shot(page, "requestor-home", "Where do you need delivery?");
 
   // New Booking — step 1 (Where): empty form first…
-  await tapTab(page, "New Booking");
+  // There is no "New Booking" tab at phone width — the requestor tab bar is
+  // Home / Bookings / Insights / Profile and booking is entered from the Home
+  // CTA card. (The home anchor above was updated to the new copy at some point;
+  // this tap was not, which is why the walk stopped here.)
+  await page.getByText("Where do you need delivery?", { exact: true }).click();
   await shot(page, "requestor-booking-step1", "New Trip Request");
 
   // …then make valid selections so Next advances to step 2 (What).
@@ -129,7 +133,10 @@ test("REQUESTOR — all screens", async ({ page }) => {
   await page.getByText("Next", { exact: true }).click();
   await shot(page, "requestor-booking-step3", "Submit Booking");
 
-  // Booking history.
+  // Booking history. Step 3 is a full-screen wizard whose Back / Submit footer
+  // sits over the tab bar, so "Bookings" is present but permanently obscured —
+  // leave the wizard by returning to the app root before tapping the tab.
+  await page.goto(MOBILE_URL);
   await tapTab(page, "Bookings");
   await shot(page, "requestor-bookings");
 });
