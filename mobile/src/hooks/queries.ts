@@ -354,13 +354,20 @@ export function useUploadPod() {
       tripId,
       stopId,
       photo,
+      capturedAt,
     }: {
       tripId: string;
       stopId: string;
       photo: PickedPhoto;
+      /** ISO capture time, sent as `captured_client_at`. Optional; evidence only. */
+      capturedAt?: string;
     }) => {
       const form = new FormData();
       await appendPhoto(form, "photo", photo);
+      // Online the gap is seconds, so this changes nothing visible — but sending
+      // it on BOTH paths means the column's meaning does not depend on which
+      // path a POD happened to take.
+      if (capturedAt) form.append("captured_client_at", capturedAt);
       return (
         await api.post<Trip>(`/trips/${tripId}/stops/${stopId}/pod`, form, {
           headers: UPLOAD_HEADERS,

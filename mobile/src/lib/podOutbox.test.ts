@@ -23,6 +23,7 @@ function item(overrides: Partial<PodOutboxItem> = {}): PodOutboxItem {
     arrivedMarked: false,
     photo: PHOTO,
     photoUploaded: false,
+    photoCapturedAt: null,
     k2FormAck: false,
     k2Acked: false,
     confirmDelivered: true,
@@ -200,5 +201,52 @@ describe("reconcileOutboxAfterFlush — folding results into a live queue", () =
     ];
     const stored = [item({ queuedAt: "10:05" })];
     expect(reconcileOutboxAfterFlush(stored, outcomes)).toEqual(stored);
+  });
+});
+
+describe("photoCapturedAt — when the POD was TAKEN, not when it replayed", () => {
+  // The server's pod_uploaded_at is its own receipt, which for a queued POD is
+  // the replay instant — hours late for the rural driver the outbox exists for.
+  // usePodOutbox sends this as `captured_client_at` so the pair can show both.
+
+  it("is stamped when a photo is queued", () => {
+    const items = mergeOutboxItem([], { tripId: "t1", stopId: "s1", photo: PHOTO }, "16:45");
+    expect(items[0].photoCapturedAt).toBe("16:45");
+  });
+
+  it("prefers an explicit capture time over the merge instant", () => {
+    // The screen stamps it when the CAMERA returns; queueing happens later, on
+    // the network failure, so the two are not the same moment.
+    const items = mergeOutboxItem(
+      [],
+      { tripId: "t1", stopId: "s1", photo: PHOTO, photoCapturedAt: "16:45" },
+      "16:52"
+    );
+    expect(items[0].photoCapturedAt).toBe("16:45");
+  });
+
+  it("is NOT queuedAt — a later photo re-times capture while queuedAt stands", () => {
+    // The bug this exists to avoid: tap Arrived offline at 15:00, photograph at
+    // 16:45. queuedAt survives a retake by design, so sending it would report
+    // the Arrived tap as the POD time.
+    let items = mergeOutboxItem([], { tripId: "t1", stopId: "s1", markArrived: true }, "15:00");
+    expect(items[0].photoCapturedAt).toBeNull();
+
+    items = mergeOutboxItem(items, { tripId: "t1", stopId: "s1", photo: PHOTO }, "16:45");
+    expect(items[0].queuedAt).toBe("15:00"); // unchanged, as before
+    expect(items[0].photoCapturedAt).toBe("16:45"); // the actual capture
+  });
+
+  it("a RETAKE re-times it, like photoUploaded resets", () => {
+    let items = mergeOutboxItem([], { tripId: "t1", stopId: "s1", photo: PHOTO }, "16:45");
+    items = mergeOutboxItem(items, { tripId: "t1", stopId: "s1", photo: PHOTO }, "17:10");
+    expect(items[0].photoCapturedAt).toBe("17:10");
+    expect(items[0].photoUploaded).toBe(false);
+  });
+
+  it("a non-photo intent leaves it alone", () => {
+    let items = mergeOutboxItem([], { tripId: "t1", stopId: "s1", photo: PHOTO }, "16:45");
+    items = mergeOutboxItem(items, { tripId: "t1", stopId: "s1", confirmDelivered: true }, "17:00");
+    expect(items[0].photoCapturedAt).toBe("16:45");
   });
 });

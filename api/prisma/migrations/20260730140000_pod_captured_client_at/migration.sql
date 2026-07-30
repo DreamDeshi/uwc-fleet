@@ -1,0 +1,34 @@
+-- The offline half of the POD timestamp pair.
+--
+-- PURELY ADDITIVE: one nullable column on TripStop. No drops, no backfill, no
+-- default, no existing row changed. A stop that predates it simply has no
+-- device-reported capture time.
+--
+-- WHY. 20260730130000 added pod_uploaded_at, the SERVER's receipt instant. For
+-- a POD queued offline that is the REPLAY instant: a photo taken at 16:45 with
+-- no signal and flushed at 19:10 records 19:10 — in the one population (rural,
+-- no coverage) the evidence matters most for. This column carries what the
+-- device says, so the pair can show both.
+--
+-- Same shape the exception workflow already uses: TripException.reported_at is
+-- the immutable server receipt and client_reported_at is the device's own time,
+-- kept beside it and never trusted for anything that decides money.
+--
+-- ⚠ CLIENT-SUPPLIED. The driver's device is a party to any dispute this helps
+-- settle, so the value is EVIDENCE, never an input — nothing in pay, dispatch
+-- or the trip lifecycle reads it. The route refuses a value later than its own
+-- receipt (a POD cannot be photographed after it arrives), storing NULL instead
+-- of a confident lie.
+--
+-- ⚠ HAND-WRITTEN. `prisma migrate diff` in this repo keeps emitting a phantom
+--     ALTER TABLE "ExceptionEvidence" DROP CONSTRAINT
+--       "ExceptionEvidence_action_same_exception_fkey";
+-- because that composite FK is raw SQL and invisible to Prisma. It is not
+-- below, and must never be.
+--
+-- LOCKING: ADD COLUMN with no default and no NOT NULL is catalog-only on
+-- PG >= 11 — no table rewrite, no long lock. (The destructive-SQL guard does
+-- not check locking; noted here because AGENTS.md lists it as uncovered.)
+
+-- AlterTable
+ALTER TABLE "TripStop" ADD COLUMN "pod_captured_client_at" TIMESTAMP(3);

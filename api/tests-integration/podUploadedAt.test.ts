@@ -126,6 +126,62 @@ describe("POD upload time is persisted (IM6)", () => {
     expect(new Date(stop.pod_uploaded_at).toString()).not.toBe("Invalid Date");
   });
 
+  it("stores the DEVICE capture time when the client sends one", async () => {
+    // The offline case this pair exists for: the photo was taken long before
+    // the server ever saw it.
+    const { trip, driver } = await inProgressTrip();
+    const captured = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(); // 2h ago
+
+    const res = await api()
+      .post(`/api/v1/trips/${trip.id}/stops/${trip.stops[0].id}/pod`)
+      .set(auth(driver))
+      .field("captured_client_at", captured)
+      .attach("photo", PHOTO, "pod.jpg");
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+
+    const stop = await prisma.tripStop.findUniqueOrThrow({ where: { id: trip.stops[0].id } });
+    expect(stop.pod_captured_client_at?.toISOString()).toBe(captured);
+    // The server's own receipt is unaffected and still now — the two are a PAIR,
+    // and only the server one is trustworthy.
+    expect(stop.pod_uploaded_at!.getTime()).toBeGreaterThan(new Date(captured).getTime());
+  });
+
+  it("REFUSES a capture time later than its own receipt — stores NULL, not a lie", async () => {
+    // A POD cannot be photographed after it arrives, so this is a broken device
+    // clock. A confident wrong time on the dispute field is worse than none.
+    const { trip, driver } = await inProgressTrip();
+    const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+    const res = await api()
+      .post(`/api/v1/trips/${trip.id}/stops/${trip.stops[0].id}/pod`)
+      .set(auth(driver))
+      .field("captured_client_at", future)
+      .attach("photo", PHOTO, "pod.jpg");
+    expect(res.status).toBe(201);
+
+    const stop = await prisma.tripStop.findUniqueOrThrow({ where: { id: trip.stops[0].id } });
+    expect(stop.pod_captured_client_at).toBeNull();
+    expect(stop.pod_uploaded_at).not.toBeNull(); // the upload still succeeded
+  });
+
+  it("is NULL when the client sends nothing, and unparseable input is ignored", async () => {
+    const { trip, driver } = await inProgressTrip();
+    expect((await uploadPod(driver, trip.id, trip.stops[0].id)).status).toBe(201);
+    expect(
+      (await prisma.tripStop.findUniqueOrThrow({ where: { id: trip.stops[0].id } })).pod_captured_client_at
+    ).toBeNull();
+
+    const res = await api()
+      .post(`/api/v1/trips/${trip.id}/stops/${trip.stops[0].id}/pod`)
+      .set(auth(driver))
+      .field("captured_client_at", "not-a-date")
+      .attach("photo", PHOTO, "pod.jpg");
+    expect(res.status).toBe(201);
+    expect(
+      (await prisma.tripStop.findUniqueOrThrow({ where: { id: trip.stops[0].id } })).pod_captured_client_at
+    ).toBeNull();
+  });
+
   it("a retake re-times the POD, because it times the photo actually stored", async () => {
     const { trip, driver } = await inProgressTrip();
     expect((await uploadPod(driver, trip.id, trip.stops[0].id)).status).toBe(201);

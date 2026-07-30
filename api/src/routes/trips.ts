@@ -2734,6 +2734,22 @@ router.post(
         publicId: `${trip.ticket_number}-stop-${stop.sequence}`,
       });
 
+      // DEVICE capture time, optional. Sent by the offline outbox (where the
+      // server's own receipt is the REPLAY instant, hours late) and by the
+      // online path for consistency. Evidence only — never read by pay.
+      //
+      // Two ways it becomes NULL rather than wrong: unparseable, or LATER than
+      // our own receipt. A POD cannot be photographed after it arrives, so a
+      // future value means a broken device clock, and a confident wrong time on
+      // the field kept for disputes is worse than no time at all.
+      const receivedAt = new Date();
+      const claimedRaw = typeof req.body?.captured_client_at === "string" ? req.body.captured_client_at : null;
+      const claimed = claimedRaw ? new Date(claimedRaw) : null;
+      const capturedClientAt =
+        claimed && !Number.isNaN(claimed.getTime()) && claimed.getTime() <= receivedAt.getTime()
+          ? claimed
+          : null;
+
       // RE-CHECK THE LOCK IN THE WRITE ITSELF, not just in the guard above.
       // Between that guard's read and this write we do a Cloudinary round-trip
       // (hundreds of ms on a 500KB photo), and the trip can flip to
@@ -2755,20 +2771,17 @@ router.post(
           pod_photo: url,
           pod_public_id: publicId,
           do_uploaded: true,
-          // IM6. SERVER receipt, not a client-supplied capture time: this is the
-          // timestamp a POD-approval dispute is argued over, so it must not be
-          // settable by the device that is a party to the dispute.
+          // IM6, the PAIR. `pod_uploaded_at` is the SERVER receipt — immutable,
+          // not settable by the device that is a party to any dispute it
+          // settles. For an offline-queued POD it is the REPLAY instant (a photo
+          // taken at 16:45 with no signal and flushed at 19:10 reads 19:10), so
+          // `pod_captured_client_at` carries what the DEVICE says beside it.
           //
-          // ⚠ For an OFFLINE-QUEUED POD this is the REPLAY instant, not the
-          // capture instant: mobile/src/lib/podOutboxCore.ts records `queuedAt`
-          // but usePodOutbox.uploadPod never sends it. A photo taken at 16:45
-          // with no signal and flushed at 19:10 reads 19:10 — in the one
-          // population (rural, no coverage) the evidence matters most for. Not
-          // fixed here: the honest fix is a SECOND column alongside this one,
-          // exactly as TripException carries client_reported_at beside the
-          // server's reported_at, and that is past "one additive nullable
-          // column". Raised on the PR.
-          pod_uploaded_at: new Date(),
+          // Same shape as TripException: reported_at (server) beside
+          // client_reported_at (device). Read the server one for anything that
+          // must be trustworthy; show the device one as device-reported.
+          pod_uploaded_at: receivedAt,
+          pod_captured_client_at: capturedClientAt,
         },
       });
       if (written.count !== 1) {

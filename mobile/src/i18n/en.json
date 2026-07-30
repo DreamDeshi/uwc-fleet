@@ -688,6 +688,7 @@
       "dropPoints": "{{pts}} pt(s)",
       "repeat": "repeat",
       "podTime": "POD uploaded {{time}}",
+      "podTaken": "taken {{time}} (device)",
       "stopDelivered": "delivered {{time}}",
       "noPod": "No POD",
       "notDelivered": "Not delivered",

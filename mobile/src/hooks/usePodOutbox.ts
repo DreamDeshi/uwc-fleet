@@ -28,6 +28,12 @@ const realApi: PodOutboxApi = {
   async uploadPod(item: PodOutboxItem) {
     const form = new FormData();
     await appendPhoto(form, "photo", item.photo!);
+    // THE POINT OF THE OFFLINE PATH: the server's own receipt is the REPLAY
+    // instant, which for a queued POD can be hours after the driver stood at
+    // the door. Send what the device recorded at capture so the pair can show
+    // both. The server treats it as evidence only, and refuses a value later
+    // than its own receipt.
+    if (item.photoCapturedAt) form.append("captured_client_at", item.photoCapturedAt);
     await api.post(`/trips/${item.tripId}/stops/${item.stopId}/pod`, form, {
       headers: UPLOAD_HEADERS,
       timeout: 60_000,

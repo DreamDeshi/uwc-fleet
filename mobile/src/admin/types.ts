@@ -107,6 +107,9 @@ export interface TripStop {
   // Server receipt time of the POD upload (IM6) — the timestamp a contested
   // approval is argued over. NULL = unknown (POD predates the column).
   pod_uploaded_at?: string | null;
+  // DEVICE-reported capture time (IM6 pair). Untrusted evidence, never a
+  // pay input; NULL when the device did not say. Label it as device-reported.
+  pod_captured_client_at?: string | null;
   // Finalize-time scoring evidence (per-drop points, repeat flag, zone
   // snapshot). Null = trip completed before the breakdown feature.
   points_awarded?: number | null;
