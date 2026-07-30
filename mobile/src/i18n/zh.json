@@ -211,6 +211,7 @@
     "pendingApprovalChip": "等待审批",
     "k2Capture": "上传海关文件",
     "k2Uploaded": "海关文件已上传",
+    "k2ReplaceShort": "更换",
     "k2NeedsConnection": "请连接网络后再上传海关文件。",
     "deliveredAll": "所有停靠点均已送达",
     "statusPending": "待处理",

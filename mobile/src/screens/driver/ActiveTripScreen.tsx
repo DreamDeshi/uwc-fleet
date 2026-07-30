@@ -285,6 +285,19 @@ export function ActiveTripScreen() {
   );
   const podQueuedHere = Boolean(!activeStop?.pod_photo && (activeQueued?.photo || activeQueued?.photoUploaded));
 
+  // An UPLOADED customs document left no trace on this screen: the footer's
+  // upload button is a stage that disappears the moment k2_photo is set, and
+  // trip.k2Uploaded was only ever a toast. So the driver could not confirm it
+  // had gone up, and a wrong or unreadable scan had no way back — pressing
+  // Delivered moves the trip to pending_approval, where the finalize-lock
+  // freezes its documents for good. The server has always allowed replacement
+  // (the Cloudinary publicId is deterministic per stop, so a re-upload
+  // overwrites in place); only the affordance was missing.
+  const needsCustomsDocHere = Boolean(
+    activeStop && requiresCustomsDoc(activeStop.consignee?.zone_code, activeStop.consignee?.area)
+  );
+  const k2DoneHere = Boolean(needsCustomsDocHere && activeStop?.k2_photo);
+
   // Q1 ruling (29 Jul): re-pointing is allowed, but a stop whose POD is up and
   // whose Delivered was never tapped follows the driver in a banner.
   const unfinished = bySeq.filter(
@@ -749,6 +762,23 @@ export function ActiveTripScreen() {
                     <Text style={styles.retakePillText}>{t("trip.podRetakeShort")}</Text>
                   </TouchableOpacity>
                 </View>
+                {k2DoneHere ? (
+                  <View style={styles.podLine}>
+                    <Ionicons name="document-attach" size={19} color={colors.green} />
+                    <Text style={styles.podLineText} numberOfLines={1}>
+                      {t("trip.k2Uploaded")}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.retakePill}
+                      onPress={() => onCaptureK2(activeStop)}
+                      disabled={uploadK2.isPending}
+                      accessibilityRole="button"
+                    >
+                      <Ionicons name="refresh" size={16} color={colors.blue} />
+                      <Text style={styles.retakePillText}>{t("trip.k2ReplaceShort")}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
                 <View style={styles.chipRow}>
                   <Chip icon="navigate" label={t("trip.mapsShort")} onPress={() => openMapsFor(activeStop)} />
                   <Chip icon="call" label={t("trip.call")} onPress={() => callConsignee(activeStop)} />

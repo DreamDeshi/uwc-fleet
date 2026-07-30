@@ -163,6 +163,7 @@
     "k2Form": "Customs document confirmed",
     "k2Capture": "Upload customs document",
     "k2Uploaded": "Customs document uploaded",
+    "k2ReplaceShort": "Replace",
     "k2NeedsConnection": "Connect to the internet to upload the customs document.",
     "docGateHint": "Confirm the DO (and a customs document, where one is needed) before marking delivered.",
     "payBreakdownTitle": "Pay Breakdown",
