@@ -68,7 +68,18 @@ export interface ExceptionListRow {
   current_state: string;
   reason: string;
   reported_at: string;
-  stop: { sequence: number; arrived_at: string | null; company_name: string } | null;
+  stop: {
+    sequence: number;
+    arrived_at: string | null;
+    company_name: string;
+    /**
+     * SERVER-DERIVED: an explicit rejection anywhere on this stop vetoes its pay
+     * (owner ruling, 30 Jul 2026). The client cannot compute it — this row does
+     * not carry the stop's sibling reports. Optional so an older API that omits
+     * it degrades to "not vetoed", which is the pre-ruling behaviour.
+     */
+    pay_vetoed?: boolean;
+  } | null;
 }
 
 export interface ReportExceptionInput {

@@ -40,12 +40,19 @@ export function isStopSettled(stop: SettleableStop): boolean {
   if (!stop.arrived_at) return false;
   const exceptions = stop.exceptions ?? [];
   // AN EXPLICIT REJECT WINS (owner ruling, 30 Jul 2026) — mirrors the server's
-  // `none: { current_state: "rejected" }`. A stop an admin rejected is NOT
-  // settled, even if another report on it was verified and resumed; otherwise
-  // reject means nothing whenever a second report exists. Keeping this in step
-  // with services/undeliveredPay.ts matters: if the client thinks a stop is
-  // settled and the server does not, the driver's rail hides work he still owes.
+  // `none: { current_state: "rejected" }`. Reject is the no-pay lever, so it
+  // must beat an approval on the same stop; otherwise it means nothing whenever
+  // a second report exists.
+  //
+  // ⚠ THIS IS THE **PAY** QUESTION ONLY. For "does the driver still owe this
+  // stop", use isStopAdjudicated below — a vetoed stop is still CLOSED OUT.
+  // Answering both with this one function is what stranded trips server-side.
   if (exceptions.some((e) => e.current_state === "rejected")) return false;
+  return hasApproval(exceptions);
+}
+
+/** Verified + resumed: the office closed this stop out. NO reject veto. */
+function hasApproval(exceptions: NonNullable<SettleableStop["exceptions"]>): boolean {
   return exceptions.some(
     (e) =>
       e.current_state === "resolved" &&
@@ -55,10 +62,24 @@ export function isStopSettled(stop: SettleableStop): boolean {
 }
 
 /**
+ * Is this stop CLOSED OUT — settled, or adjudicated-but-vetoed? Either way the
+ * office decided and the driver does not owe it, so it must leave his rail and
+ * must not hold the trip open. Mirrors ADJUDICATED_UNDELIVERED_WHERE.
+ */
+export function isStopAdjudicated(stop: SettleableStop): boolean {
+  if (stop.status === "delivered") return true;
+  if (!stop.arrived_at) return false;
+  return hasApproval(stop.exceptions ?? []);
+}
+
+/**
  * The stops still outstanding, in order — what "next stop", the Active Trip
  * rail and the Home card should all be counting. Deliberately ONE helper so
  * the three screens cannot drift apart.
  */
 export function outstandingStops<T extends SettleableStop>(stops: T[]): T[] {
-  return stops.filter((s) => s.status !== "delivered" && !isStopSettled(s));
+  // ADJUDICATED, not settled: a stop whose pay was vetoed by a rejection is
+  // still decided, so it leaves the rail. Using isStopSettled here would show
+  // the driver work the server no longer counts outstanding.
+  return stops.filter((s) => s.status !== "delivered" && !isStopAdjudicated(s));
 }

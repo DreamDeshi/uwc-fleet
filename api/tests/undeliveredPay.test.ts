@@ -5,6 +5,9 @@ import {
   stopPayInstant,
   hasResolvedStopException,
   SETTLED_UNDELIVERED_WHERE,
+  ADJUDICATED_UNDELIVERED_WHERE,
+  isStopSettled,
+  isStopAdjudicated,
   type PayableStopLike,
 } from "../src/services/undeliveredPay";
 
@@ -265,5 +268,45 @@ describe("a stop carrying SEVERAL exceptions", () => {
     });
     expect(stopPayEligibility(s)).toBe("delivered");
     expect(stopPayInstant(s)).toEqual(DELIVERED);
+  });
+});
+
+describe("PAYS and OUTSTANDING are two different questions", () => {
+  // The reject veto initially went into the ONE shared predicate, which made a
+  // vetoed stop OUTSTANDING again: the trip stopped auto-finalizing, the driver
+  // and truck were held, pay for the stops that DID earn never proposed, and on
+  // a single-drop trip abort produced `cancelled` with a null incentive and no
+  // admin edit route (assertIncentiveApprovable is pending_approval-only) —
+  // RM0 on an RM44 drop, correctable only by a DB write. Split, and pinned.
+
+  it("a vetoed stop does not pay but IS adjudicated", () => {
+    const s = stop({ exceptions: [...rejected, ...verifiedThenResumed] });
+    expect(stopPayEligibility(s)).toBe("unpaid");
+    expect(isStopSettled(s)).toBe(false);
+    expect(isStopAdjudicated(s)).toBe(true); // ← the trip can still finalize
+  });
+
+  it("only an APPROVAL adjudicates — a lone reject leaves the stop owed", () => {
+    expect(isStopAdjudicated(stop({ exceptions: [...rejected] }))).toBe(false);
+    expect(isStopAdjudicated(stop({ exceptions: [...stillOpen] }))).toBe(false);
+    expect(isStopAdjudicated(stop({ exceptions: [...verifiedThenRetried] }))).toBe(false);
+  });
+
+  it("a stop he never reached is never adjudicated", () => {
+    expect(isStopAdjudicated(stop({ arrived_at: null, exceptions: [...verifiedThenResumed] }))).toBe(false);
+  });
+
+  it("delivered is always adjudicated", () => {
+    expect(isStopAdjudicated(stop({ status: "delivered", delivered_at: DELIVERED }))).toBe(true);
+  });
+
+  it("the two WHEREs share everything except the veto", () => {
+    // Derivation, not duplication: SETTLED is built from ADJUDICATED, so the
+    // shared half cannot drift. Only `exceptions.none` may differ.
+    expect(ADJUDICATED_UNDELIVERED_WHERE.status).toEqual(SETTLED_UNDELIVERED_WHERE.status);
+    expect(ADJUDICATED_UNDELIVERED_WHERE.arrived_at).toEqual(SETTLED_UNDELIVERED_WHERE.arrived_at);
+    expect(ADJUDICATED_UNDELIVERED_WHERE.exceptions.some).toEqual(SETTLED_UNDELIVERED_WHERE.exceptions.some);
+    expect(ADJUDICATED_UNDELIVERED_WHERE.exceptions).not.toHaveProperty("none");
+    expect(SETTLED_UNDELIVERED_WHERE.exceptions.none).toEqual({ current_state: "rejected" });
   });
 });

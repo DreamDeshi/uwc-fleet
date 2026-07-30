@@ -80,7 +80,13 @@ function ExceptionDetailModal({ row, onClose, onResolved }: { row: ExceptionList
   // consequence — a `truck` report filed en route attaches to the NEXT stop,
   // which has no arrival.
   const canPay = Boolean(row.stop?.arrived_at);
-  const paysThisStop = isVerified && canPay;
+  // ...and an explicit REJECT on this stop — from ANY report, not just this one —
+  // vetoes the pay outright (owner ruling, 30 Jul 2026). Server-derived, because
+  // this row cannot see its siblings: without it the banner said "This stop is
+  // PAID, because you verified it" while the server paid RM0. This screen's whole
+  // job is to state the money consequence, so it must carry the veto too.
+  const payVetoed = Boolean(row.stop?.pay_vetoed);
+  const paysThisStop = isVerified && canPay && !payVetoed;
 
   const run = async (kind: "verify" | "request-more-evidence" | "reject" | "resume" | "resolve") => {
     if (!exc) return;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isStopSettled, outstandingStops } from "./stopSettled";
+import { isStopSettled, isStopAdjudicated, outstandingStops } from "./stopSettled";
 
 /**
  * The client-side mirror of api/src/services/undeliveredPay.ts. If these two
@@ -119,12 +119,29 @@ describe("a stop carrying SEVERAL exceptions", () => {
     expect(isStopSettled({ status: "arrived", arrived_at: ARRIVED, exceptions: [SETTLED, REJECTED] })).toBe(false);
   });
 
-  it("a rejected stop stays OUTSTANDING on the rail, so he can still deliver it", () => {
+  it("a vetoed stop is NOT settled but IS adjudicated — it leaves the rail", () => {
+    // The two questions are separate. An earlier version of this test asserted
+    // the vetoed stop stays OUTSTANDING; that was the bug — server-side it made
+    // the trip never finalize, holding the driver and the truck and withholding
+    // pay for the stops that DID earn. The office decided; he does not owe it.
+    const vetoed = { status: "arrived", arrived_at: ARRIVED, exceptions: [REJECTED, SETTLED] };
+    expect(isStopSettled(vetoed)).toBe(false); // does not pay
+    expect(isStopAdjudicated(vetoed)).toBe(true); // but is closed out
+
     const stops = [
-      { id: "a", status: "arrived", arrived_at: ARRIVED, exceptions: [REJECTED, SETTLED] },
-      { id: "b", status: "arrived", arrived_at: ARRIVED, exceptions: [SETTLED] },
+      { id: "a", ...vetoed },
+      { id: "b", status: "arrived", arrived_at: ARRIVED, exceptions: [OPEN] },
     ];
-    expect(outstandingStops(stops).map((s) => s.id)).toEqual(["a"]);
+    expect(outstandingStops(stops).map((s) => s.id)).toEqual(["b"]);
+  });
+
+  it("an UNadjudicated stop still owes work, vetoed or not", () => {
+    // Only an approval closes a stop out. A lone rejection with no approval
+    // means nobody said "we are not going back" — it stays on the rail.
+    expect(isStopAdjudicated({ status: "arrived", arrived_at: ARRIVED, exceptions: [OPEN] })).toBe(false);
+    expect(isStopAdjudicated({ status: "arrived", arrived_at: ARRIVED, exceptions: [REJECTED] })).toBe(false);
+    // ...and a stop he never reached is never adjudicated, whatever was filed.
+    expect(isStopAdjudicated({ status: "pending", arrived_at: null, exceptions: [SETTLED] })).toBe(false);
   });
 
   it("a settled stop with a second open report is NOT outstanding", () => {

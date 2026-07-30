@@ -56,7 +56,7 @@ import {
 } from "../services/incentiveEngine";
 import { leaveDateFilter } from "../services/driverLeave";
 import { priorDeliveredDropsWhere } from "../services/dayLedger";
-import { SETTLED_UNDELIVERED_WHERE, isStopSettled, hasOpenException } from "../services/undeliveredPay";
+import { SETTLED_UNDELIVERED_WHERE, isStopSettled, hasOpenException, ADJUDICATED_UNDELIVERED_WHERE, isStopAdjudicated } from "../services/undeliveredPay";
 import { sha256Hex } from "../lib/exceptionFingerprint";
 import { changeRequestsEnabled } from "../lib/featureFlags";
 import { TRIP_INCLUDE } from "../lib/tripInclude";
@@ -3048,7 +3048,7 @@ router.patch(
       // that blocks every later delivery on the trip.
       const stop = stop_id
         ? trip.stops.find((s) => s.id === stop_id)
-        : trip.stops.find((s) => s.status !== "delivered" && !isStopSettled(s));
+        : trip.stops.find((s) => s.status !== "delivered" && !isStopAdjudicated(s));
       if (!stop) {
         throw new ApiError(400, "STOP_NOT_FOUND", "No matching stop found for this trip.");
       }
@@ -3113,7 +3113,10 @@ router.patch(
         // "not delivered" forever, the trip could never finalize, and the pay it
         // just earned would never propose.
         const remainingStops = await tx.tripStop.count({
-          where: { trip_id: id, status: { not: "delivered" }, NOT: SETTLED_UNDELIVERED_WHERE },
+          // ADJUDICATED, not SETTLED: a stop whose pay a rejection vetoed is still
+          // CLOSED OUT. Using the pay predicate here made it outstanding again
+          // and the trip never finalized. See undeliveredPay's two-predicate note.
+          where: { trip_id: id, status: { not: "delivered" }, NOT: ADJUDICATED_UNDELIVERED_WHERE },
         });
         if (remainingStops > 0) {
           // More stops to go — no money moves. (Barrier: a report may still open
