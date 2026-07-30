@@ -103,3 +103,25 @@ export function redactRequestorMoney<T>(body: T): T {
   }
   return out as unknown as T;
 }
+
+/**
+ * The Express layer that applies the redaction, exported as a NAMED function so
+ * a test can assert its POSITION in the middleware stack by identity.
+ *
+ * Position is the whole guarantee. The redaction only covers a router because it
+ * is registered before it: anything mounted on /api/v1/trips ahead of this layer
+ * is not covered, silently, with no behavioural test going red — the exceptions
+ * router was in exactly that state and survived only because tripsRoutes
+ * happened to be mounted first. A comment saying "keep this first" is not a
+ * guarantee; tests/requestorMoneyMount.test.ts is.
+ */
+export function redactRequestorMoneyLayer(
+  req: { user?: { role?: string } },
+  res: { json: (body: unknown) => unknown },
+  next: () => void
+): void {
+  const json = res.json.bind(res);
+  res.json = (body: unknown) =>
+    req.user?.role === "requestor" ? json(redactRequestorMoney(body)) : json(body);
+  next();
+}

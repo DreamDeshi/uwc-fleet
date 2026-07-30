@@ -8,7 +8,7 @@ import usersRoutes from "./routes/users";
 import meRoutes from "./routes/me";
 import tripsRoutes from "./routes/trips";
 import exceptionsRoutes from "./routes/exceptions";
-import { redactRequestorMoney } from "./lib/requestorMoney";
+import { redactRequestorMoneyLayer } from "./lib/requestorMoney";
 import metaRoutes from "./routes/meta";
 import consigneesRoutes from "./routes/consignees";
 import incentivesRoutes from "./routes/incentives";
@@ -96,12 +96,9 @@ app.use("/api/v1/users", usersRoutes);
 // registration time. Registered before the routers, so it is the LAST transform
 // applied (each wrapper captures the res.json it finds) — nothing downstream,
 // including the POD-signing wrapper, can put an amount back.
-app.use("/api/v1/trips", (req, res, next) => {
-  const json = res.json.bind(res);
-  res.json = (body: unknown) =>
-    req.user?.role === "requestor" ? json(redactRequestorMoney(body)) : json(body);
-  next();
-});
+// Its POSITION is the guarantee, and tests/requestorMoneyMount.test.ts asserts
+// it: this layer must come before every router mounted on this prefix.
+app.use("/api/v1/trips", redactRequestorMoneyLayer);
 app.use("/api/v1/trips", tripsRoutes);
 // Failed-delivery / exception workflow (Phase 1, feature-flagged off by default).
 // Mounted on the same /trips prefix; its paths (/:id/exception*) don't collide
