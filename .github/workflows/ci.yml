@@ -68,6 +68,15 @@ jobs:
       # customs-document rule needs it) against a type that did not declare it.
       # It ran fine, because the API really does return the field, and nothing
       # ever compiled the file. Cheap to check, and it is real source.
+      # e2e is NOT an npm workspace (root workspaces are api + mobile), so the
+      # root `npm ci` above installs none of its dependencies. It has its own
+      # lockfile and stays standalone on purpose — it can be pointed at a
+      # deployed environment without dragging the monorepo along, and Playwright
+      # stays out of every other job's install.
+      - name: Install e2e dependencies
+        run: npm ci
+        working-directory: e2e
+
       - name: E2E typecheck
         run: npx tsc --noEmit
         working-directory: e2e
@@ -222,6 +231,13 @@ jobs:
             sleep 2
           done
           curl -sf http://localhost:8081 >/dev/null || { echo "web app did not serve:"; cat serve.log; exit 1; }
+
+      # See the note in the `checks` job: e2e is standalone, so the root npm ci
+      # does not cover it. Without this, `npx playwright test` dies with
+      # "Cannot find module '@playwright/test'".
+      - name: Install e2e dependencies
+        run: npm ci
+        working-directory: e2e
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium

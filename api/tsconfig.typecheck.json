@@ -17,5 +17,10 @@
     "noEmit": true,
     "rootDir": ".."
   },
-  "include": ["src", "tests", "tests-integration", "scripts", "prisma"]
+  // vitest.*.config.ts are included so that EVERY .ts file in this workspace is
+  // compiled by something. They are lower-risk than the rest — vitest loads them
+  // at run time, so a type error there fails a suite immediately rather than
+  // hiding — but "compiled by nothing" is the state that let the e2e directory
+  // carry a real error on main, so the answer here is simply: nothing is exempt.
+  "include": ["src", "tests", "tests-integration", "scripts", "prisma", "vitest.config.ts", "vitest.integration.config.ts"]
 }
