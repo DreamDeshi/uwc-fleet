@@ -559,16 +559,18 @@ router.post("/:id/exception/:exId/resume", requireRole("admin"), validateBody(re
 // BLOCKING this trip", not "an exception is open". Reads that want "is anything
 // open" query TripException.closed_at, which the admin lane already does.
 //
-// ⚠ KNOWN LIMITATION, deliberately shipped: while a continued report is still
-// open, the driver CANNOT file a second one. That is not this route's choice —
-// it is the DB constraint `TripException_one_open_per_trip`, a partial unique
-// index on (trip_id) WHERE closed_at IS NULL (migration
-// 20260725130100_exception_hardening_constraints). Relaxing it to
-// one-BLOCKING-per-trip is a migration, and the schema is frozen.
-// So a driver who carries on past a customer-site problem and then breaks down
-// has to phone the office. Bounded, because the office is already pushed at
-// report time (the at-report alert) and closing the first report restores his
-// ability to file. Pinned by a test so it is visible rather than discovered.
+// ✅ RESOLVED (migration 20260730120000_relax_one_open_exception_per_trip): a
+// driver who has continued past one report CAN now file a second. The old
+// partial unique index `TripException_one_open_per_trip` (one row per trip with
+// closed_at IS NULL) meant carrying on past a customer-site problem and then
+// breaking down left him phoning the office; it encoded one-OPEN-per-trip when
+// the rule was only ever one-BLOCKING-per-trip.
+//
+// What still holds the line: `Trip.open_exception_id` is a SINGLE nullable
+// column (and itself unique), so a trip cannot be blocked by two exceptions at
+// once — the guard above and the CAS below are the enforcement, not the index.
+// Reporting is still refused while the pointer is set; the driver must continue
+// past, or the office must close, the current one first.
 router.post("/:id/exception/:exId/continue", requireRole("driver"), validateBody(reviewSchema), async (req, res, next) => {
   try {
     const { id: tripId, exId } = req.params;

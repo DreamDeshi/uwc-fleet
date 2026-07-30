@@ -856,24 +856,51 @@ describe("driver continue-trip — unblocks the truck, decides nothing", () => {
     expect((await prisma.tripStop.findUniqueOrThrow({ where: { id: stopId } })).points_awarded).toBe(6);
   });
 
-  it("KNOWN LIMITATION: he cannot file a SECOND report while the first is open", async () => {
-    // Not this route's choice — the DB enforces one OPEN exception per trip
-    // (partial unique index TripException_one_open_per_trip). Leaving the
-    // report open is what keeps the driver from deciding anything about pay,
-    // and relaxing the index to one-BLOCKING-per-trip is a migration, which is
-    // frozen. Pinned here so the trade-off is visible rather than discovered
-    // by a driver at the roadside.
+  it("he CAN file a second report once he has continued past the first", async () => {
+    // Was a known limitation: the partial unique index one-OPEN-per-trip meant
+    // a driver who carried on past a customer-site problem and then broke down
+    // had to phone the office. Relaxed to one-BLOCKING-per-trip by migration
+    // 20260730120000_relax_one_open_exception_per_trip.
     const { t, tripId, exId } = await withOpenException(["A2", "K1"]);
     expect((await carryOn(driver, tripId, exId)).status).toBe(200);
 
     const second = await reportReq(driver, tripId, { trip_stop_id: t.stops[1].id }).attach("photo", PHOTO, "e.jpg");
+    expect(second.status, JSON.stringify(second.body)).toBe(201);
+
+    // BOTH are open and unadjudicated — continuing decided nothing about the first.
+    expect(await prisma.tripException.count({ where: { trip_id: tripId, closed_at: null } })).toBe(2);
+
+    // ...but only the NEWEST blocks the trip. One blocking exception per trip is
+    // the invariant that survived; it lives in the single Trip.open_exception_id
+    // column, not in an index.
+    const trip = await prisma.trip.findUniqueOrThrow({ where: { id: tripId } });
+    expect(trip.open_exception_id).toBe(second.body.exception.id);
+  });
+
+  it("still refuses a second report while one is BLOCKING (he has not continued)", async () => {
+    // The relaxation must not have opened the gate entirely: without Continue,
+    // the pointer is still set and the report route refuses.
+    const { t, tripId } = await withOpenException(["A2", "K1"]);
+
+    const second = await reportReq(driver, tripId, { trip_stop_id: t.stops[1].id }).attach("photo", PHOTO, "e.jpg");
     expect(second.status).toBe(409);
     expect(second.body.error.code).toBe("EXCEPTION_ALREADY_OPEN");
+  });
 
-    // Closing the first restores it.
-    expect((await api().post(`/api/v1/trips/${tripId}/exception/${exId}/reject`).set(auth(admin)).send({ client_action_id: randomUUID(), note: "not a real failure" })).status).toBe(200);
-    const third = await reportReq(driver, tripId, { trip_stop_id: t.stops[1].id }).attach("photo", PHOTO, "e.jpg");
-    expect(third.status, JSON.stringify(third.body)).toBe(201);
+  it("a driver can stack two open reports on the SAME stop", async () => {
+    // Reachable only because the index was relaxed. The MONEY consequence — a
+    // stop with two settled exceptions still earns once — is a pure predicate
+    // and is pinned in tests/undeliveredPay.test.ts, not here, where trip
+    // finalization would fire between the two settlements.
+    const { tripId, stopId, exId } = await withOpenException();
+    expect((await carryOn(driver, tripId, exId)).status).toBe(200);
+
+    const second = await reportReq(driver, tripId, { trip_stop_id: stopId }).attach("photo", PHOTO, "e.jpg");
+    expect(second.status, JSON.stringify(second.body)).toBe(201);
+    expect(second.body.exception.id).not.toBe(exId);
+
+    const onStop = await prisma.tripException.count({ where: { trip_stop_id: stopId, closed_at: null } });
+    expect(onStop).toBe(2);
   });
 
   it("is idempotent, and a second call is a harmless no-op", async () => {
