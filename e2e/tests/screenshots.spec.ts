@@ -75,14 +75,14 @@ test("DRIVER — all screens", async ({ page }) => {
 
   // Home / dashboard (shows the seeded assignment).
   await mobileLogin(page, DRIVER);
-  await shot(page, "driver-home", "Assignments");
+  await shot(page, "driver-home", "Log");
 
   // Trips tab.
   await tapTab(page, "Trips");
   await shot(page, "driver-trips");
 
   // Earnings screen.
-  await tapTab(page, "Earnings");
+  await tapTab(page, "My Stats");
   await shot(page, "driver-earnings", "My Earnings");
 
   // Profile screen.

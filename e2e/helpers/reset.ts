@@ -48,11 +48,20 @@ export async function freeDriver(): Promise<void> {
       // REAL photo upload (sets pod_photo and flips do_uploaded server-side —
       // the flag can no longer be self-attested, 400 POD_PHOTO_REQUIRED), plus
       // the K2 customs ack, which is still a legitimate checkbox on its own.
-      // A K2-ZONE stop additionally requires the UPLOADED Borang K2 document
-      // (R1 Q6 — the ack alone no longer satisfies the delivery gate).
+      // A stop that needs the Borang K2 customs document additionally requires
+      // it UPLOADED (R1 Q6 — the ack alone no longer satisfies the gate).
+      //
+      // That is NOT zone "K2" (Sungai Petani/Kedah, which never needs the
+      // form): the rule is zone "P1" AND an `area` containing "BAYAN LEPAS"
+      // (owner decision 29 Jul). Keying on the zone code left reset unable to
+      // close a real Bayan Lepas trip — the server rejects `delivered` with
+      // DOCUMENTATION_INCOMPLETE and every later spec inherits the stuck trip.
       // Delivering the last stop completes the trip.
       await uploadPod(accessToken, trip.id, stop.id, POD_FILE);
-      if (stop.consignee?.zone_code === "K2") {
+      const needsCustomsDoc =
+        stop.consignee?.zone_code === "P1" &&
+        (stop.consignee?.area ?? "").toUpperCase().includes("BAYAN LEPAS");
+      if (needsCustomsDoc) {
         await uploadK2(accessToken, trip.id, stop.id, POD_FILE);
       }
       await markStopDocs(accessToken, trip.id, stop.id, { k2_form_ack: true });

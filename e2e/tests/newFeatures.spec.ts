@@ -41,11 +41,23 @@ import { POD_FILE } from "../helpers/pod";
 
 // ── shared fixtures ──────────────────────────────────────────────────────
 
-/** A pending trip whose single stop is in zone K2 (the customs-form zone). */
+/**
+ * A pending trip whose single stop actually requires the Borang K2 customs
+ * document.
+ *
+ * NOT zone "K2" — that is Sungai Petani/Kedah and has nothing to do with the
+ * form. The two just share a name, and this fixture used to conflate them, so
+ * the gate below was never really exercised. The real rule (owner decision
+ * 29 Jul, mirrored in api/src/services/incentiveEngine.ts and
+ * mobile/src/lib/activeTripStage.ts) is CUSTOMS_DOC_ZONE "P1" AND an `area`
+ * containing "BAYAN LEPAS" — Penang Island is gated by AREA, not by zone,
+ * because only about half of P1 sits in the free-trade zone.
+ */
 async function seedPendingK2Trip(requestorToken: string): Promise<Trip> {
   const routeType = await pickRouteType(requestorToken);
-  const k2 = await searchConsignees(requestorToken, { zone: "K2" });
-  expect(k2.length, "test DB should hold K2-zone consignees").toBeGreaterThan(0);
+  const p1 = await searchConsignees(requestorToken, { zone: "P1" });
+  const k2 = p1.filter((c) => (c.area ?? "").toUpperCase().includes("BAYAN LEPAS"));
+  expect(k2.length, "test DB should hold P1 consignees in BAYAN LEPAS").toBeGreaterThan(0);
   const pickup = new Date();
   pickup.setUTCDate(pickup.getUTCDate() + 1);
   pickup.setUTCHours(9 - 8, 0, 0, 0); // 09:00 MYT tomorrow — inside the operating window
@@ -69,7 +81,7 @@ async function assignToTestDriver(adminToken: string, tripId: string): Promise<T
 
 /** Enter the ActiveTrip screen from the driver home and clear the GPS-consent modal. */
 async function openActiveTrip(page: Page): Promise<void> {
-  await page.getByText("View Navigation", { exact: true }).click();
+  await page.getByText("Continue trip", { exact: true }).click();
   const notNow = page.getByText("Not now", { exact: true });
   if (await notNow.isVisible().catch(() => false)) await notNow.click();
 }
@@ -228,10 +240,14 @@ test.describe("K2 destination gate (driver, mobile web)", () => {
 
     // POD satisfied, K2 outstanding: the upload button is offered and pressing
     // Delivered must NOT complete the trip (the gate holds).
-    await expect(page.getByText("POD photo uploaded").first()).toBeVisible();
-    await expect(page.getByText("Upload Borang K2 form")).toBeVisible();
+    await expect(page.getByText(/POD (photo )?uploaded/).first()).toBeVisible();
+    await expect(page.getByText(/Upload (Borang K2 form|customs document)/)).toBeVisible();
     const completed = page.getByText("Trip Completed!");
-    await page.getByText("Delivered", { exact: true }).click({ force: true });
+    // The gate is a LOCK, not a dimmed button: while the customs document is
+    // outstanding the footer offers the upload and states why Delivered is
+    // unavailable, so there is no bare "Delivered" control to press at all.
+    await expect(page.getByText(/Delivered .* the customs document/)).toBeVisible();
+    await expect(page.getByText("Delivered", { exact: true })).toHaveCount(0);
     await expect(completed).not.toBeVisible({ timeout: 2500 });
 
     // Upload the K2 document through the same multipart request the button
@@ -240,7 +256,12 @@ test.describe("K2 destination gate (driver, mobile web)", () => {
     await uploadK2(driver.token, pending.id, stopId, POD_FILE);
     await page.reload();
     await openActiveTrip(page);
-    await expect(page.getByText("K2 form uploaded")).toBeVisible({ timeout: 20_000 });
+    // NOTE: unlike POD (which keeps a green "POD uploaded - HH:MM" row plus a
+    // Retake button), an uploaded customs document leaves NO persistent mark on
+    // this screen - trip.k2Uploaded is only a transient toast on the in-app
+    // upload. The observable proof that the gate opened is the footer advancing
+    // from the locked row to a real Delivered control.
+    await expect(page.getByText("Delivered", { exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(async () => {
       if (await completed.isVisible()) return;
       // force: the live map animates continuously on a real network, so strict
@@ -280,8 +301,8 @@ test.describe("Exception workflow (flag-on, all three roles)", () => {
       await mobileLogin(page, DRIVER);
       await openActiveTrip(page);
 
-      await page.getByText("Report Exception", { exact: true }).click();
-      await expect(page.getByText("Report an exception")).toBeVisible();
+      await page.getByText("Report a problem", { exact: true }).click();
+      await expect(page.getByText("What went wrong?")).toBeVisible();
       for (const cat of ["Customer / Site", "Truck", "Cargo", "External", "Documentation"]) {
         await expect(page.getByText(cat, { exact: true })).toBeVisible();
       }
@@ -290,9 +311,9 @@ test.describe("Exception workflow (flag-on, all three roles)", () => {
       // the photoRequired message (mirrors the server's photo requirement).
       await page.getByText("Truck", { exact: true }).click();
       await page
-        .getByPlaceholder("e.g. gate locked, nobody at the site to receive")
+        .getByPlaceholder(/Anything else the office should know/)
         .fill("e2e validation probe");
-      await page.getByText("Submit report", { exact: true }).click();
+      await page.getByText("Tell the office", { exact: true }).click();
       await expect(page.getByText("A photo is required.")).toBeVisible();
     });
 
@@ -342,7 +363,7 @@ test.describe("Exception workflow (flag-on, all three roles)", () => {
 
     // Open the detail modal → Verify → the state chip flips to Verified.
     await laneTicket.click();
-    await page.getByText("Verify", { exact: true }).click();
+    await page.getByText(/^Verify/).first().click();
     await expect(page.getByText("Verified").first()).toBeVisible({ timeout: 15_000 });
   });
 

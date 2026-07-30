@@ -27,29 +27,28 @@ test.describe("Driver (mobile web)", () => {
 
     await mobileLogin(page, DRIVER);
 
-    // The driver home's assignment section title is i18n key driver.todaysAssignments,
-    // which renders as "Assignments" (the singular "Today's Assignment" key is dead).
-    await expect(page.getByText("Assignments", { exact: true })).toBeVisible();
-    // The assignment card shows the assigned status (uppercased by StatusBadge)
-    // and the PLX 2406 driver's truck.
-    await expect(page.getByText("ASSIGNED").first()).toBeVisible();
-    await expect(page.getByText("PLX 2406").first()).toBeVisible();
+    // Redesigned Home (Jul 2026): no "Assignments" heading and no StatusBadge —
+    // an assigned-but-not-started trip renders as a card whose action is
+    // "Start this trip". The plate is read from the account, not hardcoded:
+    // the 29 Jul fleet revision moved this driver from PLX 2406 to PND 1888.
+    await expect(page.getByText("Start this trip", { exact: true })).toBeVisible();
+    const { plate } = await driverIdentity(DRIVER);
+    await expect(page.getByText(plate).first()).toBeVisible();
   });
 
   test("10. starts the trip → status changes to in progress", async ({ page }) => {
     const trip = await seedAssignedTrip(adminToken);
 
     await mobileLogin(page, DRIVER);
-    // The driver home's assignment section title is i18n key driver.todaysAssignments,
-    // which renders as "Assignments" (the singular "Today's Assignment" key is dead).
-    await expect(page.getByText("Assignments", { exact: true })).toBeVisible();
+    // Redesigned Home: the start action sits on the Home card itself — the
+    // intermediate "Trip Details" screen the old flow went through is gone.
+    await page.getByText("Start this trip", { exact: true }).click();
 
-    // Assignment card → Trip Details → Start Trip.
-    await page.getByText("View Trip Details", { exact: true }).click();
-    await page.getByText("Start Trip", { exact: true }).click();
-
-    // Starting replaces the screen with the live ActiveTrip view (Navigate button).
-    await expect(page.getByText("Navigate", { exact: true })).toBeVisible();
+    // Starting lands on the live ActiveTrip view, which raises the GPS-consent
+    // overlay on first entry; dismiss it, then assert the delivery control.
+    const notNow = page.getByText("Not now", { exact: true });
+    if (await notNow.isVisible().catch(() => false)) await notNow.click();
+    await expect(page.getByText("Delivered", { exact: true }).first()).toBeVisible();
 
     // Confirm the backend transition too.
     const driver = await login(DRIVER);
@@ -74,8 +73,8 @@ test.describe("Driver (mobile web)", () => {
     await uploadPod(driver.token, trip.id, stopId, POD_FILE);
 
     await mobileLogin(page, DRIVER);
-    // An in-progress trip surfaces the Active Trip card → View Navigation.
-    await page.getByText("View Navigation", { exact: true }).click();
+    // An in-progress trip surfaces the Active Trip card → Continue trip.
+    await page.getByText("Continue trip", { exact: true }).click();
 
     // The ActiveTrip screen raises the GPS-consent modal on first entry to an
     // in-progress trip. It is a full-screen overlay — until dismissed it
@@ -88,7 +87,7 @@ test.describe("Driver (mobile web)", () => {
 
     // POD already uploaded (above), so the gate is satisfied and Delivered is
     // enabled. The inline label confirms it before we act.
-    await expect(page.getByText("POD photo uploaded").first()).toBeVisible();
+    await expect(page.getByText(/POD (photo )?uploaded/).first()).toBeVisible();
 
     // The Delivered button enables once the POD refetch lands, and the bottom
     // sheet can swallow the first tap as a drag — so retry until the completion
