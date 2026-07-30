@@ -1,7 +1,7 @@
 name: CI
 
 # This repo deploys on push to main (Railway auto-migrates on preDeploy), so CI is
-# the last safety net before prod. Two jobs:
+# the last safety net before prod. Three jobs:
 #
 #   checks       Fast, self-contained (no database): both typechecks + both unit
 #                suites, including the money-path incentive/dispatch conformance
@@ -10,6 +10,13 @@ name: CI
 #                migrations, checks for migration/checksum drift, seeds, and runs
 #                the in-process (supertest) integration tier. Isolated in its own
 #                job so a DB hiccup never masks the fast checks.
+#   migrations   Refuses destructive SQL that carries no written reason. The
+#                integration job CANNOT catch this: it runs against a FRESH
+#                database, where a DELETE simply matches zero rows. Only this
+#                job reads the statements as text and asks whether the data loss
+#                was intended. It also prints every added migration's SQL into
+#                the run summary, because merging one applies it to production
+#                immediately.
 on:
   push:
     branches: [main]
@@ -53,6 +60,37 @@ jobs:
 
       - name: Mobile unit suite
         run: npm test --workspace mobile
+
+  migrations:
+    name: Migration safety (destructive SQL guard)
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: the scan diffs against the base branch to work out which
+      # migrations this pull request ADDS, so their SQL can be shown in full.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # No `prisma generate` and no database: the scanner reads migration.sql as
+      # text. Keeping it independent means it still reports when Postgres or the
+      # Prisma engine download is having a bad day.
+      - name: Scan migrations for unjustified destructive SQL
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ -n "$BASE_REF" ]; then
+            npm run check:migrations --workspace api -- --base "origin/$BASE_REF"
+          else
+            npm run check:migrations --workspace api
+          fi
 
   integration:
     name: Integration tier (Postgres) + migration drift

@@ -8,6 +8,11 @@
 -- the same zone survives — so a database that has just the canonical rows is
 -- untouched, and K2's two LEGITIMATE locations (Kuala Ketil + Sungai Petani,
 -- one zone, per the spec sheet) are preserved.
+-- DESTRUCTIVE-OK: removes only the three known stale twin location_names, and
+-- only where the EXISTS guard proves another row for the same zone survives, so
+-- no zone can lose its rate and a database holding just the canonical rows
+-- matches zero rows. Deliberate: the twins are a live money bug (points lookup
+-- is last-row-wins in arbitrary order).
 DELETE FROM "DestinationRate" d
 WHERE d."location_name" IN ('Penang Island', 'Juru & Perai (SPS, SPT)', 'Tasek Gelugor (SPU)')
   AND d."zone_code" IS NOT NULL
@@ -18,6 +23,10 @@ WHERE d."location_name" IN ('Penang Island', 'Juru & Perai (SPS, SPT)', 'Tasek G
 
 -- Align any same-zone rows whose points diverged (defensive: none known today)
 -- to the zone's minimum, so the app-level zone-sync invariant starts clean.
+-- DESTRUCTIVE-OK: rewrites points ONLY on same-zone rows that already disagree
+-- with each other, converging them on the zone minimum (the conservative
+-- direction for pay). No divergence is known to exist today, so this is
+-- expected to match zero rows.
 UPDATE "DestinationRate" d
 SET "points" = sub.min_points
 FROM (

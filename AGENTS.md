@@ -184,6 +184,114 @@ explicit user approval.
 
 
 
+\### Merging a migration to `main` applies it to production immediately
+
+
+
+There is NO gate between the merge and production DDL. `api/railway.json` sets
+
+`preDeployCommand: npm run migrate:deploy` and Railway auto-deploys `main`, so a
+
+migration runs against the production database as soon as the pull request is
+
+merged. Nobody approves it, nobody runs it by hand, and there is no staging
+
+database in between. `main` requires zero approving reviews, so in practice the
+
+author of a migration is its only reader.
+
+
+
+Consequences to treat as rules:
+
+
+
+\- A migration on a pull request is a production change that is already
+
+&#x20; half-committed. Read the generated SQL line by line before merging — not
+
+&#x20; after. Confirm that any data loss is intended and say so in the pull request.
+
+\- `prisma migrate diff` output is a DRAFT, never a final artefact. It has
+
+&#x20; repeatedly tried to drop `ExceptionEvidence_action_same_exception_fkey`, a raw
+
+&#x20; composite FK that is invisible to Prisma. Always re-read generated SQL for
+
+&#x20; that line and remove it.
+
+\- Destructive statements have shipped this way before — for example
+
+&#x20; `20260718000000_remove_jh_sl_zones` runs `DELETE FROM "DestinationRate"`, a
+
+&#x20; money table. Care was taken, but nothing enforced it.
+
+\- Do NOT "fix" this by moving `migrate:deploy` out of `preDeployCommand`. That
+
+&#x20; hook is what guarantees the schema is migrated BEFORE the new code serves
+
+&#x20; traffic; removing it trades a rare risk for a routine one (live code querying
+
+&#x20; a table that does not exist yet).
+
+
+
+\#### The destructive-SQL guard
+
+
+
+CI job "Migration safety (destructive SQL guard)" — a required check — reads
+
+every committed `migration.sql` as text and FAILS on a destructive statement
+
+that carries no written reason. Run it yourself with
+
+`npm run check:migrations --workspace api`.
+
+
+
+Covered: `DROP TABLE / COLUMN / CONSTRAINT / INDEX`, `DROP` of a type, schema,
+
+view, sequence, trigger or function, bare `ALTER TABLE … DROP`, `TRUNCATE`,
+
+`DELETE FROM`, and `UPDATE … SET`. DML is included deliberately: most of this
+
+repo's genuinely destructive statements are `DELETE`/`UPDATE`, and one of them
+
+deletes from `DestinationRate`, a money table.
+
+
+
+To allow an intended loss, put the override immediately ABOVE the statement —
+
+not blanket at the top of the file, which is rejected:
+
+
+
+&#x20;   -- DESTRUCTIVE-OK: why this data may be destroyed
+
+&#x20;   DELETE FROM "Zone" WHERE "code" IN ('JH', 'SL');
+
+
+
+KNOWN UNCOVERED — the guard does not see these, so they remain your judgement:
+
+
+
+\- Statements that are destructive by LOCKING rather than by dropping: adding a
+
+&#x20; NOT NULL column with a default, `SET NOT NULL`, or a `CREATE INDEX` without
+
+&#x20; `CONCURRENTLY` on a large table. Any of these can stall production with no
+
+&#x20; destructive keyword present.
+
+\- Type-narrowing `ALTER COLUMN … TYPE` casts, which can silently truncate.
+
+\- Whether a migration is REVERSIBLE. Nothing here writes a down-migration.
+
+
+
 When a task touches frozen work, explain the missing decision and stop.
 
 
