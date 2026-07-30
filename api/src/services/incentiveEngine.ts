@@ -390,6 +390,20 @@ export function calculateDeliveryIncentive(params: {
     entitled_claim_weekday: number;
     entitled_claim_offpeak: number;
   };
+  /**
+   * Present ⇒ score this group under the INTERPLANT scheme instead of the
+   * per-zone drop scheme. Mr. Teh, A4 (29 Jul 2026):
+   *
+   *   "Interplant no need deduction, but please ensure they need to fulfill
+   *    round trip only can consider complete 1 trip, get 1 point."
+   *
+   * and the 28 Jul workbook, point 5: "ROUND TRIP, SEND AND RETRUN WITH CARGO
+   * ONLY CAN CONSIDER 1 TRIP COUNT".
+   */
+  interplant?: {
+    /** Every stop delivered — cargo went out AND came back. */
+    roundTripComplete: boolean;
+  };
 }): DeliveryIncentiveResult {
   // Peak vs off-peak is decided ONCE per delivery-day group, from the group's
   // first delivery-confirm time in MYT (client rule 3 Jul 2026 — was pickup
@@ -398,6 +412,38 @@ export function calculateDeliveryIncentive(params: {
   // Each truck carries its own two rates (e.g. PLX 2406: RM11 weekday / RM13
   // off-peak), so picking the rate is just a field lookup.
   const rate = offPeak ? params.truck.entitled_claim_offpeak : params.truck.entitled_claim_weekday;
+
+  // ── INTERPLANT: a separate scheme, not a variation of the one below ───────
+  //
+  // FLAT 1 POINT for a COMPLETED round trip, and NO daily deduction. Three
+  // things the per-zone scheme does are deliberately NOT done here:
+  //
+  //   • no per-drop scoring — the unit of pay is the TRIP, not the drop, so a
+  //     two-leg round trip pays 1 point, not 2;
+  //   • no zone-repeat demotion — every plant sits in zone P2, so under the
+  //     normal rule the return leg would score as a same-zone repeat, which is
+  //     meaningless when the whole trip is worth one flat point;
+  //   • no deduction — A4 says so outright.
+  //
+  // An INCOMPLETE round trip earns NOTHING. "Send AND return with cargo only can
+  // consider 1 trip count" is a condition on the pay, not a description of the
+  // route, so a driver who delivers out and comes back empty has not completed
+  // the unit he is paid for.
+  if (params.interplant) {
+    const points = params.interplant.roundTripComplete ? 1 : 0;
+    return {
+      isOffPeak: offPeak,
+      rateUsed: rate,
+      // The single point lands on the LAST leg — the return that completes the
+      // round trip and is the thing being paid for. Earlier legs score 0 rather
+      // than null so the per-drop evidence still explains the total.
+      dropPoints: params.drops.map((_, i) => (i === params.drops.length - 1 ? points : 0)),
+      wasRepeat: params.drops.map(() => false),
+      pointsThisTrip: points,
+      deductionApplied: 0,
+      incentiveThisTrip: Math.round(points * rate * 100) / 100,
+    };
+  }
 
   const scored = scoreDropsDetailed(params.drops, params.zonesDeliveredEarlierToday);
   const dropPoints = scored.map((d) => d.points);

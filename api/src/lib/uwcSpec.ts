@@ -61,3 +61,34 @@ export function loadSpecTrucks(): SpecTruck[] {
   }
   return SPEC_TRUCKS;
 }
+
+/**
+ * Route types that are INTERPLANT — plant-to-plant, paid under Mr. Teh's
+ * separate interplant scheme rather than per-zone drop points.
+ *
+ * Keyed on the ROUTE TYPE, not the truck. Point 6 of the 28 Jul workbook is
+ * explicit that lorries cross over — "All lorry still can swap between
+ * interplant and customer / supplier delivery, and also the driver assign to
+ * which lorry, authorize by admin" — so `isInterplantPlate` answers a DISPATCH
+ * question (which pool auto-dispatch draws from) and this answers a PAY one.
+ * A customer truck lent to an interplant run is paid the interplant way, and
+ * PLX 2406 lent to a customer run is paid the normal way.
+ */
+export const INTERPLANT_ROUTE_TYPES: ReadonlySet<string> = new Set([
+  "Inter-Plant Delivery",
+  "Inter-Plant Return",
+]);
+
+export function isInterplantRouteType(name: string | null | undefined): boolean {
+  return name != null && INTERPLANT_ROUTE_TYPES.has(name);
+}
+
+/** The nine UWC plants an interplant booking may pick up from / deliver to (A1). */
+export const UWC_PLANT_NAMES: readonly string[] = Array.from(
+  { length: 9 },
+  (_, i) => `UWC Plant ${i + 1}`
+);
+
+export function isUwcPlantName(companyName: string | null | undefined): boolean {
+  return companyName != null && UWC_PLANT_NAMES.includes(companyName);
+}

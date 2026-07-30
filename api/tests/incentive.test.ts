@@ -733,3 +733,73 @@ describe("calculateDeliveryIncentive - breakdown fields persisted at finalizatio
     expect(r.deductionApplied).toBe(2);
   });
 });
+
+describe("INTERPLANT pay — a separate scheme (A4, 29 Jul 2026)", () => {
+  // Mr. Teh: "Interplant no need deduction, but please ensure they need to
+  // fulfill round trip only can consider complete 1 trip, get 1 point."
+  // Workbook point 5: "ROUND TRIP, SEND AND RETRUN WITH CARGO ONLY CAN CONSIDER
+  // 1 TRIP COUNT".
+  //
+  // PLX 2406 is the interplant lorry: RM11 weekday / RM13 off-peak, and its
+  // workbook deduction of 2 must NOT be applied to an interplant run.
+  const PLX = { daily_deduction_points: 2, entitled_claim_weekday: 11, entitled_claim_offpeak: 13 };
+  const WEEKDAY_1000 = new Date("2026-07-29T02:00:00Z"); // Wed 10:00 MYT
+  const legs = (n: number) =>
+    Array.from({ length: n }, () => ({ zoneCode: "P2", zonePoints: 3 }));
+
+  const run = (over: Record<string, unknown> = {}) =>
+    calculateDeliveryIncentive({
+      rateDateTime: WEEKDAY_1000,
+      drops: legs(2), // out + back
+      zonesDeliveredEarlierToday: [],
+      priorPointsToday: 0,
+      publicHolidays: new Set<string>(),
+      truck: PLX,
+      interplant: { roundTripComplete: true },
+      ...over,
+    });
+
+  it("a completed round trip is ONE point, whatever the leg count", () => {
+    expect(run().pointsThisTrip).toBe(1);
+    expect(run({ drops: legs(2) }).pointsThisTrip).toBe(1);
+    expect(run({ drops: legs(4) }).pointsThisTrip).toBe(1);
+    // 1 point x RM11, and NOT 2 legs x 3 zone points.
+    expect(run().incentiveThisTrip).toBe(11);
+  });
+
+  it("takes NO daily deduction, even though the lorry carries one", () => {
+    // The trap: PLX 2406's row says deduction 2. Under the normal scheme a
+    // 1-point day would floor to zero and pay RM0.
+    expect(run().deductionApplied).toBe(0);
+    expect(run().incentiveThisTrip).toBe(11);
+  });
+
+  it("an INCOMPLETE round trip earns nothing", () => {
+    // "Send AND return with cargo only can consider 1 trip count" is a condition
+    // on the pay, not a description of the route.
+    const r = run({ interplant: { roundTripComplete: false } });
+    expect(r.pointsThisTrip).toBe(0);
+    expect(r.incentiveThisTrip).toBe(0);
+    expect(r.deductionApplied).toBe(0);
+  });
+
+  it("ignores prior points and same-zone repeats entirely", () => {
+    // Both legs are zone P2. Under the per-zone scheme the second would demote
+    // to a 1-point repeat and the day's prior points would change the marginal.
+    const r = run({ zonesDeliveredEarlierToday: ["P2", "P2"], priorPointsToday: 30 });
+    expect(r.pointsThisTrip).toBe(1);
+    expect(r.incentiveThisTrip).toBe(11);
+    expect(r.wasRepeat).toEqual([false, false]);
+  });
+
+  it("still picks the rate tier the normal way", () => {
+    const offPeak = run({ rateDateTime: new Date("2026-07-29T11:00:00Z") }); // 19:00 MYT
+    expect(offPeak.isOffPeak).toBe(true);
+    expect(offPeak.incentiveThisTrip).toBe(13); // 1 x RM13
+  });
+
+  it("puts the single point on the LAST leg — the return that completes it", () => {
+    expect(run({ drops: legs(3) }).dropPoints).toEqual([0, 0, 1]);
+    expect(run({ interplant: { roundTripComplete: false }, drops: legs(3) }).dropPoints).toEqual([0, 0, 0]);
+  });
+});

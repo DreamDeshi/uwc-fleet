@@ -298,6 +298,19 @@ model Trip {
   route_type                RouteType      @relation(fields: [route_type_id], references: [id])
   status                    TripStatus     @default(pending)
   pickup_datetime           DateTime
+  // INTERPLANT ONLY — which UWC plant the cargo is collected FROM.
+  //
+  // A customer/supplier trip collects at UWC and this stays NULL, exactly as
+  // before. An Inter-Plant trip is plant→plant, so the requestor must choose the
+  // pickup point too: Mr. Teh, A4 (29 Jul 2026) — "Please ensure Interplant can
+  // only select pickup point and delivery point from UWC Plant 1 to UWC Plant 9."
+  //
+  // A Consignee, not a Zone: P1–P9 are CONSIGNEE names (A1 — "P1 to P9 is not
+  // the zone area, is the consignee name, u just name it UWC Plant 1, UWC Plant
+  // 2, etc"), all sitting in zone P2 (Batu Kawan). Additive + nullable, so every
+  // existing trip is unchanged.
+  pickup_consignee_id       String?
+  pickup_consignee          Consignee?     @relation("TripPickupConsignee", fields: [pickup_consignee_id], references: [id])
   incentive_earned          Decimal?       @db.Decimal(10, 2)
   // Finalize-time pay EVIDENCE (written once, atomically with
   // incentive_earned; the engine's own outputs — display/verification only,
@@ -688,7 +701,8 @@ model Consignee {
   longitude          Float?
   geocode_match_type String?
 
-  stops TripStop[]
+  stops           TripStop[]
+  pickup_for_trips Trip[] @relation("TripPickupConsignee")
 }
 
 // ── 10. CargoDetail ──────────────────────────────────────────────────

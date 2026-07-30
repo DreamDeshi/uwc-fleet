@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { ApiError } from "../lib/apiError";
 import { loadHolidaySet } from "../lib/holidays";
 import { calculateDeliveryIncentive, groupStopsByDeliveryDay, scoreDrops } from "./incentiveEngine";
+import { isInterplantRouteType } from "../lib/uwcSpec";
 import {
   buildPointsByZone,
   dropZoneCode,
@@ -45,7 +46,7 @@ import { SETTLED_UNDELIVERED_WHERE, stopPayInstant } from "./undeliveredPay";
  */
 export async function proposeDeliveredStopsIncentive(
   tx: Prisma.TransactionClient,
-  trip: Prisma.TripGetPayload<{ include: { truck: true } }>,
+  trip: Prisma.TripGetPayload<{ include: { truck: true; route_type: true } }>,
   driverId: string
 ): Promise<number | null> {
   if (!trip.truck) throw new ApiError(400, "TRUCK_NOT_ASSIGNED", "This trip has no truck assigned.");
@@ -115,6 +116,14 @@ export async function proposeDeliveredStopsIncentive(
   });
 
   let incentiveThisTrip = 0;
+  // Round-trip completeness for the interplant scheme — counted over the WHOLE
+  // trip, not a day group, because the round trip is the unit Mr. Teh pays for.
+  // Cheap and computed once: the loop below can run more than once on the rare
+  // midnight-straddling trip, and this answer must not differ between groups.
+  const undeliveredStopCount = await tx.tripStop.count({
+    where: { trip_id: trip.id, status: { not: "delivered" } },
+  });
+
   const finalizedGroups: FinalizedGroup[] = [];
   for (const group of dayGroups) {
     // Per-day ledger: drops this driver already DELIVERED earlier today on
@@ -173,6 +182,17 @@ export async function proposeDeliveredStopsIncentive(
     // re-rate, and the arrival is the only instant that exists) does it fall
     // back to the group anchor. Q11(a) authorises paying the failed stop; it
     // says nothing about re-rating the delivered ones.
+    // INTERPLANT (A4, 29 Jul 2026): a separate scheme — flat 1 point for a
+    // COMPLETED round trip, no deduction, no per-zone scoring. Keyed on the
+    // ROUTE TYPE, not the truck: the workbook is explicit that lorries swap
+    // between interplant and customer work, so the pay follows the job.
+    //
+    // "Round trip complete" = every stop on the trip delivered. Deliberately the
+    // WHOLE trip, not this day-group: the unit Mr. Teh pays for is the round
+    // trip, so a group that happens to hold only the outbound leg must not pay.
+    const interplant = isInterplantRouteType(trip.route_type?.name)
+      ? { roundTripComplete: undeliveredStopCount === 0 }
+      : undefined;
     const rateAnchor =
       group.stops.reduce<Date | null>(
         (earliest, s) =>
@@ -181,7 +201,7 @@ export async function proposeDeliveredStopsIncentive(
             : earliest,
         null
       ) ?? group.anchor;
-    const incentive = calculateDeliveryIncentive({ rateDateTime: rateAnchor, drops, zonesDeliveredEarlierToday, priorPointsToday, publicHolidays, truck: truckRates });
+    const incentive = calculateDeliveryIncentive({ rateDateTime: rateAnchor, drops, zonesDeliveredEarlierToday, priorPointsToday, publicHolidays, truck: truckRates, interplant });
     incentiveThisTrip += incentive.incentiveThisTrip;
     finalizedGroups.push({ stops: group.stops.map((s) => ({ id: s.id, zoneCode: dropZoneCode(s, s.consignee.zone_code) })), result: incentive });
   }
