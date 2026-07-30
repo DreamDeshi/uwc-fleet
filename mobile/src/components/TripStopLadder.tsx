@@ -8,7 +8,7 @@ import { stopsOf } from "../lib/driverHome";
 import { requiresCustomsDoc } from "../lib/activeTripStage";
 import { totalPallets, ORIGIN_LABEL } from "../lib/trip";
 import type { Trip, TripStop } from "../types";
-import { isStopSettled } from "../lib/stopSettled";
+import { isStopAdjudicated } from "../lib/stopSettled";
 
 // The stop ladder on the driver's Home card: the pickup, then every drop, on a
 // single rail. Before the run it reads as a plan; during the run the same
@@ -32,7 +32,10 @@ export function TripStopLadder({ trip, running }: { trip: Trip; running: boolean
   // The rail's "you are here" marker follows the first OUTSTANDING stop —
   // a settled paid-undelivered stop (R3 Q11(a)) is finished work, not the
   // driver's next job. See lib/stopSettled.
-  const currentIdx = stops.findIndex((s) => !isStopSettled(s) && s.status !== "delivered");
+  // ADJUDICATED, not settled: a stop whose pay a rejection vetoed is still
+  // finished work. Leaving this on isStopSettled parked the NOW chip on a stop
+  // the server no longer counts outstanding — two views of one trip disagreeing.
+  const currentIdx = stops.findIndex((s) => !isStopAdjudicated(s) && s.status !== "delivered");
   const pallets = totalPallets(trip);
 
   return (

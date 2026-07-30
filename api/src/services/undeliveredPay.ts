@@ -127,15 +127,24 @@ import type { PrismaClient, Prisma } from "@prisma/client";
  *
  * ⚠ DELIBERATELY WITHOUT THE REJECT VETO. This answers "must the driver still
  * deliver this?", which is a DIFFERENT question from "does it pay". Conflating
- * them is a bug I shipped and had to withdraw: adding the veto to the single
- * shared predicate made a rejected-but-also-approved stop OUTSTANDING again, so
- * the trip stopped auto-finalizing — the driver held with the truck, pay for the
- * stops that DID earn never proposed, and on a single-drop trip the abort path
- * produced `cancelled` with a null incentive and NO admin edit route at all
- * (assertIncentiveApprovable is pending_approval-only). RM0 on an RM44 drop,
- * correctable only by a hand-written DB update.
+ * them was a bug: with the veto in the single shared predicate a
+ * rejected-but-also-approved stop went back to OUTSTANDING, so a trip with a
+ * DELIVERED sibling stop stopped auto-finalizing — driver and truck held by the
+ * one-active guard, and the pay that sibling earned never proposed.
  *
  * A rejected stop is ADJUDICATED — the office decided. It just does not pay.
+ *
+ * ⚠ WHAT THIS SPLIT DOES **NOT** FIX, stated plainly because an earlier draft of
+ * this comment wrongly claimed it did. On a trip where EVERY stop is vetoed,
+ * `finalizeIfNothingOutstanding` finds nothing outstanding but nothing earning
+ * either, so it declines (routes/exceptions.ts) and the trip sits `in_progress`
+ * until an admin aborts — which lands it in `cancelled` with a null incentive
+ * and therefore no `pending_approval`, so no amount-edit route. RM0 is the
+ * INTENDED amount there (every stop was rejected), but the trip hanging and the
+ * driver being locked out of other work by the one-active guard is a real
+ * operational dead-end, and it is NEW: before the split ADJUDICATED === SETTLED,
+ * so `earning === 0` with nothing outstanding was unreachable dead code.
+ * Raised for a decision rather than papered over.
  *
  * Use this for outstandingness: the completion gate, the default stop picker,
  * and the client's outstanding-stops rail.

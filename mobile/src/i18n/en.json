@@ -1545,6 +1545,8 @@
       "approvedBody": "You verified this report. If you close it with \"Do not return\", the driver is paid for this stop at the normal rate — the same as a delivery.",
       "notApprovedTitle": "No pay approved yet",
       "notApprovedBody": "Verify first if this was a genuine failed delivery. Without a verify, closing this report pays the driver nothing for this stop.",
+      "vetoedTitle": "No pay — a report on this stop was rejected",
+      "vetoedBody": "Another report on this stop was rejected, and a rejection is final. Verifying this one will NOT pay the driver for this stop — the rejection wins. Rejections cannot be undone; correcting this needs the amount edit at approval.",
       "noStopTitle": "No pay for this report",
       "noStopBody": "This report is not attached to a stop the driver reached, so verifying it pays nothing. A stop he never got to earns no incentive."
     },
@@ -1552,7 +1554,7 @@
     "verifyHint": "Confirms the driver really could not deliver. This is the pay decision: the stop is then paid at the normal rate once you close the report with \"Do not return\".",
     "requestMore": "Request more evidence",
     "reject": "Reject — no pay for this stop",
-    "rejectHint": "The driver is not paid for this stop. A note is required.",
+    "rejectHint": "The driver is not paid for this stop. FINAL — a rejection cannot be undone, and it blocks pay for this stop even if another report on it is approved later. A note is required.",
     "resume": "Do not return — close this stop",
     "resumeHintVerified": "The driver carries on without coming back. This stop is PAID, because you verified it.",
     "resumeHintUnverified": "The driver carries on without coming back. This stop is NOT paid — you have not verified it. Use this to get a stuck truck moving.",

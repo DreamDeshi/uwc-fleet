@@ -157,16 +157,25 @@ function ExceptionDetailModal({ row, onClose, onResolved }: { row: ExceptionList
                 <Text style={styles.payBannerTitle}>
                   {paysThisStop
                     ? t("exception.pay.approvedTitle")
-                    : canPay
-                      ? t("exception.pay.notApprovedTitle")
-                      : t("exception.pay.noStopTitle")}
+                    : payVetoed
+                      ? t("exception.pay.vetoedTitle")
+                      : canPay
+                        ? t("exception.pay.notApprovedTitle")
+                        : t("exception.pay.noStopTitle")}
                 </Text>
                 <Text style={styles.payBannerBody}>
+                  {/* VETOED must be checked BEFORE canPay. Without it the false
+                      branch fell through to "Verify first … " — which on a vetoed
+                      stop is a promise the server will not keep. The first fix
+                      only stopped the banner claiming PAID; it left the opposite
+                      lie in place. */}
                   {paysThisStop
                     ? t("exception.pay.approvedBody")
-                    : canPay
-                      ? t("exception.pay.notApprovedBody")
-                      : t("exception.pay.noStopBody")}
+                    : payVetoed
+                      ? t("exception.pay.vetoedBody")
+                      : canPay
+                        ? t("exception.pay.notApprovedBody")
+                        : t("exception.pay.noStopBody")}
                 </Text>
               </View>
 
