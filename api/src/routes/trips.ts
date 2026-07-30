@@ -2665,6 +2665,13 @@ router.patch(
   }
 );
 
+/**
+ * Trip statuses in which the POD is FROZEN. One list, two uses in the route
+ * below — the cheap pre-upload guard and the atomic re-check in the write — so
+ * the two cannot drift into disagreeing about what "finalized" means.
+ */
+const POD_LOCKED_STATUSES = ["pending_approval", "completed", "cancelled"] as const;
+
 // ── POST /trips/:id/stops/:stopId/pod — driver uploads the POD photo ──
 //
 // Multipart upload (field name "photo"). The mobile app captures with the
@@ -2701,14 +2708,15 @@ router.post(
       // covers `pending_approval` (POD-approval gate, 16 Jul 2026): the POD is
       // exactly what the admin approves against, so it must not change while the
       // trip awaits sign-off — as well as `completed` (approved/paid) and
-      // `cancelled`. Checked BEFORE any Cloudinary call. The offline outbox
-      // treats this 409 as "already done" for the photo step (podOutboxCore
-      // PHOTO_STEP_ALREADY_CODES), so a stale replay is harmless.
-      if (
-        trip.status === "pending_approval" ||
-        trip.status === "completed" ||
-        trip.status === "cancelled"
-      ) {
+      // `cancelled`. Checked BEFORE any Cloudinary call so a locked trip costs
+      // no upload. The offline outbox treats this 409 as "already done" for the
+      // photo step (podOutboxCore PHOTO_STEP_ALREADY_CODES), so a stale replay
+      // is harmless.
+      //
+      // This is the CHEAP check. It is not the guarantee — the trip can still
+      // flip while the upload is in flight, so the write below re-checks the
+      // same list atomically.
+      if (POD_LOCKED_STATUSES.includes(trip.status as (typeof POD_LOCKED_STATUSES)[number])) {
         throw new ApiError(
           409,
           "POD_LOCKED",
@@ -2726,21 +2734,50 @@ router.post(
         publicId: `${trip.ticket_number}-stop-${stop.sequence}`,
       });
 
-      await prisma.tripStop.update({
-        where: { id: stopId },
+      // RE-CHECK THE LOCK IN THE WRITE ITSELF, not just in the guard above.
+      // Between that guard's read and this write we do a Cloudinary round-trip
+      // (hundreds of ms on a 500KB photo), and the trip can flip to
+      // pending_approval in that window — the driver taps Delivered on the last
+      // stop, or an offline outbox flushes one. The old unconditional update
+      // then rewrote the POD, and now its timestamp, on a stop the admin's
+      // approval queue was already rendering.
+      //
+      // It mattered less before this commit: publicId is deterministic
+      // (`${ticket}-stop-${sequence}`), so a late write stored a byte-identical
+      // URL and was invisible. pod_uploaded_at is the first field whose value
+      // actually differs, and it is the field kept as dispute evidence.
+      //
+      // Same shape as proposeTripIncentiveOnce (services/tripCompletion.ts): put
+      // the status in the WHERE and require count === 1.
+      const written = await prisma.tripStop.updateMany({
+        where: { id: stopId, trip: { status: { notIn: [...POD_LOCKED_STATUSES] } } },
         data: {
           pod_photo: url,
           pod_public_id: publicId,
           do_uploaded: true,
           // IM6. SERVER receipt, not a client-supplied capture time: this is the
           // timestamp a POD-approval dispute is argued over, so it must not be
-          // settable by the device that is a party to the dispute. A retake
-          // overwrites it, which is correct — it times the POD that is actually
-          // stored, and the finalize-lock above already refuses any retake once
-          // the trip is awaiting sign-off.
+          // settable by the device that is a party to the dispute.
+          //
+          // ⚠ For an OFFLINE-QUEUED POD this is the REPLAY instant, not the
+          // capture instant: mobile/src/lib/podOutboxCore.ts records `queuedAt`
+          // but usePodOutbox.uploadPod never sends it. A photo taken at 16:45
+          // with no signal and flushed at 19:10 reads 19:10 — in the one
+          // population (rural, no coverage) the evidence matters most for. Not
+          // fixed here: the honest fix is a SECOND column alongside this one,
+          // exactly as TripException carries client_reported_at beside the
+          // server's reported_at, and that is past "one additive nullable
+          // column". Raised on the PR.
           pod_uploaded_at: new Date(),
         },
       });
+      if (written.count !== 1) {
+        throw new ApiError(
+          409,
+          "POD_LOCKED",
+          "This trip is finalized — its proof of delivery can no longer be changed."
+        );
+      }
       await prisma.auditLog.create({
         data: { user_id: req.user!.id, action: "stop.pod_uploaded", table_name: "TripStop", record_id: stopId },
       });

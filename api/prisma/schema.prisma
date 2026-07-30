@@ -429,6 +429,18 @@ model TripStop {
   // there is deliberately NO backfill (see the migration). Callers must render
   // the untimed string rather than substitute delivered_at or "now" — inventing
   // a time on the one field kept as dispute evidence is worse than having none.
+  //
+  // ⚠ NOT THE CAPTURE TIME WHEN THE UPLOAD WAS QUEUED OFFLINE. This is the
+  // server's receipt instant, so a photo taken at 16:45 with no signal and
+  // flushed at 19:10 reads 19:10. mobile/src/lib/podOutboxCore.ts does record
+  // `queuedAt`, but usePodOutbox never transmits it. Closing that gap means a
+  // SECOND column — the shape TripException already uses, client_reported_at
+  // beside the server's reported_at — not trusting the device on this one.
+  //
+  // ⚠ ALSO NOT THE DELIVERY CONFIRM. The POD upload always PRECEDES the
+  // delivered tap (delivery is gated on pod_photo), and the rate tier keys on
+  // the delivery confirm, so this must never be read as a pay instant. The
+  // admin approval row labels it "POD uploaded" for exactly that reason.
   pod_uploaded_at DateTime?
   do_uploaded    Boolean         @default(false)
   // K2 customs form (Borang K2). Mr. Teh, R1 2026-07-24 Q6: "Prefer they need

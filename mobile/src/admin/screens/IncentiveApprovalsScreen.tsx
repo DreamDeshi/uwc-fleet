@@ -226,10 +226,19 @@ function ApprovalCard({ trip }: { trip: Trip }) {
 
 function StopRow({ stop }: { stop: TripStop }) {
   const { t } = useTranslation();
+  // ⚠ ORDER AND LABELS ARE LOAD-BEARING ON THIS SCREEN. The admin can override
+  // the paid amount here, and the rate tier keys on the DELIVERY CONFIRM (3 Jul
+  // 2026; refined by R1 Q4). The POD upload necessarily PRECEDES the delivered
+  // tap — delivery is gated on pod_photo — so an upload at 17:58 can belong to a
+  // delivery at 18:03 that correctly rated OFF-PEAK. Showing the upload time as
+  // the only per-drop time, unlabelled, invited exactly the wrong correction:
+  // a 7-point drop "fixed" from RM91 to RM77. So the POD time says "uploaded",
+  // and the delivery confirm sits beside it as the instant that actually paid.
   const evidenceParts = [
     stop.points_awarded != null ? t("admin.incentiveApprovals.dropPoints", { pts: stop.points_awarded }) : null,
     stop.points_awarded != null && stop.was_repeat ? t("admin.incentiveApprovals.repeat") : null,
     stop.points_awarded != null && stop.zone_code ? stop.zone_code : null,
+    stop.delivered_at ? t("admin.incentiveApprovals.stopDelivered", { time: formatTime(stop.delivered_at) }) : null,
     stop.pod_uploaded_at ? t("admin.incentiveApprovals.podTime", { time: formatTime(stop.pod_uploaded_at) }) : null,
   ].filter((p): p is string => Boolean(p));
   return (

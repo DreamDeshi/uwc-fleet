@@ -52,9 +52,6 @@ const uploadPod = (driver: string, tripId: string, stopId: string) =>
     .attach("photo", PHOTO, "pod.jpg");
 
 describe("POD upload time is persisted (IM6)", () => {
-  beforeAll(() => {
-    process.env.TZ = process.env.TZ ?? "UTC";
-  });
   beforeEach(async () => {
     await resetDb();
   });
@@ -66,6 +63,37 @@ describe("POD upload time is persisted (IM6)", () => {
     const { trip } = await inProgressTrip();
     const stop = await prisma.tripStop.findUniqueOrThrow({ where: { id: trip.stops[0].id } });
     expect(stop.pod_uploaded_at).toBeNull();
+  });
+
+  it("serialises as NULL ON THE WIRE, not as a coerced 'now'", async () => {
+    // The DB assertion above cannot catch a serializer inventing a time, and
+    // "never invent a time" is the whole contract for a stop whose POD predates
+    // the column. So check the PAYLOAD, which is what the clients branch on.
+    const { trip, driver } = await inProgressTrip();
+    const res = await api().get(`/api/v1/trips/${trip.id}`).set(auth(driver));
+    expect(res.status).toBe(200);
+    const stop = res.body.stops.find((s: { id: string }) => s.id === trip.stops[0].id);
+    expect(stop).toHaveProperty("pod_uploaded_at");
+    expect(stop.pod_uploaded_at).toBeNull();
+  });
+
+  it("IGNORES a client-supplied timestamp — the server clock decides", async () => {
+    // The device is a party to any dispute this field settles, so it does not
+    // get a vote. Without this test the ±1s bound below would pass just as
+    // happily if the route trusted a client value that happened to be near now.
+    const { trip, driver } = await inProgressTrip();
+    const lie = new Date("2020-01-01T00:00:00.000Z").toISOString();
+
+    const res = await api()
+      .post(`/api/v1/trips/${trip.id}/stops/${trip.stops[0].id}/pod`)
+      .set(auth(driver))
+      .field("pod_uploaded_at", lie)
+      .field("captured_client_at", lie)
+      .attach("photo", PHOTO, "pod.jpg");
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+
+    const stop = await prisma.tripStop.findUniqueOrThrow({ where: { id: trip.stops[0].id } });
+    expect(stop.pod_uploaded_at!.getFullYear()).toBeGreaterThan(2020);
   });
 
   it("is set to the SERVER receipt time when the POD is uploaded", async () => {
