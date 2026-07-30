@@ -186,6 +186,46 @@ export async function seedAssignedTrip(adminToken: string): Promise<Trip> {
   return approveTrip(adminToken, trip.id, { driver_id: driver.id, truck_plate: driver.plate });
 }
 
+/**
+ * A pending trip picked up SHORTLY FROM NOW, i.e. today.
+ *
+ * `inWindowPickupIso` deliberately books tomorrow, which is right for most
+ * specs but makes the driver Home's primary card untestable: buildDriverDay
+ * puts a trip in `assignedToday` only when sameDay(pickup, now), so a
+ * tomorrow pickup renders the "Next assigned trip" row and never the
+ * "Start this trip" card. Ten minutes ahead clears PICKUP_GRACE_MS (15 min)
+ * from either side and keeps the pickup on today's date at any hour.
+ */
+function todayPickupIso(): string {
+  return new Date(Date.now() + 10 * 60 * 1000).toISOString();
+}
+
+/** Pending trip scheduled for TODAY — use when the assertion is about Home. */
+export async function seedPendingTripToday(requestorToken: string): Promise<Trip> {
+  const [routeType, consignee] = await Promise.all([
+    pickRouteType(requestorToken),
+    pickConsignee(requestorToken, []),
+  ]);
+  return createTrip(requestorToken, {
+    route_type_id: routeType.id,
+    pickup_datetime: todayPickupIso(),
+    stops: [{ consignee_id: consignee.id }],
+    cargo_details: [CARGO_LINE],
+  });
+}
+
+/** Assigned trip scheduled for TODAY, so the driver Home shows its start card. */
+export async function seedAssignedTripToday(adminToken: string): Promise<Trip> {
+  const requestor = await login(REQUESTOR);
+  const trip = await seedPendingTripToday(requestor.accessToken);
+  const driver = await driverIdentity(DRIVER);
+  return approveTrip(adminToken, trip.id, {
+    driver_id: driver.id,
+    truck_plate: driver.plate,
+    force: true,
+  });
+}
+
 /** Assigned → IN PROGRESS (driver pressed start), with its single stop ARRIVED. */
 export async function seedArrivedTrip(adminToken: string): Promise<{ trip: Trip; stopId: string }> {
   const assigned = await seedAssignedTrip(adminToken);

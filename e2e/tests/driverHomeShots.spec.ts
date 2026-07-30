@@ -320,6 +320,7 @@ test("register · step 2", async ({ page }) => {
   await page.getByPlaceholder("e.g. Ahmad Razak Bin Abdullah").fill("Ahmad Faizal Bin Rahman");
   await page.getByPlaceholder("e.g. H5234").fill("H5234");
   await page.getByText("Select your department").click();
+  // selector-ok: fixture company name, not i18n copy
   await page.getByText("Logistics", { exact: true }).last().click();
   await page.getByPlaceholder("12-345 6789").last().fill("123456789");
   await page.getByText("Next", { exact: true }).click();
@@ -336,6 +337,7 @@ test("profile", async ({ page }) => {
   await page.getByText("Sign In", { exact: true }).click();
   await page.getByText(/Hi, Ahmad Faizal/).first().waitFor({ timeout: 30_000 });
   await page.getByText("Profile", { exact: true }).last().click();
+  // selector-ok: fixture driver name, not i18n copy
   await page.getByText("Ahmad Faizal", { exact: true }).first().waitFor({ timeout: 15_000 });
   await page.waitForTimeout(1500);
   await page.screenshot({ path: path.join(SHOTS, "10-profile.png"), fullPage: true });

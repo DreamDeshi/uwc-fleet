@@ -92,6 +92,25 @@ jobs:
             npm run check:migrations --workspace api
           fi
 
+  selectors:
+    name: E2E selector drift (specs vs live UI copy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # No install, no browsers, no database: the guard reads the spec files and
+      # mobile/src as text. It exists because the driver suite sat red for a week
+      # after a redesign renamed every label it clicked, and a renamed label is
+      # indistinguishable from a broken feature — both are "element not found".
+      # Running it without the Playwright stack means it still reports on the days
+      # the browser download or the test database is having a bad time.
+      - name: Check e2e selectors against renderable copy
+        run: node e2e/scripts/check-selectors.mjs
+
   integration:
     name: Integration tier (Postgres) + migration drift
     runs-on: ubuntu-latest
