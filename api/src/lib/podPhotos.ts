@@ -76,9 +76,20 @@ export function documentAssetFromUrl(
 // ── Response serializer ─────────────────────────────────────────────────────
 // Applied to every trip payload leaving the trips router. For a stop/document
 // that has a stored public_id (new, private asset) it replaces the URL with a
-// signed one; legacy rows (public URL, no public_id) pass through untouched
-// until the backfill secures them. Fail-safe: a missed asset just shows no
-// image (the stored authenticated URL 401s) — never a public leak.
+// signed one AND REMOVES THE public_id; legacy rows (public URL, no public_id)
+// pass through untouched until the backfill secures them. Fail-safe: a missed
+// asset just shows no image (the stored authenticated URL 401s) — never a
+// public leak.
+//
+// Dropping the identifier is the point of the second half. The whole reason
+// this module exists is that asset ids were published and, for PODs, were
+// deterministic (`<ticket>-stop-<n>`) and therefore enumerable by ticket. The
+// signing pipeline stopped the URLs being guessable but kept handing out the id
+// itself, to every role, on every trip read — the exact string the work was
+// meant to withhold. No client reads it (verified across mobile/src); the
+// signed URL is the only usable artefact. serializeException in
+// lib/exceptionEvidence.ts already had this right: it builds an explicit object
+// and never includes public_id.
 
 type StopLike = { pod_public_id?: string | null; pod_photo?: string | null; k2_public_id?: string | null; k2_photo?: string | null } & Record<string, unknown>;
 type DocLike = { public_id?: string | null; resource_type?: string | null; format?: string | null; file_url?: string | null } & Record<string, unknown>;
@@ -86,19 +97,27 @@ type TripLike = { stops?: unknown; documents?: unknown } & Record<string, unknow
 
 function signStop(stop: StopLike): StopLike {
   if (!stop || typeof stop !== "object") return stop;
-  let out = stop;
+  if (!stop.pod_public_id && !stop.k2_public_id) return stop;
   // POD photo and the K2 (Borang K2) document are both private authenticated
-  // assets — serve each as a freshly-signed URL when its public_id is stored.
-  if (stop.pod_public_id) out = { ...out, pod_photo: signedPodUrl(stop.pod_public_id) };
-  if (stop.k2_public_id) out = { ...out, k2_photo: signedPodUrl(stop.k2_public_id) };
+  // assets — serve each as a freshly-signed URL when its public_id is stored,
+  // then DROP the identifier. It is the stored asset id this module exists to
+  // stop publishing (POD ids were once deterministic, `<ticket>-stop-<n>`, and
+  // enumerable by ticket), no client reads it, and the signed URL it produces
+  // is the only thing a client can use.
+  const { pod_public_id, k2_public_id, ...rest } = stop;
+  const out: StopLike = { ...rest };
+  if (pod_public_id) out.pod_photo = signedPodUrl(pod_public_id);
+  if (k2_public_id) out.k2_photo = signedPodUrl(k2_public_id);
   return out;
 }
 
 function signDocument(doc: DocLike): DocLike {
   if (doc && typeof doc === "object" && doc.public_id) {
+    // Same rule as signStop: mint the signed URL, then drop the identifier.
+    const { public_id, ...rest } = doc;
     return {
-      ...doc,
-      file_url: signedAssetUrl(doc.public_id, {
+      ...rest,
+      file_url: signedAssetUrl(public_id as string, {
         resourceType: doc.resource_type ?? undefined,
         format: doc.format ?? undefined,
       }),
