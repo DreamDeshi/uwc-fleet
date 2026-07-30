@@ -61,6 +61,7 @@ test.describe("Requestor booking edit (mobile web)", () => {
     await page.getByText("Edit", { exact: true }).nth(1).click();
     // Label renamed by the Q1/Q10 structured-cargo change.
     await expect(page.getByText("Cargo Size & Quantity")).toBeVisible();
+    // selector-ok: the quantity stepper glyph is not a translated string
     await page.getByText("+", { exact: true }).first().click();
     await expect(page.getByText("Total: 2 pallets")).toBeVisible();
     await page.getByText("Next", { exact: true }).click();

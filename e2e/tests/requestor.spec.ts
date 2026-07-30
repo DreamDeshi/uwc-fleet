@@ -42,6 +42,7 @@ test.describe("Requestor (mobile web)", () => {
     await mobileLogin(page, { phone: REQUESTOR.phone, password: "WrongPassword999" });
 
     // The server's 401 message is surfaced verbatim under the password field.
+    // selector-ok: server-supplied message from api/src/routes/auth.ts, never localised
     await expect(page.getByText("Phone number or password is incorrect.")).toBeVisible();
     // Still on the login screen.
     await expect(page.getByText("Where do you need delivery?")).toHaveCount(0);
@@ -84,6 +85,7 @@ test.describe("Requestor (mobile web)", () => {
     // (Label renamed "Pallet Size & Quantity" → "Cargo Size & Quantity" by the
     // Q1/Q10 structured-cargo change; the default tab is still the pallet grid.)
     await expect(page.getByText("Cargo Size & Quantity")).toBeVisible();
+    // selector-ok: the quantity stepper glyph is not a translated string
     await page.getByText("+", { exact: true }).first().click();
     await expect(page.getByText("Total: 1 pallets")).toBeVisible();
     await page.getByText("Next", { exact: true }).click();
@@ -105,6 +107,7 @@ test.describe("Requestor (mobile web)", () => {
     await page.getByText("Bookings", { exact: true }).first().click();
     await expect(page.getByText(ticketNo).first()).toBeVisible();
     // StatusBadge renders the status uppercased.
+    // selector-ok: status chip is uppercased at render; i18n holds "Pending"
     await expect(page.getByText("PENDING").first()).toBeVisible();
   });
 });

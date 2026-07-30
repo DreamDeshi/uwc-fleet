@@ -126,9 +126,10 @@ test("REQUESTOR — all screens", async ({ page }) => {
     /* search may not surface it at this viewport; still advance/capture */
   }
   await page.getByText("Next", { exact: true }).click();
-  await shot(page, "requestor-booking-step2", "Pallet Size & Quantity");
+  await shot(page, "requestor-booking-step2", "Cargo Size & Quantity");
 
   // Step 2 → add one pallet → step 3 (Confirm).
+  // selector-ok: the quantity stepper glyph is not a translated string
   await page.getByText("+", { exact: true }).first().click();
   await page.getByText("Next", { exact: true }).click();
   await shot(page, "requestor-booking-step3", "Submit Booking");

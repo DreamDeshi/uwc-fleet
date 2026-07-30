@@ -144,6 +144,7 @@ test.describe("Structured cargo & templates (requestor, mobile web)", () => {
     await expect(page.getByText("Number of Boxes")).toBeVisible();
     await expect(page.getByText("Boxes go to the dispatcher for manual truck assignment.")).toBeVisible();
     await expect(page.getByPlaceholder("Width")).toHaveCount(0);
+    // selector-ok: the quantity stepper glyph is not a translated string
     await page.getByText("+", { exact: true }).first().click();
     await page.getByText("Next", { exact: true }).click();
 
@@ -186,6 +187,7 @@ test.describe("Structured cargo & templates (requestor, mobile web)", () => {
     const name = `E2E template ${Date.now() % 100000}`;
 
     await toCargoStep(page);
+    // selector-ok: the quantity stepper glyph is not a translated string
     await page.getByText("+", { exact: true }).first().click(); // 1× first pallet size
     await page.getByText("Next", { exact: true }).click();
 
