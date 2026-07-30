@@ -181,6 +181,46 @@ export const SETTLED_UNDELIVERED_WHERE = {
 };
 
 /**
+ * WHAT THIS STOP WAS ACTUALLY PAID FOR — the form every HISTORICAL read must
+ * use: the day ledger, and the payroll/earnings window.
+ *
+ * ⚠ WHY NOT JUST SETTLED_UNDELIVERED_WHERE. That predicate is recomputed from
+ * LIVE exception state, and since the reject veto landed it is no longer
+ * MONOTONIC: a sibling report can still be OPEN when a trip finalizes (the
+ * write-once CAS requires `open_exception_id: null`, not "no open exception",
+ * and driver Continue clears that pointer). Reject it afterwards and the stop
+ * stops matching — but the money was already written. The ledger would then stop
+ * counting a stop the driver WAS paid for, so the next same-zone drop that day
+ * scores 6 instead of 1 (~RM33, the double-first-drop hole dayLedger exists to
+ * prevent), and firstEarningInstant can re-key the trip's payroll MONTH.
+ *
+ * ⚠ WHY NOT JUST `points_awarded: { not: null }` EITHER — the trap I nearly fell
+ * into. Scoring happens at FINALIZATION, but LEDGER_TRIP_STATUSES includes
+ * `in_progress` on purpose: two trips can overlap, and a delivered stop on a
+ * still-running trip must already occupy its zone slot (the RM88→RM55 hole).
+ * Those stops have no `points_awarded` yet. Keying purely on persisted evidence
+ * would drop them and reopen that hole for every concurrent trip.
+ *
+ * So: PREFER the persisted record, FALL BACK to the live predicate. The fallback
+ * serves two populations, not one — stops on in-flight trips (nothing written
+ * yet, and nothing paid yet either, so there is nothing to diverge from) and
+ * legacy rows finalized before the breakdown feature existed. It is the ORDINARY
+ * path for a concurrent trip, not a rarely-exercised legacy branch, which is why
+ * it carries DB-level tests rather than unit ones.
+ */
+export const SCORED_UNDELIVERED_WHERE = {
+  status: { not: "delivered" as const },
+  arrived_at: { not: null },
+  OR: [
+    // Persisted: finalization already decided this stop earned. Frozen.
+    { points_awarded: { not: null } },
+    // Not yet scored (in-flight) or pre-feature (legacy): ask the live rule.
+    { points_awarded: null, exceptions: SETTLED_UNDELIVERED_WHERE.exceptions },
+  ],
+};
+
+
+/**
  * The Prisma SELECT that makes a stop's pay decidable. Every site that calls
  * stopPayInstant / firstEarningInstant on DB rows must use it — the predicate is
  * re-checked in memory, so an under-selected row looks unpaid and the stop
@@ -190,6 +230,9 @@ export const EARNING_STOP_SELECT = {
   status: true,
   arrived_at: true,
   delivered_at: true,
+  // The persisted record of what this stop earned — preferred over the live
+  // exception state by stopPayEligibility. Every money-bucket caller selects it.
+  points_awarded: true,
   exceptions: {
     select: {
       current_state: true,
@@ -228,7 +271,10 @@ export function earnedInWindow(window: { gte: Date; lt?: Date }) {
   return {
     OR: [
       { delivered_at: window },
-      { ...SETTLED_UNDELIVERED_WHERE, arrived_at: window },
+      // SCORED, not SETTLED: payroll must reflect what was PAID, not what the
+      // live exception state would pay if asked again today. A reject landing
+      // after finalization must not make paid money vanish from a month's sheet.
+      { ...SCORED_UNDELIVERED_WHERE, arrived_at: window },
     ],
   };
 }
@@ -238,6 +284,13 @@ export interface PayableStopLike {
   status: string;
   arrived_at: Date | null;
   delivered_at: Date | null;
+  /**
+   * Points this stop was ACTUALLY scored for, written once at finalization.
+   * Non-null ⇒ it earned, whatever the exceptions say now. Optional: a caller
+   * that has not selected it simply falls back to the live rule, which is the
+   * pre-persistence behaviour rather than a silently wrong answer.
+   */
+  points_awarded?: number | null;
   /** Exceptions ATTACHED TO THIS STOP (trip_stop_id = this stop). */
   exceptions?: {
     current_state: string;
@@ -284,6 +337,12 @@ export function stopPayEligibility(stop: PayableStopLike): PayEligibility {
   if (stop.status === "delivered") return "delivered";
   // Never reached → his (b): no incentive for stops the driver did not get to.
   if (!stop.arrived_at) return "unpaid";
+  // PERSISTED WINS. Finalization already scored this stop, so it was paid — a
+  // later adjudication must not retro-change that, or the ledger and the payroll
+  // month disagree with money already written. Only reachable post-finalization;
+  // during finalization itself points_awarded is still null and the live rule
+  // below decides, which is what writes it.
+  if (stop.points_awarded != null) return "undelivered_paid";
   // Reached, but nobody adjudicated it (still open, or closed as retry).
   if (!hasResolvedStopException(stop)) return "unpaid";
   // Adjudicated, but an explicit reject on the same stop vetoes the pay.
