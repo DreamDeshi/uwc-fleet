@@ -687,6 +687,7 @@
       "approve": "批准",
       "dropPoints": "{{pts}} 分",
       "repeat": "重复",
+      "podTime": "POD {{time}}",
       "noPod": "无 POD",
       "notDelivered": "未送达",
       "partialTrip": "部分行程——已送达 {{done}}/{{total}} 个停靠点",

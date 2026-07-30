@@ -417,6 +417,19 @@ model TripStop {
   // (lib/podPhotos.ts); NULL → legacy public pod_photo, until the backfill
   // (prisma/secure-existing-pods.ts) flips + records it. Additive, nullable.
   pod_public_id  String?
+  // WHEN the POD was uploaded (server receipt), IM6. Additive + nullable.
+  //
+  // Until this existed the time lived only in React state, so the driver's green
+  // "POD uploaded · 9:47 AM" line went untimed the moment the screen remounted,
+  // and — the reason it matters — the system could not say when a POD was taken.
+  // For a POD-approval dispute or a late-abort argument that timestamp IS the
+  // evidence, and it existed nowhere but Cloudinary's own asset metadata.
+  //
+  // NULL means genuinely unknown: every stop whose POD predates this column, and
+  // there is deliberately NO backfill (see the migration). Callers must render
+  // the untimed string rather than substitute delivered_at or "now" — inventing
+  // a time on the one field kept as dispute evidence is worse than having none.
+  pod_uploaded_at DateTime?
   do_uploaded    Boolean         @default(false)
   // K2 customs form (Borang K2). Mr. Teh, R1 2026-07-24 Q6: "Prefer they need
   // upload the form … we need admin to final validate and approve, only they can

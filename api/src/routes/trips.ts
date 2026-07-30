@@ -2728,7 +2728,18 @@ router.post(
 
       await prisma.tripStop.update({
         where: { id: stopId },
-        data: { pod_photo: url, pod_public_id: publicId, do_uploaded: true },
+        data: {
+          pod_photo: url,
+          pod_public_id: publicId,
+          do_uploaded: true,
+          // IM6. SERVER receipt, not a client-supplied capture time: this is the
+          // timestamp a POD-approval dispute is argued over, so it must not be
+          // settable by the device that is a party to the dispute. A retake
+          // overwrites it, which is correct — it times the POD that is actually
+          // stored, and the finalize-lock above already refuses any retake once
+          // the trip is awaiting sign-off.
+          pod_uploaded_at: new Date(),
+        },
       });
       await prisma.auditLog.create({
         data: { user_id: req.user!.id, action: "stop.pod_uploaded", table_name: "TripStop", record_id: stopId },

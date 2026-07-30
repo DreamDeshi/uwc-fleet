@@ -108,6 +108,10 @@ export interface TripStop {
   arrived_at: string | null;
   delivered_at: string | null;
   pod_photo: string | null;
+  // Server receipt time of the POD upload (IM6). NULL = unknown, which is every
+  // stop whose POD predates the column — render the untimed string, never a
+  // substituted time.
+  pod_uploaded_at?: string | null;
   do_uploaded: boolean;
   // K2 (Borang K2) customs document — uploaded for K2-zone stops (Q6). The
   // signed URL is set when the driver has uploaded it; `k2_form_ack` is the

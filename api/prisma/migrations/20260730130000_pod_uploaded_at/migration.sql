@@ -1,0 +1,24 @@
+-- IM6: persist WHEN a POD was uploaded.
+--
+-- PURELY ADDITIVE: one nullable column on TripStop. No drops, no backfill, no
+-- change to any existing row, no default. An existing stop is simply a stop
+-- whose POD time is unknown.
+--
+-- ⚠ HAND-WRITTEN, and checked against the rule in AGENTS.md: `prisma migrate
+-- diff` in this repo keeps trying to emit
+--
+--     ALTER TABLE "ExceptionEvidence" DROP CONSTRAINT
+--       "ExceptionEvidence_action_same_exception_fkey";
+--
+-- because that composite FK is raw SQL and INVISIBLE to Prisma. It is not
+-- present below, and must never be.
+--
+-- WHY NO BACKFILL. AuditLog does hold a `stop.pod_uploaded` row per upload with
+-- its own created_at, so historical times are RECOVERABLE — but reconstructing
+-- them is a data migration over the one field whose entire purpose is to be
+-- evidence in a dispute, and a mis-joined row would put a confident wrong time
+-- on a contested POD. NULL says "unknown", which is true. Raised for the owner
+-- to decide separately rather than smuggled in under an additive column.
+
+-- AlterTable
+ALTER TABLE "TripStop" ADD COLUMN "pod_uploaded_at" TIMESTAMP(3);

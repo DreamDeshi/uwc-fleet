@@ -133,9 +133,14 @@ export function ActiveTripScreen() {
   // The captured-but-not-yet-uploaded POD awaiting review (design screen 3).
   const [review, setReview] = useState<{ photo: PickedPhoto; stop: TripStop } | null>(null);
   // When THIS session uploaded each stop's POD, so the green line can read
-  // "POD uploaded · 9:47 AM". The server has no pod_uploaded_at column, so a
-  // POD uploaded before this screen mounted has no time — that case falls back
-  // to the untimed string rather than inventing a timestamp.
+  // "POD uploaded · 9:47 AM" the instant it happens.
+  //
+  // The server now persists the real time (TripStop.pod_uploaded_at, IM6), and
+  // that is authoritative — this map only covers the window between the upload
+  // resolving and the trip refetch landing, so the line does not flicker from
+  // timed to untimed and back. A POD with no server time is genuinely undated
+  // (it predates the column) and falls back to the untimed string rather than
+  // inventing one.
   const [podTimes, setPodTimes] = useState<Record<string, string>>({});
   const stripRef = useRef<ScrollView>(null);
   const stripOffset = useRef(0);
@@ -718,8 +723,10 @@ export function ActiveTripScreen() {
                   <Text style={[styles.podLineText, podQueuedHere && { color: colors.navy }]} numberOfLines={1}>
                     {podQueuedHere
                       ? t("trip.podQueued")
-                      : podTimes[activeStop.id]
-                        ? t("trip.podUploadedAt", { time: formatTime(podTimes[activeStop.id]) })
+                      : (activeStop.pod_uploaded_at ?? podTimes[activeStop.id])
+                        ? t("trip.podUploadedAt", {
+                            time: formatTime((activeStop.pod_uploaded_at ?? podTimes[activeStop.id])!),
+                          })
                         : t("trip.podUploaded")}
                   </Text>
                   <TouchableOpacity

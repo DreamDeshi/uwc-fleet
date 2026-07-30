@@ -687,6 +687,7 @@
       "approve": "Luluskan",
       "dropPoints": "{{pts}} mata",
       "repeat": "ulangan",
+      "podTime": "POD {{time}}",
       "noPod": "Tiada POD",
       "notDelivered": "Tidak dihantar",
       "partialTrip": "Trip separa — {{done}}/{{total}} hentian dihantar",
