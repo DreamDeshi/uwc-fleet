@@ -110,7 +110,7 @@ function finalizeTrip(allStops: StopRow[], tripId: string, driverId: string, zon
       driverId,
       excludeTripId: tripId,
       dayStart: group.dayStart,
-      anchor: group.anchor,
+      anchor: group.anchor, excludeInterplant: true,
     })
   );
   const zonesDeliveredEarlierToday = prior.map((d) => d.zoneCode);
@@ -131,6 +131,7 @@ describe("priorDeliveredDropsWhere — the ledger's semantics, pinned", () => {
   const where = priorDeliveredDropsWhere({
     driverId: "d1",
     excludeTripId: "tB",
+    excludeInterplant: true,
     dayStart,
     anchor,
   });
@@ -371,5 +372,41 @@ describe("overlapping trips — the RM88→RM55 double-first-drop hole (MONEY)",
     const b = finalizeTrip(staleYesterday, "tB", "d1", 6);
     expect(b.dropPoints).toEqual([6]); // points refreshed at midnight
     expect(b.deductionApplied).toBe(2);
+  });
+});
+
+
+describe("interplant trips are excluded from the ledger (FEATURE_INTERPLANT)", () => {
+  // The reviewer's HIGH 7: this was the one change flagged as a money-moving
+  // judgement call and the only one with no test that could fail — deleting the
+  // exclusion left all 1041 green, because the in-memory evaluator ignores
+  // `where.trip.route_type` entirely. These assert the WHERE directly.
+  const dayStart = new Date("2026-06-21T16:00:00Z");
+  const anchor = new Date("2026-06-22T02:30:00Z");
+  const build = (excludeInterplant: boolean) =>
+    priorDeliveredDropsWhere({ driverId: "d1", excludeTripId: "tB", dayStart, anchor, excludeInterplant });
+
+  it("FLAG ON: the two interplant route types are excluded by name", () => {
+    // Every plant sits in zone P2. Without this a morning plant run would demote
+    // a real afternoon Juru or Perai delivery — also P2 — from full points to
+    // the 1-point repeat, on the strength of a trip scored by a rule that has
+    // nothing to do with zones.
+    expect(build(true).trip.route_type).toEqual({
+      name: { notIn: ["Inter-Plant Delivery", "Inter-Plant Return"] },
+    });
+  });
+
+  it("FLAG OFF: nothing is excluded — byte-identical to the pre-feature ledger", () => {
+    // `notIn: []` matches every row. If this ever became a non-empty list while
+    // the flag was off, turning the feature on would stop being reversible.
+    expect(build(false).trip.route_type).toEqual({ name: { notIn: [] } });
+  });
+
+  it("the exclusion touches ONLY the route type — driver, status and trip scoping are unchanged", () => {
+    const on = build(true).trip;
+    const off = build(false).trip;
+    expect(on.driver_id).toBe(off.driver_id);
+    expect(on.status).toEqual(off.status);
+    expect(on.id).toEqual(off.id);
   });
 });

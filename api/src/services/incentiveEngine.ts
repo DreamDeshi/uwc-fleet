@@ -389,6 +389,37 @@ export function calculateDeliveryIncentive(params: {
     daily_deduction_points: number;
     entitled_claim_weekday: number;
     entitled_claim_offpeak: number;
+    /**
+     * The lorry's INTERPLANT rates (workbook `INTERNAL LORRY RATE` rows 25-31).
+     * NULL for every lorry the client has published no interplant rate for.
+     */
+    interplant_claim_weekday?: number | null;
+    interplant_claim_offpeak?: number | null;
+  };
+  /**
+   * Present ⇒ score this group under the INTERPLANT scheme instead of the
+   * per-zone drop scheme. Mr. Teh, A4 (29 Jul 2026):
+   *
+   *   "Interplant no need deduction, but please ensure they need to fulfill
+   *    round trip only can consider complete 1 trip, get 1 point."
+   *
+   * and the 28 Jul workbook, point 5: "ROUND TRIP, SEND AND RETRUN WITH CARGO
+   * ONLY CAN CONSIDER 1 TRIP COUNT".
+   */
+  interplant?: {
+    /** Every stop delivered — cargo went out AND came back. */
+    roundTripComplete: boolean;
+    /**
+     * ⚠ AWARD THE POINT ONCE PER TRIP, NOT ONCE PER DAY GROUP.
+     *
+     * A trip whose legs straddle MYT midnight splits into two day groups and
+     * this function is called for each. `roundTripComplete` is trip-wide and so
+     * identical across them, which paid the flat point TWICE — an out-leg at
+     * 23:50 and a return at 00:10 earned RM12 instead of RM6. The caller sets
+     * this true for exactly one group (the last, which is the one that completes
+     * the round trip) and false for the rest.
+     */
+    awardThisGroup: boolean;
   };
 }): DeliveryIncentiveResult {
   // Peak vs off-peak is decided ONCE per delivery-day group, from the group's
@@ -398,6 +429,47 @@ export function calculateDeliveryIncentive(params: {
   // Each truck carries its own two rates (e.g. PLX 2406: RM11 weekday / RM13
   // off-peak), so picking the rate is just a field lookup.
   const rate = offPeak ? params.truck.entitled_claim_offpeak : params.truck.entitled_claim_weekday;
+
+  // ── INTERPLANT: a separate scheme, not a variation of the one below ───────
+  //
+  // FLAT 1 POINT for a COMPLETED round trip, and NO daily deduction. Three
+  // things the per-zone scheme does are deliberately NOT done here:
+  //
+  //   • no per-drop scoring — the unit of pay is the TRIP, not the drop, so a
+  //     two-leg round trip pays 1 point, not 2;
+  //   • no zone-repeat demotion — every plant sits in zone P2, so under the
+  //     normal rule the return leg would score as a same-zone repeat, which is
+  //     meaningless when the whole trip is worth one flat point;
+  //   • no deduction — A4 says so outright.
+  //
+  // An INCOMPLETE round trip earns NOTHING. "Send AND return with cargo only can
+  // consider 1 trip count" is a condition on the pay, not a description of the
+  // route, so a driver who delivers out and comes back empty has not completed
+  // the unit he is paid for.
+  if (params.interplant) {
+    const points = params.interplant.roundTripComplete && params.interplant.awardThisGroup ? 1 : 0;
+    // THE INTERPLANT RATE, not the customer one. Separate published numbers
+    // (PLX 2406 RM6/RM8, PPE 2406 RM5/RM7) — using the customer pair overpaid
+    // PLX by 83%. Falls back to the customer rate ONLY when the client has
+    // published no interplant rate for this lorry, which is an open question,
+    // not a rule: see the Truck schema note.
+    const interplantRate = offPeak
+      ? params.truck.interplant_claim_offpeak
+      : params.truck.interplant_claim_weekday;
+    const rateUsed = interplantRate ?? rate;
+    return {
+      isOffPeak: offPeak,
+      rateUsed,
+      // The single point lands on the LAST leg — the return that completes the
+      // round trip and is the thing being paid for. Earlier legs score 0 rather
+      // than null so the per-drop evidence still explains the total.
+      dropPoints: params.drops.map((_, i) => (i === params.drops.length - 1 ? points : 0)),
+      wasRepeat: params.drops.map(() => false),
+      pointsThisTrip: points,
+      deductionApplied: 0,
+      incentiveThisTrip: Math.round(points * rateUsed * 100) / 100,
+    };
+  }
 
   const scored = scoreDropsDetailed(params.drops, params.zonesDeliveredEarlierToday);
   const dropPoints = scored.map((d) => d.points);

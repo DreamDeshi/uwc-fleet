@@ -39,6 +39,7 @@ import type { Prisma } from "@prisma/client";
 // the finalizer's constant so the two cannot describe different stops. Adding
 // the reject veto to one and not the other is exactly the drift this prevents.
 import { SCORED_UNDELIVERED_WHERE } from "./undeliveredPay";
+import { INTERPLANT_ROUTE_TYPES } from "../lib/uwcSpec";
 
 // Trip statuses whose delivered drops feed the day ledger. `pending_approval`
 // is included (16 Jul 2026): a trip whose last stop is delivered but whose
@@ -93,6 +94,8 @@ export interface PriorDeliveredDropsWhere {
     driver_id: string;
     status: { in: ("in_progress" | "pending_approval" | "completed")[] };
     id: { not: string };
+    /** Interplant trips are excluded — see the note at the value site. */
+    route_type: { name: { notIn: string[] } };
   };
 }
 
@@ -107,6 +110,8 @@ export function priorDeliveredDropsWhere(params: {
   excludeTripId: string;
   dayStart: Date;
   anchor: Date;
+  /** FEATURE_INTERPLANT. False ⇒ the pre-feature ledger, unchanged. */
+  excludeInterplant: boolean;
 }): PriorDeliveredDropsWhere {
   const window = { gte: params.dayStart, lt: params.anchor };
   return {
@@ -143,6 +148,21 @@ export function priorDeliveredDropsWhere(params: {
       driver_id: params.driverId,
       status: { in: [...LEDGER_TRIP_STATUSES] },
       id: { not: params.excludeTripId },
+      // INTERPLANT TRIPS DO NOT ENTER THIS LEDGER, in either direction.
+      //
+      // They are paid under a separate scheme (flat 1 point per completed round
+      // trip, no deduction — A4, 29 Jul 2026), so they neither consume a zone's
+      // first-drop slot nor read one. Every UWC plant sits in zone P2, so
+      // without this an interplant run in the morning would silently demote a
+      // real afternoon delivery to Juru or Perai — also P2 — from full points to
+      // the 1-point repeat, on the strength of a trip scored by a rule that has
+      // nothing to do with zones.
+      //
+      // The converse needs no code: the interplant branch of
+      // calculateDeliveryIncentive returns before it reads the ledger at all.
+      // FLAG-GATED so flag-off is byte-identical to the pre-feature ledger.
+      // `notIn: []` matches every row, i.e. excludes nothing.
+      route_type: { name: { notIn: params.excludeInterplant ? [...INTERPLANT_ROUTE_TYPES] : [] } },
     },
   };
 }

@@ -349,7 +349,7 @@ async function finalizeIfNothingOutstanding(
   tripId: string,
   actorId: string
 ): Promise<boolean> {
-  const trip = await tx.trip.findUnique({ where: { id: tripId }, include: { truck: true } });
+  const trip = await tx.trip.findUnique({ where: { id: tripId }, include: { truck: true, route_type: true } });
   // Only an OUT trip finalizes. An abort may have cancelled it while the
   // exception was open, and a trip with no driver has no ledger owner.
   if (!trip || trip.status !== "in_progress" || !trip.driver_id) return false;

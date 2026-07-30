@@ -733,3 +733,130 @@ describe("calculateDeliveryIncentive - breakdown fields persisted at finalizatio
     expect(r.deductionApplied).toBe(2);
   });
 });
+
+describe("INTERPLANT pay — a separate scheme (A4, 29 Jul 2026)", () => {
+  // Mr. Teh: "Interplant no need deduction, but please ensure they need to
+  // fulfill round trip only can consider complete 1 trip, get 1 point."
+  // Workbook point 5: "ROUND TRIP, SEND AND RETRUN WITH CARGO ONLY CAN CONSIDER
+  // 1 TRIP COUNT".
+  //
+  // PLX 2406 is the interplant lorry: RM11 weekday / RM13 off-peak, and its
+  // workbook deduction of 2 must NOT be applied to an interplant run.
+  // PLX 2406 as the workbook actually defines it: CUSTOMER RM11/RM13 with
+  // deduction 2, and a SEPARATE published INTERPLANT pair of RM6/RM8
+  // (INTERNAL LORRY RATE rows 27/30). The first cut paid the customer rate.
+  const PLX = {
+    daily_deduction_points: 2,
+    entitled_claim_weekday: 11,
+    entitled_claim_offpeak: 13,
+    interplant_claim_weekday: 6,
+    interplant_claim_offpeak: 8,
+  };
+  const WEEKDAY_1000 = new Date("2026-07-29T02:00:00Z"); // Wed 10:00 MYT
+  const legs = (n: number) =>
+    Array.from({ length: n }, () => ({ zoneCode: "P2", zonePoints: 3 }));
+
+  const run = (over: Record<string, unknown> = {}) =>
+    calculateDeliveryIncentive({
+      rateDateTime: WEEKDAY_1000,
+      drops: legs(2), // out + back
+      zonesDeliveredEarlierToday: [],
+      priorPointsToday: 0,
+      publicHolidays: new Set<string>(),
+      truck: PLX,
+      interplant: { roundTripComplete: true, awardThisGroup: true },
+      ...over,
+    });
+
+  it("a completed round trip is ONE point, whatever the leg count", () => {
+    expect(run().pointsThisTrip).toBe(1);
+    expect(run({ drops: legs(2) }).pointsThisTrip).toBe(1);
+    expect(run({ drops: legs(4) }).pointsThisTrip).toBe(1);
+    // 1 point x RM11, and NOT 2 legs x 3 zone points.
+    expect(run().incentiveThisTrip).toBe(6); // RM6, the INTERPLANT rate — not RM11
+  });
+
+  it("takes NO daily deduction, even though the lorry carries one", () => {
+    // The trap: PLX 2406's row says deduction 2. Under the normal scheme a
+    // 1-point day would floor to zero and pay RM0.
+    expect(run().deductionApplied).toBe(0);
+    expect(run().incentiveThisTrip).toBe(6); // RM6, the INTERPLANT rate — not RM11
+  });
+
+  it("an INCOMPLETE round trip earns nothing", () => {
+    // "Send AND return with cargo only can consider 1 trip count" is a condition
+    // on the pay, not a description of the route.
+    const r = run({ interplant: { roundTripComplete: false, awardThisGroup: true } });
+    expect(r.pointsThisTrip).toBe(0);
+    expect(r.incentiveThisTrip).toBe(0);
+    expect(r.deductionApplied).toBe(0);
+  });
+
+  it("ignores prior points and same-zone repeats entirely", () => {
+    // Both legs are zone P2. Under the per-zone scheme the second would demote
+    // to a 1-point repeat and the day's prior points would change the marginal.
+    const r = run({ zonesDeliveredEarlierToday: ["P2", "P2"], priorPointsToday: 30 });
+    expect(r.pointsThisTrip).toBe(1);
+    expect(r.incentiveThisTrip).toBe(6);
+    expect(r.wasRepeat).toEqual([false, false]);
+  });
+
+  it("still picks the rate tier the normal way", () => {
+    const offPeak = run({ rateDateTime: new Date("2026-07-29T11:00:00Z") }); // 19:00 MYT
+    expect(offPeak.isOffPeak).toBe(true);
+    expect(offPeak.incentiveThisTrip).toBe(8); // 1 x RM8 interplant off-peak
+  });
+
+  it("puts the single point on the LAST leg — the return that completes it", () => {
+    expect(run({ drops: legs(3) }).dropPoints).toEqual([0, 0, 1]);
+    expect(run({ interplant: { roundTripComplete: false, awardThisGroup: true }, drops: legs(3) }).dropPoints).toEqual([0, 0, 0]);
+  });
+});
+
+describe("interplant rate selection and the once-per-trip award", () => {
+  const WEEKDAY = new Date("2026-07-29T02:00:00Z"); // Wed 10:00 MYT
+  const base = {
+    rateDateTime: WEEKDAY,
+    drops: [{ zoneCode: "P2", zonePoints: 3 }],
+    zonesDeliveredEarlierToday: [],
+    priorPointsToday: 0,
+    publicHolidays: new Set<string>(),
+  };
+
+  it("uses the INTERPLANT pair, never the customer pair", () => {
+    // The blocker: PLX 2406's customer rate is RM11 and its published interplant
+    // rate is RM6. Paying the customer rate overpaid every round trip by 83%.
+    const r = calculateDeliveryIncentive({
+      ...base,
+      truck: { daily_deduction_points: 2, entitled_claim_weekday: 11, entitled_claim_offpeak: 13, interplant_claim_weekday: 6, interplant_claim_offpeak: 8 },
+      interplant: { roundTripComplete: true, awardThisGroup: true },
+    });
+    expect(r.rateUsed).toBe(6);
+    expect(r.incentiveThisTrip).toBe(6);
+  });
+
+  it("falls back to the customer rate ONLY when no interplant rate is published", () => {
+    // A swapped-in lorry (workbook point 6 says they swap). What it should earn
+    // on a plant run is an OPEN QUESTION — falling back keeps the trip payable
+    // rather than stranding it, and is flagged rather than silent.
+    const r = calculateDeliveryIncentive({
+      ...base,
+      truck: { daily_deduction_points: 2, entitled_claim_weekday: 11, entitled_claim_offpeak: 13, interplant_claim_weekday: null, interplant_claim_offpeak: null },
+      interplant: { roundTripComplete: true, awardThisGroup: true },
+    });
+    expect(r.rateUsed).toBe(11);
+  });
+
+  it("awards the point ONCE per trip, not once per day group", () => {
+    // A trip straddling MYT midnight splits into two groups and the engine runs
+    // for each. roundTripComplete is trip-wide, so without awardThisGroup the
+    // flat point paid twice — RM12 for one RM6 round trip.
+    const truck = { daily_deduction_points: 2, entitled_claim_weekday: 11, entitled_claim_offpeak: 13, interplant_claim_weekday: 6, interplant_claim_offpeak: 8 };
+    const first = calculateDeliveryIncentive({ ...base, truck, interplant: { roundTripComplete: true, awardThisGroup: false } });
+    const last = calculateDeliveryIncentive({ ...base, truck, interplant: { roundTripComplete: true, awardThisGroup: true } });
+    expect(first.pointsThisTrip).toBe(0);
+    expect(first.incentiveThisTrip).toBe(0);
+    expect(last.pointsThisTrip).toBe(1);
+    expect(first.incentiveThisTrip + last.incentiveThisTrip).toBe(6); // not 12
+  });
+});

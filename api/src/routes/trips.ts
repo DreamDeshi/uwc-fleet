@@ -3,6 +3,8 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
+import { assertInterplantBooking } from "../services/interplant";
+import { interplantEnabled } from "../lib/featureFlags";
 import {
   isSerializationConflict,
   isUniqueViolation,
@@ -199,6 +201,42 @@ export const PICKUP_GRACE_MS = 15 * 60 * 1000;
  * with N stops to guess which one broke — while the failing ids were computable
  * at both sites. Same code, richer message; clients surface it verbatim.
  */
+/**
+ * Resolve the interplant pickup point and enforce the P1–P9 fence (A4).
+ *
+ * ONE definition, TWO callers — booking create and the shared edit/
+ * change-request validator — because a rule enforced on only one of them is a
+ * rule a requestor can route around by booking then editing.
+ */
+async function assertInterplantOrThrow(
+  routeTypeId: string,
+  pickupConsigneeId: string | null | undefined,
+  stopConsignees: { company_name: string }[]
+): Promise<string | null> {
+  // FLAG-GATED. While off this is a no-op, so an interplant booking behaves
+  // exactly as it did before the feature existed. Without this the first cut
+  // would have 400'd every interplant booking from the app — the requestor UI
+  // sends no pickup point — and locked existing ones out of editing forever.
+  if (!interplantEnabled()) return null;
+  const routeType = await prisma.routeType.findUnique({ where: { id: routeTypeId } });
+  const pickupConsignee = pickupConsigneeId
+    ? await prisma.consignee.findFirst({ where: bookableConsigneesWhere([pickupConsigneeId]) })
+    : null;
+  if (pickupConsigneeId && !pickupConsignee) {
+    throw new ApiError(
+      400,
+      "CONSIGNEE_NOT_FOUND",
+      "The pickup point is no longer available (it may have been removed or deactivated) — please reselect it."
+    );
+  }
+  assertInterplantBooking({
+    routeTypeName: routeType?.name,
+    pickupConsignee,
+    stopConsignees,
+  });
+  return pickupConsignee?.id ?? null;
+}
+
 export function consigneesNotFoundError(
   stops: { consignee_id: string }[],
   found: { id: string }[]
@@ -283,6 +321,9 @@ export const createTripSchema = z.object({
   // rather than strict UUID, since it is only ever compared for equality.
   client_request_id: z.string().min(8).max(128).optional(),
   route_type_id: z.string().min(1),
+  // INTERPLANT ONLY (A4). Required for an Inter-Plant route type, refused for
+  // any other — services/interplant.ts owns both halves of that rule.
+  pickup_consignee_id: z.string().min(1).optional(),
   pickup_datetime: z.coerce
     .date()
     .refine((d) => d.getTime() >= Date.now() - PICKUP_GRACE_MS, {
@@ -342,6 +383,15 @@ router.post(
         throw consigneesNotFoundError(stops, foundConsignees);
       }
 
+      // INTERPLANT FENCE (A4): plant-to-plant only, and no pickup point on a
+      // customer/supplier booking. Ordered by stop, so the error names positions.
+      const byId = new Map(foundConsignees.map((c) => [c.id, c]));
+      const resolvedPickupId = await assertInterplantOrThrow(
+        route_type_id,
+        req.body.pickup_consignee_id,
+        stops.map((st: { consignee_id: string }) => byId.get(st.consignee_id)!).filter(Boolean)
+      );
+
       // Cargo bigger than the biggest truck can NEVER be dispatched internally —
       // fail the booking now with a clear error instead of accepting it and
       // letting auto-dispatch fail forever. External-forwarder bookings skip
@@ -372,6 +422,9 @@ router.post(
               client_request_id,
               requestor_id: req.user!.id,
               route_type_id,
+              // NULL for every customer/supplier booking, as before — the fence
+              // above refuses a pickup point on anything but Inter-Plant.
+              pickup_consignee_id: resolvedPickupId,
               pickup_datetime,
               is_external: is_external ?? false,
               stops: {
@@ -477,6 +530,11 @@ export const updateTripSchema = z.object({
   route_type_id: z.string().min(1),
   pickup_datetime: z.coerce.date(),
   stops: createTripSchema.shape.stops,
+  // INTERPLANT (A4). `.nullable()` as well as optional: an edit that switches a
+  // booking AWAY from Inter-Plant has to be able to CLEAR the pickup point, and
+  // an absent key must stay distinguishable from an explicit null so the
+  // change-request path can tell "unchanged" from "removed".
+  pickup_consignee_id: z.string().min(1).nullable().optional(),
   // Full/legacy vocabulary so a historical 1×1/1×2 line still PARSES on edit (the
   // create schema's BOOKABLE enum would 400 the whole update). Optional: when the
   // client omits cargo_details entirely, the handler preserves existing cargo
@@ -675,6 +733,13 @@ async function validateTripEdit(
   if (foundConsignees.length !== new Set(consigneeIds).size) {
     throw consigneesNotFoundError(stops, foundConsignees);
   }
+  // Same fence on the edit / change-request path — see assertInterplantOrThrow.
+  const byIdU = new Map(foundConsignees.map((c) => [c.id, c]));
+  await assertInterplantOrThrow(
+    input.route_type_id ?? existing.route_type_id,
+    "pickup_consignee_id" in input ? input.pickup_consignee_id : existing.pickup_consignee_id,
+    stops.map((st) => byIdU.get(st.consignee_id)!).filter(Boolean)
+  );
   if (!existing.is_external) {
     const orderPallets = palletEquivalents(effectiveCargo);
     const largest = await prisma.truck.aggregate({ _max: { max_pallets: true } });
@@ -2504,7 +2569,7 @@ router.patch("/:id/abort", requireRole("admin"), validateBody(abortTripSchema), 
     // otherwise race a first delivery into an unpaid cancel).
     await prisma.$transaction(async (tx) => {
       await lockTripRow(tx, id);
-      const t2 = await tx.trip.findUnique({ where: { id }, include: { truck: true } });
+      const t2 = await tx.trip.findUnique({ where: { id }, include: { truck: true, route_type: true } });
       if (!t2) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
       if (t2.status !== "in_progress") {
         throw new ApiError(
@@ -3088,7 +3153,7 @@ router.patch(
       // is byte-for-byte unchanged — only the transaction boundary + lock are new.
       const finalizedTrip = await prisma.$transaction(async (tx) => {
         await lockTripRow(tx, id);
-        const t2 = await tx.trip.findUnique({ where: { id }, include: { truck: true } });
+        const t2 = await tx.trip.findUnique({ where: { id }, include: { truck: true, route_type: true } });
         if (!t2) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
         if (t2.driver_id !== req.user!.id) throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
         // An OPEN exception blocks delivery + finalization: no final delivery,
