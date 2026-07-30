@@ -5,6 +5,9 @@ import {
   stopPayInstant,
   hasResolvedStopException,
   SETTLED_UNDELIVERED_WHERE,
+  ADJUDICATED_UNDELIVERED_WHERE,
+  isStopSettled,
+  isStopAdjudicated,
   type PayableStopLike,
 } from "../src/services/undeliveredPay";
 
@@ -140,7 +143,11 @@ describe("the admin's levers", () => {
   });
 
   it("one fully-adjudicated exception among several is enough", () => {
-    const s = stop({ exceptions: [...rejected, ...verifiedThenResumed] });
+    // Intent unchanged: an approval does not need every sibling report to agree.
+    // The fixture used to pair it with a REJECTED sibling, which quietly made
+    // this the pin for OR-of-adjudications; that case now has its own test and
+    // the opposite expectation (owner ruling, 30 Jul 2026 — reject wins).
+    const s = stop({ exceptions: [...stillOpen, ...verifiedThenResumed] });
     expect(stopPayEligibility(s)).toBe("undelivered_paid");
   });
 
@@ -182,6 +189,10 @@ describe("the SQL predicate and the in-memory rule are the same rule", () => {
           resolution: "resume",
           actions: { some: { type: "verify" } },
         },
+        // The reject veto. Asserted structurally so dropping it — which would
+        // silently restore OR-of-adjudications and pay rejected stops — fails
+        // here rather than in a payroll run.
+        none: { current_state: "rejected" },
       },
     });
   });
@@ -214,22 +225,31 @@ describe("a stop carrying SEVERAL exceptions", () => {
     expect(stopPayEligibility(stop({ exceptions: [...verifiedThenResumed, ...stillOpen] }))).toBe("undelivered_paid");
   });
 
-  it("DOCUMENTS current behaviour: a rejected report alongside a settled one does not cancel the pay", () => {
-    // ⚠ NOT AN AUTHORISED RULE — this records what the code does, so a change
-    // is visible, and must not be read as Mr. Teh having decided it.
-    //
-    // The predicate is OR-of-adjudications: any one verified+resumed exception
-    // pays the stop in full even where the admin explicitly REJECTED another
-    // report on the same stop — and undeliveredPay's own header calls reject
-    // "the explicit no-pay lever". Those two decisions conflict, and the tie is
-    // currently broken in favour of paying.
-    //
-    // Pre-existing (two exceptions on one stop were already reachable
-    // sequentially — the dropped index only ever constrained OPEN rows), but
-    // dropping it makes the state routine. AGENTS.md freezes "failed-delivery
-    // payment behaviour not explicitly confirmed in writing", so this goes to
-    // Mr. Teh alongside the still-open R4 §A1 rather than being settled here.
-    expect(stopPayEligibility(stop({ exceptions: [...rejected, ...verifiedThenResumed] }))).toBe("undelivered_paid");
+  it("an explicit REJECT beats an approval on the same stop — no pay", () => {
+    // Owner ruling, 30 Jul 2026. This was OR-of-adjudications: one approval
+    // paid the stop in full even where an admin had explicitly rejected another
+    // report on it, which made `reject` mean nothing whenever a second report
+    // existed — while this module's header calls it "the explicit no-pay
+    // lever". Two decisions contradicted each other and the tie broke toward
+    // paying. Reject now wins, in either order.
+    expect(stopPayEligibility(stop({ exceptions: [...rejected, ...verifiedThenResumed] }))).toBe("unpaid");
+    expect(stopPayEligibility(stop({ exceptions: [...verifiedThenResumed, ...rejected] }))).toBe("unpaid");
+    expect(stopEarns(stop({ exceptions: [...rejected, ...verifiedThenResumed] }))).toBe(false);
+  });
+
+  it("the veto needs a REJECT, not merely a non-approval", () => {
+    // Only an explicit rejection vetoes. A report still open, or one closed as
+    // retry, leaves an approval on the same stop standing — otherwise a driver
+    // could lose settled pay just by filing a second report nobody has read.
+    expect(stopPayEligibility(stop({ exceptions: [...stillOpen, ...verifiedThenResumed] }))).toBe("undelivered_paid");
+    expect(stopPayEligibility(stop({ exceptions: [...verifiedThenRetried, ...verifiedThenResumed] }))).toBe("undelivered_paid");
+  });
+
+  it("a DELIVERED stop is unaffected by a reject — it earns on the delivered path", () => {
+    // The veto is about the UNDELIVERED (Q11a) path only. A stop that was
+    // actually delivered is paid for the delivery, whatever reports it collected.
+    const s = stop({ status: "delivered", delivered_at: DELIVERED, exceptions: [...rejected] });
+    expect(stopPayEligibility(s)).toBe("delivered");
   });
 
   it("several UNadjudicated reports earn nothing", () => {
@@ -248,5 +268,45 @@ describe("a stop carrying SEVERAL exceptions", () => {
     });
     expect(stopPayEligibility(s)).toBe("delivered");
     expect(stopPayInstant(s)).toEqual(DELIVERED);
+  });
+});
+
+describe("PAYS and OUTSTANDING are two different questions", () => {
+  // The reject veto initially went into the ONE shared predicate, which made a
+  // vetoed stop OUTSTANDING again: the trip stopped auto-finalizing, the driver
+  // and truck were held, pay for the stops that DID earn never proposed, and on
+  // a single-drop trip abort produced `cancelled` with a null incentive and no
+  // admin edit route (assertIncentiveApprovable is pending_approval-only) —
+  // RM0 on an RM44 drop, correctable only by a DB write. Split, and pinned.
+
+  it("a vetoed stop does not pay but IS adjudicated", () => {
+    const s = stop({ exceptions: [...rejected, ...verifiedThenResumed] });
+    expect(stopPayEligibility(s)).toBe("unpaid");
+    expect(isStopSettled(s)).toBe(false);
+    expect(isStopAdjudicated(s)).toBe(true); // ← the trip can still finalize
+  });
+
+  it("only an APPROVAL adjudicates — a lone reject leaves the stop owed", () => {
+    expect(isStopAdjudicated(stop({ exceptions: [...rejected] }))).toBe(false);
+    expect(isStopAdjudicated(stop({ exceptions: [...stillOpen] }))).toBe(false);
+    expect(isStopAdjudicated(stop({ exceptions: [...verifiedThenRetried] }))).toBe(false);
+  });
+
+  it("a stop he never reached is never adjudicated", () => {
+    expect(isStopAdjudicated(stop({ arrived_at: null, exceptions: [...verifiedThenResumed] }))).toBe(false);
+  });
+
+  it("delivered is always adjudicated", () => {
+    expect(isStopAdjudicated(stop({ status: "delivered", delivered_at: DELIVERED }))).toBe(true);
+  });
+
+  it("the two WHEREs share everything except the veto", () => {
+    // Derivation, not duplication: SETTLED is built from ADJUDICATED, so the
+    // shared half cannot drift. Only `exceptions.none` may differ.
+    expect(ADJUDICATED_UNDELIVERED_WHERE.status).toEqual(SETTLED_UNDELIVERED_WHERE.status);
+    expect(ADJUDICATED_UNDELIVERED_WHERE.arrived_at).toEqual(SETTLED_UNDELIVERED_WHERE.arrived_at);
+    expect(ADJUDICATED_UNDELIVERED_WHERE.exceptions.some).toEqual(SETTLED_UNDELIVERED_WHERE.exceptions.some);
+    expect(ADJUDICATED_UNDELIVERED_WHERE.exceptions).not.toHaveProperty("none");
+    expect(SETTLED_UNDELIVERED_WHERE.exceptions.none).toEqual({ current_state: "rejected" });
   });
 });

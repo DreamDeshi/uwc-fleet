@@ -44,8 +44,41 @@ import type { PrismaClient, Prisma } from "@prisma/client";
  *
  *    So: an explicit `verify` action is the admin's "this was a genuine failed
  *    delivery" (R1 Q2a "admin verify and approve"), and `resume` is "we are
- *    not going back for it". `reject` remains the explicit no-pay lever, and
- *    an exception still OPEN earns nothing yet.
+ *    not going back for it". `reject` is the explicit no-pay lever, and an
+ *    exception still OPEN earns nothing yet.
+ *
+ * 4. NO exception on the stop was REJECTED. A stop can carry several reports
+ *    (a driver may continue past one and file another), and the office decides
+ *    each separately — so one stop can hold an approval AND a rejection.
+ *
+ *    Owner ruling, 30 Jul 2026: the REJECTION WINS. Until then the predicate
+ *    was `some` alone, so any single approval paid the stop in full and reject
+ *    meant nothing whenever a second report existed — which contradicts calling
+ *    it the no-pay lever three lines above. Two admin decisions cannot both be
+ *    honoured; the safe tie-break is the one that withholds money, because an
+ *    unpaid stop is a conversation and an overpaid one is a clawback.
+ *
+ *    ⚠ CONSEQUENCE, accepted deliberately: a bogus first report that an admin
+ *    rejects will veto pay for a LATER genuine failure on the same stop.
+ *
+ *    ⚠ AND THERE IS NO WAY BACK. An earlier draft of this comment claimed the
+ *    office could revisit a bad reject. It cannot. `rejected` is TERMINAL and
+ *    PERMANENT: it is not an open state (services/exceptionWorkflow), the
+ *    close CAS is guarded on `closed_at: null` and reject sets `closed_at` in
+ *    the same update, `stateAfterEvidence` refuses further evidence, and there
+ *    is no delete path. So a rejected report poisons the stop for the life of
+ *    the trip, and the only remedies are the approval-screen amount edit —
+ *    which requires the trip to reach `pending_approval` — or a hand-written
+ *    DB update. Post-completion correction is impossible BY DESIGN
+ *    (UWC_MASTER_PROJECT_DOCUMENT §22: the correction plan is a design archive,
+ *    "do not build without a fresh owner decision").
+ *
+ *    Say this to an admin before they tap Reject, or they will discover it on
+ *    a driver's payslip.
+ *
+ *    ⚠ Only an explicit `rejected` vetoes. A report still OPEN, or one closed
+ *    as `retry`, must NOT withhold settled pay — otherwise a driver loses money
+ *    by filing a second report nobody has read yet.
  *
  *    ⚠ The admin UI must SAY this — Verify is a pay decision, not a filing
  *    action. See the button copy in mobile/src/admin/screens/ExceptionsScreen.
@@ -68,18 +101,55 @@ import type { PrismaClient, Prisma } from "@prisma/client";
  */
 
 /**
- * The DB-query form of the same rule: a stop SETTLED as paid-undelivered.
- * Structural (no Prisma import) but assignable to Prisma.TripStopWhereInput.
+ * TWO predicates, because there are TWO questions, and answering both with one
+ * constant is what made the reject veto strand trips.
  *
- * ONE definition, four call sites — they must never drift apart:
- *   1. finalization: which stops are scored (routes/trips.ts);
- *   2. the cross-trip day ledger (services/dayLedger.ts);
- *   3. the completion gate — a settled stop must NOT count as outstanding, or
- *      the trip can never finalize and the pay never proposes;
- *   4. the abort branch — a trip whose stops ALL failed still earns, so the
- *      "did anything earn?" count cannot be delivered-only.
+ *   ADJUDICATED_UNDELIVERED_WHERE — "is the driver still on the hook for this
+ *     stop?" NO reject veto. Call sites: the completion gate (routes/trips.ts
+ *     and the exception-close gate in routes/exceptions.ts) and the default
+ *     stop picker. Mirrored client-side by lib/stopSettled.isStopAdjudicated.
+ *
+ *   SETTLED_UNDELIVERED_WHERE — "does this stop PAY?" Adjudicated AND no
+ *     rejection. Call sites: finalization scoring (services/tripFinalize), the
+ *     cross-trip day ledger (services/dayLedger — pay and the zone slot must
+ *     agree or a later delivery is mis-scored), the abort branch's "did
+ *     anything earn?" count, and earnedInWindow → the payroll reads.
+ *     Mirrored client-side by lib/stopSettled.isStopSettled.
+ *
+ * SETTLED is derived from ADJUDICATED by construction, so the shared half
+ * cannot drift; dayLedger's type derives from SETTLED's `exceptions` in turn.
+ *
+ * Structural (no Prisma import) but assignable to Prisma.TripStopWhereInput.
  */
-export const SETTLED_UNDELIVERED_WHERE = {
+/**
+ * ADJUDICATED — the office has CLOSED this stop out: verified the failure and
+ * resumed ("we are not going back for it"). It is no longer outstanding work.
+ *
+ * ⚠ DELIBERATELY WITHOUT THE REJECT VETO. This answers "must the driver still
+ * deliver this?", which is a DIFFERENT question from "does it pay". Conflating
+ * them was a bug: with the veto in the single shared predicate a
+ * rejected-but-also-approved stop went back to OUTSTANDING, so a trip with a
+ * DELIVERED sibling stop stopped auto-finalizing — driver and truck held by the
+ * one-active guard, and the pay that sibling earned never proposed.
+ *
+ * A rejected stop is ADJUDICATED — the office decided. It just does not pay.
+ *
+ * ⚠ WHAT THIS SPLIT DOES **NOT** FIX, stated plainly because an earlier draft of
+ * this comment wrongly claimed it did. On a trip where EVERY stop is vetoed,
+ * `finalizeIfNothingOutstanding` finds nothing outstanding but nothing earning
+ * either, so it declines (routes/exceptions.ts) and the trip sits `in_progress`
+ * until an admin aborts — which lands it in `cancelled` with a null incentive
+ * and therefore no `pending_approval`, so no amount-edit route. RM0 is the
+ * INTENDED amount there (every stop was rejected), but the trip hanging and the
+ * driver being locked out of other work by the one-active guard is a real
+ * operational dead-end, and it is NEW: before the split ADJUDICATED === SETTLED,
+ * so `earning === 0` with nothing outstanding was unreachable dead code.
+ * Raised for a decision rather than papered over.
+ *
+ * Use this for outstandingness: the completion gate, the default stop picker,
+ * and the client's outstanding-stops rail.
+ */
+export const ADJUDICATED_UNDELIVERED_WHERE = {
   status: { not: "delivered" as const },
   arrived_at: { not: null },
   exceptions: {
@@ -88,6 +158,25 @@ export const SETTLED_UNDELIVERED_WHERE = {
       resolution: "resume" as const, // NOT retry — retry leaves the stop outstanding
       actions: { some: { type: "verify" as const } }, // the admin's pay decision
     },
+  },
+};
+
+export const SETTLED_UNDELIVERED_WHERE = {
+  ...ADJUDICATED_UNDELIVERED_WHERE,
+  exceptions: {
+    ...ADJUDICATED_UNDELIVERED_WHERE.exceptions,
+    // AN EXPLICIT REJECT WINS (owner ruling, 30 Jul 2026).
+    //
+    // This used to be `some` alone — OR-of-adjudications — so one approval paid
+    // the stop in full even where an admin had explicitly REJECTED another
+    // report on it. That made `reject` mean nothing whenever a second report
+    // existed, while this module's own header calls it "the explicit no-pay
+    // lever". Two decisions contradicted each other and the tie broke toward
+    // paying, silently.
+    //
+    // Reachable in the ordinary course since 20260730120000 let a driver hold
+    // several open reports at once, and reachable sequentially before that.
+    none: { current_state: "rejected" as const },
   },
 };
 
@@ -168,6 +257,8 @@ export type PayEligibility =
  * `resume` — the two-part adjudication. Mirrors SETTLED_UNDELIVERED_WHERE.
  */
 export function hasResolvedStopException(stop: PayableStopLike): boolean {
+  // ADJUDICATED: the office verified the failure and resumed. NO reject veto —
+  // this is the outstandingness question. Twin of ADJUDICATED_UNDELIVERED_WHERE.
   return (stop.exceptions ?? []).some(
     (e) =>
       e.current_state === "resolved" &&
@@ -176,13 +267,27 @@ export function hasResolvedStopException(stop: PayableStopLike): boolean {
   );
 }
 
+/**
+ * An explicit rejection on this stop. Twin of SETTLED_UNDELIVERED_WHERE's
+ * `none: { current_state: "rejected" }`.
+ *
+ * Only `rejected` counts. A report still OPEN, or one closed as `retry`, must
+ * NOT withhold settled pay — otherwise a driver loses money by filing a second
+ * report nobody has read yet.
+ */
+export function hasRejectedStopException(stop: PayableStopLike): boolean {
+  return (stop.exceptions ?? []).some((e) => e.current_state === "rejected");
+}
+
 /** Why (or whether) this stop earns. */
 export function stopPayEligibility(stop: PayableStopLike): PayEligibility {
   if (stop.status === "delivered") return "delivered";
   // Never reached → his (b): no incentive for stops the driver did not get to.
   if (!stop.arrived_at) return "unpaid";
-  // Reached, but nobody adjudicated it (still open) or it was rejected.
+  // Reached, but nobody adjudicated it (still open, or closed as retry).
   if (!hasResolvedStopException(stop)) return "unpaid";
+  // Adjudicated, but an explicit reject on the same stop vetoes the pay.
+  if (hasRejectedStopException(stop)) return "unpaid";
   return "undelivered_paid";
 }
 
@@ -197,6 +302,20 @@ export function stopPayEligibility(stop: PayableStopLike): PayEligibility {
  */
 export function isStopSettled(stop: PayableStopLike): boolean {
   return stopPayEligibility(stop) === "undelivered_paid";
+}
+
+/**
+ * Is this stop CLOSED OUT — no longer work the driver owes? True for a settled
+ * stop AND for one whose pay was vetoed by a rejection: the office decided
+ * either way, so it must not hold the trip open.
+ *
+ * The in-memory twin of ADJUDICATED_UNDELIVERED_WHERE. Never use isStopSettled
+ * for outstandingness — that is the conflation that stranded trips.
+ */
+export function isStopAdjudicated(stop: PayableStopLike): boolean {
+  if (stop.status === "delivered") return true;
+  if (!stop.arrived_at) return false;
+  return hasResolvedStopException(stop);
 }
 
 /** True when the stop earns at all (either path). */

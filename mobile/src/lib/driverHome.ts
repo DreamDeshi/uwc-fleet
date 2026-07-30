@@ -16,7 +16,7 @@
 
 import type { Trip, TripStop } from "../types";
 import { isDelivered } from "./tripStatus";
-import { isStopSettled } from "./stopSettled";
+import { isStopAdjudicated } from "./stopSettled";
 
 export type DriverDayState = "no_trips" | "before" | "running" | "between" | "finished";
 
@@ -66,7 +66,9 @@ export function stopProgress(trip: Trip): { delivered: number; total: number } {
  */
 export function currentStopNumber(trip: Trip): number {
   const stops = stopsOf(trip);
-  const idx = stops.findIndex((s) => s.status !== "delivered" && !isStopSettled(s));
+  // ADJUDICATED, not settled — see TripStopLadder. A vetoed stop is decided,
+  // so "stop 2 of 5" must not still be counting it as his current job.
+  const idx = stops.findIndex((s) => s.status !== "delivered" && !isStopAdjudicated(s));
   return idx === -1 ? stops.length : idx + 1;
 }
 

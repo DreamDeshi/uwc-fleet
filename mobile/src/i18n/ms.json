@@ -1545,6 +1545,8 @@
       "approvedBody": "Anda telah mengesahkan laporan ini. Jika anda tutup dengan \"Jangan patah balik\", pemandu dibayar untuk hentian ini pada kadar biasa — sama seperti penghantaran.",
       "notApprovedTitle": "Belum ada bayaran diluluskan",
       "notApprovedBody": "Sahkan dahulu jika ini benar-benar penghantaran gagal. Tanpa pengesahan, menutup laporan ini tidak membayar pemandu apa-apa untuk hentian ini.",
+      "vetoedTitle": "Tiada bayaran — satu laporan untuk hentian ini telah ditolak",
+      "vetoedBody": "Satu lagi laporan untuk hentian ini telah ditolak, dan penolakan adalah muktamad. Mengesahkan laporan ini TIDAK akan membayar pemandu untuk hentian ini — penolakan yang menang. Penolakan tidak boleh dibatalkan; pembetulan perlu melalui suntingan jumlah semasa kelulusan.",
       "noStopTitle": "Tiada bayaran untuk laporan ini",
       "noStopBody": "Laporan ini tidak terikat pada hentian yang pemandu sampai, jadi pengesahan tidak membayar apa-apa. Hentian yang tidak dicapai tiada insentif."
     },
@@ -1552,7 +1554,7 @@
     "verifyHint": "Mengesahkan pemandu memang tidak dapat menghantar. Ini keputusan bayaran: hentian ini dibayar pada kadar biasa selepas anda tutup laporan dengan \"Jangan patah balik\".",
     "requestMore": "Minta bukti tambahan",
     "reject": "Tolak — tiada bayaran untuk hentian ini",
-    "rejectHint": "Pemandu tidak dibayar untuk hentian ini. Nota diperlukan.",
+    "rejectHint": "Pemandu tidak dibayar untuk hentian ini. MUKTAMAD — penolakan tidak boleh dibatalkan, dan ia menghalang bayaran untuk hentian ini walaupun laporan lain diluluskan kemudian. Nota diperlukan.",
     "resume": "Jangan patah balik — tutup hentian ini",
     "resumeHintVerified": "Pemandu teruskan tanpa patah balik. Hentian ini DIBAYAR, kerana anda telah mengesahkannya.",
     "resumeHintUnverified": "Pemandu teruskan tanpa patah balik. Hentian ini TIDAK dibayar — anda belum mengesahkannya. Guna ini untuk gerakkan lori yang tersekat.",

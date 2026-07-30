@@ -353,4 +353,131 @@ describe("failed-delivery pay (R3 Q11a) — through Postgres", () => {
     expect(abort.body.error.code).toBe("EXCEPTION_OPEN");
     expect((await freshTrip(t.id)).incentive_earned).toBeNull();
   });
+
+  // NESTED DELIBERATELY. As a sibling describe it sat outside beforeAll/
+  // beforeEach/afterAll: FEATURE_EXCEPTIONS was already deleted (so every
+  // exception call 404s), resetDb never ran (so the day ledger was polluted by
+  // the previous suite and demoted these zones to 1-pt repeats), and prisma was
+  // already disconnected. All four cases failed in CI while passing review.
+  describe("an explicit REJECT vetoes the stop's pay", () => {
+    // Owner ruling, 30 Jul 2026. Unit tests pin the predicate OBJECT; only these
+    // prove what Prisma actually emits for `{ some, none }` against real SQL —
+    // which is the entire risk surface of the change.
+    async function startedTrip(zones: string[]) {
+      const t = await bookTrip(requestor, zones, rt);
+      await approveTrip(admin, t.id, driverId, PND_PLATE);
+      await startTrip(driver, t.id);
+      return t;
+    }
+
+    /** Report on a stop the driver has already arrived at, then REJECT it. */
+    async function reportAndReject(tripId: string, stopId: string) {
+      const reported = await reportReq(tripId, stopId);
+      expect(reported.status, JSON.stringify(reported.body)).toBe(201);
+      const exId = reported.body.exception.id as string;
+      const rejected = await api()
+        .post(`/api/v1/trips/${tripId}/exception/${exId}/reject`)
+        .set(auth(admin))
+        .send({ client_action_id: randomUUID(), note: "not a genuine failure" });
+      expect(rejected.status, JSON.stringify(rejected.body)).toBe(200);
+      return exId;
+    }
+
+    it("a stop with BOTH a rejection and an approval pays NOTHING — and the trip still finalizes", async () => {
+      // THE REGRESSION TEST. Putting the veto in the single shared predicate made
+      // this stop OUTSTANDING again, so the trip never finalized: driver and truck
+      // held, and the pay the OTHER stop earned never proposed. Two assertions,
+      // because either one alone would have passed while the other was broken.
+      const t = await startedTrip(["A2", "K1"]); // Ipoh 6 pts, Kulim 3 pts
+      const [ipoh, kulim] = t.stops;
+
+      // ORDER MATTERS ONLY FOR THE HARNESS, not the rule: failStopAndResolve
+      // does the arrival itself and asserts exactly 200, so it must run FIRST —
+      // pre-arriving made its own arrival a second one and the server correctly
+      // returned 400 INVALID_STATUS. Approve, then reject a second report on the
+      // same stop. (Both orders are covered in the unit tier.)
+      await failStopAndResolve(t.id, ipoh.id);
+      await reportAndReject(t.id, ipoh.id);
+
+      await deliverStop(t.id, kulim.id);
+
+      // It finalized — the veto did not strand the trip.
+      const trip = await freshTrip(t.id);
+      expect(trip.status).toBe("pending_approval");
+
+      // ...and it paid KULIM ONLY. Ipoh's 6 points are vetoed.
+      expect(num(trip.incentive_earned)).toBe(await expectedRm(t.id, 3));
+
+      const ipohRow = await prisma.tripStop.findUniqueOrThrow({ where: { id: ipoh.id } });
+      expect(ipohRow.points_awarded).toBeNull(); // never scored
+    });
+
+    it("without the rejection the same shape pays BOTH stops", async () => {
+      // The control. Isolates the veto as the cause of the difference above —
+      // otherwise a stop dropping out for some unrelated reason would look identical.
+      const t = await startedTrip(["A2", "K1"]);
+      const [ipoh, kulim] = t.stops;
+      await failStopAndResolve(t.id, ipoh.id);
+      await deliverStop(t.id, kulim.id);
+
+      const trip = await freshTrip(t.id);
+      expect(trip.status).toBe("pending_approval");
+      expect(num(trip.incentive_earned)).toBe(await expectedRm(t.id, 9)); // 6 + 3
+    });
+
+    it("a rejection on ANOTHER stop does not touch this one", async () => {
+      // `none` must be correlated to the stop, not global. If Prisma emitted an
+      // uncorrelated NOT EXISTS, one rejection anywhere would zero the whole trip.
+      const t = await startedTrip(["A2", "K1"]);
+      const [ipoh, kulim] = t.stops;
+
+      await api().patch(`/api/v1/trips/${t.id}/status`).set(auth(driver)).send({ action: "arrived", stop_id: kulim.id });
+      await reportAndReject(t.id, kulim.id); // rejection lives on KULIM
+      await failStopAndResolve(t.id, ipoh.id); // approval on IPOH
+
+      await deliverStop(t.id, kulim.id);
+
+      const trip = await freshTrip(t.id);
+      expect(trip.status).toBe("pending_approval");
+      expect(num(trip.incentive_earned)).toBe(await expectedRm(t.id, 9)); // Ipoh still pays
+    });
+
+    it("a TRIP-LEVEL rejection (no stop attached) vetoes nothing", async () => {
+      // The NULL trap: SQL `NOT IN (…, NULL)` is never true, so an uncorrelated
+      // `none` over a nullable FK would stop EVERY undelivered stop from paying
+      // the first time a trip-level report was rejected. Prisma guards it; proved.
+      const t = await startedTrip(["A2"]);
+      const [ipoh] = t.stops;
+      // ORDER: the trip-level report must be filed and rejected BEFORE the stop
+      // is resolved. This trip has ONE stop, so resolving it leaves nothing
+      // outstanding and the trip finalizes to `pending_approval` — after which
+      // the report route correctly refuses with TRIP_NOT_IN_PROGRESS. (Fixing
+      // the earlier double-arrive by moving failStopAndResolve first is what
+      // introduced that; CI caught it.)
+      const reported = await api()
+        .post(`/api/v1/trips/${t.id}/exception`)
+        .set(auth(driver))
+        .field("category", "truck")
+        .field("reason", "Breakdown, no stop attached")
+        .field("client_occurrence_id", randomUUID())
+        .field("client_action_id", randomUUID())
+        .field("client_evidence_id", randomUUID())
+        .attach("photo", PHOTO, "e.jpg");
+      expect(reported.status, JSON.stringify(reported.body)).toBe(201);
+      const tripLevelId = reported.body.exception.id as string;
+      // It must genuinely have NO stop, or this proves nothing.
+      expect(await prisma.tripException.findUniqueOrThrow({ where: { id: tripLevelId } })).toMatchObject({ trip_stop_id: null });
+
+      await api().post(`/api/v1/trips/${t.id}/exception/${tripLevelId}/reject`)
+        .set(auth(admin)).send({ client_action_id: randomUUID(), note: "not real" });
+
+      // Now arrive + approve the stop. failStopAndResolve owns the arrival, so
+      // the stop must still be `pending` here — no pre-arrival above.
+      await failStopAndResolve(t.id, ipoh.id);
+
+      const trip = await freshTrip(t.id);
+      expect(trip.status).toBe("pending_approval");
+      expect(num(trip.incentive_earned)).toBe(await expectedRm(t.id, 6)); // Ipoh pays in full
+    });
+  });
 });

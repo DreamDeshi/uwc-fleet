@@ -20,7 +20,7 @@ import {
 } from "../lib/exceptionEvidence";
 import type { Prisma } from "@prisma/client";
 import { sendPushNotifications } from "../lib/pushNotifications";
-import { SETTLED_UNDELIVERED_WHERE } from "../services/undeliveredPay";
+import { SETTLED_UNDELIVERED_WHERE, ADJUDICATED_UNDELIVERED_WHERE } from "../services/undeliveredPay";
 import { proposeDeliveredStopsIncentive } from "../services/tripFinalize";
 import {
   EXCEPTION_CATEGORIES,
@@ -355,7 +355,9 @@ async function finalizeIfNothingOutstanding(
   if (!trip || trip.status !== "in_progress" || !trip.driver_id) return false;
 
   const remainingStops = await tx.tripStop.count({
-    where: { trip_id: tripId, status: { not: "delivered" }, NOT: SETTLED_UNDELIVERED_WHERE },
+    // ADJUDICATED, not SETTLED — a reject closes the stop out even though it
+    // does not pay. See the two-predicate note in services/undeliveredPay.
+    where: { trip_id: tripId, status: { not: "delivered" }, NOT: ADJUDICATED_UNDELIVERED_WHERE },
   });
   if (remainingStops > 0) return false;
 
@@ -663,7 +665,19 @@ router.get("/exceptions/open", requireRole("admin"), async (_req, res, next) => 
         trip: { select: { id: true, ticket_number: true, truck_plate: true, driver: { select: { name: true } } } },
         // arrived_at: the admin UI needs it to know whether a verify can PAY this
         // stop at all — Q11(b), a stop the driver never reached earns nothing.
-        trip_stop: { select: { sequence: true, arrived_at: true, consignee: { select: { company_name: true } } } },
+        // `exceptions.current_state` on the STOP, not just this report: the admin
+        // screen must know whether a SIBLING rejection has vetoed the stop's pay
+        // (owner ruling 30 Jul 2026). It cannot derive that from this row — the
+        // veto is a property of the stop, and without it the banner promises
+        // "this stop is PAID" while the server pays RM0.
+        trip_stop: {
+          select: {
+            sequence: true,
+            arrived_at: true,
+            consignee: { select: { company_name: true } },
+            exceptions: { select: { current_state: true } },
+          },
+        },
       },
     });
     res.json({
@@ -677,7 +691,17 @@ router.get("/exceptions/open", requireRole("admin"), async (_req, res, next) => 
         current_state: r.current_state,
         reason: r.reason,
         reported_at: r.reported_at,
-        stop: r.trip_stop ? { sequence: r.trip_stop.sequence, arrived_at: r.trip_stop.arrived_at, company_name: r.trip_stop.consignee.company_name } : null,
+        stop: r.trip_stop
+          ? {
+              sequence: r.trip_stop.sequence,
+              arrived_at: r.trip_stop.arrived_at,
+              company_name: r.trip_stop.consignee.company_name,
+              // DERIVED, never stored: an explicit rejection anywhere on this
+              // stop means no verify can pay it. Mirrors SETTLED_UNDELIVERED_WHERE's
+              // `none: { current_state: "rejected" }`.
+              pay_vetoed: r.trip_stop.exceptions.some((e) => e.current_state === "rejected"),
+            }
+          : null,
       })),
     });
   } catch (err) {

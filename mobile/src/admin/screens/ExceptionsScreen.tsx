@@ -80,7 +80,13 @@ function ExceptionDetailModal({ row, onClose, onResolved }: { row: ExceptionList
   // consequence — a `truck` report filed en route attaches to the NEXT stop,
   // which has no arrival.
   const canPay = Boolean(row.stop?.arrived_at);
-  const paysThisStop = isVerified && canPay;
+  // ...and an explicit REJECT on this stop — from ANY report, not just this one —
+  // vetoes the pay outright (owner ruling, 30 Jul 2026). Server-derived, because
+  // this row cannot see its siblings: without it the banner said "This stop is
+  // PAID, because you verified it" while the server paid RM0. This screen's whole
+  // job is to state the money consequence, so it must carry the veto too.
+  const payVetoed = Boolean(row.stop?.pay_vetoed);
+  const paysThisStop = isVerified && canPay && !payVetoed;
 
   const run = async (kind: "verify" | "request-more-evidence" | "reject" | "resume" | "resolve") => {
     if (!exc) return;
@@ -151,16 +157,25 @@ function ExceptionDetailModal({ row, onClose, onResolved }: { row: ExceptionList
                 <Text style={styles.payBannerTitle}>
                   {paysThisStop
                     ? t("exception.pay.approvedTitle")
-                    : canPay
-                      ? t("exception.pay.notApprovedTitle")
-                      : t("exception.pay.noStopTitle")}
+                    : payVetoed
+                      ? t("exception.pay.vetoedTitle")
+                      : canPay
+                        ? t("exception.pay.notApprovedTitle")
+                        : t("exception.pay.noStopTitle")}
                 </Text>
                 <Text style={styles.payBannerBody}>
+                  {/* VETOED must be checked BEFORE canPay. Without it the false
+                      branch fell through to "Verify first … " — which on a vetoed
+                      stop is a promise the server will not keep. The first fix
+                      only stopped the banner claiming PAID; it left the opposite
+                      lie in place. */}
                   {paysThisStop
                     ? t("exception.pay.approvedBody")
-                    : canPay
-                      ? t("exception.pay.notApprovedBody")
-                      : t("exception.pay.noStopBody")}
+                    : payVetoed
+                      ? t("exception.pay.vetoedBody")
+                      : canPay
+                        ? t("exception.pay.notApprovedBody")
+                        : t("exception.pay.noStopBody")}
                 </Text>
               </View>
 
