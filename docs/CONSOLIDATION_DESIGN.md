@@ -7,44 +7,47 @@
 
 ## 1. What he actually asked for
 
-A13, `CLIENT_ANSWERS.md` (R3, 29 Jul 2026) — **verbatim**:
+A13, R3, 29 Jul 2026. **The verbatim answer is in `CLIENT_ANSWERS.md` on Drive
+(`$UWC_REFS_DIR`) — this repo is public, so it is paraphrased here.**
 
-> "I don't understand your statement of one lorry one booking. The booking should
-> be fill as much as possible, but not based on first come first serve basis.
-> Before the cut off time, system can still arrange within the best allocation.
-> The ideal auto-dispatch logic should be: Booking → Group compatible bookings →
-> Select suitable lorry based on pallet capacity → Optimize delivery sequence →
-> Assign trip. Build the multi-booking auto-dispatch capability. Make the
-> algorithm consider 4 factors: pallet capacity + customer location + delivery
-> deadline + route sequence."
+In summary: he rejects one-booking-one-lorry. A lorry should be filled as much as
+possible, and **not** first-come-first-served — before a cut-off, the system may
+still rearrange for the best allocation. He gave the pipeline as
+*Booking → group compatible bookings → select lorry by pallet capacity →
+optimise delivery sequence → assign*, and named **four factors**: pallet
+capacity, customer location, delivery deadline, route sequence.
+
+Two fragments are quoted because the exact wording is load-bearing:
 
 Two things in there are easy to skim past:
 
-- **"not based on first come first serve"** is a rejection of what the engine does
-  today. `autoDispatchTrip` places ONE booking at a time, in arrival order. No
+- **"not based on first come first serve basis"** — a rejection of what the engine
+  does today. `autoDispatchTrip` places ONE booking at a time, in arrival order. No
   amount of tuning inside that shape produces consolidation; the unit of the
   decision has to change from *a booking* to *a set of bookings*.
 - **"Before the cut off time"** implies a scheduled decision point that does not
   exist anywhere in the system today. See §6 — this is a second unknown, and
   unlike the deck dimensions nobody is currently waiting on an answer for it.
 
-Reinforced by **A18**: *"better whole trip finish only assign, like morning trip
-they complete, then system assign by consolidating the booking for afternoon
-trip"* — capacity frees on trip completion (already true), and consolidation is
-expected to run against the freed truck.
+Reinforced by **A18** (paraphrase): assign only once a whole trip finishes — the
+morning trip completes, then the system consolidates bookings for the afternoon
+one. Capacity already frees on trip completion; consolidation is expected to run
+against the freed truck.
 
 ## 2. Provenance of the "2D packing" idea — read this before quoting it
 
 This matters because the repo has a standing rule about it.
 
-He raised it **himself**, in the Q1/Q10 cargo thread:
+He raised it **himself**, in the Q1/Q10 cargo thread — but framed as something he
+had asked LLMs about, not as a rule. Two short fragments, because the exact
+wording is what settles the provenance:
 
-> "Your calculation is correct, however we not sure its can really fully utilize
-> the truck"
->
-> "You try to ask ChatGPT or other LLM to help you set up the algorithm, as I
-> tried all of them suggested me to use Grid System or a 2D Bin Packing
-> Algorithm."
+> "we not sure its can really fully utilize the truck"
+
+> "as I tried all of them suggested me to use Grid System or a 2D Bin Packing
+> Algorithm"
+
+Full context in `CLIENT_ANSWERS.md` on Drive.
 
 So:
 
@@ -57,10 +60,10 @@ So:
 The concern is client-sourced and real. The algorithm is a proposal. Design to the
 concern; treat the algorithm as one option that has to earn its place.
 
-⚠ **The 31 Jul WhatsApp asking for the 2D packing visual is NOT in
-`CLIENT_ANSWERS.md`.** Under the source precedence rule (WORKBOOK > EMAIL >
-WhatsApp) a WhatsApp-only ask is the weakest tier and should be logged verbatim
-before anything is built on it.
+⚠ **The 31 Jul WhatsApp asking for the 2D packing visual — no weight, no height,
+2D only — is now logged in `CLIENT_ANSWERS.md`.** It remains the WEAKEST source
+tier under WORKBOOK > EMAIL > WhatsApp, so it should be confirmed in the workbook
+or by email before code is built on it.
 
 ## 3. Why area-sum over-promises — worked
 
@@ -76,8 +79,8 @@ B    2 × (5×10) + rest  ~14 units   5×10 = 3.125 units each
 
 Load B's two items are **10 ft long**. On a deck narrower than 10 ft they cannot
 lie across it, so they consume length no area model can see. Area says yes; the
-lorry says no. That is exactly *"we not sure its can really fully utilize the
-truck"*, and it is a **pre-existing** property of today's single-booking dispatch —
+lorry says no. That is exactly the concern he raised, and it is a
+**pre-existing** property of today's single-booking dispatch —
 consolidation does not create it, it multiplies it, because a consolidated load is
 several requestors' odd shapes rather than one.
 
@@ -87,7 +90,7 @@ several requestors' odd shapes rather than one.
 |---|---|---|
 | Cargo footprint per line | **yes** | `width_ft` / `length_ft` on `CargoDetail` (crate/rack/custom) |
 | Pallet sizes | **yes, in feet** | `"4×4"`, `"5×10"` … — the labels *are* the dimensions |
-| Box | **count only, by his rule** | *"only box no need put the dimension"* → admin assigns by hand, never auto |
+| Box | **count only, by his rule** | he asked for a count and no dimension → admin assigns by hand, never auto |
 | Truck capacity | **yes, as a COUNT** | `Truck.max_pallets`, in 4×4-equivalents |
 | Truck deck **length** | **partly inferable, unconfirmed** | `Truck.type`: `"10t-30ft"`, `"5t-17.5ft"` carry a figure; `"1t"` (PRH 5292) and `"Generic"` (4 Wheel) carry **none** |
 | Truck deck **width** | **NO — nowhere** | — |
@@ -130,9 +133,8 @@ A candidate set is compatible when **all** hold:
 - zones form a corridor: identical, or adjacent under `enRouteZones`
 - combined `palletEquivalents` ≤ the truck's `max_pallets`
 - no cargo line that is `ALWAYS_MANUAL`. ⚠ That set is wider than it sounds:
-  `["box", "crate", "rack", "custom"]`. Crate and rack **do** carry dimensions
-  (his rule: *"crate and rack should have dimension like pallet"*) and are still
-  routed to a human. **So the auto path only ever sees PALLET lines** — which
+  `["box", "crate", "rack", "custom"]`. Crate and rack **do** carry dimensions —
+  he asked for them to be sized like pallets — and are still routed to a human. **So the auto path only ever sees PALLET lines** — which
   bounds what consolidation can do today far more than the deck dimensions do,
   and is worth putting to him directly (Q4)
 - neither booking is `is_external`, paused, or already assigned
@@ -183,8 +185,8 @@ must never be described to the office as proof the lorry can legally carry it.
 > know whether "30ft" is the deck or the whole vehicle.
 
 **Q2 (blocking stage 2, and not currently on anyone's list). The cut-off time.**
-> "Before the cut off time, system can still arrange within the best allocation" —
-> what is the cut-off? A fixed daily time, a fixed lead time before pickup, or the
+> A13 refers to rearranging bookings "before the cut off time". What is the
+> cut-off — a fixed daily time, a fixed lead time before pickup, or the
 > dispatcher pressing a button?
 
 Q2 is the one to notice: it is as blocking as Q1 and nobody is waiting on it.
