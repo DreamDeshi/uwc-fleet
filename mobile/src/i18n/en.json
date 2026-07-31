@@ -1159,7 +1159,7 @@
     "reports": {
       "reportsError": "Could not load reports.",
       "consolidationTitle": "Consolidation savings",
-      "consolidationSub": "Deliveries combined into shared trips",
+      "consolidationSub": "Deliveries combined into shared trips — since launch",
       "tripsSaved": "Fewer trips",
       "co2Saved": "CO₂e avoided (est.)",
       "kmSaved": "Distance avoided (est.)",

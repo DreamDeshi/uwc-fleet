@@ -22,7 +22,7 @@ import {
 import { EARNING_STOP_SELECT, earnedInWindow } from "../services/undeliveredPay";
 import { attentionConfig, hoursSince } from "../services/attention";
 import { earlyTapDistanceM, isEarlyTap } from "../lib/earlyTap";
-import { consolidationSavings } from "../lib/consolidationSavings";
+import { consolidationSavingsFromTotals } from "../lib/consolidationSavings";
 import { rightSizingSavings } from "../lib/rightSizingSavings";
 
 import { requireAuth } from "../middleware/auth";
@@ -582,18 +582,39 @@ router.get("/payroll", async (req, res, next) => {
 // estimates from tunable averages (see lib/consolidationSavings) and are
 // labelled so in the UI. rightSizing adds the smallest-fit dispatch savings
 // for the current MYT month (lib/rightSizingSavings — also estimate-labelled).
+//
+// THE TWO HALVES ARE SCOPED DIFFERENTLY ON PURPOSE, and tests-integration/
+// consolidationReport.test.ts pins both so neither drifts into the other:
+//   consolidation — SINCE LAUNCH, cumulative. A running total of avoided
+//                   journeys is the figure that means anything for a
+//                   sustainability claim; it has no month selector because it
+//                   is not a period report. The UI says "since launch".
+//   rightSizing   — THE RUNNING MYT MONTH, as its subtitle states.
+//
+// Both are INTERNAL FLEET ONLY. An outsourced trip burned a forwarder's diesel,
+// not ours, and every other figure on the Sustainability screen comes from UWC
+// fuel logs; rightSizing already drew that line and consolidation now agrees.
+const CONSOLIDATION_TRIP_WHERE = { status: "completed" as const, is_external: false };
+
 router.get("/consolidation", async (_req, res, next) => {
   try {
     const bounds = currentMytMonthBounds(new Date());
-    const [trips, monthTrips, largest] = await Promise.all([
-      prisma.trip.findMany({
-        where: { status: "completed" },
-        select: { _count: { select: { stops: true } } },
+    const [tripsThatDelivered, dropsDelivered, monthTrips, largest] = await Promise.all([
+      // Trips that delivered AT LEAST ONE drop. A completed trip that delivered
+      // nothing must not be in this denominator — it would subtract a real
+      // saving from the total.
+      prisma.trip.count({
+        where: { ...CONSOLIDATION_TRIP_WHERE, stops: { some: { status: "delivered" } } },
+      }),
+      // DELIVERED stops only — see the header of lib/consolidationSavings. The
+      // planned itinerary over-claims for every trip that ended early (abort
+      // with partial pay leaves unreached stops `pending` on a COMPLETED trip).
+      prisma.tripStop.count({
+        where: { status: "delivered", trip: CONSOLIDATION_TRIP_WHERE },
       }),
       prisma.trip.findMany({
         where: {
-          status: "completed",
-          is_external: false,
+          ...CONSOLIDATION_TRIP_WHERE,
           truck_plate: { not: null },
           pickup_datetime: { gte: bounds.start, lt: bounds.end },
         },
@@ -606,7 +627,7 @@ router.get("/consolidation", async (_req, res, next) => {
       }),
     ]);
     res.json({
-      ...consolidationSavings(trips.map((t) => t._count.stops)),
+      ...consolidationSavingsFromTotals(tripsThatDelivered, dropsDelivered),
       rightSizing: rightSizingSavings(
         monthTrips.map((t) => t.truck?.type ?? null),
         largest?.type ?? null
