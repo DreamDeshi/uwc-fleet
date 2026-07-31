@@ -16,6 +16,7 @@ import { colors, radius } from "../theme";
 import { Button } from "./Button";
 import { useToast } from "./Toast";
 import { capturePodPhoto, type PickedPhoto } from "../lib/photo";
+import { PhotoReviewModal } from "./PhotoReviewModal";
 import { EXCEPTION_CATEGORIES, CANNED_REASONS, validateExceptionForm } from "../lib/exceptionForm";
 import { useReportException } from "../hooks/useExceptionOutbox";
 import { apiErrorMessage } from "../services/api";
@@ -69,6 +70,14 @@ export function ReportExceptionSheet({
   const [stopId, setStopId] = useState<string | null>(activeStopId ?? null);
   const [reason, setReason] = useState("");
   const [photo, setPhoto] = useState<PickedPhoto | null>(null);
+  // Frame 20 of the design pack: the shot goes to a full-screen review BEFORE it
+  // becomes the report's photo. `review` holds a candidate that has not been
+  // kept yet — keeping it is what sets `photo`.
+  //
+  // This is the step that catches a useless exception photo while the driver is
+  // still AT the gate. Without it the office receives an unreadable shot, has to
+  // request more evidence (frame 22), and the driver has already left.
+  const [review, setReview] = useState<PickedPhoto | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Re-seed the stop each time the sheet opens: the driver may have moved on
@@ -82,6 +91,7 @@ export function ReportExceptionSheet({
     setStopId(activeStopId ?? null);
     setReason("");
     setPhoto(null);
+    setReview(null);
     setSubmitting(false);
   };
   const close = () => {
@@ -95,7 +105,7 @@ export function ReportExceptionSheet({
       toast(t("exception.photoPermissionDenied"), "error");
       return;
     }
-    if (res) setPhoto(res);
+    if (res) setReview(res);
   };
 
   // A canned phrase APPENDS to the note instead of overwriting it — tapping two
@@ -230,6 +240,28 @@ export function ReportExceptionSheet({
               </TouchableOpacity>
             )}
           </ScrollView>
+
+          {/* Same viewer as the POD flow (design frame 20), with this flow's
+              copy — the component defaults to the POD wording, so passing these
+              three keys is the entire difference. Never uploads: keeping the
+              photo just stages it for the submit below. */}
+          <PhotoReviewModal
+            photo={review}
+            subtitle={activeStopLabel ?? t("exception.problemPhoto")}
+            uploading={false}
+            titleKey="trip.podReviewTitle"
+            hintKeys={["exception.photoCheck1", "exception.photoCheck2", "exception.photoCheck3"]}
+            confirmKey="exception.keepPhoto"
+            onRetake={() => {
+              setReview(null);
+              void onCapture();
+            }}
+            onUse={() => {
+              setPhoto(review);
+              setReview(null);
+            }}
+            onCancel={() => setReview(null)}
+          />
 
           <View style={styles.footer}>
             {submitting ? (
