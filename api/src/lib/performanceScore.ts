@@ -24,9 +24,17 @@ export const WEIGHTS = { onTime: 40, completion: 30, points: 30 } as const;
 
 /** Per-driver inputs, already reduced from the driver's trips by the caller. */
 export interface DriverTripStats {
-  /** Completed trips judged on time (see isTripOnTime). */
+  /** Completed trips judged on time (see isTripOnTime). Subset of
+   *  fullyDeliveredCompleted — a trip that did not fully deliver is not
+   *  eligible to be on time. */
   onTimeCompleted: number;
-  /** All completed trips (all-time). */
+  /** THE ON-TIME DENOMINATOR: completed trips where every stop was delivered
+   *  (see isFullyDelivered). NOT the same as totalCompleted — see the note on
+   *  isTripOnTime for why an aborted run is excluded from both sides. */
+  fullyDeliveredCompleted: number;
+  /** All completed trips (all-time) — the COMPLETION-rate numerator, and the
+   *  "has this driver any history" signal. Deliberately still counts a
+   *  partially-delivered abort: the trip did reach `completed`. */
   totalCompleted: number;
   /** Cancelled trips assigned to this driver (all-time). */
   cancelled: number;
@@ -74,27 +82,52 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
  * of two stops nobody ever drove to — the driver's own My Stats score, and the
  * admin's driver table, both flattered by an abandoned run.
  *
- * /reports/dashboard already refuses this, from the other end: it restricts its
- * completed set to `stops: { every: { status: "delivered" } }`, with a comment
- * naming the abort rule and saying the never-delivered stops "would read as
- * late/served". It keeps its own copy of this function, and because it
- * pre-filters, that copy never reaches the branch changed here — the two agree
- * in behaviour, and only this one was exposed.
+ * ── AND IT IS EXCLUDED FROM THE DENOMINATOR TOO (owner ruling, 31 Jul 2026) ──
  *
- * ⚠ JUDGEMENT, and the alternative is defensible. FR-FM7 defines the rate as
- * "completed trips that ran on time / ALL completed", so the fix is applied to
- * the NUMERATOR — the brief's denominator is left exactly as written rather
- * than quietly redefined. The other reading is the dashboard's: drop aborted
- * trips from both sides, since a run that was called off is not evidence about
- * punctuality either way. That is a change to a documented metric and to a
- * driver-visible score, so it is raised rather than taken.
+ * PR #77 fixed only the numerator and left FR-FM7's "/ all completed" denominator
+ * as written, flagging the alternative rather than taking it. That left the two
+ * surfaces DISAGREEING about a driver-visible number:
+ *
+ *   /reports/dashboard      excluded aborted trips from the set entirely
+ *   /users/me/performance   kept them in the denominator, always late
+ *
+ * A driver with one clean run and one breakdown read 100% on the admin's
+ * dashboard and 50% on his own My Stats. Two definitions of one metric is the
+ * defect; which definition wins is the smaller question.
+ *
+ * THE DASHBOARD'S READING WINS. An aborted run is not evidence about punctuality
+ * in EITHER direction — the driver never got the chance to be late. Counting it
+ * against him charges a lorry breakdown to his score, permanently, on the number
+ * that sets his Gold/Silver/Bronze tier; Mr. Teh already docks the PAY for a
+ * breakdown ("if the lorry breakdown halfway, no incentive"), which is about
+ * work done, not blame. And FR-FM7's "all completed" was written BEFORE the
+ * partial-abort path existed (28 Jul 2026), so it is not a considered answer to
+ * this case — it is a phrase from before the case was possible.
+ *
+ * `totalCompleted` is deliberately NOT changed: it still counts the abort, so
+ * COMPLETION rate is untouched. Only the on-time denominator narrows. Those are
+ * two different questions and conflating them would be the same mistake as
+ * ADJUDICATED-vs-SETTLED in services/undeliveredPay.
  */
+
+/**
+ * Every stop delivered — the ON-TIME DENOMINATOR's membership test, and the
+ * precondition for isTripOnTime returning true at all.
+ *
+ * Keyed on `delivered_at`, not `status`, because both callers already have it
+ * and because the legacy anomaly (status `delivered` with a NULL delivered_at,
+ * surfaced by /reports/attention) genuinely CANNOT be judged for punctuality —
+ * there is no instant to compare. Excluding it is the honest answer; it used to
+ * be counted as on time on the strength of a missing field.
+ */
+export function isFullyDelivered(stops: { delivered_at: Date | null }[]): boolean {
+  return stops.length > 0 && stops.every((s) => s.delivered_at != null);
+}
+
 export function isTripOnTime(pickup: Date, stops: { delivered_at: Date | null }[]): boolean {
+  if (!isFullyDelivered(stops)) return false;
   const pickupDay = mytDayIndex(new Date(pickup));
-  return stops.every((s) => {
-    if (!s.delivered_at) return false;
-    return mytDayIndex(new Date(s.delivered_at)) <= pickupDay;
-  });
+  return stops.every((s) => mytDayIndex(new Date(s.delivered_at as Date)) <= pickupDay);
 }
 
 /**
@@ -106,9 +139,13 @@ export function isTripOnTime(pickup: Date, stops: { delivered_at: Date | null }[
  *                            earned nothing this month, the points component is 0.
  */
 export function computeScore(stats: DriverTripStats, maxPointsThisMonth: number): ScoreBreakdown {
-  const { onTimeCompleted, totalCompleted, cancelled, pointsThisMonth } = stats;
+  const { onTimeCompleted, fullyDeliveredCompleted, totalCompleted, cancelled, pointsThisMonth } = stats;
 
-  const onTimeFraction = totalCompleted > 0 ? onTimeCompleted / totalCompleted : 0;
+  // The on-time denominator is FULLY-DELIVERED completions, not all of them —
+  // see the ruling on isTripOnTime. A driver whose only trip was aborted has an
+  // empty denominator, which is 0%, the same as before and for a better reason:
+  // there is nothing to judge, not a failure to be punctual.
+  const onTimeFraction = fullyDeliveredCompleted > 0 ? onTimeCompleted / fullyDeliveredCompleted : 0;
   const assigned = totalCompleted + cancelled;
   const completionFraction = assigned > 0 ? totalCompleted / assigned : 0;
   const pointsFraction = maxPointsThisMonth > 0 ? pointsThisMonth / maxPointsThisMonth : 0;

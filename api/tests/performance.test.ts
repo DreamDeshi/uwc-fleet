@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeScore,
   isTripOnTime,
+  isFullyDelivered,
   tierForScore,
   percentileBand,
   type DriverTripStats,
@@ -14,6 +15,7 @@ describe("computeScore — perfect score", () => {
   it("gives 100 when on-time, never cancelled, and the top earner", () => {
     const stats: DriverTripStats = {
       onTimeCompleted: 20,
+      fullyDeliveredCompleted: 20,
       totalCompleted: 20,
       cancelled: 0,
       pointsThisMonth: 500,
@@ -34,6 +36,7 @@ describe("computeScore — zero trips", () => {
   it("scores 0 across the board with no divide-by-zero", () => {
     const stats: DriverTripStats = {
       onTimeCompleted: 0,
+      fullyDeliveredCompleted: 0,
       totalCompleted: 0,
       cancelled: 0,
       pointsThisMonth: 0,
@@ -49,7 +52,7 @@ describe("computeScore — zero trips", () => {
 
 describe("computeScore — normalisation across drivers", () => {
   it("ranks a higher-earning driver above a lower one, all else equal", () => {
-    const base = { onTimeCompleted: 10, totalCompleted: 10, cancelled: 0 };
+    const base = { onTimeCompleted: 10, fullyDeliveredCompleted: 10, totalCompleted: 10, cancelled: 0 };
     const maxPoints = 1000; // the top earner this month
 
     const top = computeScore({ ...base, pointsThisMonth: 1000 }, maxPoints);
@@ -67,7 +70,7 @@ describe("computeScore — partial components", () => {
   it("weights on-time 40%, completion 30%, points 30%", () => {
     // 80% on-time, 4 of 5 assigned completed (80%), half the top earner.
     const s = computeScore(
-      { onTimeCompleted: 8, totalCompleted: 10, cancelled: 0, pointsThisMonth: 50 },
+      { onTimeCompleted: 8, fullyDeliveredCompleted: 10, totalCompleted: 10, cancelled: 0, pointsThisMonth: 50 },
       100
     );
     expect(s.on_time_rate).toBe(80);
@@ -77,7 +80,7 @@ describe("computeScore — partial components", () => {
 
   it("completion rate counts cancelled trips against the driver", () => {
     const s = computeScore(
-      { onTimeCompleted: 8, totalCompleted: 8, cancelled: 2, pointsThisMonth: 0 },
+      { onTimeCompleted: 8, fullyDeliveredCompleted: 8, totalCompleted: 8, cancelled: 2, pointsThisMonth: 0 },
       0
     );
     expect(s.completion_rate).toBe(80); // 8 / (8 + 2)
@@ -128,6 +131,63 @@ describe("isTripOnTime", () => {
       { delivered_at: new Date("2026-06-24T09:00:00Z") },
     ];
     expect(isTripOnTime(pickup, stops)).toBe(true);
+  });
+});
+
+describe("the on-time DENOMINATOR excludes an aborted run (owner ruling, 31 Jul)", () => {
+  it("one clean trip + one abort is 100%, not 50%", () => {
+    // THE DISAGREEMENT THIS RULING SETTLED. /reports/dashboard already dropped
+    // the abort from its set, so the admin saw 100%; the driver score kept it in
+    // the denominator, so the driver saw 50% for the same two trips. One metric,
+    // two numbers, and the one the driver reads was the pessimistic one.
+    const s = computeScore(
+      { onTimeCompleted: 1, fullyDeliveredCompleted: 1, totalCompleted: 2, cancelled: 0, pointsThisMonth: 0 },
+      0
+    );
+    expect(s.on_time_rate).toBe(100);
+    // COMPLETION rate is deliberately untouched — the abort still counts as a
+    // trip the driver completed. Two different questions.
+    expect(s.completion_rate).toBe(100); // 2 completed, 0 cancelled
+  });
+
+  it("a driver whose ONLY trip was aborted has nothing to judge, not a failure", () => {
+    const s = computeScore(
+      { onTimeCompleted: 0, fullyDeliveredCompleted: 0, totalCompleted: 1, cancelled: 0, pointsThisMonth: 0 },
+      0
+    );
+    expect(s.on_time_rate).toBe(0); // empty denominator, no divide-by-zero
+    expect(s.completion_rate).toBe(100);
+  });
+
+  it("a genuinely late trip still counts against the driver", () => {
+    // The ruling must not become "nothing is ever late".
+    const s = computeScore(
+      { onTimeCompleted: 1, fullyDeliveredCompleted: 2, totalCompleted: 2, cancelled: 0, pointsThisMonth: 0 },
+      0
+    );
+    expect(s.on_time_rate).toBe(50);
+  });
+});
+
+describe("isFullyDelivered — the denominator's membership test", () => {
+  it("is true only when every stop has a delivery instant", () => {
+    const d = new Date("2026-06-24T06:00:00Z");
+    expect(isFullyDelivered([{ delivered_at: d }, { delivered_at: d }])).toBe(true);
+    expect(isFullyDelivered([{ delivered_at: d }, { delivered_at: null }])).toBe(false);
+    expect(isFullyDelivered([{ delivered_at: null }])).toBe(false);
+  });
+
+  it("a trip with NO stops is not fully delivered", () => {
+    // `every` on an empty array is vacuously true — which would put a stopless
+    // trip in the on-time denominator and count it on time.
+    expect(isFullyDelivered([])).toBe(false);
+  });
+
+  it("agrees with isTripOnTime: not fully delivered implies not on time", () => {
+    const pickup = new Date("2026-06-24T01:00:00Z");
+    const partial = [{ delivered_at: new Date("2026-06-24T05:00:00Z") }, { delivered_at: null }];
+    expect(isFullyDelivered(partial)).toBe(false);
+    expect(isTripOnTime(pickup, partial)).toBe(false);
   });
 });
 

@@ -10,6 +10,7 @@ import { normalizePhone, isNormalizedPhone } from "../lib/phone";
 import {
   computeScore,
   isTripOnTime,
+  isFullyDelivered,
   tierForScore,
   percentileBand,
   type DriverTripStats,
@@ -100,9 +101,15 @@ async function buildDriverPerformance() {
     // "This month" keys on the pay-attribution instant (delivery day) so the
     // points/RM figures agree with the payroll sheet (finding 1.3).
     const completedThisMonth = completed.filter((t) => inMonth(payAttributionInstant(t)));
+    // The on-time rate is judged over FULLY-DELIVERED completions only, the
+    // same set /reports/dashboard uses — see the ruling on isTripOnTime. A
+    // partially-delivered abort leaves both sides of that fraction; it stays in
+    // totalCompleted, so COMPLETION rate is unaffected.
+    const fullyDelivered = completed.filter((t) => isFullyDelivered(t.stops));
     const stats: DriverTripStats = {
       totalCompleted: completed.length,
-      onTimeCompleted: completed.filter((t) => isTripOnTime(t.pickup_datetime, t.stops)).length,
+      fullyDeliveredCompleted: fullyDelivered.length,
+      onTimeCompleted: fullyDelivered.filter((t) => isTripOnTime(t.pickup_datetime, t.stops)).length,
       cancelled: d.trips_driven.filter((t) => t.status === "cancelled").length,
       pointsThisMonth: completedThisMonth.reduce((sum, t) => sum + payableIncentive(t), 0),
     };
