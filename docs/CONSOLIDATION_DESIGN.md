@@ -26,8 +26,8 @@ Two things in there are easy to skim past:
   amount of tuning inside that shape produces consolidation; the unit of the
   decision has to change from *a booking* to *a set of bookings*.
 - **"Before the cut off time"** implies a scheduled decision point that does not
-  exist anywhere in the system today. See §6 — this is a second unknown, and
-  unlike the deck dimensions nobody is currently waiting on an answer for it.
+  exist anywhere in the system today. See §6 — it is a second unknown, and it is
+  **already asked** as R5 §B7.
 
 Reinforced by **A18** (paraphrase): assign only once a whole trip finishes — the
 morning trip completes, then the system consolidates bookings for the afternoon
@@ -184,19 +184,27 @@ must never be described to the office as proof the lorry can legally carry it.
 > figure and two do not (`1t`, `Generic`), and even where there is one we do not
 > know whether "30ft" is the deck or the whole vehicle.
 
-**Q2 (blocking stage 2, and not currently on anyone's list). The cut-off time.**
+**Q2 (blocking stage 2). The cut-off time — ALREADY ASKED as R5 §B7.**
 > A13 refers to rearranging bookings "before the cut off time". What is the
 > cut-off — a fixed daily time, a fixed lead time before pickup, or the
 > dispatcher pressing a button?
 
-Q2 is the one to notice: it is as blocking as Q1 and nobody is waiting on it.
-Consolidation cannot be scheduled without knowing when the decision is made.
+⚠ **CORRECTION.** An earlier draft of this document claimed the cut-off was "not
+on anyone's list" and that nobody was waiting on an answer. That was wrong — R5
+§B7 asks it directly, and R5 §C8 asks the stop-reordering question that §5's
+sequence-before-selection constraint depends on. Both were live before this
+document existed.
+
+The lesson is the repo's own standing rule, and I broke it: check the live
+ask-list and `CLIENT_ANSWERS.md` before calling anything untracked. Q2 is as
+blocking as Q1 — but it is blocked on a REPLY, not on someone remembering to ask.
 
 **Q3 (nice to have).** Is there a per-booking "deliver by" time, or is the pickup
 slot the only deadline? His factor list says "delivery deadline"; the system only
 has a pickup.
 
-**Q4 (raised by this design, not previously asked).** Crate, rack and custom are
+**Q4 (genuinely new — the only one here that was not already asked). Now on the
+post-R5 follow-up list as R6-1.** Crate, rack and custom are
 currently routed to **manual** assignment, so consolidation would only ever group
 plain pallet loads. Is that intended? He asked for crate/rack to carry dimensions
 "like pallet", which suggests he may expect them to auto-dispatch too — and if so,
