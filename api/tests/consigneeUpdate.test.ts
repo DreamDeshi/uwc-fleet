@@ -17,11 +17,20 @@ import {
 
 function fakeStore(opts?: { zoneExists?: boolean }) {
   const zoneExists = opts?.zoneExists ?? true;
-  const consigneeRow = {
+  const consigneeRow: Record<string, unknown> = {
     id: "c1",
     company_name: "Intel Kulim",
     zone_code: "P1", // WRONG — should be K1; the correction under test
     is_active: true,
+    // A REAL geocode: the driver's Navigate opens exactly this point.
+    address_1: "12 Jalan Perusahaan",
+    address_2: null,
+    area: "KULIM",
+    state: "KEDAH",
+    postal_code: "09000",
+    latitude: 5.3654,
+    longitude: 100.5612,
+    geocode_match_type: "ROOFTOP",
   };
   // A trip finalized BEFORE the correction, with the finalize-time snapshot.
   const finalizedTrip = { id: "t1", status: "completed", incentive_earned: 44, rate_used: 11 };
@@ -31,7 +40,7 @@ function fakeStore(opts?: { zoneExists?: boolean }) {
   const client: ConsigneeUpdateClient = {
     consignee: {
       async findUnique({ where }) {
-        return where.id === consigneeRow.id ? { ...consigneeRow } : null;
+        return where.id === consigneeRow.id ? ({ ...consigneeRow } as never) : null;
       },
       async update({ data }) {
         Object.assign(consigneeRow, data);
@@ -101,6 +110,103 @@ describe("updateConsignee — the admin correction path", () => {
       'consignee.updated renamed "ACE"→"ACE Engineering"'
     );
     expect(consigneeAuditAction(before, { zone_code: "K1" })).toBe("consignee.updated (no-op)");
+  });
+});
+
+/**
+ * A CORRECTED ADDRESS MUST NOT KEEP THE OLD BUILDING'S COORDINATE.
+ *
+ * The stored lat/lng is what the driver's Navigate opens, and routing gates on
+ * the PRESENCE of coords (DG-D2) — so a coordinate is trusted absolutely
+ * whenever there is one. Editing the address is exactly what an admin does when
+ * the address was WRONG, and leaving the geocode behind pointed the driver at
+ * the old building with more confidence than the zone-centroid fallback would
+ * have given. The corrected address survived only as text nobody navigates by.
+ */
+describe("updateConsignee — a moved address discards the stale geocode", () => {
+  it("clearing happens on the street, and it is audited", async () => {
+    const { client, consigneeRow, audits } = fakeStore();
+    const action = await updateConsignee(
+      client,
+      "c1",
+      { address_1: "500 Lorong Industri" },
+      "admin-1"
+    );
+    expect(consigneeRow.address_1).toBe("500 Lorong Industri");
+    expect(consigneeRow.latitude).toBeNull();
+    expect(consigneeRow.longitude).toBeNull();
+    // The match_type goes too: it described the OLD lookup, and leaving it set
+    // would file this consignee under "asked and declined" in
+    // GET /consignees/coverage when it has never been asked about this address.
+    expect(consigneeRow.geocode_match_type).toBeNull();
+    expect(action).toContain("geocode cleared (address moved)");
+    expect(audits).toHaveLength(1);
+  });
+
+  it.each(["address_1", "address_2", "area", "state", "postal_code"] as const)(
+    "%s moves the building",
+    async (field) => {
+      const { client, consigneeRow } = fakeStore();
+      await updateConsignee(client, "c1", { [field]: "SOMEWHERE ELSE" }, "admin-1");
+      expect(consigneeRow.latitude).toBeNull();
+    }
+  );
+
+  it.each(["company_name", "contact_person", "phone", "vendor_code"] as const)(
+    "%s does not — the building has not moved",
+    async (field) => {
+      const { client, consigneeRow } = fakeStore();
+      await updateConsignee(client, "c1", { [field]: "Renamed Sdn Bhd" }, "admin-1");
+      expect(consigneeRow.latitude).toBe(5.3654);
+      expect(consigneeRow.geocode_match_type).toBe("ROOFTOP");
+    }
+  );
+
+  it("a zone re-code keeps the position — same building, different zone", async () => {
+    const { client, consigneeRow } = fakeStore();
+    await updateConsignee(client, "c1", { zone_code: "K1" }, "admin-1");
+    expect(consigneeRow.latitude).toBe(5.3654);
+  });
+
+  it("RE-SAVING the same address keeps it — an unchanged form is not a move", async () => {
+    // The edit screen submits every field it holds, so a patch that merely
+    // MENTIONS address_1 is not evidence of a change. Discarding a good geocode
+    // every time an admin opens and saves the form would erode coverage to zero.
+    const { client, consigneeRow } = fakeStore();
+    const action = await updateConsignee(
+      client,
+      "c1",
+      { address_1: "12 Jalan Perusahaan", area: "KULIM", state: "KEDAH", postal_code: "09000" },
+      "admin-1"
+    );
+    expect(consigneeRow.latitude).toBe(5.3654);
+    expect(consigneeRow.geocode_match_type).toBe("ROOFTOP");
+    expect(action).not.toContain("geocode cleared");
+  });
+
+  it("clearing a blank field to null counts as a move", async () => {
+    // "" → null is the route's normalisation, but area "KULIM" → null genuinely
+    // changes the address the geocoder was given.
+    const { client, consigneeRow } = fakeStore();
+    await updateConsignee(client, "c1", { area: null }, "admin-1");
+    expect(consigneeRow.latitude).toBeNull();
+  });
+
+  it("null → null is not a move (address_2 was already empty)", async () => {
+    const { client, consigneeRow } = fakeStore();
+    await updateConsignee(client, "c1", { address_2: null }, "admin-1");
+    expect(consigneeRow.latitude).toBe(5.3654);
+  });
+
+  it("says nothing about a geocode when there was none to clear", async () => {
+    const { client, consigneeRow } = fakeStore();
+    consigneeRow.latitude = null;
+    consigneeRow.longitude = null;
+    consigneeRow.geocode_match_type = "APPROXIMATE"; // asked, declined
+    const action = await updateConsignee(client, "c1", { address_1: "New street" }, "admin-1");
+    expect(action).not.toContain("geocode cleared");
+    // The stale match_type still goes — the new address deserves a fresh ask.
+    expect(consigneeRow.geocode_match_type).toBeNull();
   });
 });
 
