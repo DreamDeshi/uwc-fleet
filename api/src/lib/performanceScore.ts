@@ -57,13 +57,42 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
  * On-time proxy: every stop was delivered on (or before) the same MYT
  * calendar day the trip was picked up — i.e. the run didn't spill into the
  * next day. No scheduled per-stop ETA is stored, so this is the best honest
- * signal of a trip that completed as planned. (Same rule as the dashboard
- * KPI; day binning is explicit MYT via lib/myt.ts, never server-local.)
+ * signal of a trip that completed as planned. (Day binning is explicit MYT via
+ * lib/myt.ts, never server-local.)
+ *
+ * ── AN UNDELIVERED STOP IS NOT ON TIME ─────────────────────────────────────
+ *
+ * This used to `return true` for a stop with no `delivered_at`, on the reading
+ * "not delivered YET". That reading is wrong at the only place this is called:
+ * routes/users.ts asks it about `status === "completed"` trips ONLY. On a
+ * completed trip a null delivery is not "yet" — it is NEVER.
+ *
+ * And completed trips really do carry them. The 28 Jul partial-pay abort
+ * finalizes to `pending_approval` with the unreached stops left `pending`, and
+ * approval makes that trip `completed`. So a three-stop run that delivered one
+ * drop before the lorry broke down scored a clean on-time tick on the strength
+ * of two stops nobody ever drove to — the driver's own My Stats score, and the
+ * admin's driver table, both flattered by an abandoned run.
+ *
+ * /reports/dashboard already refuses this, from the other end: it restricts its
+ * completed set to `stops: { every: { status: "delivered" } }`, with a comment
+ * naming the abort rule and saying the never-delivered stops "would read as
+ * late/served". It keeps its own copy of this function, and because it
+ * pre-filters, that copy never reaches the branch changed here — the two agree
+ * in behaviour, and only this one was exposed.
+ *
+ * ⚠ JUDGEMENT, and the alternative is defensible. FR-FM7 defines the rate as
+ * "completed trips that ran on time / ALL completed", so the fix is applied to
+ * the NUMERATOR — the brief's denominator is left exactly as written rather
+ * than quietly redefined. The other reading is the dashboard's: drop aborted
+ * trips from both sides, since a run that was called off is not evidence about
+ * punctuality either way. That is a change to a documented metric and to a
+ * driver-visible score, so it is raised rather than taken.
  */
 export function isTripOnTime(pickup: Date, stops: { delivered_at: Date | null }[]): boolean {
   const pickupDay = mytDayIndex(new Date(pickup));
   return stops.every((s) => {
-    if (!s.delivered_at) return true;
+    if (!s.delivered_at) return false;
     return mytDayIndex(new Date(s.delivered_at)) <= pickupDay;
   });
 }

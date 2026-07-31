@@ -98,9 +98,35 @@ describe("isTripOnTime", () => {
     expect(isTripOnTime(pickup, stops)).toBe(false);
   });
 
-  it("ignores stops that have not been delivered yet", () => {
+  it("an UNDELIVERED stop is not on time — on a completed trip, null means never", () => {
+    // This assertion used to expect `true`, under the reading "not delivered
+    // YET". That is wrong at the only call site: routes/users.ts asks only
+    // about COMPLETED trips, where a null delivery is never, not yet.
+    //
+    // And it is reachable without a feature flag: the 28 Jul partial-pay abort
+    // finalizes with the unreached stops left `pending`, and approval makes the
+    // trip `completed`. One drop delivered before a breakdown used to score a
+    // clean on-time tick on the strength of the two stops nobody drove to.
     const pickup = new Date("2026-06-24T01:00:00Z");
     const stops = [{ delivered_at: null }, { delivered_at: new Date("2026-06-24T05:00:00Z") }];
+    expect(isTripOnTime(pickup, stops)).toBe(false);
+  });
+
+  it("a trip that delivered nothing at all is not on time", () => {
+    // The all-vetoed trip (FEATURE_EXCEPTIONS): finalizes at RM0 with no
+    // delivered stop anywhere. `every` over an all-null list must not be
+    // vacuously on time.
+    const pickup = new Date("2026-06-24T01:00:00Z");
+    expect(isTripOnTime(pickup, [{ delivered_at: null }, { delivered_at: null }])).toBe(false);
+  });
+
+  it("a fully delivered trip is unaffected", () => {
+    // The ordinary case, and the regression this must not cause.
+    const pickup = new Date("2026-06-24T01:00:00Z");
+    const stops = [
+      { delivered_at: new Date("2026-06-24T05:00:00Z") },
+      { delivered_at: new Date("2026-06-24T09:00:00Z") },
+    ];
     expect(isTripOnTime(pickup, stops)).toBe(true);
   });
 });
