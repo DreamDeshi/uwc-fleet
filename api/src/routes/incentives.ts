@@ -3,9 +3,9 @@ import { prisma } from "../lib/prisma";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { estimateTripDistanceKm } from "../lib/geo";
-import { currentMytMonthBounds, inMytMonth, mytMonthKey } from "../lib/myt";
+import { currentMytMonthBounds, inMytMonth, mytMonthKey, mytMonthParts, mytMonthStart } from "../lib/myt";
 import { firstEarningInstant, payableIncentive } from "../services/tripCompletion";
-import { EARNING_STOP_SELECT } from "../services/undeliveredPay";
+import { EARNING_STOP_SELECT, earnedInWindow } from "../services/undeliveredPay";
 
 const router = Router();
 router.use(requireAuth);
@@ -18,12 +18,76 @@ router.use(requireAuth);
 // APPROVED (completed) money counts toward the month total and is paid — the
 // amount shown is `payableIncentive` (admin-edited final, or the proposal for
 // pre-gate trips). Money stays the stored Decimal; the client formats it.
+// ── HOW FAR BACK THIS READS ────────────────────────────────────────────────
+//
+// It used to read EVERY trip the driver had ever done — no date bound, no take
+// — with each trip's stops, exceptions and cargo, on every open of the Earnings
+// tab. Unbounded and monotonic, the same shape as the consolidation query fixed
+// in PR #74, just growing per-driver instead of fleet-wide.
+//
+// THE BOUND MUST NOT MOVE A SINGLE DISPLAYED NUMBER, so it is a strict superset
+// of everything the screen computes:
+//
+//   summary          current MYT month, derived below from these rows
+//   the week chart   the current Mon-Sun week, which can START IN THE PREVIOUS
+//                    MONTH (Mon 29 Jun for a Wed 1 Jul), so a month-only bound
+//                    would silently empty two bars
+//   awaiting         pending_approval of ANY age — money the driver is owed and
+//                    chasing must never age out of his own screen
+//   the trip list    history, and the only thing this bound actually shortens
+//
+// Six months, matching /reports/monthly's window on the admin side.
+//
+// WARNING: BOUNDED ON THE PAY INSTANT, never on pickup_datetime alone. A trip
+// picked up on the last evening of a month and delivered the next morning earns
+// in the LATER month; a pickup-only bound drops it from the window while the
+// month summary still expects it, and the driver's total silently understates.
+// Same predicate the payroll sheet uses (services/undeliveredPay.earnedInWindow)
+// — see tests-integration/thisMonthAgreement.
+const EARNINGS_WINDOW_MONTHS = 6;
+
 router.get("/mine", requireRole("driver"), async (req, res, next) => {
   try {
     const driverId = req.user!.id;
+    const nowForWindow = new Date();
+    const { year: winYear, month: winMonth } = mytMonthParts(nowForWindow);
+    const windowStart = mytMonthStart(winYear, winMonth - (EARNINGS_WINDOW_MONTHS - 1));
 
     const rows = await prisma.trip.findMany({
-      where: { driver_id: driverId, status: { in: ["pending_approval", "completed"] } },
+      where: {
+        driver_id: driverId,
+        OR: [
+          // Never ages out: an unapproved proposal is money outstanding.
+          { status: "pending_approval" },
+          {
+            status: "completed",
+            OR: [
+              { stops: { some: earnedInWindow({ gte: windowStart }) } },
+              // NOT redundant with the line above, and not a belt-and-braces
+              // widening either — it is the ONLY branch that catches a trip
+              // whose pay instant cannot be derived from its stops:
+              //   - the legacy anomaly of a stop marked `delivered` with a NULL
+              //     delivered_at (real; /reports/attention surfaces it), where
+              //     firstEarningInstant returns null and the month bucket falls
+              //     back to pickup_datetime — exactly what the summary below
+              //     does. Drop this line and that trip's RM leaves the driver's
+              //     month total while the payroll sheet still pays it.
+              //   - an all-vetoed trip, where no stop matches earnedInWindow at
+              //     all, so trip_count and avg_per_trip move.
+              // /reports/payroll carries the identical branch for the identical
+              // reason. Pinned by "the LEGACY ANOMALY" test.
+              { pickup_datetime: { gte: windowStart } },
+              // A settlement the driver has just been given must not vanish on
+              // the day it happens. An aged proposal is exempt from the window
+              // while it is pending; without this it would be erased the moment
+              // an admin approved it — the one day the row matters most. Keyed
+              // on the APPROVAL instant, so it follows the settlement, not the
+              // journey. Can only ADD rows.
+              { incentive_approved_at: { gte: windowStart } },
+            ],
+          },
+        ],
+      },
       select: {
         id: true,
         ticket_number: true,
