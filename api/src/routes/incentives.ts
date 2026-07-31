@@ -4,8 +4,9 @@ import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { estimateTripDistanceKm } from "../lib/geo";
 import { currentMytMonthBounds, inMytMonth, mytMonthKey, mytMonthParts, mytMonthStart } from "../lib/myt";
-import { firstEarningInstant, payableIncentive } from "../services/tripCompletion";
+import { firstEarningInstant, payAttributionInstant, payableIncentive } from "../services/tripCompletion";
 import { EARNING_STOP_SELECT, earnedInWindow } from "../services/undeliveredPay";
+import { countFromEnv } from "../lib/envNumbers";
 
 const router = Router();
 router.use(requireAuth);
@@ -46,69 +47,158 @@ router.use(requireAuth);
 // — see tests-integration/thisMonthAgreement.
 const EARNINGS_WINDOW_MONTHS = 6;
 
+/**
+ * Newest N trips in the LIST. Bounding the payload was the point of the window;
+ * without a cap a busy driver's six months is on the order of a thousand trips
+ * with nested stops, exceptions and cargo, delivered to a phone.
+ *
+ * SAFE ONLY BECAUSE THE SUMMARY NO LONGER READS THIS QUERY. While the month
+ * total was derived from the list rows, any `take` silently truncated the
+ * total — which is why the previous pass deliberately shipped without one and
+ * said so. The summary now has its own query below; that is the change that
+ * makes a cap possible at all.
+ *
+ * Truncation is REPORTED, never silent: `truncated` tells the client the list
+ * is partial so it can say so. A money list that just stops is the same class
+ * of defect as a total that just stops.
+ *
+ * Read PER REQUEST, not captured at import, for the same reason the feature
+ * flags are — and because it is the only way to actually TEST the decoupling:
+ * proving the summary survives a truncated list needs a truncated list, and
+ * manufacturing 201 real trips through the booking API would take minutes.
+ */
+function earningsListLimit(): number {
+  return countFromEnv("EARNINGS_LIST_LIMIT", 200);
+}
+
 router.get("/mine", requireRole("driver"), async (req, res, next) => {
   try {
     const driverId = req.user!.id;
+    const limit = earningsListLimit();
     const nowForWindow = new Date();
     const { year: winYear, month: winMonth } = mytMonthParts(nowForWindow);
     const windowStart = mytMonthStart(winYear, winMonth - (EARNINGS_WINDOW_MONTHS - 1));
 
-    const rows = await prisma.trip.findMany({
+    // ── THE MONTH SUMMARY, FROM ITS OWN QUERY ──────────────────────────────
+    //
+    // It used to be derived from the list rows, which coupled two unrelated
+    // questions: "what did I earn this month" and "what should the breakdown
+    // show". That coupling is why the list could not be capped — every `take`
+    // was also a cap on the total.
+    //
+    // Scoped to the CURRENT MONTH and to `completed` only (a pending proposal
+    // is shown in the list but is not paid money), with the same superset bound
+    // /reports/payroll uses: earned-in-window OR picked-up-in-window, then the
+    // precise pay-instant predicate applied in memory. Selects only what the
+    // four figures need.
+    const monthBounds = currentMytMonthBounds(new Date());
+    const summaryRows = await prisma.trip.findMany({
       where: {
         driver_id: driverId,
+        status: "completed",
         OR: [
-          // Never ages out: an unapproved proposal is money outstanding.
-          { status: "pending_approval" },
-          {
-            status: "completed",
-            OR: [
-              { stops: { some: earnedInWindow({ gte: windowStart }) } },
-              // NOT redundant with the line above, and not a belt-and-braces
-              // widening either — it is the ONLY branch that catches a trip
-              // whose pay instant cannot be derived from its stops:
-              //   - the legacy anomaly of a stop marked `delivered` with a NULL
-              //     delivered_at (real; /reports/attention surfaces it), where
-              //     firstEarningInstant returns null and the month bucket falls
-              //     back to pickup_datetime — exactly what the summary below
-              //     does. Drop this line and that trip's RM leaves the driver's
-              //     month total while the payroll sheet still pays it.
-              //   - an all-vetoed trip, where no stop matches earnedInWindow at
-              //     all, so trip_count and avg_per_trip move.
-              // /reports/payroll carries the identical branch for the identical
-              // reason. Pinned by "the LEGACY ANOMALY" test.
-              { pickup_datetime: { gte: windowStart } },
-              // A settlement the driver has just been given must not vanish on
-              // the day it happens. An aged proposal is exempt from the window
-              // while it is pending; without this it would be erased the moment
-              // an admin approved it — the one day the row matters most. Keyed
-              // on the APPROVAL instant, so it follows the settlement, not the
-              // journey. Can only ADD rows.
-              { incentive_approved_at: { gte: windowStart } },
-            ],
-          },
+          { stops: { some: earnedInWindow({ gte: monthBounds.start, lt: monthBounds.end }) } },
+          { pickup_datetime: { gte: monthBounds.start, lt: monthBounds.end } },
         ],
       },
       select: {
-        id: true,
-        ticket_number: true,
-        status: true,
         pickup_datetime: true,
         incentive_earned: true,
         incentive_final: true,
-        truck_plate: true,
-        route_type: { select: { name: true } },
         stops: {
           orderBy: { sequence: "asc" },
-          select: {
-            ...EARNING_STOP_SELECT,
-            consignee: { select: { company_name: true, area: true, zone_code: true } },
-          },
+          select: { ...EARNING_STOP_SELECT, consignee: { select: { zone_code: true } } },
         },
-        cargo_details: { select: { quantity: true } },
       },
+    });
+
+    // ── THE LIST: TWO QUERIES, BECAUSE ONE CAP WOULD EAT THE WRONG ROWS ────
+    //
+    // The list is ordered by pickup DESC, so a `take` removes the OLDEST rows.
+    // That is precisely the population that is in this list *because it must
+    // not age out*:
+    //
+    //   an aged pending_approval trip   money the driver is owed and chasing
+    //   an old trip just settled        the incentive_approved_at branch, added
+    //                                   after a money review found the row
+    //                                   vanished on the day it was paid
+    //
+    // Both are old BY CONSTRUCTION — that is what makes them exempt from the
+    // window — so a single capped query deletes exactly the rows the two
+    // rulings above exist to protect. A money review measured it: with the cap
+    // at 1, an eight-month-old RM52 proposal disappeared from the response, and
+    // the client's "Awaiting approval" figure is computed FROM THIS LIST
+    // (mobile/src/lib/earnings.ts pendingTotal/pendingCount), so the driver's
+    // owed money vanished from the only screen that shows it while his month
+    // total stayed correct — which is what would have made it unnoticeable.
+    //
+    // So they are fetched SEPARATELY and never capped. Both are inherently
+    // small: one is the office's approval backlog, the other is old work
+    // settled inside the window.
+    // One select for both list queries, so the two halves of the list cannot
+    // come back with different shapes.
+    const listSelect = {
+      id: true,
+      ticket_number: true,
+      status: true,
+      pickup_datetime: true,
+      incentive_earned: true,
+      incentive_final: true,
+      truck_plate: true,
+      route_type: { select: { name: true } },
+      stops: {
+        orderBy: { sequence: "asc" as const },
+        select: {
+          ...EARNING_STOP_SELECT,
+          consignee: { select: { company_name: true, area: true, zone_code: true } },
+        },
+      },
+      cargo_details: { select: { quantity: true } },
+    };
+
+    const keptRows = await prisma.trip.findMany({
+      where: {
+        driver_id: driverId,
+        OR: [
+          { status: "pending_approval" },
+          {
+            status: "completed",
+            pickup_datetime: { lt: windowStart },
+            incentive_approved_at: { gte: windowStart },
+          },
+        ],
+      },
+      select: listSelect,
       orderBy: { pickup_datetime: "desc" },
     });
 
+    // Ordinary recent history — the only thing a cap should ever shorten.
+    const historyRows = await prisma.trip.findMany({
+      take: limit + 1, // +1 to detect truncation without a second count
+      where: {
+        driver_id: driverId,
+        status: "completed",
+        OR: [
+          // Keyed on the PAY INSTANT, not pickup — a trip picked up the evening
+          // before the window opens and delivered the morning after earned
+          // inside it and belongs here. Dropping this branch loses a pre-gate
+          // trip (incentive_approved_at null) that the kept-rows query cannot
+          // reach either.
+          { stops: { some: earnedInWindow({ gte: windowStart }) } },
+          { pickup_datetime: { gte: windowStart } },
+        ],
+      },
+      select: listSelect,
+      orderBy: { pickup_datetime: "desc" },
+    });
+
+    const truncatedHistory = historyRows.length > limit;
+    const seen = new Set<string>();
+    const rows = [...keptRows, ...historyRows.slice(0, limit)]
+      .filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)))
+      .sort((a, b) => b.pickup_datetime.getTime() - a.pickup_datetime.getTime());
+
+    const truncated = truncatedHistory;
     const trips = rows.map((t) => {
       const pending = t.status === "pending_approval";
       return {
@@ -139,34 +229,39 @@ router.get("/mine", requireRole("driver"), async (req, res, next) => {
         pallets: t.cargo_details.reduce((sum, c) => sum + c.quantity, 0),
       };
     });
+    const listed = trips;
 
-    // Current-month aggregate in explicit MYT (lib/myt.ts) — the month bucket
-    // must match the engine's MYT trip-days regardless of the server's TZ env.
-    const now = new Date();
-    // Both bounds ([start, end)) — the same predicate the admin reports use,
-    // so the driver's own month total always matches theirs (finding 1.3).
-    // Keyed on delivered_at (pickup fallback): pay was written on the delivery
-    // day, so that's the month the driver actually gets the money in.
-    // Only APPROVED (non-pending) trips count toward paid money; a pending
-    // proposal is shown in the list but never added to the total.
-    const monthBounds = currentMytMonthBounds(now);
-    const monthTrips = trips.filter(
-      (t) => !t.pending && inMytMonth(new Date(t.delivered_at ?? t.pickup_datetime), monthBounds)
+    // ── THE FOUR FIGURES, FROM summaryRows — NEVER FROM `trips` ────────────
+    //
+    // Keyed on payAttributionInstant, the SHARED function every other money
+    // surface buckets by (services/tripCompletion), rather than re-deriving
+    // `delivered_at ?? pickup_datetime` here. The re-derivation was correct but
+    // it was a fourth copy of a rule this session has already been bitten by
+    // three times; the shared one cannot drift from payroll.
+    //
+    // Both bounds ([start, end)) — the same predicate the admin reports use, so
+    // the driver's own month total always matches theirs (finding 1.3).
+    const monthTrips = summaryRows.filter((t) =>
+      inMytMonth(payAttributionInstant(t), monthBounds)
     );
-    const monthTotal = monthTrips.reduce((sum, t) => sum + Number(t.incentive_earned ?? 0), 0);
-    const monthDistance = monthTrips.reduce((sum, t) => sum + t.distance_km, 0);
-
-    const monthLabel = mytMonthKey(now);
+    const monthTotal = monthTrips.reduce((sum, t) => sum + payableIncentive(t), 0);
+    const monthDistance = monthTrips.reduce(
+      (sum, t) => sum + estimateTripDistanceKm(t.stops[0]?.consignee.zone_code ?? null),
+      0
+    );
 
     res.json({
       summary: {
-        month: monthLabel, // YYYY-MM in MYT
+        month: mytMonthKey(monthBounds.start), // YYYY-MM in MYT
         total: monthTotal,
         trip_count: monthTrips.length,
         total_distance_km: monthDistance,
         avg_per_trip: monthTrips.length > 0 ? monthTotal / monthTrips.length : 0,
       },
-      trips,
+      trips: listed,
+      // The list is the newest EARNINGS_LIST_LIMIT, not everything. Said out
+      // loud so the client can too — the summary above is complete regardless.
+      truncated,
     });
   } catch (err) {
     next(err);

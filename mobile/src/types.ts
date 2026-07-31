@@ -256,6 +256,10 @@ export interface IncentiveSummary {
     avg_per_trip: number;
   };
   trips: IncentiveTrip[];
+  /** True when the breakdown is the newest N only. The SUMMARY above is always
+   *  complete for the month — it comes from its own query — so this affects the
+   *  list and nothing else. Optional so an older API build simply reads false. */
+  truncated?: boolean;
 }
 
 export interface ApiErrorShape {

@@ -224,6 +224,7 @@
     "deliveredMeta": "Delivered {{when}}",
     "tripsCount": "{{count}} trips",
     "breakdown": "Trip Breakdown",
+    "listTruncated": "Showing your most recent trips — the month total above counts them all.",
     "noEarnings": "No completed trips yet.",
     "thisWeek": "This Week",
     "totalDistance": "Total Distance",

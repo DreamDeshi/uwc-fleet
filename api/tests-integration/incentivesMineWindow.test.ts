@@ -57,8 +57,9 @@ describe("GET /incentives/mine — the six-month window", () => {
     const res = await api().get("/api/v1/incentives/mine").set(auth(driver));
     expect(res.status, res.text).toBe(200);
     return res.body as {
-      summary: { month: string; total: number; trip_count: number };
+      summary: { month: string; total: number; trip_count: number; total_distance_km: number; avg_per_trip: number };
       trips: { id: string; pending: boolean; incentive_earned: number }[];
+      truncated: boolean;
     };
   };
 
@@ -229,6 +230,129 @@ describe("GET /incentives/mine — the six-month window", () => {
     expect(withOld.summary.trip_count).toBe(0);
     expect(both.summary.trip_count).toBe(1);
     expect(both.trips.map((x) => x.id)).toEqual([t.id]);
+  });
+
+  it("THE SUMMARY SURVIVES A TRUNCATED LIST — the whole point of the split", async () => {
+    // THE COUPLING THIS REMOVED. The month total used to be derived FROM the
+    // list rows, so any cap on the list was silently a cap on the total — which
+    // is why the previous pass shipped without a `take` and said so.
+    //
+    // Proving it needs an ACTUALLY truncated list, so the cap is lowered to one
+    // for this test rather than manufacturing 201 bookings.
+    const a = await completedTripAt(
+      new Date(monthStart.getTime() + 3 * 3600_000),
+      new Date(monthStart.getTime() + 9 * 3600_000)
+    );
+    const b = await completedTripAt(
+      new Date(monthStart.getTime() + 27 * 3600_000),
+      new Date(monthStart.getTime() + 33 * 3600_000)
+    );
+
+    const full = await mine();
+    expect(full.trips).toHaveLength(2);
+    expect(full.truncated).toBe(false);
+    const bothPaid = full.summary.total;
+    expect(bothPaid).toBeGreaterThan(0);
+
+    process.env.EARNINGS_LIST_LIMIT = "1";
+    try {
+      const capped = await mine();
+      // The list really is cut...
+      expect(capped.trips).toHaveLength(1);
+      expect(capped.truncated, "truncation is reported, not silent").toBe(true);
+      // ...and the money is untouched. Under the old derivation this total
+      // would have halved along with the list.
+      expect(capped.summary.trip_count, "the summary followed the list").toBe(2);
+      expect(capped.summary.total).toBe(bothPaid);
+      expect(capped.summary.total_distance_km).toBe(full.summary.total_distance_km);
+      expect(capped.summary.avg_per_trip).toBe(full.summary.avg_per_trip);
+      // WHICH row survives is the whole risk, so it is named: the cap orders by
+      // pickup DESC, so the NEWER trip is kept and the older is cut. An
+      // order-agnostic assertion here could not catch the two cases below.
+      expect(capped.trips.map((t) => t.id)).toEqual([b.id]);
+      void a;
+    } finally {
+      delete process.env.EARNINGS_LIST_LIMIT;
+    }
+  });
+
+  it("TRUNCATION NEVER EATS AN AGED PROPOSAL — money still owed", async () => {
+    // A money review measured this failing: the cap orders by pickup DESC, and
+    // an aged pending_approval trip is the OLDEST row by construction — its
+    // exemption from the window exists precisely because it is old. So a single
+    // capped query deleted exactly the row that must never age out, and the
+    // client's "Awaiting approval RM X" figure is computed FROM THIS LIST.
+    const t = await bookTrip(requestor, ["A2"], rt);
+    await approveTrip(admin, t.id, driverId, DRIVERS.PND.plate);
+    await startTrip(driver, t.id);
+    await arriveAndDeliver(driver, t.id, t.stops[0].id);
+    const old = monthsBack(8);
+    await prisma.trip.update({ where: { id: t.id }, data: { pickup_datetime: old } });
+    await prisma.tripStop.update({ where: { id: t.stops[0].id }, data: { delivered_at: old } });
+
+    // Plus enough recent history to fill the cap entirely.
+    await completedTripAt(
+      new Date(monthStart.getTime() + 3 * 3600_000),
+      new Date(monthStart.getTime() + 9 * 3600_000)
+    );
+
+    process.env.EARNINGS_LIST_LIMIT = "1";
+    try {
+      const body = await mine();
+      const row = body.trips.find((x) => x.id === t.id);
+      expect(row, "the aged proposal was cut by the cap").toBeTruthy();
+      expect(row!.pending).toBe(true);
+      expect(Number(row!.incentive_earned)).toBeGreaterThan(0);
+    } finally {
+      delete process.env.EARNINGS_LIST_LIMIT;
+    }
+  });
+
+  it("TRUNCATION NEVER EATS A JUST-SETTLED OLD TRIP", async () => {
+    // The incentive_approved_at branch exists because a money review found the
+    // row vanished on the day it was paid. The cap would have removed exactly
+    // the rows that branch adds — they are old by pickup, which is the point.
+    const old = monthsBack(8);
+    const settled = await completedTripAt(old, old, new Date());
+
+    await completedTripAt(
+      new Date(monthStart.getTime() + 3 * 3600_000),
+      new Date(monthStart.getTime() + 9 * 3600_000)
+    );
+
+    process.env.EARNINGS_LIST_LIMIT = "1";
+    try {
+      const body = await mine();
+      expect(
+        body.trips.map((x) => x.id),
+        "the just-settled old trip was cut by the cap"
+      ).toContain(settled.id);
+    } finally {
+      delete process.env.EARNINGS_LIST_LIMIT;
+    }
+  });
+
+  it("an OUT-OF-WINDOW trip is absent from the list but its month is untouched", async () => {
+    // The summary's query is month-scoped and INDEPENDENT of the list's
+    // six-month window, so the two bounds cannot interfere.
+    const old = monthsBack(9);
+    await completedTripAt(old, old);
+    const recent = await completedTripAt(
+      new Date(monthStart.getTime() + 3 * 3600_000),
+      new Date(monthStart.getTime() + 9 * 3600_000)
+    );
+
+    const body = await mine();
+    expect(body.trips.map((t) => t.id)).toEqual([recent.id]);
+    expect(body.summary.trip_count).toBe(1);
+  });
+
+  it("reports truncation rather than silently stopping", async () => {
+    // `truncated` is part of the contract: a money list that just stops is the
+    // same class of defect as a total that just stops.
+    const body = await mine();
+    expect(body).toHaveProperty("truncated");
+    expect(typeof body.truncated).toBe("boolean");
   });
 
   it("recent completed trips are all still there", async () => {
