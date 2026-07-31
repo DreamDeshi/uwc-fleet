@@ -229,6 +229,38 @@ if (findings.length === 0) {
   out.push("    // selector-ok: <why this is not i18n copy>");
 }
 
+// ── DEAD KEYS ARE NOW A FAILURE, NOT A FOOTNOTE ────────────────────────────
+//
+// This script has always COUNTED keys that are defined in en.json but rendered
+// nowhere, and printed the number inside a parenthesis nobody read. It reached
+// 102.
+//
+// They are not harmless. A dead key is the fingerprint of a RENAME whose old
+// half was never removed, and this suite's own history is the argument: the
+// driver e2e specs sat red for a week because a redesign renamed every label
+// they clicked, and the FIRST version of this guard PASSED those broken
+// selectors — because `driver.todaysAssignments` and `driver.viewNavigation`
+// were still sitting in all three locale files after the code that rendered
+// them was deleted. Dead copy is precisely what let a broken selector look
+// valid to this script.
+//
+// So the bar is zero, and it is enforced. The one thing this rejects is adding
+// a key before the screen that renders it; add them in the same commit, which
+// is the rule AGENTS.md already states for the three locale files.
+if (deadEntries.length > 0) {
+  out.push("");
+  out.push(`DEAD COPY: ${deadEntries.length} key(s) are defined but rendered nowhere.`);
+  out.push("");
+  for (const [k, v] of deadEntries.slice(0, 40)) {
+    out.push(`  ${k}  = ${JSON.stringify(v).slice(0, 72)}`);
+  }
+  if (deadEntries.length > 40) out.push(`  ... and ${deadEntries.length - 40} more`);
+  out.push("");
+  out.push("A dead key is usually half of a rename. Delete it from en.json, ms.json AND");
+  out.push("zh.json in the same commit — leaving it is what makes a broken selector look");
+  out.push("valid to this very script.");
+}
+
 const report = out.join("\n");
 console.log(report);
 
@@ -238,4 +270,4 @@ if (process.env.GITHUB_STEP_SUMMARY) {
   });
 }
 
-process.exit(findings.length > 0 ? 1 : 0);
+process.exit(findings.length > 0 || deadEntries.length > 0 ? 1 : 0);
