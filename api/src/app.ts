@@ -8,7 +8,7 @@ import usersRoutes from "./routes/users";
 import meRoutes from "./routes/me";
 import tripsRoutes from "./routes/trips";
 import exceptionsRoutes from "./routes/exceptions";
-import { redactRequestorMoneyLayer } from "./lib/requestorMoney";
+import { redactRequestorMoneyLayer, REQUESTOR_REDACTED_PREFIXES } from "./lib/requestorMoney";
 import metaRoutes from "./routes/meta";
 import consigneesRoutes from "./routes/consignees";
 import incentivesRoutes from "./routes/incentives";
@@ -75,30 +75,32 @@ app.get("/api/v1/health", (_req, res) => {
 });
 
 app.use("/api/v1/auth", authRoutes);
+
+// ── SC7: the requestor field guard leads EVERY prefix it protects ──────────
+// Driven by REQUESTOR_REDACTED_PREFIXES so the mount and the assertion in
+// tests/requestorMoneyMount are the same fact rather than two copies that can
+// drift. Registered here, ahead of every router below, because the layer only
+// covers what is mounted AFTER it — and because "anything added later is
+// covered without anyone remembering" is the entire point.
+//
+// The role is read when res.json is CALLED, not when this middleware runs:
+// requireAuth lives inside each router, so req.user does not exist yet at
+// registration time. Being first also makes it the LAST transform applied
+// (each wrapper captures the res.json it finds), so nothing downstream —
+// including the POD-signing wrapper — can put an amount back.
+for (const prefix of REQUESTOR_REDACTED_PREFIXES) {
+  app.use(prefix, redactRequestorMoneyLayer);
+}
+
 // meRoutes is mounted first so GET /users/me resolves to the self-profile
 // handler (any authenticated user) before the admin-only users router.
 app.use("/api/v1/users", meRoutes);
 app.use("/api/v1/users", usersRoutes);
-// Driver pay is not requestor-visible — one choke point for the WHOLE /trips
-// prefix, ahead of both routers mounted on it.
-//
-// It lives here rather than inside tripsRoutes because exceptionsRoutes shares
-// this prefix. A router-local `router.use()` IS prefix-level, so it does cover
-// the exceptions router's paths — but only because tripsRoutes happens to be
-// mounted above it. Swap the two app.use lines below and redaction silently
-// disappears from every exceptions-router response, with no test going red.
-// The argument for a choke point is "anything added later is covered without
-// anyone remembering"; a guarantee that depends on the order of two mount
-// lines is not that.
-//
-// The role is read when res.json is CALLED, not when this middleware runs:
-// requireAuth lives inside each router, so req.user does not exist yet at
-// registration time. Registered before the routers, so it is the LAST transform
-// applied (each wrapper captures the res.json it finds) — nothing downstream,
-// including the POD-signing wrapper, can put an amount back.
-// Its POSITION is the guarantee, and tests/requestorMoneyMount.test.ts asserts
-// it: this layer must come before every router mounted on this prefix.
-app.use("/api/v1/trips", redactRequestorMoneyLayer);
+// Driver pay is not requestor-visible. The choke point for this prefix is
+// mounted in the loop above, ahead of BOTH routers on it — it lives there
+// rather than inside tripsRoutes because exceptionsRoutes shares the prefix,
+// and a router-local `router.use()` would cover it only because tripsRoutes
+// happens to be mounted first.
 app.use("/api/v1/trips", tripsRoutes);
 // Failed-delivery / exception workflow (Phase 1, feature-flagged off by default).
 // Mounted on the same /trips prefix; its paths (/:id/exception*) don't collide

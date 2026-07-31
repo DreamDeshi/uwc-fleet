@@ -125,3 +125,46 @@ export function redactRequestorMoneyLayer(
     req.user?.role === "requestor" ? json(redactRequestorMoney(body)) : json(body);
   next();
 }
+
+/**
+ * EVERY PREFIX THE LAYER MUST LEAD (SC7).
+ *
+ * ONE list, read by app.ts to mount and by tests/requestorMoneyMount to assert.
+ * A second copy would be the bug this whole file exists to prevent: the mount
+ * and the check must be the same fact, or they drift and the check keeps
+ * passing. (reports.ts kept a private copy of an on-time predicate for the same
+ * reason it felt harmless, and the e2e window chooser had a duplicate that put
+ * a fixed bug straight back.)
+ *
+ * ── WHY THE PREFIXES WITH NO REQUESTOR ROUTE ARE HERE ANYWAY ────────────────
+ *
+ * Measured, today:
+ *
+ *   /trips        requestor-reachable. The original leak: 150 of a requestor's
+ *                 275 own trips carried a non-null incentive_earned.
+ *   /consignees   requestor-reachable — GET / has NO role guard (search), and
+ *                 POST / is `requestor, admin` (self-add).
+ *   /users        requestor-reachable via meRoutes (GET/PATCH /users/me),
+ *                 mounted BEFORE the admin-only router on the same prefix.
+ *   /trucks       NOT requestor-reachable today: every route is `admin, driver`
+ *                 or behind `router.use(requireRole("admin"))`.
+ *   /incentives   NOT requestor-reachable today: `/mine` is driver-only.
+ *
+ * The last two are here on purpose. The protection this file provides is
+ * supposed to be STRUCTURAL — "anything added later is covered without anyone
+ * remembering" — and that promise is empty on a prefix where the layer is
+ * absent, because the day someone adds a requestor-readable truck route the
+ * rate card ships with it. Mounting costs one line and a closure; the layer
+ * no-ops for every non-requestor role, so nothing else changes.
+ *
+ * ⚠ NOT A SUBSTITUTE FOR ROLE GUARDS. This strips FIELDS. Whether a requestor
+ * may call a route at all is still `requireRole`'s job, and a route that should
+ * be admin-only is a bug this cannot see.
+ */
+export const REQUESTOR_REDACTED_PREFIXES = [
+  "/api/v1/trips",
+  "/api/v1/consignees",
+  "/api/v1/users",
+  "/api/v1/trucks",
+  "/api/v1/incentives",
+] as const;

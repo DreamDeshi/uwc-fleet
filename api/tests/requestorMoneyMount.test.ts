@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import express from "express";
 import request from "supertest";
-import { redactRequestorMoneyLayer, redactRequestorMoney } from "../src/lib/requestorMoney";
+import {
+  redactRequestorMoneyLayer,
+  redactRequestorMoney,
+  REQUESTOR_REDACTED_PREFIXES,
+} from "../src/lib/requestorMoney";
 
 /**
  * THE REDACTION ONLY COVERS WHAT IS MOUNTED AFTER IT.
@@ -67,7 +71,7 @@ describe("redaction layer position", () => {
     expect(res.body).toEqual({ id: "t1", truck: {} });
   });
 
-  it("WIRING: in the real app the layer precedes every router on /api/v1/trips", async () => {
+  it("WIRING: in the real app the layer leads EVERY prefix it claims to protect", async () => {
     // Imported lazily so a failure here reads as a wiring problem rather than a
     // module-load error in the two tests above.
     const { app } = await import("../src/app");
@@ -75,38 +79,96 @@ describe("redaction layer position", () => {
     type Layer = { name?: string; handle?: unknown; regexp?: RegExp };
     const stack = (app as unknown as { _router: { stack: Layer[] } })._router.stack;
 
-    // Express compiles `app.use("/api/v1/trips", …)` into a layer whose regexp
+    // Express compiles `app.use("/api/v1/x", …)` into a layer whose regexp
     // matches that path; match by testing the path rather than parsing internals.
     //
-    // The second test excludes GLOBAL middleware. `app.use(cors())` and friends
-    // compile to a regexp matching everything, so they match /api/v1/trips too —
+    // GLOBAL middleware must be excluded. `app.use(cors())` and friends compile
+    // to a regexp matching everything, so they match every prefix too —
     // filtering on that alone put the redaction layer at index 6 behind cors,
-    // the rate limiter and express.json, none of which are on this prefix at all.
-    // A prefix-mounted layer matches /api/v1/trips and NOT a sibling prefix.
-    const onTripsPrefix = stack
-      .map((layer, index) => ({ layer, index }))
-      .filter(({ layer }) => layer.regexp?.test("/api/v1/trips") && !layer.regexp?.test("/api/v1/users"));
+    // the rate limiter and express.json, none of which are on the prefix at all.
+    // A prefix-mounted layer matches its own path and NOT an unrelated one.
+    const CONTROL = "/api/v1/__not_a_real_prefix__";
+    const failures: string[] = [];
+
+    for (const prefix of REQUESTOR_REDACTED_PREFIXES) {
+      const onPrefix = stack
+        .map((layer, index) => ({ layer, index }))
+        .filter(({ layer }) => layer.regexp?.test(prefix) && !layer.regexp?.test(CONTROL));
+
+      if (onPrefix.length <= 1) {
+        failures.push(`${prefix}: no prefix-mounted layers found — Express internals may have changed shape`);
+        continue;
+      }
+      const layerIndex = onPrefix.findIndex(({ layer }) => layer.handle === redactRequestorMoneyLayer);
+      if (layerIndex < 0) failures.push(`${prefix}: redactRequestorMoneyLayer is not mounted here at all`);
+      else if (layerIndex !== 0) {
+        failures.push(`${prefix}: ${layerIndex} handler(s) are mounted BEFORE the redaction layer`);
+      }
+    }
 
     expect(
-      onTripsPrefix.length,
-      "no layers found on /api/v1/trips — Express internals may have changed shape"
-    ).toBeGreaterThan(1);
-
-    const layerIndex = onTripsPrefix.findIndex(({ layer }) => layer.handle === redactRequestorMoneyLayer);
-    expect(layerIndex, "redactRequestorMoneyLayer is not mounted on /api/v1/trips at all").toBeGreaterThanOrEqual(0);
-
-    // It must be the FIRST thing on this prefix. Anything ahead of it — a router
-    // added later, or these two lines reordered — is unredacted for requestors.
-    expect(
-      layerIndex,
+      failures,
       [
         "",
-        "A handler is mounted on /api/v1/trips BEFORE the redaction layer.",
-        "Everything ahead of it returns driver pay to requestors, silently.",
-        "Move redactRequestorMoneyLayer back to the first app.use on this prefix.",
+        "The requestor field guard is not leading a prefix it is supposed to protect:",
+        ...failures.map((f) => `  ${f}`),
+        "",
+        "Anything mounted ahead of it returns unredacted fields to requestors, silently.",
+        "The mount loop lives in app.ts and is driven by REQUESTOR_REDACTED_PREFIXES.",
         "",
       ].join("\n")
-    ).toBe(0);
+    ).toEqual([]);
+  });
+
+  it("WIRING: the prefix list names only prefixes the app actually mounts", async () => {
+    // No blank cheques, same rule as the fail-closed allow-list: a prefix in the
+    // list that nothing is mounted on would make the test above vacuous for it,
+    // and would read as coverage that does not exist.
+    const { app } = await import("../src/app");
+    type Layer = { handle?: unknown; regexp?: RegExp };
+    const stack = (app as unknown as { _router: { stack: Layer[] } })._router.stack;
+    const CONTROL = "/api/v1/__not_a_real_prefix__";
+
+    const empty = REQUESTOR_REDACTED_PREFIXES.filter((prefix) => {
+      const onPrefix = stack.filter(
+        (l) => l.regexp?.test(prefix) && !l.regexp?.test(CONTROL) && l.handle !== redactRequestorMoneyLayer
+      );
+      return onPrefix.length === 0;
+    });
+    expect(empty, `REQUESTOR_REDACTED_PREFIXES names prefix(es) with no router: ${empty.join(", ")}`).toEqual([]);
+  });
+
+  it("the prefix list cannot be SHRUNK past the requestor-reachable routers", async () => {
+    // The list is its own oracle: deleting a prefix removes the mount AND the
+    // assertion above, so the previous test stays green while protection
+    // disappears. Deleting "/api/v1/users" from REQUESTOR_REDACTED_PREFIXES was
+    // measured to do exactly that.
+    //
+    // So the prefixes a requestor can actually reach are named HERE, in the
+    // test, deliberately as a second statement of the requirement — app.ts says
+    // what is mounted, this says what must be. Established by reading the role
+    // guards, not assumed:
+    //
+    //   /trips        tripsRoutes + exceptionsRoutes, requestor owns trips
+    //   /consignees   GET / has no role guard; POST / is requestor+admin
+    //   /users        meRoutes (GET/PATCH /users/me) is any authenticated user
+    //
+    // /trucks and /incentives are absent on purpose: no requestor-reachable
+    // route today, so their presence in the list is prophylactic and removing
+    // them would be a judgement call, not a regression.
+    const MUST_COVER = ["/api/v1/trips", "/api/v1/consignees", "/api/v1/users"];
+    const missing = MUST_COVER.filter((p) => !REQUESTOR_REDACTED_PREFIXES.includes(p as never));
+    expect(
+      missing,
+      [
+        "",
+        "Prefix(es) a REQUESTOR CAN REACH are no longer in REQUESTOR_REDACTED_PREFIXES:",
+        ...missing.map((p) => `  ${p}`),
+        "",
+        "Removing one silently drops the field guard from that router.",
+        "",
+      ].join("\n")
+    ).toEqual([]);
   });
 
   it("the layer leaves non-requestor roles alone", async () => {

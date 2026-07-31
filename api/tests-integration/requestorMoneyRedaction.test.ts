@@ -60,6 +60,23 @@ describe("requestors never receive driver pay", () => {
     await approveTrip(admin, t.id, driverId, DRIVERS.PND.plate);
     await startTrip(driver, t.id);
     tripId = t.id;
+
+    // Populate the two surfaces the fail-closed sweep would otherwise SKIP.
+    // TripDocument was vacuous from the day that test was written — the fixture
+    // trip has never had a document, so the model was listed, allow-listed, and
+    // never actually swept. The non-vacuity assertion in the sweep is what
+    // surfaced it; without a row here it would just fail instead of covering.
+    await prisma.tripDocument.create({
+      data: { trip_id: t.id, type: "do_photo", file_url: "test://do.jpg" },
+    });
+    // ...and give the requestor a department, so /users/me carries the nested row.
+    const dept = await prisma.department.findFirst();
+    if (dept) {
+      await prisma.user.update({
+        where: { id: await userIdByPhone(REQUESTOR.phone) },
+        data: { department_id: dept.id },
+      });
+    }
   });
 
   it("GET /trips — stripped for the requestor, intact for driver and admin", async () => {
@@ -194,13 +211,40 @@ describe("requestors never receive driver pay", () => {
         "format", "uploaded_at",
       ]),
       RouteType: new Set(["id", "name"]),
+      // /users/me — deliberately SHORT. password_hash and refresh_token_hash are
+      // absent on purpose: me.ts selects explicitly, and if either ever appears
+      // here this test is the thing that says so.
+      User: new Set([
+        "id", "phone", "name", "employee_number", "role", "status",
+        "language_pref", "department_id", "assigned_truck_plate", "created_at",
+      ]),
+      Department: new Set(["id", "name"]),
       TripStatusHistory: new Set(["id", "trip_id", "event", "stop_id", "actor_id", "note", "created_at"]),
     };
 
-    // The first cut swept 3 of the 9 models a requestor actually receives.
+    // The first cut swept 3 of the 9 models a requestor actually receives, and
+    // covered only the /trips prefix. SC7 extends it to every OTHER router a
+    // requestor can reach — established by reading the role guards, not assumed:
+    //
+    //   /consignees  GET / has NO role guard (search); POST / is requestor+admin
+    //   /users       meRoutes (GET/PATCH /users/me) is mounted for any auth user
+    //   /trucks      NOT reachable — every route is admin/driver or admin-only
+    //   /incentives  NOT reachable — /mine is driver-only
+    //
+    // The last two carry the redaction layer anyway (see
+    // REQUESTOR_REDACTED_PREFIXES) but cannot be swept here: there is no
+    // requestor-reachable payload to sweep. The mount test covers them instead.
     const one = (await api().get(`/api/v1/trips/${tripId}`).set(auth(requestor))).body;
+    const consignees = (await api().get("/api/v1/consignees?search=test").set(auth(requestor))).body;
+    const me = (await api().get("/api/v1/users/me").set(auth(requestor))).body;
     const SURFACES: { model: string; value: unknown }[] = [
       { model: "Trip", value: one },
+      // /consignees — a different router, the same Consignee model.
+      { model: "Consignee", value: Array.isArray(consignees) ? consignees[0] : undefined },
+      // /users/me — the requestor's own row. The model carries password_hash and
+      // refresh_token_hash, so an unclassified field here is worse than money.
+      { model: "User", value: me },
+      { model: "Department", value: (me as { department?: unknown })?.department },
       { model: "Truck", value: one.truck },
       { model: "TripStop", value: one.stops?.[0] },
       { model: "Consignee", value: one.stops?.[0]?.consignee },
@@ -209,6 +253,16 @@ describe("requestors never receive driver pay", () => {
       { model: "RouteType", value: one.route_type },
       { model: "TripStatusHistory", value: one.status_history?.[0] },
     ];
+
+    // NON-VACUITY. The loop below SKIPS a surface that came back empty, so a
+    // consignee search returning [] or a /users/me that 403s would make this
+    // sweep pass forever while checking nothing. Every surface must actually
+    // carry a row.
+    const empty = SURFACES.filter((s) => !s.value || typeof s.value !== "object").map((s) => s.model);
+    expect(
+      empty,
+      `surface(s) returned nothing, so the sweep below would skip them: ${empty.join(", ")}`
+    ).toEqual([]);
 
     const unexpected: string[] = [];
     for (const { model, value } of SURFACES) {
