@@ -1975,9 +1975,55 @@ function assertChangeRequestsEnabled(): void {
 // moves until an admin approves, and approval replays the stored payload
 // through validateTripEdit — the SAME validation a requestor's own edit uses.
 //
-// Every field the edit route accepts is on his critical list (delivery
-// location, date/time, pallet quantity/size, customer), so on an ASSIGNED
-// booking this route is the only way to change anything.
+// ── HIS LIST, AND WHAT THE EDIT ROUTE ACTUALLY ACCEPTS ─────────────────────
+//
+// This comment used to claim "every field the edit route accepts is on his
+// critical list". That is FALSE by five fields, and it is the kind of claim
+// that justifies a wrong decision later — so here is the real mapping.
+//
+// He named SIX things. They resolve to FOUR fields:
+//
+//   delivery location   stops[].consignee_id
+//   delivery date/time  pickup_datetime
+//   pallet quantity     cargo_details[].quantity
+//   pallet size         cargo_details[].pallet_type (+ width_ft/length_ft)
+//   customer            stops[].consignee_id  — THE SAME FIELD as location
+//   priority            ⚠ NO SUCH FIELD HAS EVER EXISTED. Do not build one and
+//                         do not ask him about it; the word appears once, here.
+//
+// updateTripSchema also accepts FIVE fields he never named, and they are not
+// equally harmless:
+//
+//   stops[].sequence            ⚠ DISPATCH-AFFECTING, by his own criterion.
+//                               Stop order decides which stop is FIRST, and
+//                               dispatchEngine.primaryZone reads the first
+//                               stop's zone to lock an A1/A2 run to PND 1888 —
+//                               which sets the RM-per-point rate. He would not
+//                               recognise the name "sequence", but reordering
+//                               stops is exactly "information that affects
+//                               auto-dispatch". See lib/stopSequence.
+//   cargo_details[].estimated_pallets  ⚠ DISPATCH-AFFECTING. It is the
+//                               footprint unsized cargo is dispatched on;
+//                               without it the order routes to manual.
+//   cargo_details[].remark      display only
+//   cargo_details[].cartons     display only
+//   route_type_id               a label (id + name). Verified: never read by
+//                               dispatchEngine, incentiveEngine or tripFinalize.
+//                               ⚠ interplant work may change that.
+//
+// ── WHY EVERYTHING STILL GOES THROUGH APPROVAL ─────────────────────────────
+//
+// His matrix says ASSIGNED / requestor = "Can edit non-critical details /
+// request change" — two options. Only the second is built: PATCH /trips/:id
+// 409s on anything but `pending`, so once assigned this route is the only way
+// to change anything. That is STRICTER than he asked, in the safe direction,
+// and it was recorded as a deliberate deviation on PR #47.
+//
+// Owner ruling, 31 Jul 2026: leave it. The genuinely harmless set is only
+// remark and cartons (and arguably route_type) — sequence and
+// estimated_pallets are dispatch-affecting despite not being on his list — so a
+// direct-edit path would buy the requestor very little and is not worth
+// building until he says the approval load is a problem.
 
 /** The trip shape both change-request handlers need. */
 const changeRequestTripInclude = { stops: true, cargo_details: true } as const;

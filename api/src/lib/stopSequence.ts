@@ -28,6 +28,31 @@
  * something reasonable today, and there is nothing to gain by refusing: the
  * client's INTENT is an order, and an order is exactly what this recovers. The
  * result is always contiguous, unique and 1-based, whatever came in.
+ *
+ * ── ⚠ SEQUENCE IS DISPATCH-AFFECTING UNDER A NAME THE CLIENT WOULD NOT USE ──
+ *
+ * Mr. Teh's A19 list (29 Jul 2026) names what a requestor must not change once
+ * a lorry is assigned: "Delivery location / Delivery date/time / Pallet
+ * quantity / Pallet size / Priority / Customer". Stop ORDER is not on it.
+ *
+ * It belongs on it. His stated criterion is "information that affects
+ * auto-dispatch", and reordering stops changes which stop is FIRST — which is
+ * what primaryZone reads, which is what locks an A1/A2 run to PND 1888, which
+ * is what sets the RM-per-point rate the trip pays. He would not think to name
+ * "sequence"; that does not make it non-critical, it makes it a gap in the list
+ * rather than a decision.
+ *
+ * Consequence, and the reason this note is here rather than only in a PR: the
+ * unbuilt half of A19 is a DIRECT-EDIT path for "non-critical details" on an
+ * assigned booking. Anyone building it must NOT infer the non-critical set by
+ * subtracting his six names from updateTripSchema. That subtraction yields
+ * sequence, estimated_pallets, remark, cartons and route_type — and the first
+ * two are dispatch-affecting. The genuinely harmless set is remark and cartons,
+ * and arguably route_type (a label, verified unread by dispatch/pay today).
+ *
+ * Owner ruling, 31 Jul 2026: that path stays unbuilt until Mr. Teh says the
+ * approval load is a problem. Everything on an assigned booking goes through
+ * Request Change, which is stricter than he asked, in the safe direction.
  */
 
 export interface IncomingStop {
