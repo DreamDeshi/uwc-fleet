@@ -666,20 +666,52 @@ model Consignee {
   is_active          Boolean @default(true)
   created_by         String? // requestor can self-add
   created_by_user    User?   @relation("ConsigneeCreatedBy", fields: [created_by], references: [id])
-  // ── Geocoded position (scripts/geocode-consignees.ts, Geoapify) ──────
+  // ── Geocoded position (lib/geocodeConsignee.ts + scripts/geocode-google.ts) ──
   // All THREE are nullable and additive: a consignee with no geocode must behave
-  // exactly as before (destination = its zone centroid). Populated offline, never
-  // at request time — there is no runtime geocoding provider.
+  // exactly as before (destination = its zone centroid).
   //
-  // `geocode_match_type` is Geoapify's own match_type and is the GATE, not a
-  // decoration. Only `full_match` and `match_by_street` are real positions;
-  // `match_by_postcode` means the street was NOT found and the point is a postcode
-  // centroid — callers must treat that as NO geocode and fall back to the zone,
-  // exactly like a ghosted fleet-map marker or a stale RouteLeg.
+  // ── PRESENCE OF THE COORDINATES IS THE GATE ────────────────────────────────
   //
-  // ⚠ Geoapify's `confidence` is deliberately NOT stored. It lies: FRONTKEN came
-  // back conf=1.00 on what is plainly a postcode centroid. match_type is the
-  // honest field; storing confidence would invite someone to gate on it.
+  // A non-null lat/lng pair is a real building. NULL means fall back to the zone
+  // centroid. That is the whole rule, and it is the ONLY rule readers get.
+  //
+  // The precision gate is applied at WRITE time, which is why readers need no
+  // second check: lib/geocodeConsignee stores coordinates for ROOFTOP and
+  // RANGE_INTERPOLATED only, and writes NULL coords for anything coarser, for a
+  // failure, and for every member of a cluster that resolved to one shared point
+  // (a demoted duplicate). services/consigneeUpdate additionally clears all
+  // three columns when an admin edits the address, since a stored position is a
+  // statement about the address it was looked up from.
+  //
+  // ⚠ NEVER GATE ON `geocode_match_type`. It records the provider's verbatim
+  // verdict for provenance and is NOT a precision signal, because it carries
+  // FOUR different vocabularies depending on what last wrote the row:
+  //   Geoapify   `full_match` / `match_by_street` / `match_by_postcode`
+  //              (legacy rows from the retired scripts/geocode-consignees.ts)
+  //   Google     `ROOFTOP` / `RANGE_INTERPOLATED` / `GEOMETRIC_CENTER` /
+  //              `APPROXIMATE` / `ZERO_RESULTS`  (current)
+  //   `driver_fix`  scripts/self-heal-coords.ts
+  //   NULL       never attempted, or cleared by an address edit
+  // A reader matching on any one of those silently mis-handles rows written by
+  // the other three. lib/geo.ts, lib/earlyTap.ts, mobile/src/types.ts and
+  // reports.ts all say so at their own call sites; this comment used to say the
+  // OPPOSITE, naming match_type "the GATE", and was left behind by the Geoapify
+  // → Google migration.
+  //
+  // The one legitimate read is in routes/consignees `/coverage`, and it is not a
+  // gate: match_type IS NULL with no coords distinguishes "never geocoded"
+  // (a run would fix it) from "asked and declined" (a run would not).
+  //
+  // ⚠ Geoapify's `confidence` was deliberately never stored. It lied: FRONTKEN
+  // came back conf=1.00 on what is plainly a postcode centroid. The lesson
+  // outlived the provider — do not add a confidence column for Google either.
+  //
+  // ⚠ NOT ONLY OFFLINE any more (owner request, 27 Jul 2026). This comment used
+  // to promise "populated offline, never at request time — there is no runtime
+  // geocoding provider". A new consignee now geocodes ONCE at creation, on the
+  // create route, FIRE-AND-FORGET: it is never awaited, and a failure or a
+  // missing GOOGLE_MAPS_KEY leaves the row exactly as before (null coords, zone
+  // fallback). It must never make consignee creation fail or block.
   //
   // Float (not Decimal like LocationLog) is intentional and sufficient: a double
   // holds ~1cm of precision at these latitudes, and these are static building
