@@ -1,3 +1,4 @@
+import { numberFromEnv } from "./envNumbers";
 /**
  * Consolidation ("empty-mile") savings — a sustainability KPI.
  *
@@ -39,16 +40,12 @@ export interface ConsolidationConfig {
   co2ePerLitre: number; // diesel tailpipe factor
 }
 
-function numEnv(name: string, fallback: number): number {
-  const n = Number(process.env[name]);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
 
 export function defaultConsolidationConfig(): ConsolidationConfig {
   return {
-    kmPerDelivery: numEnv("EST_KM_PER_DELIVERY", 35),
-    litresPer100km: numEnv("EST_L_PER_100KM", 30),
-    co2ePerLitre: numEnv("FUEL_CO2E_KG_PER_LITRE", 2.68),
+    kmPerDelivery: numberFromEnv("EST_KM_PER_DELIVERY", 35),
+    litresPer100km: numberFromEnv("EST_L_PER_100KM", 30),
+    co2ePerLitre: numberFromEnv("FUEL_CO2E_KG_PER_LITRE", 2.68),
   };
 }
 

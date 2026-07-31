@@ -94,7 +94,15 @@ export function haversineKm(a: LatLng, b: LatLng): number {
   const lat2 = toRad(b.latitude);
   const h =
     Math.sin(dLat / 2) ** 2 + Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
-  return Math.round(2 * R * Math.asin(Math.sqrt(h)));
+  // PRECISE, not rounded. This function is an api↔mobile twin
+  // (api/tests/geoMirror.test.ts), and the two copies used to differ by exactly
+  // this Math.round — the same name returning 26 here and 25.923... there.
+  //
+  // Precision is the correct SHARED semantics, and the api side proves it:
+  // lib/earlyTap compares against a 500 METRE radius, which a km-rounded value
+  // cannot express at all. Rounding is presentation, so it now happens at the
+  // one place that displays a distance (ActiveTripScreen), not inside the rule.
+  return 2 * R * Math.asin(Math.sqrt(h));
 }
 
 function toRad(deg: number): number {

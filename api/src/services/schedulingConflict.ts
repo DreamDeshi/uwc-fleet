@@ -16,12 +16,7 @@
 
 // Minutes either side of the new pickup within which another trip for the same
 // driver/truck counts as a conflict. Override with ASSIGNMENT_CONFLICT_BUFFER_MIN.
-function minutesFromEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === "") return fallback;
-  const n = Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : fallback;
-}
+import { minutesFromEnv } from "../lib/envNumbers";
 
 export const ASSIGNMENT_CONFLICT_BUFFER_MIN = minutesFromEnv("ASSIGNMENT_CONFLICT_BUFFER_MIN", 120);
 export const ASSIGNMENT_CONFLICT_BUFFER_MS = ASSIGNMENT_CONFLICT_BUFFER_MIN * 60 * 1000;

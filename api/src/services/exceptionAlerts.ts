@@ -1,6 +1,7 @@
 import { prisma } from "../lib/prisma";
 import { sendPushNotifications } from "../lib/pushNotifications";
 import { exceptionsEnabled } from "../lib/featureFlags";
+import { minutesFromEnv } from "../lib/envNumbers";
 
 // Overdue-open-exception alert sweep (failed-delivery plan, [R] alert-only).
 //
@@ -20,12 +21,6 @@ import { exceptionsEnabled } from "../lib/featureFlags";
 // routes): while the feature is dark this sweep does nothing, and flipping the
 // flag needs no redeploy.
 
-function minutesFromEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === "") return fallback;
-  const n = Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : fallback;
-}
 
 // How long an exception may stay open before admins are pinged. Override with
 // EXCEPTION_ALERT_THRESHOLD_MINUTES; defaults to 30 minutes.
