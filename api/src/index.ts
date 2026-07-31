@@ -1,3 +1,10 @@
+// FIRST, before anything else is required. Sentry's instrumentation can only
+// see modules loaded after it initialises, and a crash during startup — the
+// worst kind, because the service never comes up — is only reported if the
+// client already exists. No-ops entirely without SENTRY_DSN.
+import { initSentry, flushSentry } from "./lib/sentry";
+initSentry();
+
 import { app } from "./app";
 import { startPendingTripAlerts } from "./services/pendingTripAlerts";
 import { startRateMaturation } from "./services/pendingRates";
@@ -40,3 +47,17 @@ app.listen(PORT, () => {
   // FEATURE_EXCEPTIONS is off — the flag is read per sweep.
   startExceptionAlerts();
 });
+
+// Railway sends SIGTERM on every redeploy. Sentry buffers events, so without a
+// flush the reports from the seconds before a restart — often the interesting
+// ones, because a crash loop restarts constantly — are dropped on exit.
+//
+// Registered LAST, and it re-exits itself: adding the first SIGTERM/SIGINT
+// listener overrides Node's default terminate-on-signal, so a handler that
+// forgot to exit would leave the container hanging until Railway killed it.
+// No-op without a DSN, and the exit happens either way.
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.on(signal, () => {
+    void flushSentry(2000).finally(() => process.exit(0));
+  });
+}
