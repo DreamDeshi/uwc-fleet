@@ -510,6 +510,7 @@
     "templateName": "Template name",
     "templateNamePlaceholder": "e.g. Weekly Jabil run",
     "templateSaved": "Template saved.",
+    "templateNeedsUpdate": "This saved template was made before the cargo options changed — please complete the highlighted step.",
     "changeRequestedToast": "Change request sent to the office for approval."
   },
   "bookingDetail": {

@@ -510,6 +510,7 @@
     "templateName": "Nama templat",
     "templateNamePlaceholder": "cth. Larian mingguan Jabil",
     "templateSaved": "Templat disimpan.",
+    "templateNeedsUpdate": "Templat tersimpan ini dibuat sebelum pilihan kargo berubah — sila lengkapkan langkah yang ditandakan.",
     "changeRequestedToast": "Permintaan perubahan dihantar ke pejabat untuk kelulusan."
   },
   "bookingDetail": {

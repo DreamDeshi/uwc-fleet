@@ -48,11 +48,16 @@ import {
   loadTemplates,
   persistTemplates,
   palletsMap,
-  palletQtysFor,
   upsertTemplate,
   removeTemplate,
+  templateToForm,
   type BookingTemplate,
 } from "../../lib/bookingTemplates";
+import {
+  firstBookingIssue,
+  STEP_CONFIRM,
+  type BookingDraft,
+} from "../../lib/bookingSteps";
 import {
   pickupToSlot,
   tripRemarks,
@@ -402,20 +407,38 @@ export function BookingFormScreen() {
   // rebook). Pallets are rebuilt from the size→qty map, so a template still maps
   // to the right rows even if PALLET_SIZES is reordered later.
   const applyTemplate = (tpl: BookingTemplate) => {
-    setError(null);
-    if (tpl.routeTypeId) setRouteTypeId(tpl.routeTypeId);
-    setStops(tpl.stops ?? []);
-    setPalletQtys(palletQtysFor(tpl, PALLET_SIZES));
+    // ONE resolver for the values AND for the landing step, so the form cannot
+    // show a finished-looking Confirm for a draft it knows is incomplete.
+    const form = templateToForm(tpl, PALLET_SIZES);
+    if (form.routeTypeId) setRouteTypeId(form.routeTypeId);
+    setStops(form.stops);
+    setPalletQtys(form.palletQtys);
     setLegacyCargo([]); // templates only carry current bookable sizes
-    setBoxQty(tpl.boxQty ?? tpl.cartonQty ?? 0);
-    setDimW(tpl.dimW ?? "");
-    setDimL(tpl.dimL ?? "");
-    setDimQty(tpl.dimQty ?? 1);
-    // Map a legacy on-disk cargoType (carton/others) onto the new tabs.
-    const ct = tpl.cargoType;
-    setCargoType(ct === "carton" ? "box" : ct === "others" ? "custom" : ct);
-    setRemarks(tpl.remarks ?? "");
-    setStep(STEPS.length - 1); // jump to Confirm — review before submit
+    setBoxQty(form.boxQty);
+    setDimW(form.dimW);
+    setDimL(form.dimL);
+    setDimQty(form.dimQty);
+    setCargoType(form.cargoType);
+    setRemarks(form.remarks);
+
+    // A template stored before the cargo vocabulary changed can resolve to an
+    // UNSUBMITTABLE draft (a free-text "others" size has no width × length; a
+    // 1×1/1×2 pallet list is no longer bookable). Land where it can be fixed
+    // and say why, instead of on a Confirm the server would reject.
+    const loaded: BookingDraft = {
+      routeTypeId: form.routeTypeId ?? routeTypeId,
+      stopCount: form.stops.length,
+      cargoType: form.cargoType,
+      totalPallets: form.palletQtys.reduce((a, b) => a + b, 0),
+      boxQty: form.boxQty,
+      dimsOk:
+        isValidDimension(Number(form.dimW)) &&
+        isValidDimension(Number(form.dimL)) &&
+        form.dimQty > 0,
+    };
+    const issue = firstBookingIssue(loaded, STEP_CONFIRM);
+    setError(issue ? t("booking.templateNeedsUpdate") : null);
+    setStep(issue ? issue.step : STEPS.length - 1);
   };
 
   const saveCurrentTemplate = async () => {
@@ -465,17 +488,27 @@ export function BookingFormScreen() {
     }
   }, [isEdit, editTrip]);
 
+  // The live draft, in the shape lib/bookingSteps judges.
+  const draft: BookingDraft = {
+    routeTypeId,
+    stopCount: stops.length,
+    cargoType,
+    totalPallets,
+    boxQty,
+    dimsOk,
+  };
+
+  // Validate every step UP TO the current one, never just the current one — the
+  // template and rebook shortcuts jump straight to Confirm, and the old
+  // current-step-only check let them submit past both earlier steps. See the
+  // header of lib/bookingSteps.ts.
   const validateStep = (): string | null => {
-    if (step === 0) {
-      if (!routeTypeId) return t("booking.selectRouteType");
-      if (stops.length === 0) return t("booking.selectConsignee");
-    }
-    if (step === 1) {
-      if (cargoType === "pallet" && totalPallets === 0) return t("booking.addCargo");
-      if (cargoType === "box" && boxQty === 0) return t("booking.addCargo");
-      if ((cargoType === "crate" || cargoType === "rack" || cargoType === "custom") && !dimsOk) return t("booking.addCargoDims");
-    }
-    return null;
+    const issue = firstBookingIssue(draft, step);
+    if (!issue) return null;
+    // Send the requestor to the step that can actually fix it — landing on
+    // Confirm with a message about cargo is a dead end.
+    if (issue.step !== step) setStep(issue.step);
+    return t(issue.key);
   };
 
   const buildCargo = () => {
