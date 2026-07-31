@@ -59,44 +59,62 @@ router.get("/favicon.png", (_req, res) => {
   res.type("png").send(UWC_FAVICON_PNG);
 });
 
-router.get("/:token", async (req, res) => {
+/**
+ * ⚠ `next` IS LOAD-BEARING HERE, NOT DECORATION.
+ *
+ * This is Express 4: it does not follow a returned promise, so a rejection from
+ * an async handler NEVER reaches errorHandler. Without the try/catch below the
+ * request simply hangs until the client gives up — no 500, no `console.error`,
+ * and no Sentry event. The failure would be invisible to the monitoring
+ * installed for exactly this purpose, which is worse than having no monitoring,
+ * because the dashboard would be quietly clean while the page was down.
+ *
+ * This handler was the ONE async route in src/routes without the bridge (77
+ * handlers, 76 correct by convention alone). tests/asyncRouteBridging enforces
+ * it now rather than leaving it to discipline.
+ */
+router.get("/:token", async (req, res, next) => {
   const tripId = verifyTrackingToken(req.params.token);
   const notFound = () =>
     res.status(404).type("html").send(html(`<div class="brand">UWC Delivery</div><h1>Not found</h1><p class="muted">This tracking link is invalid or has expired.</p>`));
 
   if (!tripId) return notFound();
-  const trip = await prisma.trip.findUnique({
-    where: { id: tripId },
-    select: {
-      ticket_number: true,
-      status: true,
-      stops: { orderBy: { sequence: "asc" }, select: { status: true, consignee: { select: { area: true } } } },
-    },
-  });
-  if (!trip) return notFound();
+  try {
+    const trip = await prisma.trip.findUnique({
+      where: { id: tripId },
+      select: {
+        ticket_number: true,
+        status: true,
+        stops: { orderBy: { sequence: "asc" }, select: { status: true, consignee: { select: { area: true } } } },
+      },
+    });
+    if (!trip) return notFound();
 
-  const delivered = trip.stops.filter((s) => s.status === "delivered").length;
-  const total = trip.stops.length;
-  // A delivered-family trip with undelivered stops is a PARTIAL abort (28 Jul
-  // partial-pay rule): the label must not claim "Delivered" for stops that
-  // never happened — the recipient reads this page to know what arrived.
-  const deliveredFamily = trip.status === "pending_approval" || trip.status === "completed";
-  const partial = deliveredFamily && delivered < total;
-  const label = partial ? "Partially delivered" : (STATUS_LABEL[trip.status] ?? trip.status);
-  const cls =
-    label === "Delivered" ? "status done" : label === "Cancelled" ? "status off" : partial ? "status part" : "status";
-  const areas = [...new Set(trip.stops.map((s) => s.consignee.area).filter(Boolean))].join(", ");
+    const delivered = trip.stops.filter((s) => s.status === "delivered").length;
+    const total = trip.stops.length;
+    // A delivered-family trip with undelivered stops is a PARTIAL abort (28 Jul
+    // partial-pay rule): the label must not claim "Delivered" for stops that
+    // never happened — the recipient reads this page to know what arrived.
+    const deliveredFamily = trip.status === "pending_approval" || trip.status === "completed";
+    const partial = deliveredFamily && delivered < total;
+    const label = partial ? "Partially delivered" : (STATUS_LABEL[trip.status] ?? trip.status);
+    const cls =
+      label === "Delivered" ? "status done" : label === "Cancelled" ? "status off" : partial ? "status part" : "status";
+    const areas = [...new Set(trip.stops.map((s) => s.consignee.area).filter(Boolean))].join(", ");
 
-  res.type("html").send(
-    html(
-      `<div class="brand">UWC Delivery</div>` +
-        `<div class="ticket">${esc(trip.ticket_number)}</div>` +
-        `<span class="${cls}">${esc(label)}</span>` +
-        `<div class="row"><span class="muted">Stops delivered</span><span>${delivered} / ${total}</span></div>` +
-        (areas ? `<div class="row"><span class="muted">Destination</span><span>${esc(areas)}</span></div>` : "") +
-        `<div class="foot">Live delivery status · UWC Berhad</div>`
-    )
-  );
+    res.type("html").send(
+      html(
+        `<div class="brand">UWC Delivery</div>` +
+          `<div class="ticket">${esc(trip.ticket_number)}</div>` +
+          `<span class="${cls}">${esc(label)}</span>` +
+          `<div class="row"><span class="muted">Stops delivered</span><span>${delivered} / ${total}</span></div>` +
+          (areas ? `<div class="row"><span class="muted">Destination</span><span>${esc(areas)}</span></div>` : "") +
+          `<div class="foot">Live delivery status · UWC Berhad</div>`
+      )
+    );
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;
