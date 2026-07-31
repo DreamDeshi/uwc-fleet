@@ -161,6 +161,12 @@ export function EarningsScreen({ embedded = false }: { embedded?: boolean } = {}
             <EmptyState message={t("earnings.noEarnings")} icon="cash-outline" />
           ) : (
             <Card padded={false} style={{ overflow: "hidden" }}>
+              {data.truncated ? (
+                /* Say it out loud. A money list that just stops, next to a
+                   month total the driver cannot reconcile against it, is the
+                   same class of defect as a total that just stops. */
+                <Text style={styles.truncatedNote}>{t("earnings.listTruncated")}</Text>
+              ) : null}
               {data.trips.map((tr, i) => (
                 <TouchableOpacity
                   key={tr.id}
@@ -264,6 +270,13 @@ const styles = StyleSheet.create({
   breakdownTitle: { fontSize: 15, fontWeight: "700", color: colors.navy, marginTop: 20, marginBottom: 12 },
   row: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 14, gap: 10 },
   rowIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
+  truncatedNote: {
+    fontSize: 12,
+    color: colors.textMuted,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 2,
+  },
   divider: { borderBottomWidth: 1, borderBottomColor: colors.bg },
   rowRoute: { fontSize: 14, fontWeight: "700", color: colors.navy },
   rowMetaLine: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 3, flexWrap: "wrap" },

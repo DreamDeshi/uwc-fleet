@@ -224,6 +224,7 @@
     "deliveredMeta": "送达于 {{when}}",
     "tripsCount": "{{count}} 个行程",
     "breakdown": "行程明细",
+    "listTruncated": "仅显示最近的行程 — 上方的本月总额已计入全部。",
     "noEarnings": "暂无已完成的行程。",
     "thisWeek": "本周",
     "totalDistance": "总里程",

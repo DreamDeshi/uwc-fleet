@@ -224,6 +224,7 @@
     "deliveredMeta": "Dihantar {{when}}",
     "tripsCount": "{{count}} perjalanan",
     "breakdown": "Pecahan Perjalanan",
+    "listTruncated": "Menunjukkan trip terkini sahaja — jumlah bulan di atas mengira semuanya.",
     "noEarnings": "Belum ada perjalanan selesai.",
     "thisWeek": "Minggu Ini",
     "totalDistance": "Jumlah Jarak",

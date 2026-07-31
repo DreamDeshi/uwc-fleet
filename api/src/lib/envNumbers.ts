@@ -27,6 +27,28 @@
  * than `Number("") === 0` silently disabling the threshold.
  */
 export function minutesFromEnv(name: string, fallback: number): number {
+  return positiveInt(name, fallback);
+}
+
+/**
+ * A positive INTEGER count of things — rows, items, retries.
+ *
+ * Same rule as minutesFromEnv, named separately because the callers are not
+ * minutes and a helper called "minutes" returning a row limit is the kind of
+ * name that misleads a reader later. Both delegate to one implementation, so
+ * this is two NAMES for one behaviour — the safe direction. (The dangerous
+ * direction, two BEHAVIOURS under one name, is what nonNegativeMinutesFromEnv
+ * below exists to undo.)
+ *
+ * A float would be worse than useless here: `EARNINGS_LIST_LIMIT=200.5` makes
+ * `take` and `slice` disagree about the boundary and turns a truncation flag
+ * into a comparison against a fractional row.
+ */
+export function countFromEnv(name: string, fallback: number): number {
+  return positiveInt(name, fallback);
+}
+
+function positiveInt(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === "") return fallback;
   const n = Number(raw);

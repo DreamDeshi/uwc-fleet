@@ -3,6 +3,7 @@ import {
   minutesFromEnv,
   nonNegativeMinutesFromEnv,
   numberFromEnv,
+  countFromEnv,
 } from "../src/lib/envNumbers";
 
 /**
@@ -86,6 +87,33 @@ describe("numberFromEnv — positive finite, floats allowed", () => {
     for (const v of ["-1", "Infinity", "-Infinity", "abc", ""]) {
       set(v);
       expect(numberFromEnv(VAR, 35), `value ${JSON.stringify(v)}`).toBe(35);
+    }
+  });
+});
+
+describe("countFromEnv — a row count, not a physical quantity", () => {
+  it("takes a positive integer and rejects a float", () => {
+    // A fractional limit makes `take` and `slice` disagree about the boundary.
+    set("200");
+    expect(countFromEnv(VAR, 50)).toBe(200);
+    set("200.5");
+    expect(countFromEnv(VAR, 50)).toBe(50);
+  });
+
+  it("rejects zero, negatives and junk", () => {
+    for (const v of ["0", "-1", "abc", "", undefined]) {
+      set(v);
+      expect(countFromEnv(VAR, 50), `value ${JSON.stringify(v)}`).toBe(50);
+    }
+  });
+
+  it("agrees with minutesFromEnv — same rule, two honest names", () => {
+    // Deliberately two NAMES for one behaviour (the safe direction). The
+    // dangerous direction, two BEHAVIOURS under one name, is what
+    // nonNegativeMinutesFromEnv exists to undo.
+    for (const v of ["1", "200", "0", "-1", "2.5", "", undefined]) {
+      set(v);
+      expect(countFromEnv(VAR, 7), `value ${JSON.stringify(v)}`).toBe(minutesFromEnv(VAR, 7));
     }
   });
 });
