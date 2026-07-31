@@ -56,6 +56,21 @@ beforeAll(async () => {
   const err = new Error(
     "Can't reach database server at `postgresql://uwc:s3cr3tP4ss@host.railway.app:6543/railway?schema=public`"
   );
+  // ── THE PRODUCTION SEQUENCE, NOT JUST THE REPORTING CALL ──────────────────
+  // middleware/errorHandler.ts does `console.error(err)` and THEN reports. That
+  // console call becomes a breadcrumb holding the RAW Error instance, and the
+  // breadcrumb rides along on the event captured immediately after.
+  //
+  // Testing captureServerError on its own misses it completely — which is
+  // exactly what happened: this file was green while every reported 500 shipped
+  // a second, unscrubbed copy of its own message in the breadcrumbs. scrubDeep
+  // skipped it because an Error's prototype is not Object.prototype.
+  console.error(
+    new Error(
+      "breadcrumb copy: postgresql://uwc:BR34DCRUMBP4SS@host.railway.app:6543/railway — driver +60127778888"
+    )
+  );
+
   captureServerError(err, {
     method: "GET",
     originalUrl: "/api/v1/consignees?search=KEYSIGHT&zone=P1",
@@ -92,8 +107,34 @@ describe("the Sentry envelope leaves nothing behind", () => {
     ["session cookie", "session=abc123"],
     ["Malaysian phone", "60123456789"],
     ["customer name in a query", "KEYSIGHT"],
+    ["password from a console.error BREADCRUMB", "BR34DCRUMBP4SS"],
+    ["phone from a console.error BREADCRUMB", "60127778888"],
   ])("never sends the %s", (_label, needle) => {
     expect(wire()).not.toContain(needle);
+  });
+
+  it("actually recorded a console breadcrumb — else the two above are vacuous", () => {
+    // If the console integration is ever removed or reordered, the breadcrumb
+    // assertions would pass by absence rather than by scrubbing. Say so loudly.
+    const events = wire()
+      .split("\n")
+      .filter((l) => l.trim().startsWith("{"))
+      .map((l) => {
+        try {
+          return JSON.parse(l) as { breadcrumbs?: { category?: string }[] };
+        } catch {
+          return null;
+        }
+      })
+      .filter((o): o is { breadcrumbs?: { category?: string }[] } => o !== null);
+
+    const consoleCrumbs = events
+      .flatMap((e) => e.breadcrumbs ?? [])
+      .filter((b) => b.category === "console");
+    expect(
+      consoleCrumbs.length,
+      "no console breadcrumb was attached — the breadcrumb leak assertions are now vacuous"
+    ).toBeGreaterThan(0);
   });
 
   it.each([
