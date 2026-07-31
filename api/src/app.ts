@@ -70,8 +70,20 @@ if (RATE_LIMIT_MAX > 0) {
 }
 app.use(express.json());
 
+/**
+ * Liveness, plus WHICH BUILD IS ANSWERING.
+ *
+ * `release` closes a real gap: after a merge there was no way to confirm from
+ * outside that the new code was actually serving. "It deployed" was an inference
+ * from the merge, not an observation — and on 1 Aug the only thing that could
+ * answer it was a temporary debug route, which then had to be removed.
+ *
+ * Safe to expose: the SHA identifies a commit in a PUBLIC repository, so it
+ * reveals nothing that `git log` does not. Null locally, where Railway does not
+ * set the variable.
+ */
 app.get("/api/v1/health", (_req, res) => {
-  res.json({ status: "ok" });
+  res.json({ status: "ok", release: process.env.RAILWAY_GIT_COMMIT_SHA ?? null });
 });
 
 app.use("/api/v1/auth", authRoutes);

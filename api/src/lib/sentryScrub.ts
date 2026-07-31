@@ -32,12 +32,41 @@
  *    requestor (lib/phone normalises to +60…), so one in a message is both PII
  *    and half of a credential.
  *
+ * 5. THE CLIENT IP IS PERSONAL DATA, AND `sendDefaultPii: false` DOES NOT COVER
+ *    IT. That flag governs `user.ip_address`; the address ALSO arrives as
+ *    `x-forwarded-for` and half a dozen other spellings, which are just headers
+ *    as far as the SDK is concerned. Railway forwards the real client address
+ *    and the app trusts one proxy hop, so on production that is a driver's home
+ *    or mobile connection, sitting on the same event as their user id.
+ *
+ * ⚠ THE COUNT HAS ONLY EVER GONE UP, AND NEVER FROM READING THIS FILE. Items 5
+ * and the stack-frame and breadcrumb channels were all found by capturing the
+ * actual wire payload while the whole suite was green. Treat this list as the
+ * things known to leak, never as the things that can.
+ *
  * Anything not understood is left alone deliberately: this scrubs KNOWN
  * dangerous shapes rather than trying to whitelist safe text, and the callers
  * (sentry.ts) already withhold the categories that are dangerous wholesale.
  */
 
-/** Header names never forwarded, whatever their value. */
+/**
+ * Header names never forwarded, whatever their value.
+ *
+ * ⚠ THE IP FAMILY IS HERE BECAUSE AN IP ADDRESS IS PERSONAL DATA. Railway
+ * terminates TLS at its proxy and forwards the client address, and the app sets
+ * `trust proxy`, so in production the first entry of `x-forwarded-for` is A
+ * DRIVER'S REAL IP — a home or roadside mobile connection, tied to a named
+ * employee by the `user.id` on the same event.
+ *
+ * `sendDefaultPii: false` does NOT cover these. It governs `user.ip_address`
+ * (verified null on the wire) and nothing else; the headers arrive through
+ * `scrubHeaders`, which until now had no rule for them. Two different channels
+ * that the phrase "PII is off" reads as one.
+ *
+ * Redacting by NAME rather than by value shape also covers IPv6 for free, which
+ * matters because an IPv6 regex cannot be written safely — `(?:[0-9a-f]{1,4}:)`
+ * repeated matches an ordinary timestamp like `00:00:11`.
+ */
 export const REDACTED_HEADERS: ReadonlySet<string> = new Set([
   "authorization",
   "cookie",
@@ -45,6 +74,17 @@ export const REDACTED_HEADERS: ReadonlySet<string> = new Set([
   "x-api-key",
   "x-auth-token",
   "proxy-authorization",
+  // The client-IP family. Every proxy spells it differently, and one unredacted
+  // spelling is as good as none.
+  "x-forwarded-for",
+  "x-real-ip",
+  "x-client-ip",
+  "x-cluster-client-ip",
+  "cf-connecting-ip",
+  "true-client-ip",
+  "fastly-client-ip",
+  "forwarded",
+  "x-forwarded",
 ]);
 
 export const REDACTED = "[redacted]";
@@ -67,6 +107,22 @@ const BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi;
 const EMAIL = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
 
 /**
+ * IPv4 in FREE TEXT — the header family is redacted by name above, but an
+ * address also reaches a message or a stack frame whenever anything logs one.
+ *
+ * IPv4 only, deliberately. A general IPv6 pattern is repeated hex groups
+ * separated by colons, which matches an ordinary timestamp (`00:00:11`) and a
+ * host:port pair; over-scrubbing every log line to catch a rare free-text IPv6
+ * is a bad trade when the headers — where an IPv6 client address actually
+ * arrives — are already redacted by name. Documented gap, not an oversight.
+ *
+ * Loopback and private ranges are redacted too. Splitting "harmless" addresses
+ * from client ones is exactly the judgement this file refuses to make elsewhere
+ * (see the query-string note), and it would get it wrong once.
+ */
+const IPV4 = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
+
+/**
  * Redact the known-dangerous shapes from a free-text string (an exception
  * message, a stack frame, a breadcrumb).
  *
@@ -80,6 +136,7 @@ export function scrubText(value: string): string {
     .replace(BEARER, `Bearer ${REDACTED}`)
     .replace(MY_PHONE, REDACTED)
     .replace(EMAIL, REDACTED)
+    .replace(IPV4, REDACTED)
     .replace(EMBEDDED_QUERY, (_m, key: string) => `${key}=${REDACTED}`);
 }
 

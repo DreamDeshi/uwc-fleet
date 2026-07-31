@@ -70,6 +70,20 @@ describe("scrubText — the four things that would actually leak", () => {
       "TRIP_NOT_FOUND for cms8azbyq00gph2ax766fxqf5 (TKT-20260731-004, zone A2, PND 1888) at services/tripFinalize.ts:123";
     expect(scrubText(msg)).toBe(msg);
   });
+
+  it("IPv4 in free text — an address is personal data wherever it surfaces", () => {
+    expect(scrubText("request from 203.0.113.77 failed")).not.toContain("203.0.113.77");
+    // Loopback and private ranges go too. Deciding which addresses are "harmless"
+    // is the judgement this file refuses to make about query values either.
+    expect(scrubText("pool at 10.0.0.5 and 127.0.0.1")).not.toMatch(/10\.0\.0\.5|127\.0\.0\.1/);
+  });
+
+  it("does NOT eat the things an IPv4 pattern is most likely to over-reach into", () => {
+    // The real cost of this rule would be a stack frame or a version going dark.
+    // A timestamp is the specific reason IPv6 is deliberately NOT matched.
+    const keep = "at tripFinalize.ts:123:45 on 2026-08-01 00:00:11 runtimeVersion 1.0.0 v10.2.3";
+    expect(scrubText(keep)).toBe(keep);
+  });
 });
 
 describe("scrubHeaders", () => {
@@ -87,6 +101,39 @@ describe("scrubHeaders", () => {
     // ...and keeps the ones that help diagnose.
     expect(out["user-agent"]).toBe("okhttp/4.9");
     expect(out["content-type"]).toBe("application/json");
+  });
+
+  it("redacts EVERY spelling of the client IP — one survivor is as good as none", () => {
+    // `sendDefaultPii: false` does not cover these. It governs user.ip_address;
+    // these are ordinary headers to the SDK, and Railway puts a driver's real
+    // address in them on production.
+    const out = scrubHeaders({
+      "X-Forwarded-For": "203.0.113.77, 10.0.0.5",
+      "x-real-ip": "203.0.113.77",
+      "CF-Connecting-IP": "203.0.113.77",
+      "true-client-ip": "203.0.113.77",
+      "x-client-ip": "203.0.113.77",
+      "x-cluster-client-ip": "203.0.113.77",
+      "fastly-client-ip": "203.0.113.77",
+      forwarded: "for=203.0.113.77;proto=https",
+      "x-forwarded": "203.0.113.77",
+      // Not personal: our own hostname, and it identifies the failing deployment.
+      "x-forwarded-host": "uwc-api-production.up.railway.app",
+    });
+
+    for (const [name, value] of Object.entries(out)) {
+      if (name === "x-forwarded-host") continue;
+      expect(value, `${name} still carries an address`).toBe(REDACTED);
+    }
+    expect(out["x-forwarded-host"]).toBe("uwc-api-production.up.railway.app");
+  });
+
+  it("an IPv6 client address is covered by the header rule, since no regex can be", () => {
+    // The documented gap: IPv6 in FREE TEXT is not matched, because a pattern
+    // for it also matches timestamps. Redacting by header NAME is what closes
+    // the channel an IPv6 client address actually arrives through.
+    const out = scrubHeaders({ "x-forwarded-for": "2001:db8::1a2b, ::1" });
+    expect(out["x-forwarded-for"]).toBe(REDACTED);
   });
 
   it("still scrubs the VALUE of a header not on the name list", () => {
