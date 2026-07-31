@@ -46,18 +46,13 @@
 // fields to get the wall-clock MYT parts (same convention as incentiveEngine).
 const MYT_OFFSET_MS = 8 * 60 * 60 * 1000;
 
-// Reads a non-negative-integer minutes value from an env var, falling back to
-// `fallback` if unset or invalid.
-function minutesFromEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === "") return fallback;
-  const n = Number(raw);
-  return Number.isInteger(n) && n >= 0 ? n : fallback;
-}
+// ZERO IS VALID here (OP_LOAD_MIN=0 is a real configuration), which is why this
+// reads nonNegativeMinutesFromEnv and NOT minutesFromEnv — see lib/envNumbers.
+import { nonNegativeMinutesFromEnv } from "../lib/envNumbers";
 
-export const OP_LOAD_MIN = minutesFromEnv("OP_LOAD_MIN", 30);
-export const OP_UNLOAD_MIN_PER_STOP = minutesFromEnv("OP_UNLOAD_MIN_PER_STOP", 20);
-export const OP_DRIVE_MIN_PER_LEG = minutesFromEnv("OP_DRIVE_MIN_PER_LEG", 45);
+export const OP_LOAD_MIN = nonNegativeMinutesFromEnv("OP_LOAD_MIN", 30);
+export const OP_UNLOAD_MIN_PER_STOP = nonNegativeMinutesFromEnv("OP_UNLOAD_MIN_PER_STOP", 20);
+export const OP_DRIVE_MIN_PER_LEG = nonNegativeMinutesFromEnv("OP_DRIVE_MIN_PER_LEG", 45);
 // Zone points that correspond to ONE flat OP_DRIVE_MIN_PER_LEG of driving —
 // a 3-point zone (Kulim/Penang tier) keeps the historical 45-minute leg.
 function baselineFromEnv(): number {

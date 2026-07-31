@@ -2,15 +2,10 @@ import { prisma } from "../lib/prisma";
 import { sendPushNotifications } from "../lib/pushNotifications";
 import { getDispatchMode } from "../lib/settings";
 import { autoDispatchTrip } from "./dispatchEngine";
+import { minutesFromEnv } from "../lib/envNumbers";
 
 // Reads a positive-integer minutes value from an env var, falling back to
 // `fallback` if the var is unset or not a valid positive integer.
-function minutesFromEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === "") return fallback;
-  const n = Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : fallback;
-}
 
 // How long a booking may sit unassigned before the engine retries auto-dispatch
 // and (failing that) alerts admins. Override with PENDING_ALERT_THRESHOLD_MINUTES

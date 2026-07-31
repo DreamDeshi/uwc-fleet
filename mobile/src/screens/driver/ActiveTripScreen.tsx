@@ -858,7 +858,7 @@ export function ActiveTripScreen() {
                           </Text>
                         </View>
                         <Text style={styles.stripKm}>
-                          {haversineKm(kmOrigin, consigneeDestination(s.consignee).coord)} {t("common.km")}
+                          {Math.round(haversineKm(kmOrigin, consigneeDestination(s.consignee).coord))} {t("common.km")}
                         </Text>
                       </View>
                       <Text style={styles.stripName} numberOfLines={2}>

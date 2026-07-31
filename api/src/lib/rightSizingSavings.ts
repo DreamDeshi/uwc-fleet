@@ -1,3 +1,4 @@
+import { numberFromEnv } from "./envNumbers";
 /**
  * Right-sizing ("smallest-fit") fuel savings — a sustainability KPI.
  *
@@ -29,20 +30,16 @@ export interface RightSizingConfig {
   co2ePerLitre: number;
 }
 
-function numEnv(name: string, fallback: number): number {
-  const n = Number(process.env[name]);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
 
 export function defaultRightSizingConfig(): RightSizingConfig {
   return {
     l100ByClass: {
-      "10t": numEnv("EST_L100_10T", 32),
-      "5t": numEnv("EST_L100_5T", 22),
-      "1t": numEnv("EST_L100_1T", 12),
+      "10t": numberFromEnv("EST_L100_10T", 32),
+      "5t": numberFromEnv("EST_L100_5T", 22),
+      "1t": numberFromEnv("EST_L100_1T", 12),
     },
-    kmPerTrip: numEnv("EST_KM_PER_TRIP", 35),
-    co2ePerLitre: numEnv("FUEL_CO2E_KG_PER_LITRE", 2.68),
+    kmPerTrip: numberFromEnv("EST_KM_PER_TRIP", 35),
+    co2ePerLitre: numberFromEnv("FUEL_CO2E_KG_PER_LITRE", 2.68),
   };
 }
 
