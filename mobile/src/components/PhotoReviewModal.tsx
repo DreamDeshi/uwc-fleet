@@ -1,8 +1,18 @@
-// Full-screen POD photo review — step 3 of the agreed driver flow (design:
-// `Driver Active Trip - Final Flow.dc.html`, screen 3). The in-app step between
-// the OS camera and the upload: it exists to catch a bad chop-sign photo WHILE
-// the driver is still standing at the consignee's counter, instead of the
-// office rejecting the POD hours later.
+// Full-screen photo review — the in-app step between the OS camera and the
+// upload. It exists to catch a bad photo WHILE the driver is still standing at
+// the consignee's counter, instead of the office rejecting it hours later.
+//
+// TWO FLOWS USE IT, which is why it is no longer called PodReviewModal:
+//
+//   POD          step 3 of the agreed driver flow (design: `Driver Active Trip
+//                - Final Flow.dc.html`, screen 3) — the default copy below.
+//   REPORT A     frame 20 of the driver design pack, whose note is literally
+//   PROBLEM      "Same viewer as the POD flow — keep or retake". Passing its own
+//                title/hints/confirm label is the whole difference; forking the
+//                component would have made two viewers that drift.
+//
+// The copy is PARAMETERISED WITH POD DEFAULTS rather than made required, so the
+// POD call site is untouched and cannot be broken by this generalisation.
 //
 // Exact values are taken from the design file, not guessed: dark chrome
 // `blueDark` #001a4d, photo surface `navy` #1A1F5E, 62px actions at flex
@@ -19,10 +29,13 @@ import { useTranslation } from "react-i18next";
 import { colors, layout, radius, type } from "../theme";
 import type { PickedPhoto } from "../lib/photo";
 
-export function PodReviewModal({
+export function PhotoReviewModal({
   photo,
   subtitle,
   uploading,
+  titleKey = "trip.podReviewTitle",
+  hintKeys = ["trip.podCheck1", "trip.podCheck2", "trip.podCheck3"],
+  confirmKey = "trip.podUse",
   onRetake,
   onUse,
   onCancel,
@@ -33,6 +46,11 @@ export function PodReviewModal({
   subtitle: string;
   /** True while the parent's upload is in flight — locks both actions. */
   uploading: boolean;
+  /** Copy overrides. Default to the POD flow's, so that call site is unchanged. */
+  titleKey?: string;
+  /** EXACTLY THREE — the layout is a fixed three-row checklist, not a list. */
+  hintKeys?: [string, string, string];
+  confirmKey?: string;
   onRetake: () => void;
   onUse: () => void;
   onCancel: () => void;
@@ -40,7 +58,7 @@ export function PodReviewModal({
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
 
-  const hints = [t("trip.podCheck1"), t("trip.podCheck2"), t("trip.podCheck3")];
+  const hints = hintKeys.map((k) => t(k));
 
   return (
     <Modal visible={photo !== null} animationType="slide" onRequestClose={onCancel}>
@@ -58,7 +76,7 @@ export function PodReviewModal({
               <Ionicons name="close" size={22} color={colors.white} />
             </TouchableOpacity>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.title}>{t("trip.podReviewTitle")}</Text>
+              <Text style={styles.title}>{t(titleKey)}</Text>
               <Text style={styles.subtitle} numberOfLines={1}>
                 {subtitle}
               </Text>
@@ -103,7 +121,7 @@ export function PodReviewModal({
               accessibilityRole="button"
             >
               <Ionicons name="checkmark" size={24} color={colors.white} />
-              <Text style={styles.useLabel}>{t("trip.podUse")}</Text>
+              <Text style={styles.useLabel}>{t(confirmKey)}</Text>
             </TouchableOpacity>
           </View>
         </View>

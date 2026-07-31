@@ -15,7 +15,7 @@
 // consent, reconcile-on-lost-response) is carried over unchanged — this is a
 // presentation rebuild. No money, dispatch or API code is touched. The one
 // behavioural addition is the POD REVIEW step: capture no longer uploads
-// straight away, it opens PodReviewModal and the upload runs on "Use photo".
+// straight away, it opens PhotoReviewModal and the upload runs on "Use photo".
 import React, { useRef, useState } from "react";
 import { Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -46,7 +46,7 @@ import { usePodOutboxItems } from "../../hooks/usePodOutbox";
 import { WebRefreshButton } from "../../components/WebRefreshButton";
 import { colors, layout, radius, shadow, type as typeScale } from "../../theme";
 import { Button } from "../../components/Button";
-import { PodReviewModal } from "../../components/PodReviewModal";
+import { PhotoReviewModal } from "../../components/PhotoReviewModal";
 import { footerStage, waitingForDelivered, requiresCustomsDoc, type StageFlags } from "../../lib/activeTripStage";
 import { LoadingState, ErrorState } from "../../components/States";
 import { PLANT_ORIGIN, regionFor, consigneeDestination, haversineKm } from "../../lib/geo";
@@ -964,7 +964,7 @@ export function ActiveTripScreen() {
       ) : null}
 
       {/* POD review — capture → check → upload (design screen 3) */}
-      <PodReviewModal
+      <PhotoReviewModal
         photo={review?.photo ?? null}
         subtitle={
           review
