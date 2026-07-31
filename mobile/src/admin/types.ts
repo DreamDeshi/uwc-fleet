@@ -387,6 +387,10 @@ export interface AttentionReport {
 export interface ConsigneeCoverage {
   total_active: number;
   missing_coords: number;
+  /** The subset of missing_coords a geocode run would actually fill — the rest
+   *  have already been asked and declined (coarse match, or a demoted
+   *  duplicate). Only this number justifies suggesting a run. */
+  never_geocoded: number;
   partial_coords: number;
 }
 

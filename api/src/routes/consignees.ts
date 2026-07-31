@@ -220,17 +220,50 @@ async function similarActiveConsignees(
 // self-heal-coords.ts run when this grows). Mirrors the self-heal script's
 // semantics: healable = BOTH coords null; exactly-one-null is a data anomaly
 // surfaced separately, never healed. Counts only — no write, no automation.
+//
+// ── WHY `missing_coords` ALONE IS NOT AN ACTION ────────────────────────────
+//
+// It used to be the only number, under copy promising "a geocode run would fill
+// them". For most of that count a run fills NOTHING, because the geocoder has
+// already been there and deliberately declined:
+//
+//   scripts/geocode-google.ts writes coords ONLY for ROOFTOP and
+//   RANGE_INTERPOLATED. A GEOMETRIC_CENTER / APPROXIMATE / ZERO_RESULTS answer
+//   is written back as NULL COORDS + the raw location_type, and so is every
+//   member of a cluster that resolved to one shared point (a demoted
+//   duplicate). Re-running returns the same verdict.
+//
+// So `geocode_match_type` is the discriminator, and it costs one more COUNT:
+//   match_type NULL + no coords -> NEVER ATTEMPTED. A run would fix these, and
+//     they are the ones that accumulate: every requestor self-add starts here,
+//     and so does every consignee whose address an admin has just corrected
+//     (services/consigneeUpdate clears the position when the address moves).
+//   match_type SET + no coords  -> ASKED AND DECLINED. A run changes nothing;
+//     these need a better address, not another lookup.
+//
+// ⚠ `geocode_match_type` is NOT a gate for READERS — routing and every other
+// consumer gate on the PRESENCE OF COORDS, because the vocabulary is
+// provider-specific (Geoapify's `match_by_postcode` era vs Google's
+// `location_type` today) and the WRITER is what guarantees a stored coordinate
+// is trustworthy. It is used here, and only here, to explain a null.
 router.get("/coverage", requireRole("admin"), async (_req, res, next) => {
   try {
-    const [totalActive, missingBoth, missingAny] = await Promise.all([
+    const noCoords = { is_active: true, latitude: null, longitude: null };
+    const [totalActive, missingBoth, missingAny, neverGeocoded] = await Promise.all([
       prisma.consignee.count({ where: { is_active: true } }),
-      prisma.consignee.count({ where: { is_active: true, latitude: null, longitude: null } }),
+      prisma.consignee.count({ where: noCoords }),
       prisma.consignee.count({ where: { is_active: true, OR: [{ latitude: null }, { longitude: null }] } }),
+      prisma.consignee.count({ where: { ...noCoords, geocode_match_type: null } }),
     ]);
     res.json({
       total_active: totalActive,
       missing_coords: missingBoth,
-      partial_coords: missingAny - missingBoth,
+      // The ACTIONABLE subset of missing_coords — what a geocode run would fill.
+      never_geocoded: neverGeocoded,
+      // Four unsynchronised COUNTs: a write landing between the second and the
+      // third makes this negative, and "-1 with half-missing coordinates" is a
+      // worse bug report than the anomaly it exists to report.
+      partial_coords: Math.max(missingAny - missingBoth, 0),
     });
   } catch (err) {
     next(err);

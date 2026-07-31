@@ -103,8 +103,10 @@ export function ConsigneesScreen() {
             </View>
           </>
         )}
-        {/* Geocode-coverage hint (read-only): when this grows, a manual
-            geocode/self-heal run is worth doing. Hidden at zero. */}
+        {/* Geocode-coverage hint (read-only). The count states the position gap;
+            the SUGGESTION to run the geocoder is attached only to
+            never_geocoded, because the rest have already been asked and
+            declined and a run would fill none of them. Hidden at zero. */}
         {coverage.data && coverage.data.missing_coords > 0 && (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
             <Ionicons name="location-outline" size={13} color={colors.textMuted} />
@@ -113,6 +115,9 @@ export function ConsigneesScreen() {
                 count: coverage.data.missing_coords,
                 total: coverage.data.total_active,
               })}
+              {coverage.data.never_geocoded > 0
+                ? ` · ${t("admin.consignees.coverageNeverGeocoded", { count: coverage.data.never_geocoded })}`
+                : ""}
               {coverage.data.partial_coords > 0
                 ? ` · ${t("admin.consignees.coveragePartial", { count: coverage.data.partial_coords })}`
                 : ""}
