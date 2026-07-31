@@ -21,6 +21,7 @@ import {
 } from "../services/tripCompletion";
 import { EARNING_STOP_SELECT, earnedInWindow } from "../services/undeliveredPay";
 import { attentionConfig, hoursSince } from "../services/attention";
+import { isFullyDelivered, isTripOnTime } from "../lib/performanceScore";
 import { earlyTapDistanceM, isEarlyTap } from "../lib/earlyTap";
 import { consolidationSavingsFromTotals } from "../lib/consolidationSavings";
 import { rightSizingSavings } from "../lib/rightSizingSavings";
@@ -32,19 +33,6 @@ const router = Router();
 router.use(requireAuth, requireRole("admin"));
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-// On-time proxy: every stop was delivered on (or before) the same MYT
-// calendar day it was picked up — i.e. the run didn't spill into the next day.
-// No scheduled per-stop ETA is stored, so this is the best honest signal of a
-// trip that completed as planned. Day binning is explicit MYT (lib/myt.ts),
-// matching the engine's trip-days regardless of the server's TZ env.
-function tripOnTime(pickup: Date, stops: { delivered_at: Date | null }[]): boolean {
-  const pickupDay = mytDayIndex(new Date(pickup));
-  return stops.every((s) => {
-    if (!s.delivered_at) return true;
-    return mytDayIndex(new Date(s.delivered_at)) <= pickupDay;
-  });
-}
 
 // ── GET /reports/dashboard — headline KPIs for the fleet dashboard ──
 router.get("/dashboard", async (_req, res, next) => {
@@ -134,12 +122,15 @@ router.get("/dashboard", async (_req, res, next) => {
     const monthCompleted = completedThisMonth.filter((t) =>
       inMytMonth(payAttributionInstant(t), { start: monthStart, end: monthEnd })
     );
-    const onTimeCount = monthCompleted.filter((t) =>
-      tripOnTime(t.pickup_datetime, t.stops)
-    ).length;
+    // ONE definition of on time, shared with the driver score (lib/
+    // performanceScore). This file used to keep its own copy of the predicate;
+    // the copies agreed only because this one pre-filters, and a second copy of
+    // a rule is how the e2e window bug survived its first fix.
+    const onTimeEligible = monthCompleted.filter((t) => isFullyDelivered(t.stops));
+    const onTimeCount = onTimeEligible.filter((t) => isTripOnTime(t.pickup_datetime, t.stops)).length;
     const onTimeRate =
-      monthCompleted.length > 0
-        ? Math.round((onTimeCount / monthCompleted.length) * 1000) / 10
+      onTimeEligible.length > 0
+        ? Math.round((onTimeCount / onTimeEligible.length) * 1000) / 10
         : null;
 
     res.json({

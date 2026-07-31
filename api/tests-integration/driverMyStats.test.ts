@@ -181,8 +181,44 @@ describe("driver My Stats agrees with itself and with payroll", () => {
     expect(stops.filter((s) => s.delivered_at === null)).toHaveLength(2);
 
     const score = await asDriver("/users/me/performance");
-    expect(score.total_completed).toBe(1); // FR-FM7's denominator is unchanged
-    expect(score.on_time_rate, "an abandoned run scored as on time").toBe(0);
+    // The abort still COUNTS as a completed trip (completion rate is a different
+    // question), but it is out of the on-time denominator entirely — nothing to
+    // judge, rather than a failure to be punctual.
+    expect(score.total_completed).toBe(1);
+    expect(score.on_time_rate).toBe(0); // empty denominator
+  });
+
+  it("BOTH SURFACES report the same on-time rate for the same two trips", async () => {
+    // THE DISAGREEMENT THE 31 JUL RULING SETTLED. One clean run plus one
+    // breakdown read 100% on the admin's dashboard and 50% on the driver's own
+    // My Stats, because the two computed the denominator differently. A
+    // driver-visible score must not depend on which screen you open.
+    const clean = await bookTrip(requestor, ["A2"], rt);
+    await approveTrip(admin, clean.id, driverId, DRIVERS.PND.plate);
+    await startTrip(driver, clean.id);
+    await arriveAndDeliver(driver, clean.id, clean.stops[0].id);
+    await approveIncentive(admin, clean.id);
+
+    const broken = await bookTrip(requestor, ["P1", "P2"], rt);
+    await approveTrip(admin, broken.id, driverId, DRIVERS.PND.plate);
+    await startTrip(driver, broken.id);
+    await arriveAndDeliver(driver, broken.id, stopsBySequence(broken)[0].id);
+    expect((await api().patch(`/api/v1/trips/${broken.id}/abort`).set(auth(admin))
+      .send({ reason: "breakdown" })).status).toBe(200);
+    await approveIncentive(admin, broken.id);
+
+    const score = await asDriver("/users/me/performance");
+    const dash = await (async () => {
+      const res = await api().get("/api/v1/reports/dashboard").set(auth(admin));
+      expect(res.status, res.text).toBe(200);
+      return res.body;
+    })();
+
+    expect(score.total_completed, "both trips reached completed").toBe(2);
+    expect(score.on_time_rate, "the clean run is the only judgeable trip").toBe(100);
+    expect(dash.on_time_rate, "the dashboard disagrees with the driver's own screen").toBe(
+      score.on_time_rate
+    );
   });
 
   it("a fully delivered trip still scores on time", async () => {
