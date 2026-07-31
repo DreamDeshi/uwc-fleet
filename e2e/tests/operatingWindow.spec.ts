@@ -3,6 +3,10 @@ import { ADMIN, DRIVER, REQUESTOR } from "../helpers/accounts";
 import { approveTrip, driverIdentity, login, setTruckWindow } from "../helpers/api";
 import { seedPendingTripToday } from "../helpers/seed";
 import { resetState } from "../helpers/reset";
+// THE SHARED CHOOSER. This file used to keep its own copy, and restoring the
+// window with it silently reinstated a bug the setup had just fixed — for every
+// spec after this one, since the suite is serial (workers: 1).
+import { runWideWindow } from "../helpers/runWideWindow";
 
 /**
  * THE OPERATING-WINDOW GUARD.
@@ -26,20 +30,6 @@ function windowExcludingNow(): { start: string; end: string } {
   const pad = (h: number) => `${String(h % 24).padStart(2, "0")}:00`;
   // (h+3)..(h+4) excludes h whether or not the range wraps midnight.
   return { start: pad(mytHour + 3), end: pad(mytHour + 4) };
-}
-
-/**
- * Mirrors setup.ts's alwaysOpenWindow — a wrapping window that began an hour
- * ago, so every pickup lands in windowEndInstant's roll-forward branch with
- * ~23 hours of completion slack. See the long note there; a fixed wall-clock
- * end cannot give that guarantee at every hour.
- */
-function runWideWindow(): { start: string; end: string } {
-  const mytMinutes = Math.floor((Date.now() + 8 * 60 * 60 * 1000) / 60000) % 1440;
-  const start = (mytMinutes - 60 + 1440) % 1440;
-  const end = (start - 1 + 1440) % 1440;
-  const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-  return { start: hhmm(start), end: hhmm(end) };
 }
 
 test.describe("operating window", () => {
