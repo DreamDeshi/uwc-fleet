@@ -134,6 +134,15 @@ jobs:
       - name: Check e2e selectors against renderable copy
         run: node e2e/scripts/check-selectors.mjs
 
+      # Also text-only, and here for the same reason as the selector guard: a
+      # suite whose fixture truck window is chosen from the WALL CLOCK is only
+      # observably broken in the hours it is broken. `start = now - 1h` closed
+      # the operating day before the suite's fixed 09:00 pickup whenever a run
+      # began after 10:00 MYT, so CI failed for a 3-hour band every day and it
+      # read as whichever PR was unlucky. This walks all 1440 start minutes.
+      - name: Check the e2e operating window holds at every hour
+        run: node e2e/scripts/check-window.mjs
+
   e2e:
     name: E2E (Playwright, real browser — FEATURE FLAGS ON)
     runs-on: ubuntu-latest

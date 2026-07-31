@@ -66,6 +66,22 @@ export async function pickSearchableConsignee(
   return { term, display: match.company_name, id: match.id };
 }
 
+/**
+ * THE MYT TIME-OF-DAY OF EVERY FIXED PICKUP THIS SUITE BOOKS, in minutes.
+ *
+ * The global setup widens the fixture truck's operating window, and it can only
+ * choose a window that leaves completion slack if it knows WHEN the runs start.
+ * It reads this list. A new fixture with a new fixed pickup hour MUST be added
+ * here, or the setup will pick a window that fits the others and 409 on it.
+ *
+ * (Pickups derived from `now` — todayPickupIso — are handled separately; the
+ * setup knows its own clock.)
+ */
+export const FIXED_PICKUP_MYT_MINUTES = [
+  9 * 60,  // inWindowPickupIso — tomorrow 09:00
+  10 * 60, // seedUndispatchableTrip — 45 days out, 10:00
+] as const;
+
 // Tomorrow 09:00 Malaysia time (UTC+8). A FIXED, near-future, in-window instant:
 //   - always inside the 07:00–18:00 operating window (a 1-stop run finishes
 //     ~10:35), so the Phase-3 cutoff never trips manual-assign flows by wall clock;
