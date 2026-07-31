@@ -78,6 +78,13 @@ beforeAll(async () => {
       authorization: "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJjbTh4In0.SIGNATUREHERE1234",
       cookie: "session=abc123",
       "user-agent": "okhttp/4.9.2",
+      // Railway forwards the real client address and the app trusts one proxy
+      // hop, so on production these are a DRIVER'S IP, on the same event as
+      // their user id. `sendDefaultPii: false` does not touch them.
+      "x-forwarded-for": "203.0.113.77, 10.0.0.5",
+      "x-real-ip": "203.0.113.77",
+      "cf-connecting-ip": "203.0.113.77",
+      "x-forwarded-host": "uwc-api-production.up.railway.app",
     },
     user: { id: "cms8azbyq00gph2ax766fxqf5", role: "driver" },
   });
@@ -109,8 +116,32 @@ describe("the Sentry envelope leaves nothing behind", () => {
     ["customer name in a query", "KEYSIGHT"],
     ["password from a console.error BREADCRUMB", "BR34DCRUMBP4SS"],
     ["phone from a console.error BREADCRUMB", "60127778888"],
+    ["client IP", "203.0.113.77"],
+    ["proxy hop IP", "10.0.0.5"],
   ])("never sends the %s", (_label, needle) => {
     expect(wire()).not.toContain(needle);
+  });
+
+  it("carries no ip_address and no CGI env, the two fields an IP hides in", () => {
+    const events = wire()
+      .split("\n")
+      .filter((l) => l.trim().startsWith("{"))
+      .map((l) => {
+        try {
+          return JSON.parse(l) as {
+            user?: { ip_address?: unknown };
+            request?: { env?: unknown };
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter((o): o is { user?: { ip_address?: unknown }; request?: { env?: unknown } } => o !== null);
+
+    for (const e of events) {
+      expect(e.user?.ip_address, "user.ip_address is set").toBeUndefined();
+      expect(e.request?.env, "request.env can carry REMOTE_ADDR").toBeUndefined();
+    }
   });
 
   it("actually recorded a console breadcrumb — else the two above are vacuous", () => {
@@ -144,6 +175,7 @@ describe("the Sentry envelope leaves nothing behind", () => {
     ["the opaque user id", "cms8azbyq00gph2ax766fxqf5"],
     ["the role", "driver"],
     ["a useful header", "okhttp"],
+    ["our own hostname, which names the deployment", "uwc-api-production"],
   ])("still sends the %s — over-scrubbing makes it useless", (_label, needle) => {
     expect(wire()).toContain(needle);
   });

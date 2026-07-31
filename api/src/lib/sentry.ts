@@ -90,11 +90,22 @@ export function initSentry(): void {
           event.request.headers = scrubHeaders(event.request.headers) as Record<string, string>;
         }
       }
-      // Identity: role + opaque id only. `sendDefaultPii: false` already drops
-      // ip_address; this drops the rest by construction rather than by trust.
+      // Identity: role + opaque id only, rebuilt from scratch so `ip_address`
+      // and anything else the SDK attached cannot survive.
+      //
+      // ⚠ This used to say `sendDefaultPii: false` already drops ip_address, and
+      // treat that as covering the client IP. It does not. The flag governs THIS
+      // field; the address also travels as `x-forwarded-for` and its half-dozen
+      // synonyms, which are ordinary headers to the SDK and went out verbatim
+      // until they were added to REDACTED_HEADERS. Two channels, one reassuring
+      // phrase — so this drops by construction and the headers are handled there.
       if (event.user) {
         event.user = { id: event.user.id, role: (event.user as { role?: string }).role };
       }
+      // CGI-style environment, where a server SDK can put REMOTE_ADDR. Measured
+      // as absent today; deleted anyway, because "absent today" is a property of
+      // this SDK version rather than a guarantee.
+      if (event.request) delete (event.request as { env?: unknown }).env;
       if (event.message) event.message = scrubText(event.message);
       for (const ex of event.exception?.values ?? []) {
         if (ex.value) ex.value = scrubText(ex.value);
