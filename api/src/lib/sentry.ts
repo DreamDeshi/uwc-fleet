@@ -23,7 +23,7 @@
  *                         deletes `request.data`. A booking payload carries
  *                         consignee names; a login carries a phone and password.
  *   headers               Authorization / Cookie redacted by NAME.
- *   query values          redacted; `?search=KEYSIGHT` is a customer.
+ *   query values          redacted; `?search=<a customer name>` is customer data.
  *   free text             connection strings, JWTs, +60 numbers and emails are
  *                         scrubbed out of messages and stack frames.
  *   4xx                   not an error. Validation, 403 and 409 are the API
@@ -98,7 +98,10 @@ export function initSentry(): void {
       if (event.message) event.message = scrubText(event.message);
       for (const ex of event.exception?.values ?? []) {
         if (ex.value) ex.value = scrubText(ex.value);
+        scrubFrames(ex.stacktrace?.frames);
       }
+      // Sentry can carry a second set of stacktraces here.
+      for (const th of event.threads?.values ?? []) scrubFrames(th.stacktrace?.frames);
       if (event.extra) event.extra = scrubDeep(event.extra) as Record<string, unknown>;
       return event;
     },
@@ -107,6 +110,47 @@ export function initSentry(): void {
   started = true;
   // eslint-disable-next-line no-console
   console.log("sentry: error monitoring enabled");
+}
+
+/**
+ * THE STACKTRACE IS A FOURTH PAYLOAD, AND IT USED TO GO OUT UNSCRUBBED.
+ *
+ * Found by capturing the ACTUAL envelope the SDK puts on the wire, rather than
+ * unit-testing the scrub functions in isolation. The three layers that were
+ * designed all worked — `exception.value`, `contexts.request.url` and the
+ * headers all came back `[redacted]`. The frames did not, because nothing
+ * touched them:
+ *
+ *   context_line / pre_context / post_context
+ *       Sentry's contextLines integration OPENS THE SOURCE FILE around every
+ *       frame and attaches the real lines. So a string literal sitting near a
+ *       throwing line is uploaded verbatim, and no amount of scrubbing the
+ *       MESSAGE catches it. In the probe that shipped a connection string and a
+ *       customer name straight out of the probe's own source.
+ *   vars
+ *       local variables, if includeLocalVariables is ever switched on. It is
+ *       off, and it must stay off — but scrubbing them costs nothing and means
+ *       switching it on is not silently a data-exfiltration change.
+ *   filename / module / function
+ *       real paths in production, so ordinarily harmless. Scrubbed anyway:
+ *       scrubText is a no-op on a normal path, and "ordinarily" is not a
+ *       guarantee.
+ *
+ * ⚠ Our source is public, so this is defence in depth rather than a live
+ * breach — but "the repo is public" is a property of today, not a design.
+ */
+function scrubFrames(frames: readonly unknown[] | undefined): void {
+  for (const raw of frames ?? []) {
+    const f = raw as Record<string, unknown>;
+    for (const key of ["context_line", "filename", "module", "function", "abs_path"]) {
+      if (typeof f[key] === "string") f[key] = scrubText(f[key] as string);
+    }
+    for (const key of ["pre_context", "post_context"]) {
+      const lines = f[key];
+      if (Array.isArray(lines)) f[key] = lines.map((l) => (typeof l === "string" ? scrubText(l) : l));
+    }
+    if (f.vars) f.vars = scrubDeep(f.vars);
+  }
 }
 
 /** Minimal request shape — structural, so callers need no Express types. */

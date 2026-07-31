@@ -1,11 +1,17 @@
 /**
  * Phone-number canonicalization. The phone number IS the login ID (User.phone
  * is unique), so registration and login must map the same human input to the
- * same stored string — "0174145245", "174145245", "017-414 5245",
- * "+60174145245" and the double-prefixed "+600174145245" are all one person.
+ * same stored string — "0123456789", "123456789", "012-345 6789",
+ * "+60123456789" and the double-prefixed "+600123456789" are all one person.
+ *
+ * ⚠ The illustrative number above is SYNTHETIC. This comment previously used a
+ * real Malaysian mobile, described as "one person" — in a public repo, and one
+ * that Sentry's contextLines integration would upload as source context around
+ * any nearby stack frame. AGENTS.md forbids committing telephone numbers; use
+ * an obviously-sequential example here.
  *
  * Canonical form: "+60" + national number with no trunk zero, digits only
- * (e.g. "+60174145245"). Both auth routes normalize through here; nothing
+ * (e.g. "+60123456789"). Both auth routes normalize through here; nothing
  * else in the API writes User.phone.
  */
 export function normalizePhone(input: string): string {

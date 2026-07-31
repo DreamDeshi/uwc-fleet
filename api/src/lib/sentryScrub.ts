@@ -19,7 +19,7 @@
  *    headers by default. This is the single worst one: a token in an error
  *    report is a working credential sitting in a third party's UI.
  *
- * 2. THE QUERY STRING IS CUSTOMER DATA HERE. `/consignees?search=KEYSIGHT` puts
+ * 2. THE QUERY STRING IS CUSTOMER DATA HERE. `/consignees?search=<company>` puts
  *    a real customer name in the URL, and `?q=` on the trip search does the
  *    same. Keys are kept (they say which endpoint shape failed); VALUES are
  *    redacted, because the value is the customer.
@@ -79,8 +79,29 @@ export function scrubText(value: string): string {
     .replace(JWT, REDACTED)
     .replace(BEARER, `Bearer ${REDACTED}`)
     .replace(MY_PHONE, REDACTED)
-    .replace(EMAIL, REDACTED);
+    .replace(EMAIL, REDACTED)
+    .replace(EMBEDDED_QUERY, (_m, key: string) => `${key}=${REDACTED}`);
 }
+
+/**
+ * A `key=value` pair inside FREE TEXT, not just inside a URL field.
+ *
+ * scrubQueryString handles a URL we were handed. This handles the same data
+ * arriving somewhere nobody expected — and it does, because Sentry's
+ * contextLines integration uploads SOURCE LINES around every stack frame. A
+ * line like
+ *
+ *     originalUrl: "/api/v1/consignees?search=<company>&zone=P1",
+ *
+ * is not a URL field, it is a string of source code, and it carried a real
+ * customer name past every other rule here. Caught by auditing the actual wire
+ * payload; the unit tests could not see it because they test this function's
+ * inputs, not what the SDK chooses to attach.
+ *
+ * Deliberately narrow: it needs a `?` or `&` before the key, so ordinary
+ * assignments (`const total = x`) and object literals are untouched.
+ */
+const EMBEDDED_QUERY = /(?<=[?&])([A-Za-z0-9_]+)=([^&\s"'`]+)/g;
 
 /** Header map with the sensitive names removed by NAME, others scrubbed by value. */
 export function scrubHeaders(headers: Record<string, unknown>): Record<string, unknown> {
