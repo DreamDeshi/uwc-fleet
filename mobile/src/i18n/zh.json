@@ -1159,7 +1159,7 @@
     "reports": {
       "reportsError": "无法加载报表。",
       "consolidationTitle": "合并配送节省",
-      "consolidationSub": "多个配送合并到共享行程",
+      "consolidationSub": "多个配送合并到共享行程 — 自启用以来",
       "tripsSaved": "减少的行程",
       "co2Saved": "减少的 CO₂e（估算）",
       "kmSaved": "减少的里程（估算）",
