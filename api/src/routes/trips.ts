@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { ApiError } from "../lib/apiError";
+import { normalizeStopSequences } from "../lib/stopSequence";
 import {
   isSerializationConflict,
   isUniqueViolation,
@@ -375,9 +376,11 @@ router.post(
               pickup_datetime,
               is_external: is_external ?? false,
               stops: {
-                create: stops.map((s: { consignee_id: string; sequence?: number }, idx: number) => ({
+                // Normalised to a contiguous, tie-free 1..N — the truck pick and
+                // the POD asset id both read stop order. See lib/stopSequence.
+                create: normalizeStopSequences(stops as { consignee_id: string; sequence?: number }[]).map((s) => ({
                   consignee_id: s.consignee_id,
-                  sequence: s.sequence ?? idx + 1,
+                  sequence: s.sequence,
                 })),
               },
               cargo_details: { create: cargo_details.map(withCanonicalCargoSize) },
@@ -768,10 +771,10 @@ router.patch(
         // snapshots (those are written at assignment) — replace wholesale.
         await tx.tripStop.deleteMany({ where: { trip_id: id } });
         await tx.tripStop.createMany({
-          data: stops.map((s, idx) => ({
+          data: normalizeStopSequences(stops).map((s) => ({
             trip_id: id,
             consignee_id: s.consignee_id,
-            sequence: s.sequence ?? idx + 1,
+            sequence: s.sequence,
           })),
         });
         // Only rewrite cargo when the client actually submitted it; an omitted
@@ -2371,12 +2374,12 @@ router.post(
         );
         await tx.tripStop.deleteMany({ where: { trip_id: id } });
         await tx.tripStop.createMany({
-          data: input.stops.map((s, idx) => {
+          data: normalizeStopSequences(input.stops).map((s) => {
             const carried = priorSnapshot.get(s.consignee_id);
             return {
               trip_id: id,
               consignee_id: s.consignee_id,
-              sequence: s.sequence ?? idx + 1,
+              sequence: s.sequence,
               // null for a genuinely NEW destination — priced just below.
               zone_code: carried?.zone_code ?? null,
               zone_points: carried?.zone_points ?? null,

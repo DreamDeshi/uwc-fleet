@@ -83,3 +83,51 @@ export function upsertTemplate(list: BookingTemplate[], tpl: BookingTemplate): B
 export function removeTemplate(list: BookingTemplate[], name: string): BookingTemplate[] {
   return list.filter((t) => t.name !== name);
 }
+
+/** The form fields a stored template resolves to. */
+export interface TemplateForm {
+  routeTypeId?: string;
+  stops: Consignee[];
+  /** Legacy "carton"/"others" already mapped onto the current tabs. */
+  cargoType: "pallet" | "box" | "crate" | "rack" | "custom";
+  palletQtys: number[];
+  boxQty: number;
+  dimW: string;
+  dimL: string;
+  dimQty: number;
+  remarks: string;
+}
+
+/**
+ * Resolve a stored template into form state — ONE function, so the values the
+ * screen sets and the values it judges completeness by cannot disagree.
+ *
+ * They used to: the screen applied the legacy cargoType mapping inline while
+ * deciding where to land from nothing at all (it always jumped to Confirm), so
+ * a template that resolved to an unsubmittable draft looked finished. See the
+ * header of bookingSteps.ts for the two shapes that actually do this.
+ *
+ * The mapping is deliberately LOSSY and cannot be otherwise:
+ *   "carton" → box     carries its count across (cartonQty → boxQty)
+ *   "others" → custom  CANNOT carry anything — a free-text size is not a
+ *                      width × length, so the dimensions come out empty and the
+ *                      draft is incomplete BY CONSTRUCTION. That is the honest
+ *                      result; the fix is to make the screen say so.
+ */
+export function templateToForm(
+  tpl: BookingTemplate,
+  sizes: readonly PalletSize[]
+): TemplateForm {
+  const ct = tpl.cargoType;
+  return {
+    routeTypeId: tpl.routeTypeId,
+    stops: tpl.stops ?? [],
+    cargoType: ct === "carton" ? "box" : ct === "others" ? "custom" : ct,
+    palletQtys: palletQtysFor(tpl, sizes),
+    boxQty: tpl.boxQty ?? tpl.cartonQty ?? 0,
+    dimW: tpl.dimW ?? "",
+    dimL: tpl.dimL ?? "",
+    dimQty: tpl.dimQty ?? 1,
+    remarks: tpl.remarks ?? "",
+  };
+}

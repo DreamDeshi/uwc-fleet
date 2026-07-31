@@ -510,6 +510,7 @@
     "templateName": "模板名称",
     "templateNamePlaceholder": "例如：Jabil 每周班次",
     "templateSaved": "模板已保存。",
+    "templateNeedsUpdate": "此保存的模板创建于货物选项变更之前 — 请补全所提示的步骤。",
     "changeRequestedToast": "变更申请已发送至办公室等待批准。"
   },
   "bookingDetail": {
