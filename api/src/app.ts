@@ -27,6 +27,7 @@ import leavesRoutes from "./routes/leaves";
 import auditRoutes from "./routes/audit";
 import publicRoutes from "./routes/public";
 import searchRoutes from "./routes/search";
+import scrubProbeRoutes from "./routes/scrubProbe"; // ⚠ TEMPORARY — removed with the probe
 import { errorHandler } from "./middleware/errorHandler";
 
 // The Express app is constructed here and exported so it can be driven
@@ -73,6 +74,12 @@ app.use(express.json());
 app.get("/api/v1/health", (_req, res) => {
   res.json({ status: "ok" });
 });
+
+// ⚠⚠ TEMPORARY — DELETED IN THE FOLLOW-UP PR (see routes/scrubProbe.ts).
+// Verifies the Sentry scrubber against a real production event. Mounted ahead
+// of everything so no other router can shadow it; inert without the token
+// header, and its only effect is to throw.
+app.use("/api/v1", scrubProbeRoutes);
 
 app.use("/api/v1/auth", authRoutes);
 
