@@ -149,6 +149,42 @@ export function scrubDeep(value: unknown, depth = 0): unknown {
   if (typeof value === "string") return scrubText(value);
   if (Array.isArray(value)) return value.slice(0, 100).map((v) => scrubDeep(v, depth + 1));
   if (value === null || typeof value !== "object") return value;
+
+  /**
+   * AN ERROR IS THE ONE NON-PLAIN OBJECT THAT ROUTINELY CARRIES SECRETS, AND IT
+   * GETS HERE FOR REAL — this was a live leak on production, found 31 Jul by
+   * capturing the envelope of a deliberate 500 rather than by reasoning:
+   *
+   *   errorHandler does `console.error(err)`. Sentry's console integration puts
+   *   the RAW Error instance into breadcrumb `data.arguments`. The prototype
+   *   guard below then waved it straight through, because an Error's prototype
+   *   is Error.prototype, not Object.prototype. The SDK serialized it to
+   *   {message, stack} AFTER beforeBreadcrumb had already passed on it.
+   *
+   * Net effect: every reported 500 carried a SECOND, UNSCRUBBED copy of its own
+   * message in the breadcrumbs, beside the scrubbed `exception.value`. For a
+   * Prisma connection failure that copy is the production database password —
+   * precisely the leak the scrubber exists to stop.
+   *
+   * Own enumerable properties are walked too: a PrismaClientKnownRequestError
+   * carries `code` and `meta`, and `meta` holds query detail.
+   */
+  if (value instanceof Error || Object.prototype.toString.call(value) === "[object Error]") {
+    const err = value as Error & Record<string, unknown>;
+    const out: Record<string, unknown> = {
+      name: err.name,
+      message: scrubText(String(err.message ?? "")),
+    };
+    if (typeof err.stack === "string") out.stack = scrubText(err.stack);
+    // name/message/stack are non-enumerable on a standard Error, so this adds
+    // the extras (Prisma's code/meta, a cause) without duplicating the above.
+    for (const [k, v] of Object.entries(err)) {
+      if (k === "name" || k === "message" || k === "stack") continue;
+      out[k] = scrubDeep(v, depth + 1);
+    }
+    return out;
+  }
+
   const proto = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) return value;
 

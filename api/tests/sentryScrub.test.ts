@@ -160,4 +160,48 @@ describe("scrubDeep", () => {
     const d = new Date("2026-07-31T00:00:00Z");
     expect(scrubDeep(d)).toBe(d);
   });
+
+  // ── ...WITH ERRORS AS THE DELIBERATE EXCEPTION TO THE RULE ABOVE ───────────
+  // Found on production 31 Jul: errorHandler logs `console.error(err)`, Sentry's
+  // console integration puts the RAW Error in breadcrumb data.arguments, and the
+  // pass-through above shipped it unscrubbed. Every reported 500 carried an
+  // unscrubbed duplicate of its own message — the DB password, for a Prisma
+  // connection failure. An Error is not opaque data; it is a message with a
+  // prototype, so it gets flattened and scrubbed.
+  it("flattens and scrubs an ERROR, which the rule above would have passed through", () => {
+    const err = new Error(
+      "Can't reach database server at `postgresql://uwc:s3cr3tP4ss@host:6543/railway`, driver +60123456789"
+    );
+    const out = scrubDeep(err) as { name: string; message: string; stack?: string };
+
+    expect(out).not.toBeInstanceOf(Error);
+    expect(out.name).toBe("Error");
+    expect(out.message).not.toContain("s3cr3tP4ss");
+    expect(out.message).not.toContain("60123456789");
+    expect(out.message).toContain(REDACTED);
+    // The stack names real files and is the diagnostic payload — kept, scrubbed.
+    expect(out.stack).toBeTypeOf("string");
+    expect(out.stack).not.toContain("s3cr3tP4ss");
+  });
+
+  it("scrubs an error's OWN properties too — Prisma hangs query detail off `meta`", () => {
+    const err = Object.assign(new Error("query failed"), {
+      code: "P2002",
+      meta: { target: "+60123456789", url: "postgresql://uwc:s3cr3tP4ss@host:6543/db" },
+    });
+    const out = scrubDeep(err) as { code: string; meta: { target: string; url: string } };
+
+    expect(out.code, "the diagnostic code must survive").toBe("P2002");
+    expect(out.meta.target).toBe(REDACTED);
+    expect(out.meta.url).not.toContain("s3cr3tP4ss");
+  });
+
+  it("finds an error NESTED inside an ordinary structure", () => {
+    // The real shape: breadcrumb data is { arguments: [Error] }, not a bare Error.
+    const out = scrubDeep({
+      arguments: [new Error("db=postgresql://uwc:s3cr3tP4ss@host:6543/db")],
+    }) as { arguments: { message: string }[] };
+    expect(out.arguments[0].message).not.toContain("s3cr3tP4ss");
+    expect(out.arguments[0].message).toContain(REDACTED);
+  });
 });
