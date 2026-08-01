@@ -69,9 +69,12 @@ router.get("/favicon.png", (_req, res) => {
  * installed for exactly this purpose, which is worse than having no monitoring,
  * because the dashboard would be quietly clean while the page was down.
  *
- * This handler was the ONE async route in src/routes without the bridge (77
- * handlers, 76 correct by convention alone). tests/asyncRouteBridging enforces
- * it now rather than leaving it to discipline.
+ * This handler was the ONE async route in src/routes without the bridge.
+ * tests/asyncRouteBridging enforces that now rather than leaving it to
+ * discipline, and THAT GUARD IS THE AUTHORITY ON HOW MANY HANDLERS THERE ARE —
+ * it counts them on every run. A number written here would only rot; this
+ * comment carried "77 handlers, 76 correct" for a day while the guard counted
+ * 98 and 97.
  */
 router.get("/:token", async (req, res, next) => {
   const tripId = verifyTrackingToken(req.params.token);

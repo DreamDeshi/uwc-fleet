@@ -17,9 +17,18 @@ import { join } from "node:path";
  * signal that goes missing. Sentry was installed on 31 Jul precisely so failures
  * stop depending on someone noticing — a route that fails silently defeats it.
  *
- * `routes/public.ts` was the only offender: 98 async handlers registered across
- * src/routes, 97 correct by convention alone and one not. Convention held 99% of
- * the time, which is exactly the hit rate that makes a defect survive review.
+ * `routes/public.ts` was the only offender: at calibration (1 Aug 2026) the GUARD
+ * below counted 98 async handlers registered across src/routes, 97 correct by
+ * convention alone and one not. Convention held 99% of the time, which is exactly
+ * the hit rate that makes a defect survive review.
+ *
+ * ⚠ 98 is a POINT-IN-TIME figure produced by the GUARD's own regex — `async (`,
+ * over every `router.<verb>(` including `use`. A hand-count with a narrower
+ * pattern gets a different and wrong-looking answer: `async (req` matches only
+ * 76, because 22 handlers name or destructure their first argument differently.
+ * That is how public.ts came to carry "77 handlers, 76 correct" while this file
+ * said 98 and 97 — two comments, both confident, one of them counting something
+ * else. If you need the number, run the guard. Do not quote it from prose.
  *
  * Three tests, because none of them is sufficient alone:
  *
