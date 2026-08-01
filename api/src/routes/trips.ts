@@ -2890,11 +2890,17 @@ router.post(
         throw new ApiError(409, "POD_LOCKED", "This trip is finalized — its documents can no longer be changed.");
       }
 
+      // ⚠ resource_type stays "image" — do NOT "fix" this to "auto".
+      // Cloudinary classifies a PDF as resource_type IMAGE, so "image" accepts
+      // one perfectly well. What it ALSO does is reject bytes Cloudinary cannot
+      // decode, and that rejection is load-bearing: K2 gates Delivered and
+      // therefore pay. Under "auto" an undecodable file falls through to `raw`
+      // and stores SUCCESSFULLY, so `k2_photo` is set, the gate opens, and the
+      // stored evidence is an asset the signed /image/ URL can never render —
+      // an open gate over an unopenable document. K2 has no resource_type
+      // column to sign from, so it cannot recover the way documents can.
       const { url, publicId } = await uploadBuffer(req.file.buffer, "uwc/k2", {
         type: "authenticated",
-        // "auto" so a PDF is stored as a PDF rather than being forced through
-        // the image pipeline.
-        resourceType: "auto",
         publicId: `${trip.ticket_number}-stop-${stop.sequence}-k2`,
       });
       await prisma.tripStop.update({

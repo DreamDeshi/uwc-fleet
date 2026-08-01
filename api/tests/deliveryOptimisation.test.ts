@@ -43,7 +43,7 @@ beforeAll(async () => {
   pod = await import("../src/lib/podPhotos");
 });
 
-describe("POD and K2 photos take the full treatment", () => {
+describe("the POD photo takes the full treatment", () => {
   it("carries BOTH q_auto and f_auto", () => {
     const url = pod.signedPodUrl("uwc/pod/TKT-0001-stop-1");
     expect(url).toContain("q_auto");

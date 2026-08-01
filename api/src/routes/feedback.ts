@@ -63,9 +63,11 @@ router.post("/", upload.single("image"), validateBody(submitSchema), async (req,
       // Low stakes, so it takes the widest set: a bug report is as often a PDF
       // export as a screenshot. "auto" keeps a PDF a PDF.
       assertMimetype(req.file, DOCUMENT_MIMETYPES, "A feedback attachment");
+      // resource_type "image" (the default) — feedback is signed back as an
+      // image and stores no resource type, so "auto" would risk a raw asset
+      // that nothing can render. A PDF is an image to Cloudinary anyway.
       const { publicId } = await uploadBuffer(req.file.buffer, "uwc/feedback", {
         type: "authenticated",
-        resourceType: "auto",
       });
       imageId = publicId;
     }

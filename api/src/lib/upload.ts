@@ -23,11 +23,28 @@ export const upload = multer({
  *      something happened LIVE at the delivery point. POD gates pay, so letting
  *      an arbitrary file stand in for a live photo weakens the guarantee the
  *      photo exists to provide.
+ *      ⚠ THIS IS A RULING ABOUT THE MEDIUM, NOT THE CLIENT'S DEFINITION OF A
+ *      POD. Mr. Teh's workbook (TEST QUERY item 9, repeated in the 16 Jul
+ *      email) calls the POD "the chop sign return copy on DO from consignee
+ *      warehouse" — a DOCUMENT, which drivers happen to photograph. Nothing
+ *      breaks today because every picker is images-only, but if UWC ever
+ *      scans that chop-signed DO to PDF this rule 400s the pay gate. Re-open
+ *      the decision then; do not read this comment as the client's own rule.
  *   2. POD delivery URLs carry `f_auto` (lib/podPhotos.ts), which is only safe
  *      because a POD cannot be a PDF. f_auto on a PDF keeps page one and
  *      silently drops the rest.
  *
  * A convention that two safety properties rest on should be a check.
+ */
+/**
+ * ⚠ KEEP IN STEP WITH OPTIMISABLE_FORMATS in lib/podPhotos.ts. The two lists
+ * describe the same thing — "a raster image this system expects to hold" — and
+ * they disagreed on first writing: this one omitted bmp/tiff/avif while the
+ * other listed them. Being too NARROW here is the dangerous direction: a POD
+ * rejected on mimetype is not retryable, and the offline outbox drops an item
+ * after 5 API failures, taking the queued photo and its delivery confirm with
+ * it (OPEN_ITEMS DG-D4). A file type nobody expected costs a wasted upload;
+ * a legitimate one costs the evidence.
  */
 export const IMAGE_MIMETYPES = [
   "image/jpeg",
@@ -37,6 +54,9 @@ export const IMAGE_MIMETYPES = [
   "image/heic",
   "image/heif",
   "image/gif",
+  "image/bmp",
+  "image/tiff",
+  "image/avif",
 ] as const;
 
 /** Paperwork may also be a PDF: customs forms and invoices arrive that way. */
