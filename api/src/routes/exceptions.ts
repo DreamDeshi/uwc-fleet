@@ -6,7 +6,7 @@ import { isUniqueViolation } from "../lib/prismaErrors";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { validateBody } from "../middleware/validate";
-import { upload } from "../lib/upload";
+import { upload, assertMimetype, IMAGE_MIMETYPES } from "../lib/upload";
 import { uploadBuffer } from "../lib/cloudinary";
 import { exceptionsEnabled } from "../lib/featureFlags";
 import { alertExceptionReported } from "../services/exceptionAlerts";
@@ -138,6 +138,9 @@ router.post("/:id/exception", requireRole("driver"), upload.single("photo"), asy
     if (!reason) throw new ApiError(400, "REASON_REQUIRED", "A reason is required.");
     if (reason.length > MAX_REASON) throw new ApiError(400, "REASON_TOO_LONG", `Reason exceeds ${MAX_REASON} characters.`);
     if (!req.file) throw new ApiError(400, "EVIDENCE_REQUIRED", "A photo is required (field name 'photo').");
+    // Images only — exception evidence is proof of a live event at the stop,
+    // the same rule as POD. Owner ruling, 1 Aug 2026.
+    assertMimetype(req.file, IMAGE_MIMETYPES, "Exception evidence");
 
     const lat = numField(req.body.lat);
     const lng = numField(req.body.lng);
@@ -251,6 +254,9 @@ router.post("/:id/exception/:exId/evidence", requireRole("driver"), upload.singl
     const driverId = req.user!.id;
     const clientEvidenceId = requireUuid("client_evidence_id", strField(req.body.client_evidence_id));
     if (!req.file) throw new ApiError(400, "EVIDENCE_REQUIRED", "A photo is required (field name 'photo').");
+    // Images only — exception evidence is proof of a live event at the stop,
+    // the same rule as POD. Owner ruling, 1 Aug 2026.
+    assertMimetype(req.file, IMAGE_MIMETYPES, "Exception evidence");
     const capturedClientAt = dateField(req.body.captured_client_at);
     const photoSha256 = sha256Hex(req.file.buffer);
 

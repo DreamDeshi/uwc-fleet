@@ -94,14 +94,40 @@ export function signedAssetUrl(
 }
 
 /**
- * POD and K2 photos are always raster camera images: the client re-encodes every
- * one to JPEG before upload, and the route uploads them with an explicit
- * `resource_type: "image"` rather than "auto". Nothing anywhere parses their
- * delivery URL, so they can take the full q_auto + f_auto treatment — the app's
- * highest-volume asset class getting the largest per-view saving.
+ * A POD photo is always a raster camera image, and that is now enforced rather
+ * than assumed: `lib/upload.ts` rejects anything but an image on the POD route,
+ * because the owner's ruling is that a POD is proof something happened LIVE at
+ * the delivery point. Nothing parses a POD delivery URL, so it takes the full
+ * q_auto + f_auto treatment — the highest-volume asset class getting the largest
+ * per-view saving.
+ *
+ * ⚠ DO NOT REUSE THIS FOR K2. See signedK2Url.
  */
 export function signedPodUrl(publicId: string): string {
   return signedAssetUrl(publicId, { resourceType: "image", optimise: "full" });
+}
+
+/**
+ * The Borang K2 customs document — NOT optimised, and the difference from
+ * signedPodUrl is load-bearing.
+ *
+ * ⚠ K2 MAY BE A PDF. Customs paperwork arrives as one, and a Borang K2 can run
+ * to several pages. `f_auto` on a PDF renders PAGE ONE and silently discards the
+ * rest — so the document would look complete to the admin validating it, while
+ * being incomplete. That admin's approval is what releases pay (Mr. Teh R1 Q6:
+ * "we need admin to final validate and approve, only they can get pay"), which
+ * makes a silently-truncated K2 a money problem, not a display one.
+ *
+ * K2 shares POD's storage columns (`k2_photo`/`k2_public_id`) and has NO format
+ * column, so there is nothing to gate an allowlist on — and "optimise on a
+ * guess" is exactly what must not happen here. `"none"` costs K2 its q_auto,
+ * which is worth nothing at K2 volume, and is correct whatever type the file is.
+ *
+ * ⚠ If K2 ever gains a `format` column, this may become "quality" — never
+ * "full", regardless.
+ */
+export function signedK2Url(publicId: string): string {
+  return signedAssetUrl(publicId, { resourceType: "image", optimise: "none" });
 }
 
 /**
@@ -170,7 +196,9 @@ function signStop(stop: StopLike): StopLike {
   const { pod_public_id, k2_public_id, ...rest } = stop;
   const out: StopLike = { ...rest };
   if (pod_public_id) out.pod_photo = signedPodUrl(pod_public_id);
-  if (k2_public_id) out.k2_photo = signedPodUrl(k2_public_id);
+  // ⚠ signedK2Url, NOT signedPodUrl — a K2 may be a multi-page PDF and must not
+  // be format-converted. The two looked interchangeable until PDFs were allowed.
+  if (k2_public_id) out.k2_photo = signedK2Url(k2_public_id);
   return out;
 }
 

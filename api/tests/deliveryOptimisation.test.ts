@@ -43,7 +43,7 @@ beforeAll(async () => {
   pod = await import("../src/lib/podPhotos");
 });
 
-describe("POD and K2 photos take the full treatment", () => {
+describe("the POD photo takes the full treatment", () => {
   it("carries BOTH q_auto and f_auto", () => {
     const url = pod.signedPodUrl("uwc/pod/TKT-0001-stop-1");
     expect(url).toContain("q_auto");
@@ -56,6 +56,33 @@ describe("POD and K2 photos take the full treatment", () => {
     // Cloudinary's signature segment. Without it the asset is unreachable, which
     // is the whole point of uploading POD photos as private assets.
     expect(url).toMatch(/\/s--[^/]+--\//);
+  });
+});
+
+describe("the K2 customs document is NEVER format-converted", () => {
+  /**
+   * K2 shares POD's storage columns and had shared its signer. The moment PDF
+   * uploads were allowed on the K2 route, that sharing became a bug: a Borang K2
+   * runs to several pages, f_auto keeps only the first, and the admin validating
+   * it is the person who releases pay. The document would look complete.
+   */
+  it("carries NEITHER q_auto nor f_auto", () => {
+    const url = pod.signedK2Url("uwc/k2/TKT-0001-stop-1-k2");
+    expect(url).not.toContain("f_auto");
+    expect(url).not.toContain("q_auto");
+  });
+
+  it("is still signed and authenticated — dropping optimisation must not drop privacy", () => {
+    const url = pod.signedK2Url("uwc/k2/TKT-0001-stop-1-k2");
+    expect(url).toContain("/authenticated/");
+    expect(url).toMatch(/\/s--[^/]+--\//);
+  });
+
+  it("differs from the POD signer, which is the whole point", () => {
+    const k2 = pod.signedK2Url("uwc/shared/same-id");
+    const podUrl = pod.signedPodUrl("uwc/shared/same-id");
+    expect(k2).not.toBe(podUrl);
+    expect(podUrl).toContain("f_auto");
   });
 });
 
@@ -161,15 +188,18 @@ describe("the document serializer applies the safe mode", () => {
     expect(doc.public_id).toBeUndefined();
   });
 
-  it("optimises a stop's POD and K2 photos fully", () => {
+  it("optimises the POD fully but leaves the K2 alone — they are NOT interchangeable", () => {
     const signed = pod.signTripResponse({
       stops: [{ id: "s1", pod_public_id: "uwc/pod/T-1-stop-1", k2_public_id: "uwc/k2/T-1-stop-1-k2" }],
       documents: [],
     }) as unknown as { stops: { pod_photo: string; k2_photo: string; pod_public_id?: string }[] };
 
     const stop = signed.stops[0];
+    // POD is images-only by server guard, so f_auto is safe.
     expect(stop.pod_photo).toContain("f_auto");
-    expect(stop.k2_photo).toContain("f_auto");
+    // K2 may be a multi-page PDF. f_auto would deliver page one and drop the rest.
+    expect(stop.k2_photo).not.toContain("f_auto");
+    expect(stop.k2_photo).not.toContain("q_auto");
     expect(stop.pod_public_id).toBeUndefined();
   });
 });

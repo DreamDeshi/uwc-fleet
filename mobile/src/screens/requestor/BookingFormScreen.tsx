@@ -34,7 +34,7 @@ import { OptionsModal } from "../../components/OptionsModal";
 import { NewConsigneeModal } from "../../components/NewConsigneeModal";
 import { LoadingState } from "../../components/States";
 import { useToast } from "../../components/Toast";
-import { pickDocumentImage, PickedPhoto } from "../../lib/photo";
+import { pickDocumentFile, PickedPhoto } from "../../lib/photo";
 import {
   palletEquivalents,
   partitionEditableCargo,
@@ -363,7 +363,11 @@ export function BookingFormScreen() {
   const onAddDoc = async () => {
     setError(null);
     try {
-      const photo = await pickDocumentImage();
+      const photo = await pickDocumentFile();
+      if (photo === "too_large") {
+        toast(t("common.fileTooLarge"), "error");
+        return;
+      }
       if (!photo) return; // cancelled or permission denied
       setDocs((prev) => [...prev, photo]);
     } catch (e) {

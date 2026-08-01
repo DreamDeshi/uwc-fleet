@@ -17,7 +17,8 @@
     "reconnecting": "正在重新连接…",
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
-    "noData": "这里还没有内容。"
+    "noData": "这里还没有内容。",
+    "fileTooLarge": "文件过大。请发送小于 10 MB 的文件。"
   },
   "login": {
     "welcome": "欢迎回来",

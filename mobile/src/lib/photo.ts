@@ -1,6 +1,13 @@
 import { Platform } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { compressToLimit } from "./imageCompress";
+import {
+  openFileDialog,
+  FILE_DIALOG_SUPPORTED,
+  DOCUMENT_ACCEPT,
+  type PickedFile,
+} from "./filePicker";
+import { isCompressibleType, asJpgName } from "./uploadTypes";
 
 // Compress EVERY uploaded image to ≤500KB — drivers are often on weak rural
 // mobile data, and the API/Cloudinary don't need a 5MB original. Applies to all
@@ -75,6 +82,60 @@ export async function toDurablePhotoUri(photo: PickedPhoto): Promise<PickedPhoto
     reader.readAsDataURL(blob);
   });
   return { ...photo, uri: dataUrl };
+}
+
+/**
+ * A pick that may fail in a way worth telling the user about. "too_large" is its
+ * own outcome rather than an error because a 12MB scan is an ordinary thing for
+ * office staff to try, and the fix ("send a smaller file") belongs in the UI.
+ */
+export type PickedFileResult = PickedPhoto | "too_large" | null;
+
+/**
+ * Paperwork: a PDF **or** an image where the platform can offer both, an image
+ * where it cannot.
+ *
+ * On web this opens a real file dialog — office staff at a desk are the people
+ * who actually hold a scanned DO or a PDF invoice. On native it falls through to
+ * the gallery, unchanged, because picking a PDF there needs a native module the
+ * app does not carry (see filePicker.ts).
+ *
+ * ⚠ The FILE_DIALOG_SUPPORTED check is not decoration: without it a user who
+ * cancels the web dialog would immediately get an image picker instead.
+ */
+export async function pickDocumentFile(): Promise<PickedFileResult> {
+  const picked = await openFileDialog(DOCUMENT_ACCEPT);
+  if (picked === "too_large") return "too_large";
+  if (picked) return finalizeFile(picked);
+  if (FILE_DIALOG_SUPPORTED) return null; // a genuine cancel
+  return pickDocumentImage();
+}
+
+/** Feedback attachment — same split, widest accept. Low stakes by design. */
+export async function pickFeedbackAttachment(): Promise<PickedFileResult> {
+  const picked = await openFileDialog(DOCUMENT_ACCEPT);
+  if (picked === "too_large") return "too_large";
+  if (picked) return finalizeFile(picked);
+  if (FILE_DIALOG_SUPPORTED) return null;
+  return pickFeedbackImage();
+}
+
+/**
+ * Compress a picked file — IMAGES ONLY.
+ *
+ * ⚠ A PDF must reach the server byte-for-byte. Re-encoding one is precisely how
+ * pages get dropped, and paperwork is the class of document that runs to several
+ * of them. The image branch reuses the same fail-open compressor as the camera
+ * paths, so a PDF is not a special case that skips a safety net — it is a file
+ * type that has no business being re-encoded at all.
+ */
+async function finalizeFile(picked: PickedFile): Promise<PickedPhoto> {
+  if (!isCompressibleType(picked.type)) return picked;
+
+  const uri = await compressToLimit(picked.uri);
+  if (uri === picked.uri) return picked; // compression failed open
+
+  return { uri, name: asJpgName(picked.name), type: "image/jpeg" };
 }
 
 /** Pick a document (image) for a booking — DO / invoice from the gallery. */

@@ -66,7 +66,7 @@ import { effectiveTruckRates, effectiveZonePoints } from "../services/pendingRat
 import { truckExpiryIssues } from "../services/truckEligibility";
 import { getRoute } from "../services/routeLegs";
 import { loadHolidaySet } from "../lib/holidays";
-import { upload } from "../lib/upload";
+import { upload, assertMimetype, IMAGE_MIMETYPES, DOCUMENT_MIMETYPES } from "../lib/upload";
 import { uploadBuffer } from "../lib/cloudinary";
 import { lockTripRow } from "../lib/tripLock";
 import { testHook } from "../lib/testHooks";
@@ -2738,6 +2738,10 @@ router.post(
       if (!req.file) {
         throw new ApiError(400, "NO_FILE", "A photo file is required (field name 'photo').");
       }
+      // Images ONLY. A POD is proof of a live event at the delivery point and it
+      // gates pay; an arbitrary file must not be able to stand in for the photo.
+      // It is also what makes f_auto safe on POD delivery URLs (lib/podPhotos).
+      assertMimetype(req.file, IMAGE_MIMETYPES, "A proof-of-delivery photo");
 
       const trip = await prisma.trip.findUnique({ where: { id }, include: { stops: true } });
       if (!trip) {
@@ -2868,6 +2872,10 @@ router.post(
       if (!req.file) {
         throw new ApiError(400, "NO_FILE", "A file is required (field name 'photo').");
       }
+      // Customs paperwork genuinely arrives as a PDF, so this route accepts one.
+      // ⚠ That is why K2 delivery URLs use signedK2Url (no f_auto) rather than
+      // signedPodUrl — the two are NOT interchangeable any more.
+      assertMimetype(req.file, DOCUMENT_MIMETYPES, "The customs document");
       const trip = await prisma.trip.findUnique({ where: { id }, include: { stops: true } });
       if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
       if (trip.driver_id !== req.user!.id) {
@@ -2882,6 +2890,15 @@ router.post(
         throw new ApiError(409, "POD_LOCKED", "This trip is finalized — its documents can no longer be changed.");
       }
 
+      // ⚠ resource_type stays "image" — do NOT "fix" this to "auto".
+      // Cloudinary classifies a PDF as resource_type IMAGE, so "image" accepts
+      // one perfectly well. What it ALSO does is reject bytes Cloudinary cannot
+      // decode, and that rejection is load-bearing: K2 gates Delivered and
+      // therefore pay. Under "auto" an undecodable file falls through to `raw`
+      // and stores SUCCESSFULLY, so `k2_photo` is set, the gate opens, and the
+      // stored evidence is an asset the signed /image/ URL can never render —
+      // an open gate over an unopenable document. K2 has no resource_type
+      // column to sign from, so it cannot recover the way documents can.
       const { url, publicId } = await uploadBuffer(req.file.buffer, "uwc/k2", {
         type: "authenticated",
         publicId: `${trip.ticket_number}-stop-${stop.sequence}-k2`,
@@ -2920,6 +2937,7 @@ router.post(
       if (!req.file) {
         throw new ApiError(400, "NO_FILE", "A file is required (field name 'file').");
       }
+      assertMimetype(req.file, DOCUMENT_MIMETYPES, "A document");
 
       const rawType = typeof req.body.type === "string" ? req.body.type : "other";
       const type = (documentTypes as readonly string[]).includes(rawType)
