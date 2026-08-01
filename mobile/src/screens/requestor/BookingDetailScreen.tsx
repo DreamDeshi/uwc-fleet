@@ -403,7 +403,12 @@ function LiveStatus({ pos }: { pos?: { stale: boolean } | null }) {
 // tap-to-open that hands the Cloudinary URL to the system browser/viewer.
 function DocumentRow({ doc }: { doc: TripDocument }) {
   const { t } = useTranslation();
-  const isImage = /\.(jpe?g|png|webp|heic|gif)$/i.test(doc.file_url);
+  // ⚠ Match the extension on the PATH, not the whole URL. The `$` anchor used to
+  // sit against the full string, and a Cloudinary delivery URL ends with an SDK
+  // analytics parameter (`?_a=...`) — so this was false for EVERY document and
+  // every image paperwork row rendered as a file icon instead of a thumbnail.
+  // Found by the API-side test that pins this rule (tests/deliveryOptimisation).
+  const isImage = /\.(jpe?g|png|webp|heic|gif)$/i.test(doc.file_url.split(/[?#]/)[0]);
   const typeLabel: Record<string, string> = {
     do_photo: t("bookingDetail.docTypeDO"),
     k2_form: t("bookingDetail.docTypeK2"),
