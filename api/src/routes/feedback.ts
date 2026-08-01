@@ -16,7 +16,7 @@ import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { prisma } from "../lib/prisma";
-import { upload } from "../lib/upload";
+import { upload, assertMimetype, DOCUMENT_MIMETYPES } from "../lib/upload";
 import { uploadBuffer } from "../lib/cloudinary";
 import { signedAssetUrl } from "../lib/podPhotos";
 
@@ -60,8 +60,12 @@ router.post("/", upload.single("image"), validateBody(submitSchema), async (req,
 
     let imageId: string | null = null;
     if (req.file) {
+      // Low stakes, so it takes the widest set: a bug report is as often a PDF
+      // export as a screenshot. "auto" keeps a PDF a PDF.
+      assertMimetype(req.file, DOCUMENT_MIMETYPES, "A feedback attachment");
       const { publicId } = await uploadBuffer(req.file.buffer, "uwc/feedback", {
         type: "authenticated",
+        resourceType: "auto",
       });
       imageId = publicId;
     }

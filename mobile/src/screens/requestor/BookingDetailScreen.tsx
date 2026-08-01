@@ -7,7 +7,7 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RequestorStackParamList } from "../../navigation/types";
 import { useTrip, useCancelTrip, useTripLatestLocation, useUploadTripDocument } from "../../hooks/queries";
-import { pickDocumentImage } from "../../lib/photo";
+import { pickDocumentFile } from "../../lib/photo";
 import { TripDocument } from "../../types";
 import { useToast } from "../../components/Toast";
 import { api, apiErrorMessage } from "../../services/api";
@@ -93,7 +93,11 @@ export function BookingDetailScreen() {
   const onUploadDoc = async () => {
     setError(null);
     try {
-      const photo = await pickDocumentImage();
+      const photo = await pickDocumentFile();
+      if (photo === "too_large") {
+        toast(t("common.fileTooLarge"), "error");
+        return;
+      }
       if (!photo) return; // cancelled or permission denied
       await uploadDoc.mutateAsync({ tripId: trip.id, photo, type: "other" });
       toast(t("bookingDetail.docUploaded"), "success");

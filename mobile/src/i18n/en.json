@@ -17,7 +17,8 @@
     "reconnecting": "Reconnecting…",
     "showPassword": "Show password",
     "hidePassword": "Hide password",
-    "noData": "Nothing here yet."
+    "noData": "Nothing here yet.",
+    "fileTooLarge": "That file is too large. Please send one under 10 MB."
   },
   "login": {
     "welcome": "Welcome Back",

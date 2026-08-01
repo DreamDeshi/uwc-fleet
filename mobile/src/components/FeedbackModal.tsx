@@ -15,7 +15,7 @@ import { colors, radius } from "../theme";
 import { Button } from "./Button";
 import { api, apiErrorMessage } from "../services/api";
 import { appendPhoto, UPLOAD_HEADERS } from "../hooks/queries";
-import { pickFeedbackImage } from "../lib/photo";
+import { pickFeedbackAttachment } from "../lib/photo";
 import type { PickedPhoto } from "../lib/photo";
 
 const CATEGORIES = ["bug", "idea", "other"] as const;
@@ -47,10 +47,15 @@ export function FeedbackModal({
 
   const attach = async () => {
     setStatus(null);
-    const picked = await pickFeedbackImage();
+    const picked = await pickFeedbackAttachment();
     // Cancel and a refused permission both land here. Feedback sends fine
-    // without a picture, so neither is worth an error — the button simply
-    // does nothing visible.
+    // without an attachment, so neither is worth an error — the button simply
+    // does nothing visible. An oversized file IS worth saying, because the
+    // user picked something and would otherwise see nothing happen.
+    if (picked === "too_large") {
+      setStatus({ kind: "err", text: t("common.fileTooLarge") });
+      return;
+    }
     if (picked) setImage(picked);
   };
 

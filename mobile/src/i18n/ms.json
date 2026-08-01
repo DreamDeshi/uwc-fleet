@@ -17,7 +17,8 @@
     "reconnecting": "Menyambung semula…",
     "showPassword": "Tunjukkan kata laluan",
     "hidePassword": "Sembunyikan kata laluan",
-    "noData": "Belum ada apa-apa di sini."
+    "noData": "Belum ada apa-apa di sini.",
+    "fileTooLarge": "Fail itu terlalu besar. Sila hantar fail bawah 10 MB."
   },
   "login": {
     "welcome": "Selamat Kembali",
