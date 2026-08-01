@@ -20,13 +20,59 @@ const POD_URL_TTL_SECONDS = Number(process.env.CLOUDINARY_POD_URL_TTL_SECONDS) |
 const POD_TOKEN_KEY = process.env.CLOUDINARY_POD_TOKEN_KEY?.trim() || undefined;
 
 /**
+ * Formats Cloudinary may safely re-encode. An ALLOWLIST, not a pdf-denylist:
+ * an unknown or absent format must fall through to "leave it alone", because
+ * the failure mode of guessing wrong is silent and destructive (see below).
+ */
+const OPTIMISABLE_FORMATS = new Set([
+  "jpg", "jpeg", "png", "webp", "heic", "heif", "avif", "bmp", "tif", "tiff", "gif",
+]);
+
+/**
+ * How much delivery optimisation an asset may take.
+ *
+ *   "full"    q_auto + f_auto — Cloudinary picks quality AND container. Only for
+ *             assets whose URL nobody parses (POD / K2 photos).
+ *   "quality" q_auto only. The URL keeps its extension.
+ *   "none"    untouched.
+ *
+ * ⚠ WHY DOCUMENTS NEVER GET "full", AND IT IS NOT THE REASON YOU EXPECT.
+ * Two independent traps sit on that path:
+ *
+ *  1. A PDF uploaded with `resource_type: "auto"` lands as resource_type
+ *     **image**, format **pdf** — so a gate written on resource_type would sail
+ *     straight past it. f_auto on a PDF renders PAGE ONE as a raster image and
+ *     silently discards the rest. A multi-page customs document would arrive
+ *     looking complete and be missing pages, with nothing in any log.
+ *  2. Even for genuine images, the requestor's paperwork row decides
+ *     image-vs-PDF by regexing the file EXTENSION off the delivery URL
+ *     (screens/requestor/BookingDetailScreen.tsx). f_auto removes the extension,
+ *     so every image document would stop rendering as a thumbnail.
+ *
+ * Gate on FORMAT, never on resource_type, and never remove an extension something
+ * else is reading.
+ */
+export type Optimisation = "full" | "quality" | "none";
+
+function optimisationParams(mode: Optimisation, format: string | undefined, resourceType: string) {
+  if (mode === "none" || resourceType === "raw") return {};
+  if (mode === "full") return { quality: "auto", fetch_format: "auto" };
+  // "quality": only when we positively recognise a raster format.
+  if (!format || !OPTIMISABLE_FORMATS.has(format.toLowerCase())) return {};
+  return { quality: "auto" };
+}
+
+/**
  * A freshly-signed authenticated delivery URL for any private asset. `format`
  * preserves the file extension for image/video assets (the DO/invoice row in the
  * client detects image-vs-PDF from the URL); raw public_ids already carry it.
+ *
+ * `optimise` defaults to "none" so a new caller cannot acquire a transformation
+ * by accident — see the Optimisation notes above for why that default matters.
  */
 export function signedAssetUrl(
   publicId: string,
-  opts: { resourceType?: string; format?: string } = {}
+  opts: { resourceType?: string; format?: string; optimise?: Optimisation } = {}
 ): string {
   // Stubbed uploads produce stubbed ids, and signing one needs a configured
   // Cloudinary — so without this every trip payload carrying a stubbed asset
@@ -40,15 +86,22 @@ export function signedAssetUrl(
   const resource_type = opts.resourceType || "image";
   const base: Record<string, unknown> = { type: "authenticated", resource_type, secure: true };
   if (opts.format && resource_type !== "raw") base.format = opts.format;
+  Object.assign(base, optimisationParams(opts.optimise ?? "none", opts.format, resource_type));
   if (POD_TOKEN_KEY) {
     return cloudinary.url(publicId, { ...base, auth_token: { key: POD_TOKEN_KEY, duration: POD_URL_TTL_SECONDS } });
   }
   return cloudinary.url(publicId, { ...base, sign_url: true });
 }
 
-/** POD photos are always images. */
+/**
+ * POD and K2 photos are always raster camera images: the client re-encodes every
+ * one to JPEG before upload, and the route uploads them with an explicit
+ * `resource_type: "image"` rather than "auto". Nothing anywhere parses their
+ * delivery URL, so they can take the full q_auto + f_auto treatment — the app's
+ * highest-volume asset class getting the largest per-view saving.
+ */
 export function signedPodUrl(publicId: string): string {
-  return signedAssetUrl(publicId, { resourceType: "image" });
+  return signedAssetUrl(publicId, { resourceType: "image", optimise: "full" });
 }
 
 /**
@@ -127,9 +180,12 @@ function signDocument(doc: DocLike): DocLike {
     const { public_id, ...rest } = doc;
     return {
       ...rest,
+      // "quality" only — a document may be a PDF, and its extension is load-bearing
+      // for the requestor's paperwork row. See the Optimisation notes above.
       file_url: signedAssetUrl(public_id as string, {
         resourceType: doc.resource_type ?? undefined,
         format: doc.format ?? undefined,
+        optimise: "quality",
       }),
     };
   }
