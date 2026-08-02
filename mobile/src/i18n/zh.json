@@ -631,6 +631,7 @@
       "podTaken": "拍摄 {{time}}（设备）",
       "stopDelivered": "送达 {{time}}",
       "noPod": "无 POD",
+      "noK2": "无 K2",
       "notDelivered": "未送达",
       "partialTrip": "部分行程——已送达 {{done}}/{{total}} 个停靠点",
       "editTitle": "批准 {{ticket}}",

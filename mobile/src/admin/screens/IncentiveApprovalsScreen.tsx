@@ -25,6 +25,7 @@ import { apiErrorMessage } from "../services/api";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import type { Trip, TripStop } from "../types";
 import { isStopSettled } from "../../lib/stopSettled";
+import { k2Evidence } from "../lib/k2Evidence";
 
 // The engine proposal stored on the trip (what pay defaults to at approval).
 const proposedAmount = (trip: Trip): number => Number(trip.incentive_earned ?? 0);
@@ -259,6 +260,12 @@ function StopRow({ stop }: { stop: TripStop }) {
       ? t("admin.incentiveApprovals.podTaken", { time: formatTime(stop.pod_captured_client_at!) })
       : null,
   ].filter((p): p is string => Boolean(p));
+  const k2 = k2Evidence(stop);
+  // "This stop is putting money on the invoice" — delivered, or settled without
+  // a delivery confirm (R3 Q11(a)). The same predicate deliveredAt() above uses
+  // to anchor the trip, kept in one shape so the K2 warning and the pay date
+  // cannot disagree about which stops are being paid for.
+  const paid = stop.status === "delivered" || isStopSettled(stop);
   return (
     <View
       style={{
@@ -290,21 +297,48 @@ function StopRow({ stop }: { stop: TripStop }) {
           </Text>
         ) : null}
       </View>
-      {stop.pod_photo ? (
-        <Pressable onPress={() => Linking.openURL(stop.pod_photo!)}>
-          <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.blue }}>📷 POD ↗</Text>
-        </Pressable>
-      ) : stop.status !== "delivered" ? (
-        // Cut short by a partial abort — not paid, not missing evidence. Muted
-        // on purpose: orange "no POD" would read as a problem to chase.
-        <Pill bg={colors.panel} fg={colors.textMuted}>
-          {t("admin.incentiveApprovals.notDelivered")}
-        </Pill>
-      ) : (
-        <Pill bg={colors.orangeTint} fg={colors.orange}>
-          {t("admin.incentiveApprovals.noPod")}
-        </Pill>
-      )}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        {stop.pod_photo ? (
+          <Pressable onPress={() => Linking.openURL(stop.pod_photo!)}>
+            <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.blue }}>📷 POD ↗</Text>
+          </Pressable>
+        ) : stop.status !== "delivered" ? (
+          // Cut short by a partial abort — not paid, not missing evidence. Muted
+          // on purpose: orange "no POD" would read as a problem to chase.
+          <Pill bg={colors.panel} fg={colors.textMuted}>
+            {t("admin.incentiveApprovals.notDelivered")}
+          </Pill>
+        ) : (
+          <Pill bg={colors.orangeTint} fg={colors.orange}>
+            {t("admin.incentiveApprovals.noPod")}
+          </Pill>
+        )}
+        {/* The Borang K2 (IM9). Until this row existed, NOTHING in the admin app
+            rendered k2_photo — the document that gates Delivered, and therefore
+            pay, was one nobody had ever seen. Mr. Teh R1 Q6: "we need admin to
+            final validate and approve, only they can get pay."
+
+            ⚠ AN OPEN ACTION, NEVER AN INLINE <Image>. A K2 may be a multi-page
+            PDF and the signed URL carries no extension to tell us which (see
+            admin/types.ts). Rendering it as an image would show a blank box for
+            every PDF — and a page-1 raster preview would be WORSE: it looks
+            complete while hiding pages, which is exactly the silent truncation
+            signedK2Url refuses to risk. Hand it to the system viewer whole. */}
+        {k2 === "present" ? (
+          <Pressable onPress={() => Linking.openURL(stop.k2_photo!)}>
+            <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.blue }}>📄 K2 ↗</Text>
+          </Pressable>
+        ) : k2 === "missing" && paid ? (
+          // Gated on PAID, not on `delivered`: a stop reached but never
+          // delivered can still be paid (R3 Q11(a) — admin verified + resumed),
+          // and that is the case most worth flagging, since it reached approval
+          // without the upload gate ever running. An unpaid stop missing its K2
+          // is not a problem to chase, so it stays silent.
+          <Pill bg={colors.orangeTint} fg={colors.orange}>
+            {t("admin.incentiveApprovals.noK2")}
+          </Pill>
+        ) : null}
+      </View>
     </View>
   );
 }

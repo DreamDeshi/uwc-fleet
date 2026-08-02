@@ -631,6 +631,7 @@
       "podTaken": "diambil {{time}} (peranti)",
       "stopDelivered": "dihantar {{time}}",
       "noPod": "Tiada POD",
+      "noK2": "Tiada K2",
       "notDelivered": "Tidak dihantar",
       "partialTrip": "Trip separa — {{done}}/{{total}} hentian dihantar",
       "editTitle": "Luluskan {{ticket}}",

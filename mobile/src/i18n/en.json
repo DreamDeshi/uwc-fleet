@@ -631,6 +631,7 @@
       "podTaken": "taken {{time}} (device)",
       "stopDelivered": "delivered {{time}}",
       "noPod": "No POD",
+      "noK2": "No K2",
       "notDelivered": "Not delivered",
       "partialTrip": "Partial trip — {{done}}/{{total}} stops delivered",
       "editTitle": "Approve {{ticket}}",
