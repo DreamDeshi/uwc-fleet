@@ -41,11 +41,18 @@
  *     DATABASE_URL=<prod-url> npx tsx prisma/wipe-trips.ts --apply
  */
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { PrismaClient } from "@prisma/client";
 import { assertTripWipeAllowed } from "./destructive-guard";
-import { cloudinary, isCloudinaryConfigured } from "../src/lib/cloudinary";
-import { podPublicIdFromUrl, documentAssetFromUrl } from "../src/lib/podPhotos";
+import { isCloudinaryConfigured } from "../src/lib/cloudinary";
+import {
+  listAllAssets,
+  referencedPublicIds,
+  findOrphans,
+  implausibleScan,
+  purgeAssets,
+} from "../src/lib/assetReconcile";
 
 const APPLY = process.argv.includes("--apply");
 
@@ -56,67 +63,6 @@ const APPLY = process.argv.includes("--apply");
 const TRIP_AUDIT_TABLES = ["Trip", "TripStop", "TripDocument"];
 
 const prisma = new PrismaClient();
-
-/** Every Cloudinary asset owned by trip data, with the ids needed to delete it. */
-interface Asset {
-  publicId: string;
-  resourceType: string;
-  source: string;
-}
-
-async function collectAssets(): Promise<Asset[]> {
-  const assets: Asset[] = [];
-
-  // POD + K2 both live on TripStop and are `type: "authenticated"` images.
-  // ⚠ Legacy rows have a URL but no public_id (they predate the privacy work),
-  // so fall back to parsing the id out of the stored URL — otherwise those
-  // assets survive the wipe invisibly and keep costing storage.
-  const stops = await prisma.tripStop.findMany({
-    where: { OR: [{ pod_photo: { not: null } }, { k2_photo: { not: null } }] },
-    select: { pod_public_id: true, pod_photo: true, k2_public_id: true, k2_photo: true },
-  });
-  for (const s of stops) {
-    const pod = s.pod_public_id ?? (s.pod_photo ? podPublicIdFromUrl(s.pod_photo) : null);
-    if (pod) assets.push({ publicId: pod, resourceType: "image", source: "TripStop.pod" });
-    const k2 = s.k2_public_id ?? (s.k2_photo ? podPublicIdFromUrl(s.k2_photo) : null);
-    if (k2) assets.push({ publicId: k2, resourceType: "image", source: "TripStop.k2" });
-  }
-
-  // Requestor paperwork. resource_type matters here — a PDF stored via
-  // `resource_type: "auto"` can land as image OR raw, and deleting with the
-  // wrong one silently no-ops.
-  const docs = await prisma.tripDocument.findMany({
-    select: { public_id: true, resource_type: true, file_url: true },
-  });
-  for (const d of docs) {
-    if (d.public_id) {
-      assets.push({
-        publicId: d.public_id,
-        resourceType: d.resource_type ?? "image",
-        source: "TripDocument",
-      });
-    } else if (d.file_url) {
-      const parsed = documentAssetFromUrl(d.file_url);
-      if (parsed) {
-        assets.push({
-          publicId: parsed.publicId,
-          resourceType: parsed.resourceType,
-          source: "TripDocument(legacy-url)",
-        });
-      }
-    }
-  }
-
-  // Exception evidence photos (flag is off today, so normally empty). Unlike
-  // the others this model stores `public_id` NOT NULL and calls its URL `url`,
-  // so there is no legacy-parse fallback to make.
-  const evidence = await prisma.exceptionEvidence.findMany({ select: { public_id: true } });
-  for (const e of evidence) {
-    assets.push({ publicId: e.public_id, resourceType: "image", source: "ExceptionEvidence" });
-  }
-
-  return assets;
-}
 
 async function counts() {
   return {
@@ -158,14 +104,28 @@ async function untouched() {
 async function main() {
   const before = await counts();
   const keep = await untouched();
-  const assets = await collectAssets();
 
   console.log("\n── WOULD DELETE (trip data) ──");
   console.table(before);
   console.log("── UNTOUCHED ──");
   console.table(keep);
-  console.log(`── CLOUDINARY: ${assets.length} asset(s) owned by trip data ──`);
-  for (const a of assets) console.log(`  ${a.source.padEnd(26)} ${a.resourceType.padEnd(6)} ${a.publicId}`);
+
+  // ⚠ RECONCILIATION, NOT A ROW-DERIVED LIST. This used to collect asset ids off
+  // the rows it was about to delete, which cannot see anything stranded by an
+  // EARLIER wipe — so every run left its assets behind forever and the next run
+  // was blind to them. By 2 Aug 2026 that had accumulated to 511 orphans against
+  // an empty database, 145 of them publicly reachable. The census is the source
+  // of truth about what exists; the DB about what is still needed.
+  if (isCloudinaryConfigured()) {
+    const census = await listAllAssets();
+    const scanNow = await referencedPublicIds(prisma);
+    console.log(
+      `── CLOUDINARY: ${census.length} asset(s) under "uwc/", ${findOrphans(census, scanNow).length} already orphaned before this wipe ──`
+    );
+    console.log("   (the purge runs AFTER the delete and re-scans, so it also sweeps historical orphans)");
+  } else {
+    console.log("── CLOUDINARY: not configured — assets cannot be reconciled in this run ──");
+  }
 
   // Users are counted and shown, never selected for deletion. Printing the
   // roster is the point: it is the check that this script is not seed-clean.
@@ -181,11 +141,13 @@ async function main() {
   // ── Locks. Only reached with --apply. ──
   assertTripWipeAllowed("wipe-trips", before.Trip);
 
-  // Asset ids to disk BEFORE any delete, so a failed purge is retryable once
-  // the rows that named them are gone.
-  const manifest = path.resolve(__dirname, `../wipe-assets-${Date.now()}.json`);
-  fs.writeFileSync(manifest, JSON.stringify({ assets, counts: before }, null, 2));
-  console.log(`\nAsset manifest written: ${manifest}`);
+  // ⚠ Written OUTSIDE the repo — a manifest dropped in the working tree gets
+  // picked up by the next `git add`. Set MANIFEST_DIR to keep one somewhere
+  // durable. This is the only record of what a run removed.
+  const manifestDir = process.env.MANIFEST_DIR || os.tmpdir();
+  const manifest = path.join(manifestDir, `wipe-assets-${Date.now()}.json`);
+  fs.writeFileSync(manifest, JSON.stringify({ counts: before }, null, 2));
+  console.log(`\nManifest written: ${manifest}`);
 
   // ── DB deletes: children first, one transaction. ──
   // ⚠ Explicit timeout — Prisma's default is 5s and this runs over the Railway
@@ -223,32 +185,29 @@ async function main() {
   // This order is deliberate: a failed purge leaves orphaned assets (a cost),
   // whereas purging first and then failing the DB delete would leave live rows
   // pointing at assets that no longer exist (broken evidence).
-  if (assets.length === 0) {
-    console.log("\nNo Cloudinary assets to purge.");
-  } else if (!isCloudinaryConfigured()) {
-    console.log(`\n⚠ Cloudinary not configured — ${assets.length} asset(s) NOT purged. Manifest: ${manifest}`);
+  if (!isCloudinaryConfigured()) {
+    console.log("\n⚠ Cloudinary not configured — assets NOT purged. Run prisma/reconcile-assets.ts later.");
   } else {
-    let ok = 0;
-    const failed: string[] = [];
-    for (const a of assets) {
-      try {
-        // `type: "authenticated"` must match how they were uploaded, or the
-        // delete silently reports "not found" and the asset survives.
-        const res = await cloudinary.uploader.destroy(a.publicId, {
-          resource_type: a.resourceType,
-          type: "authenticated",
-          invalidate: true,
-        });
-        if (res.result === "ok" || res.result === "not found") ok += 1;
-        else failed.push(`${a.publicId} → ${res.result}`);
-      } catch (e) {
-        failed.push(`${a.publicId} → ${(e as Error).message}`);
+    // Re-scan AFTER the commit: the assets belonging to the rows just deleted
+    // are orphans only now, and the same pass sweeps anything stranded by an
+    // earlier run.
+    const census = await listAllAssets();
+    const scanAfter = await referencedPublicIds(prisma);
+    const broken = implausibleScan(scanAfter);
+    if (broken) {
+      // Never delete on a reference scan that looks defused — a missed
+      // reference destroys live POD evidence, while a missed orphan costs only
+      // storage.
+      console.log(`\n⚠ Reference scan looks broken (${broken}) — NOT purging. Investigate, then run reconcile-assets.ts.`);
+    } else {
+      const orphans = findOrphans(census, scanAfter);
+      fs.writeFileSync(manifest, JSON.stringify({ counts: before, orphans }, null, 2));
+      const res = await purgeAssets(orphans);
+      console.log(`\nCloudinary: ${res.deleted}/${orphans.length} orphan(s) purged (of ${census.length} total).`);
+      if (res.failed.length) {
+        console.log("⚠ Failed (retry from the manifest):");
+        for (const f of res.failed.slice(0, 20)) console.log(`  ${f.publicId} → ${f.reason}`);
       }
-    }
-    console.log(`\nCloudinary: ${ok}/${assets.length} purged.`);
-    if (failed.length) {
-      console.log("⚠ Failed (retry from the manifest):");
-      for (const f of failed) console.log(`  ${f}`);
     }
   }
 
