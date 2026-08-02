@@ -11,6 +11,7 @@ import { AuthProvider } from "./src/context/AuthContext";
 import { ToastProvider } from "./src/components/Toast";
 import { RootNavigator } from "./src/navigation/RootNavigator";
 import { ReconnectingBanner } from "./src/components/ReconnectingBanner";
+import { UpdateReadyBanner } from "./src/components/UpdateReadyBanner";
 import { installWebFocusRing } from "./src/lib/webFocusRing";
 import { wireReactQueryNative } from "./src/lib/reactQueryNative";
 import { installGlobalErrorReporting } from "./src/lib/errorReporting";
@@ -33,6 +34,10 @@ export default function App() {
               <StatusBar style="light" />
               <RootNavigator />
               <ReconnectingBanner />
+              {/* Foreground OTA check + one-tap restart. Mounted app-wide so
+                  every role sees it, and outside the navigator so a restart
+                  offer survives screen changes. */}
+              <UpdateReadyBanner />
             </ToastProvider>
           </AuthProvider>
         </QueryClientProvider>
