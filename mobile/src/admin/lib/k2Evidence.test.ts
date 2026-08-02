@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { k2Evidence, type K2StopLike } from "./k2Evidence";
+import { k2ApprovalGaps, k2Evidence, type K2GateStop, type K2StopLike } from "./k2Evidence";
 import { CUSTOMS_DOC_ZONE, CUSTOMS_DOC_AREA } from "../../lib/activeTripStage";
 
 const K2_URL = "https://res.cloudinary.com/uwc/image/authenticated/s--sig--/uwc/k2/TKT-1-stop-1";
@@ -50,5 +50,79 @@ describe("what the approving admin is told about a stop's K2", () => {
   it("matches the real free-text area rows, not just the bare name", () => {
     // Live rows read "KAWASAN PERINDUSTRIAN BAYAN LEPAS" as often as the name.
     expect(k2Evidence(stop({ area: "Kawasan Perindustrian Bayan Lepas" }))).toBe("missing");
+  });
+});
+
+// ── The Approve gate (owner ruling, 2 Aug 2026) ─────────────────────────────
+// "Block Approve with a confirm — but only when the stop was actually delivered
+// (upload gate should have run) and the document is missing. Don't block on a
+// settled-undelivered stop, since no K2 was ever expected there."
+const SETTLED = [{ current_state: "resolved", resolution: "resume", actions: [{ type: "verify" }] }];
+
+const gateStop = (over: Partial<K2GateStop> & { area?: string | null } = {}): K2GateStop => ({
+  status: over.status ?? "delivered",
+  arrived_at: over.arrived_at ?? "2026-08-02T06:00:00.000Z",
+  exceptions: over.exceptions,
+  k2_photo: over.k2_photo ?? null,
+  consignee: over.consignee ?? {
+    zone_code: CUSTOMS_DOC_ZONE,
+    area: over.area === undefined ? CUSTOMS_DOC_AREA : over.area,
+  },
+});
+
+describe("which missing K2s block approval", () => {
+  it("blocks a DELIVERED stop with no document", () => {
+    // The upload gate stands directly in front of the Delivered tap, so this
+    // combination should be unreachable — which is exactly why it is worth
+    // stopping for rather than shrugging at.
+    const gaps = k2ApprovalGaps([gateStop()]);
+    expect(gaps.blocking).toHaveLength(1);
+    expect(gaps.notExpected).toHaveLength(0);
+  });
+
+  // ⚠ THE RULING'S WHOLE POINT. A settled-undelivered stop is PAID and its K2
+  // is absent — identical to the blocking case in the data. It must not block:
+  // the driver never delivered, so the upload gate never ran and no document
+  // was ever asked for. Blocking here would stop legitimate approvals dead.
+  it("does not block a settled-undelivered stop, and names it separately", () => {
+    const gaps = k2ApprovalGaps([gateStop({ status: "arrived", exceptions: SETTLED })]);
+    expect(gaps.blocking).toHaveLength(0);
+    expect(gaps.notExpected).toHaveLength(1);
+  });
+
+  it("keeps the two apart on a trip that has both", () => {
+    const gaps = k2ApprovalGaps([
+      gateStop({ status: "delivered" }),
+      gateStop({ status: "arrived", exceptions: SETTLED }),
+    ]);
+    expect(gaps.blocking).toHaveLength(1);
+    expect(gaps.blocking[0].status).toBe("delivered");
+    expect(gaps.notExpected).toHaveLength(1);
+    expect(gaps.notExpected[0].status).toBe("arrived");
+  });
+
+  it("ignores a stop that is neither delivered nor settled", () => {
+    // Not on this invoice at all — an unpaid stop's missing document is not the
+    // admin's business at the moment of approval, and surfacing it would put a
+    // blocking dialog in front of every partial trip.
+    const gaps = k2ApprovalGaps([gateStop({ status: "pending", arrived_at: null })]);
+    expect(gaps.blocking).toHaveLength(0);
+    expect(gaps.notExpected).toHaveLength(0);
+  });
+
+  it("does not block when the document is there", () => {
+    expect(k2ApprovalGaps([gateStop({ k2_photo: K2_URL })]).blocking).toHaveLength(0);
+  });
+
+  it("does not block a delivered stop that never needed a K2", () => {
+    // The common case by far — everything outside Bayan Lepas. If this ever
+    // returns a gap, every approval in the fleet grows a confirm dialog.
+    expect(
+      k2ApprovalGaps([gateStop({ consignee: { zone_code: "P2", area: "PERAI" } })]).blocking
+    ).toHaveLength(0);
+  });
+
+  it("has nothing to say about an empty trip", () => {
+    expect(k2ApprovalGaps([])).toEqual({ blocking: [], notExpected: [] });
   });
 });

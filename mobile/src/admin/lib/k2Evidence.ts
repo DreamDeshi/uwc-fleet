@@ -13,6 +13,7 @@
  * tested without rendering the approval queue.
  */
 import { requiresCustomsDoc } from "../../lib/activeTripStage";
+import { isStopSettled, type SettleableStop } from "../../lib/stopSettled";
 
 export type K2Evidence =
   /** No customs document is expected here, and none was uploaded. Show nothing. */
@@ -46,4 +47,45 @@ export function k2Evidence(stop: K2StopLike): K2Evidence {
   if (stop.k2_photo) return "present";
   if (requiresCustomsDoc(stop.consignee.zone_code, stop.consignee.area)) return "missing";
   return "not_required";
+}
+
+export interface K2GateStop extends K2StopLike, SettleableStop {}
+
+export interface K2ApprovalGaps<T> {
+  /**
+   * DELIVERED with the required document absent. Marking a stop delivered is
+   * exactly what the upload gate stands in front of, so this combination should
+   * be unreachable — it means either a pre-25-Jul row or a gate that did not
+   * run. Blocks Approve behind a confirm.
+   */
+  blocking: T[];
+  /**
+   * Paid WITHOUT a delivery confirm (R3 Q11(a) — reached, admin verified +
+   * resumed). The upload gate never ran, so no K2 was ever required and none is
+   * "missing". NEVER blocks; carried only so the confirm can name the
+   * difference instead of leaving the admin to guess which stops it means.
+   */
+  notExpected: T[];
+}
+
+/**
+ * Split a trip's stops into the K2 absences that matter and the ones that do
+ * not (owner ruling, 2 Aug 2026).
+ *
+ * ⚠ THE TWO CASES LOOK IDENTICAL IN THE DATA — both are a paid stop in a
+ * Bayan Lepas area with no `k2_photo` — and they mean opposite things. The
+ * discriminator is `status === "delivered"`, i.e. whether the upload gate was
+ * ever in the driver's path. Collapsing them into one "K2 missing" test would
+ * either block approvals that are perfectly correct (settled-undelivered) or
+ * wave through the one anomaly worth stopping for.
+ */
+export function k2ApprovalGaps<T extends K2GateStop>(stops: T[]): K2ApprovalGaps<T> {
+  const missing = stops.filter((s) => k2Evidence(s) === "missing");
+  return {
+    blocking: missing.filter((s) => s.status === "delivered"),
+    // Unpaid stops are excluded deliberately: an undelivered, unsettled stop is
+    // not on this invoice at all, so its missing document is not the admin's
+    // business at the moment of approval.
+    notExpected: missing.filter((s) => s.status !== "delivered" && isStopSettled(s)),
+  };
 }
