@@ -1829,10 +1829,15 @@ router.patch("/:id/cancel", async (req, res, next) => {
       throw new ApiError(403, "FORBIDDEN", "You cannot cancel this booking.");
     }
     if (trip.status !== "pending" && trip.status !== "approved") {
+      // ⚠ NAMES THE REMEDY, because in practice this is the requestor's ONLY
+      // encounter with it. Prod dispatches automatically, so a booking is
+      // assigned before the create response returns and the self-cancel window
+      // is effectively zero — this message is what they actually see. Stating
+      // the rule alone left them with no next step and no one to ask.
       throw new ApiError(
         400,
         "INVALID_STATUS",
-        "Only bookings that have not been assigned yet can be cancelled."
+        "A driver has already been assigned, so this booking can no longer be cancelled here. Call the office to cancel it."
       );
     }
 

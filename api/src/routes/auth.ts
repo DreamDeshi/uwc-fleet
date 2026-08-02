@@ -109,10 +109,18 @@ router.post("/login", sensitiveRateLimiter, validateBody(loginSchema), async (re
     }
 
     if (user.status === "pending_approval") {
-      throw new ApiError(403, "ACCOUNT_PENDING_APPROVAL", "Your account is awaiting admin approval.");
+      throw new ApiError(
+        403,
+        "ACCOUNT_PENDING_APPROVAL",
+        "Your account is still waiting for admin approval. Ask the office to approve it."
+      );
     }
     if (user.status === "disabled") {
-      throw new ApiError(403, "ACCOUNT_DISABLED", "Your account has been disabled.");
+      throw new ApiError(
+        403,
+        "ACCOUNT_DISABLED",
+        "This account has been disabled. Contact the office if this is a mistake."
+      );
     }
 
     const accessToken = signAccessToken({ sub: user.id, role: user.role });

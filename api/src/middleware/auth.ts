@@ -11,14 +11,25 @@ import { prisma } from "../lib/prisma";
  * tokens. Exported for unit tests.
  */
 export function accountStatusError(status: string | null | undefined): ApiError | null {
-  if (status !== "active") {
+  if (status === "active") return null;
+  // ⚠ TWO SITUATIONS, TWO MESSAGES, AND BOTH NAME THE REMEDY. This returned one
+  // sentence — "This account is disabled or awaiting approval." — for every
+  // non-active status, so a new driver waiting to be approved and an employee
+  // disabled by mistake read the same words and neither learned who to ask.
+  // The login route already distinguished them; this path is what every request
+  // AFTER login hits, so an account disabled mid-shift got the vaguer one.
+  if (status === "pending_approval") {
     return new ApiError(
       401,
-      "ACCOUNT_DISABLED",
-      "This account is disabled or awaiting approval."
+      "ACCOUNT_PENDING_APPROVAL",
+      "Your account is still waiting for admin approval. Ask the office to approve it."
     );
   }
-  return null;
+  return new ApiError(
+    401,
+    "ACCOUNT_DISABLED",
+    "This account has been disabled. Contact the office if this is a mistake."
+  );
 }
 
 export async function requireAuth(req: Request, _res: Response, next: NextFunction) {

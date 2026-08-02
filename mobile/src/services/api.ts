@@ -2,6 +2,9 @@ import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } fro
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { LoginResponse } from "../types";
+// The i18next instance directly, not the React hook: apiErrorMessage is called
+// from plain functions and mutation handlers, not only from components.
+import i18n from "../i18n";
 
 // ── Base URL ────────────────────────────────────────────────────────────
 // Reads `extra.apiUrl` from app.json. On a physical phone via Expo Go,
@@ -130,9 +133,13 @@ api.interceptors.response.use(
 export function apiErrorMessage(err: unknown, fallback = "Something went wrong."): string {
   const ax = err as AxiosError<{ error?: { code?: string; message?: string } }>;
   if (ax?.response?.data?.error?.message) return ax.response.data.error.message;
-  if (ax?.code === "ECONNABORTED") return "The server took too long to respond.";
-  if (ax?.message === "Network Error")
-    return "Could not connect. Check your internet and that the API is running.";
+  // ⚠ DRIVER-FACING, AND TRANSLATED. These were hardcoded English written for a
+  // developer — "check that the API is running" means nothing to someone in a
+  // truck cab, and it is the message he gets when Start Trip fails in a
+  // basement loading bay. Neither promises the work is saved: only the outbox
+  // paths are, and claiming it here would be a lie on every other screen.
+  if (ax?.code === "ECONNABORTED") return i18n.t("common.errorTimeout");
+  if (ax?.message === "Network Error") return i18n.t("common.errorOffline");
   return fallback;
 }
 

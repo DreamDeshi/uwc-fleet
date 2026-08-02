@@ -4,6 +4,19 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
   default: { getItem: vi.fn(), setItem: vi.fn() },
 }));
 
+/**
+ * podOutbox.ts now also reaches the filesystem, to move a queued POD photo out
+ * of the OS-evictable cache directory (lib/podPhotoStore). Stubbed here for the
+ * same reason AsyncStorage is: this file tests the QUEUE, and expo-file-system
+ * cannot load under plain-node vitest. The real behaviour has its own suite in
+ * podPhotoStore.test.ts; the spies below pin the WIRING, which nothing else does.
+ */
+const photoStore = vi.hoisted(() => ({
+  persistPodPhoto: vi.fn((uri: string) => `file:///doc/pod-outbox/persisted-${uri.split("/").pop()}`),
+  sweepPodPhotos: vi.fn(),
+}));
+vi.mock("./podPhotoStore", () => photoStore);
+
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   getPodOutbox,
@@ -165,5 +178,72 @@ describe("POD outbox storage edge — the normal paths still work", () => {
     await removePodItem("s2");
     const written = JSON.parse(writesTo(KEY)[0][1] as string);
     expect(written.map((i: { stopId: string }) => i.stopId)).toEqual(["s1", "s3"]);
+  });
+});
+
+/**
+ * ⚠ THE WIRING, not the filesystem behaviour (podPhotoStore.test.ts covers
+ * that). Without these, the queue could go on storing the raw camera URI — the
+ * cache path Android reclaims — and every test here would still pass, because
+ * the queue itself would look perfectly correct.
+ */
+describe("queued photos are moved out of the evictable cache", () => {
+  beforeEach(() => {
+    mockStorage.getItem.mockResolvedValue(null);
+  });
+
+  it("stores the PERSISTED uri, not the camera's cache path", async () => {
+    await enqueuePodItem({
+      tripId: "t1",
+      stopId: "s1",
+      photo: { uri: "file:///cache/ImagePicker/abc.jpg", name: "pod.jpg", type: "image/jpeg" },
+      confirmDelivered: true,
+    });
+
+    expect(photoStore.persistPodPhoto).toHaveBeenCalledWith(
+      "file:///cache/ImagePicker/abc.jpg",
+      "s1",
+      expect.any(Number)
+    );
+    const written = JSON.parse(writesTo(KEY)[0][1] as string);
+    expect(written[0].photo.uri).toBe("file:///doc/pod-outbox/persisted-abc.jpg");
+    // The whole point: what lands in the queue is NOT the reclaimable path.
+    expect(written[0].photo.uri).not.toContain("/cache/");
+  });
+
+  it("keeps the rest of the photo metadata intact", async () => {
+    await enqueuePodItem({
+      tripId: "t1",
+      stopId: "s1",
+      photo: { uri: "file:///cache/x.jpg", name: "pod.jpg", type: "image/jpeg" },
+      confirmDelivered: true,
+    });
+    const written = JSON.parse(writesTo(KEY)[0][1] as string);
+    expect(written[0].photo.name).toBe("pod.jpg");
+    expect(written[0].photo.type).toBe("image/jpeg");
+  });
+
+  it("does not touch the filesystem for a photoless queue entry", async () => {
+    await enqueuePodItem({ tripId: "t1", stopId: "s1", markArrived: true });
+    expect(photoStore.persistPodPhoto).not.toHaveBeenCalled();
+  });
+
+  it("sweeps orphans after a write, passing the uris still referenced", async () => {
+    await enqueuePodItem({
+      tripId: "t1",
+      stopId: "s1",
+      photo: { uri: "file:///cache/x.jpg", name: "pod.jpg", type: "image/jpeg" },
+      confirmDelivered: true,
+    });
+    expect(photoStore.sweepPodPhotos).toHaveBeenCalledWith(["file:///doc/pod-outbox/persisted-x.jpg"]);
+  });
+
+  it("sweeps with an empty list when the last item is removed", async () => {
+    mockStorage.getItem.mockResolvedValue(
+      JSON.stringify([{ tripId: "t1", stopId: "s1", confirmDelivered: true, queuedAt: "2026-08-03T00:00:00.000Z" }])
+    );
+    await removePodItem("s1");
+    // Nothing referenced any more → every stored photo is collectable.
+    expect(photoStore.sweepPodPhotos).toHaveBeenCalledWith([]);
   });
 });

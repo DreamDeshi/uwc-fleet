@@ -21,7 +21,9 @@
     "hidePassword": "Sembunyikan kata laluan",
     "noData": "Belum ada apa-apa di sini.",
     "fileTooLarge": "Fail itu terlalu besar. Sila hantar fail bawah 10 MB.",
-    "passwordTooWeak": "Kata laluan mesti sekurang-kurangnya 12 aksara dan mengandungi huruf kecil, huruf besar dan satu digit."
+    "passwordTooWeak": "Kata laluan mesti sekurang-kurangnya 12 aksara dan mengandungi huruf kecil, huruf besar dan satu digit.",
+    "errorOffline": "Tiada sambungan internet. Pergi ke kawasan bertalian dan cuba lagi — hubungi pejabat jika mendesak.",
+    "errorTimeout": "Pelayan mengambil masa terlalu lama untuk membalas. Cuba lagi — hubungi pejabat jika ia berterusan."
   },
   "login": {
     "welcome": "Selamat Kembali",
@@ -216,7 +218,8 @@
     "savedOffline": "Disimpan pada telefon ini — akan dimuat naik apabila talian kembali.",
     "podQueued": "Foto disimpan — dimuat naik apabila dalam talian",
     "outboxSynced": "Penghantaran tersimpan telah dimuat naik ({{count}})",
-    "outboxDropped": "Penghantaran tersimpan gagal dimuat naik ({{count}}) — sila semak perjalanan itu."
+    "outboxDropped_one": "Satu penghantaran yang disimpan gagal dimuat naik. Beritahu pejabat — hentian itu mungkin perlu diulang.",
+    "outboxDropped_other": "{{count}} penghantaran yang disimpan gagal dimuat naik. Beritahu pejabat — hentian tersebut mungkin perlu diulang."
   },
   "myStats": {
     "title": "Statistik Saya",
