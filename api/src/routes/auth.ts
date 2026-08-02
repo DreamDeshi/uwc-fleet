@@ -8,6 +8,7 @@ import { validateBody } from "../middleware/validate";
 import { accountStatusError, requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { sensitiveRateLimiter } from "../middleware/rateLimit";
+import { isStrongPassword, passwordProblemMessage } from "../lib/passwordPolicy";
 import {
   signAccessToken,
   signRefreshToken,
@@ -175,9 +176,16 @@ router.post("/refresh", validateBody(refreshSchema), async (req, res, next) => {
 // ── POST /auth/forgot-password ────────────────────────────────────────
 // No SMTP available — an admin resets the password directly.
 
+// ⚠ THE SAME FLOOR THE PROD ROTATION USED (lib/passwordPolicy). This accepted
+// six characters until 2 Aug 2026, which meant an admin reset could quietly
+// undo the rotation of the seeded accounts one at a time — set a driver back to
+// `abc123` and nothing complained. The rule lives in ONE module so the CLI and
+// this route cannot drift apart.
 const forgotPasswordSchema = z.object({
   user_id: z.string().min(1),
-  new_password: z.string().min(6, "Password must be at least 6 characters"),
+  new_password: z
+    .string()
+    .refine(isStrongPassword, (p) => ({ message: passwordProblemMessage(p) })),
 });
 
 router.post(

@@ -13,6 +13,7 @@
 import path from "path";
 import dotenv from "dotenv";
 import { dbHostOf, isProdDbHost } from "../src/lib/dbGuard";
+import { passwordProblems } from "../src/lib/passwordPolicy";
 
 export const BCRYPT_COST = 10;
 
@@ -56,21 +57,18 @@ export function resolveTarget(script: string, prodOptInEnv: string): Target {
   return { host, isProd };
 }
 
-// Well-known / seeded defaults a rotation must never re-introduce.
-const WEAK_PASSWORDS = new Set(["password123", "password", "changeme", "admin123", "12345678"]);
-
 /**
  * Minimal strength floor: ≥12 chars, mixed case + a digit, and not a known
  * default. Throws (exits) with a specific message so a weak secret can never be
- * written. Deliberately not draconian — it's a floor, not a policy engine.
+ * written.
+ *
+ * ⚠ THE RULE ITSELF NOW LIVES IN src/lib/passwordPolicy.ts, shared with the
+ * admin reset endpoint. It used to be defined here only, while the API accepted
+ * six characters — so a rotation done to this floor could be undone through the
+ * app without tripping anything. One definition, both callers.
  */
 export function assertStrongPassword(pw: string, label: string, script: string): void {
-  const needs: string[] = [];
-  if (pw.length < 12) needs.push("at least 12 characters");
-  if (!/[a-z]/.test(pw)) needs.push("a lowercase letter");
-  if (!/[A-Z]/.test(pw)) needs.push("an uppercase letter");
-  if (!/[0-9]/.test(pw)) needs.push("a digit");
-  if (WEAK_PASSWORDS.has(pw.toLowerCase())) needs.push("to not be a well-known/default password");
+  const needs = passwordProblems(pw);
   if (needs.length) {
     fail(script, `the password for ${label} is too weak — it must have ${needs.join(", ")}.`);
   }

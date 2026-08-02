@@ -32,6 +32,7 @@
     "fillFields": "Sila masukkan nombor telefon dan kata laluan anda.",
     "signIn": "Log Masuk",
     "createAccount": "Cipta Akaun",
+    "forgotPassword": "Lupa kata laluan? Hubungi pejabat — admin boleh menetapkannya semula untuk anda.",
     "footer": "UWC Berhad © 2026"
   },
   "register": {
@@ -706,6 +707,7 @@
       "deactivateTitle": "Nyahaktifkan akaun ini?",
       "deactivateBody": "Nyahaktifkan {{name}}? Mereka akan dilog keluar dan tidak boleh log masuk sehingga diaktifkan semula.",
       "resetPassword": "Set Semula Kata Laluan",
+      "passwordTooWeak": "Kata laluan mesti sekurang-kurangnya 12 aksara dan mengandungi huruf kecil, huruf besar dan satu digit.",
       "passwordResetDone": "Kata laluan ditetapkan semula. Kongsi kata laluan baharu dengan selamat.",
       "tempPasswordHint": "Kata laluan sementara baharu"
     },
