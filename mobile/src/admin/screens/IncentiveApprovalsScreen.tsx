@@ -19,12 +19,17 @@ import { Linking, Pressable, RefreshControl, ScrollView, Text, View } from "reac
 import { useTranslation } from "react-i18next";
 import { useApproveIncentive, usePendingApprovals } from "../hooks/queries";
 import { colors, font, radius } from "../theme";
+
 import { Button, Card, EmptyState, ErrorState, Input, Loading, Modal, Pill } from "../components/ui";
 import { formatMoney, formatDateTime, formatTime } from "../lib/format";
 import { apiErrorMessage } from "../services/api";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import type { Trip, TripStop } from "../types";
 import { isStopSettled } from "../../lib/stopSettled";
+import { approvalStep, k2ApprovalGaps, k2Evidence, type K2ApprovalGaps } from "../lib/k2Evidence";
+
+/** What an approval sends beyond the trip id. `{}` = pay the proposal as-is. */
+type ApprovalVars = { final_amount?: number; reason?: string };
 
 // The engine proposal stored on the trip (what pay defaults to at approval).
 const proposedAmount = (trip: Trip): number => Number(trip.incentive_earned ?? 0);
@@ -118,21 +123,44 @@ function ApprovalCard({ trip }: { trip: Trip }) {
 
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  // Pending approval held back by the K2 gate. `{}` is a plain approve-as-is;
+  // an object with final_amount is an edited one. null = nothing held.
+  const [confirmK2, setConfirmK2] = useState<ApprovalVars | null>(null);
 
   const proposed = proposedAmount(trip);
   const delivered = deliveredAt(trip);
 
-  async function approveAsIs() {
+  const stops = [...trip.stops].sort((a, b) => a.sequence - b.sequence);
+  const k2Gaps = k2ApprovalGaps(stops);
+
+  async function runApproval(vars: ApprovalVars) {
     setError(null);
     try {
       // No final_amount → the server pays the proposal exactly.
-      await approve.mutateAsync({ id: trip.id });
+      await approve.mutateAsync({ id: trip.id, ...vars });
     } catch (e) {
       setError(apiErrorMessage(e, t("admin.incentiveApprovals.actionFailed")));
     }
   }
 
-  const stops = [...trip.stops].sort((a, b) => a.sequence - b.sequence);
+  /**
+   * EVERY path that releases pay goes through here (owner ruling, 2 Aug 2026).
+   *
+   * ⚠ Gating only the Approve button would leave "Edit rate → approve" as a
+   * one-click bypass of the confirm — the edit path is an approval too, and it
+   * is the path an admin takes when something already looks off.
+   */
+  function guardedApprove(vars: ApprovalVars) {
+    const step = approvalStep(vars, k2Gaps);
+    if (step.kind === "confirm") {
+      // RN Modals do not stack, so the edit dialog must close before the gate
+      // opens. The amount and reason ride along on `confirmK2`.
+      setEditing(false);
+      setConfirmK2(step.vars);
+      return;
+    }
+    void runApproval(step.vars);
+  }
 
   const actions = (
     <View style={{ flexDirection: "row", gap: 8 }}>
@@ -149,7 +177,7 @@ function ApprovalCard({ trip }: { trip: Trip }) {
         variant="success"
         size="sm"
         disabled={approve.isPending}
-        onPress={approveAsIs}
+        onPress={() => guardedApprove({})}
         style={{ flex: wide ? undefined : 1 }}
       >
         {t("admin.incentiveApprovals.approve")}
@@ -220,6 +248,12 @@ function ApprovalCard({ trip }: { trip: Trip }) {
           onClose={() => setEditing(false)}
           onSubmit={async (finalAmount, reason) => {
             setError(null);
+            if (k2Gaps.blocking.length > 0) {
+              // Hand off to the K2 gate rather than approving. Closing this
+              // dialog first is required, not cosmetic: RN Modals do not stack.
+              guardedApprove({ final_amount: finalAmount, reason });
+              return;
+            }
             try {
               await approve.mutateAsync({ id: trip.id, final_amount: finalAmount, reason });
               setEditing(false);
@@ -230,7 +264,98 @@ function ApprovalCard({ trip }: { trip: Trip }) {
           }}
         />
       )}
+
+      {confirmK2 && (
+        <K2ApprovalGate
+          gaps={k2Gaps}
+          pending={approve.isPending}
+          onCancel={() => setConfirmK2(null)}
+          onConfirm={() => {
+            const vars = confirmK2;
+            setConfirmK2(null);
+            void runApproval(vars);
+          }}
+        />
+      )}
     </Card>
+  );
+}
+
+/**
+ * The missing-K2 approval gate (owner ruling, 2 Aug 2026).
+ *
+ * ⚠ THE WHOLE POINT IS THAT IT NAMES WHICH STOPS AND WHY. "K2 missing" alone
+ * would be read as the ordinary partial-trip noise this screen is full of, and
+ * waved through. A delivered stop with no customs document is a different
+ * animal: the upload gate stands directly in front of the Delivered tap, so
+ * this combination should be impossible, and the admin is about to release pay
+ * on it anyway.
+ */
+function K2ApprovalGate({
+  gaps,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  gaps: K2ApprovalGaps<TripStop>;
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Modal open onClose={onCancel} title={t("admin.incentiveApprovals.k2GateTitle")} width={460}>
+      <Text style={{ fontSize: font.sm, color: colors.text, lineHeight: 20, marginBottom: 10 }}>
+        {t("admin.incentiveApprovals.k2GateBody")}
+      </Text>
+      <View
+        style={{
+          backgroundColor: colors.orangeTint,
+          borderRadius: radius.sm,
+          paddingVertical: 8,
+          paddingHorizontal: 12,
+          gap: 4,
+          marginBottom: 12,
+        }}
+      >
+        {gaps.blocking.map((s) => (
+          <Text key={s.id} style={{ fontSize: font.sm, fontWeight: "700", color: colors.orange }}>
+            {s.sequence}. {s.consignee.company_name}
+          </Text>
+        ))}
+      </View>
+      {/* ⚠ States the rule's START DATE rather than asserting the delivery was
+          impossible. Until 29 Jul the gate was on the wrong zone (aee7a28), so
+          a P1/Bayan Lepas stop delivered before then legitimately has no K2 —
+          and a dialog that told the admin it "could not have happened" would be
+          plainly false on exactly the rows most likely to reach this screen
+          first (the queue sorts oldest-delivery-first). */}
+      <Text style={{ fontSize: font.xs, color: colors.textMuted, lineHeight: 18, marginBottom: 12 }}>
+        {t("admin.incentiveApprovals.k2GateSince")}
+      </Text>
+      {/* Shown ONLY when the trip actually contains one, so it explains a
+          contrast the admin can see on screen rather than describing a case
+          that isn't there. Without it, a trip with both kinds of stop leaves
+          them guessing which ones the warning covers. */}
+      {gaps.notExpected.length > 0 ? (
+        <Text style={{ fontSize: font.sm, color: colors.textMuted, lineHeight: 20, marginBottom: 12 }}>
+          {t("admin.incentiveApprovals.k2GateNotExpected", {
+            stops: gaps.notExpected.map((s) => `${s.sequence}. ${s.consignee.company_name}`).join(", "),
+          })}
+        </Text>
+      ) : null}
+      <Text style={{ fontSize: font.sm, color: colors.text, lineHeight: 20, marginBottom: 14 }}>
+        {t("admin.incentiveApprovals.k2GateWarn")}
+      </Text>
+      <View style={{ flexDirection: "row", gap: 10 }}>
+        <Button variant="ghost" onPress={onCancel} disabled={pending} style={{ flex: 1 }}>
+          {t("common.cancel")}
+        </Button>
+        <Button variant="success" onPress={onConfirm} disabled={pending} style={{ flex: 1 }}>
+          {pending ? t("admin.working") : t("admin.incentiveApprovals.k2GateApproveAnyway")}
+        </Button>
+      </View>
+    </Modal>
   );
 }
 
@@ -259,6 +384,7 @@ function StopRow({ stop }: { stop: TripStop }) {
       ? t("admin.incentiveApprovals.podTaken", { time: formatTime(stop.pod_captured_client_at!) })
       : null,
   ].filter((p): p is string => Boolean(p));
+  const k2 = k2Evidence(stop);
   return (
     <View
       style={{
@@ -290,21 +416,54 @@ function StopRow({ stop }: { stop: TripStop }) {
           </Text>
         ) : null}
       </View>
-      {stop.pod_photo ? (
-        <Pressable onPress={() => Linking.openURL(stop.pod_photo!)}>
-          <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.blue }}>📷 POD ↗</Text>
-        </Pressable>
-      ) : stop.status !== "delivered" ? (
-        // Cut short by a partial abort — not paid, not missing evidence. Muted
-        // on purpose: orange "no POD" would read as a problem to chase.
-        <Pill bg={colors.panel} fg={colors.textMuted}>
-          {t("admin.incentiveApprovals.notDelivered")}
-        </Pill>
-      ) : (
-        <Pill bg={colors.orangeTint} fg={colors.orange}>
-          {t("admin.incentiveApprovals.noPod")}
-        </Pill>
-      )}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        {stop.pod_photo ? (
+          <Pressable onPress={() => Linking.openURL(stop.pod_photo!)}>
+            <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.blue }}>📷 POD ↗</Text>
+          </Pressable>
+        ) : stop.status !== "delivered" ? (
+          // Cut short by a partial abort — not paid, not missing evidence. Muted
+          // on purpose: orange "no POD" would read as a problem to chase.
+          <Pill bg={colors.panel} fg={colors.textMuted}>
+            {t("admin.incentiveApprovals.notDelivered")}
+          </Pill>
+        ) : (
+          <Pill bg={colors.orangeTint} fg={colors.orange}>
+            {t("admin.incentiveApprovals.noPod")}
+          </Pill>
+        )}
+        {/* The Borang K2 (IM9). Until this row existed, NOTHING in the admin app
+            rendered k2_photo — the document that gates Delivered, and therefore
+            pay, was one nobody had ever seen. Mr. Teh R1 Q6: "we need admin to
+            final validate and approve, only they can get pay."
+
+            ⚠ AN OPEN ACTION, NEVER AN INLINE <Image>. A K2 may be a multi-page
+            PDF and the signed URL carries no extension to tell us which (see
+            admin/types.ts). Rendering it as an image would show a blank box for
+            every PDF — and a page-1 raster preview would be WORSE: it looks
+            complete while hiding pages, which is exactly the silent truncation
+            signedK2Url refuses to risk. Hand it to the system viewer whole. */}
+        {k2 === "present" ? (
+          <Pressable onPress={() => Linking.openURL(stop.k2_photo!)}>
+            <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.blue }}>📄 K2 ↗</Text>
+          </Pressable>
+        ) : k2 === "missing" && stop.status === "delivered" ? (
+          // DELIVERED ONLY (owner ruling, 2 Aug 2026). Marking a stop delivered
+          // is precisely what the upload gate stands in front of, so a delivered
+          // stop with no K2 is an anomaly worth chasing — and it blocks Approve
+          // behind a confirm below.
+          //
+          // ⚠ A settled-undelivered stop (paid via R3 Q11(a) — reached, admin
+          // verified + resumed) deliberately gets NOTHING here. The gate never
+          // ran for it, so no K2 was ever expected and none is "missing". The
+          // muted "Not delivered" pill beside this already explains the stop.
+          // Orange here would manufacture a problem to chase, the same mistake
+          // the POD branch above documents avoiding.
+          <Pill bg={colors.orangeTint} fg={colors.orange}>
+            {t("admin.incentiveApprovals.noK2")}
+          </Pill>
+        ) : null}
+      </View>
     </View>
   );
 }

@@ -110,6 +110,16 @@ export interface TripStop {
   // DEVICE-reported capture time (IM6 pair). Untrusted evidence, never a
   // pay input; NULL when the device did not say. Label it as device-reported.
   pod_captured_client_at?: string | null;
+  // The Borang K2 customs document (IM9). Signed, short-lived Cloudinary URL —
+  // the server mints it per request in lib/podPhotos.ts (signStop) and drops
+  // the public_id, so this is the ONLY usable handle on the asset.
+  //
+  // ⚠ MAY BE A PDF, AND THE URL CANNOT TELL YOU. signedK2Url passes no
+  // `format` (K2 has no format column), so unlike a TripDocument's file_url
+  // this one carries NO extension — the requestor paperwork row's
+  // image-vs-PDF regex would be false for every K2. Never render it as an
+  // <Image>; hand it to the system viewer. See lib/k2Evidence.
+  k2_photo?: string | null;
   // Finalize-time scoring evidence (per-drop points, repeat flag, zone
   // snapshot). Null = trip completed before the breakdown feature.
   points_awarded?: number | null;
