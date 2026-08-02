@@ -26,7 +26,7 @@ export type K2Evidence =
 /** The fields this decision reads — structural, so both TripStop shapes fit. */
 export interface K2StopLike {
   k2_photo?: string | null;
-  consignee: { zone_code?: string | null; area?: string | null };
+  consignee?: { zone_code?: string | null; area?: string | null };
 }
 
 /**
@@ -45,7 +45,12 @@ export interface K2StopLike {
  */
 export function k2Evidence(stop: K2StopLike): K2Evidence {
   if (stop.k2_photo) return "present";
-  if (requiresCustomsDoc(stop.consignee.zone_code, stop.consignee.area)) return "missing";
+  // Optional-chained deliberately even though the admin payload always joins a
+  // consignee: this runs inside the render of every card in the approval queue,
+  // so a throw here blanks the whole queue rather than one row. Matches the
+  // convention in TripStopLadder/ActiveTripScreen, where the driver-side
+  // TripStop.consignee genuinely is optional.
+  if (requiresCustomsDoc(stop.consignee?.zone_code, stop.consignee?.area)) return "missing";
   return "not_required";
 }
 
@@ -54,9 +59,23 @@ export interface K2GateStop extends K2StopLike, SettleableStop {}
 export interface K2ApprovalGaps<T> {
   /**
    * DELIVERED with the required document absent. Marking a stop delivered is
-   * exactly what the upload gate stands in front of, so this combination should
-   * be unreachable — it means either a pre-25-Jul row or a gate that did not
-   * run. Blocks Approve behind a confirm.
+   * exactly what the upload gate stands in front of, so on current rules this
+   * combination is unreachable — the only writer of `status: "delivered"`
+   * (api/src/routes/trips.ts) sits immediately behind isDocumentationComplete.
+   * Blocks Approve behind a confirm.
+   *
+   * ⚠ THE LEGACY WINDOW IS PRE-**29** JUL, NOT PRE-25 JUL, and getting that
+   * wrong understates it by the entire zone retarget. `k2_photo` arrived on
+   * 25 Jul (20260725150000_k2_document_upload) — but until aee7a28 on 29 Jul
+   * the gate was on the WRONG ZONE: it fired for zone code "K2" (Sungai
+   * Petani) and NOT for P1/Bayan Lepas. So every P1 + Bayan Lepas stop
+   * delivered before 29 Jul has no k2_photo BY CONSTRUCTION and was delivered
+   * entirely correctly under the rule then in force.
+   *
+   * Such a row lands here and cannot be remediated: the K2 upload route
+   * finalize-locks at `pending_approval` (409 POD_LOCKED), so the document
+   * cannot be supplied after the fact. Whether those rows should be exempt is
+   * an OWNER decision — do not invent a delivered_at cutoff here.
    */
   blocking: T[];
   /**
@@ -88,4 +107,25 @@ export function k2ApprovalGaps<T extends K2GateStop>(stops: T[]): K2ApprovalGaps
     // business at the moment of approval.
     notExpected: missing.filter((s) => s.status !== "delivered" && isStopSettled(s)),
   };
+}
+
+export type ApprovalStep<V> = { kind: "approve" | "confirm"; vars: V };
+
+/**
+ * Does this approval go straight through, or via the K2 confirm — and with
+ * exactly what payload?
+ *
+ * ⚠ EXTRACTED SO THE HAND-OFF IS PINNED BY A TEST RATHER THAN BY READING. The
+ * screen has TWO entry points that release pay (the Approve button and the
+ * Edit-rate submit), and the edited one carries a `final_amount` plus the
+ * reason the server makes mandatory for a changed amount. Those have to survive
+ * a round trip through React state while a modal closes and another opens. A
+ * silent drop there would approve an EDITED trip at the PROPOSED amount — a
+ * wrong payment with an audit trail that says the admin chose it.
+ *
+ * `vars` is returned by reference, never rebuilt, so the test can assert
+ * identity rather than deep equality and catch a reconstruction too.
+ */
+export function approvalStep<V>(vars: V, gaps: Pick<K2ApprovalGaps<unknown>, "blocking">): ApprovalStep<V> {
+  return { kind: gaps.blocking.length > 0 ? "confirm" : "approve", vars };
 }

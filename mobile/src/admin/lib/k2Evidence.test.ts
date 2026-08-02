@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { k2ApprovalGaps, k2Evidence, type K2GateStop, type K2StopLike } from "./k2Evidence";
+import {
+  approvalStep,
+  k2ApprovalGaps,
+  k2Evidence,
+  type K2GateStop,
+  type K2StopLike,
+} from "./k2Evidence";
 import { CUSTOMS_DOC_ZONE, CUSTOMS_DOC_AREA } from "../../lib/activeTripStage";
 
 const K2_URL = "https://res.cloudinary.com/uwc/image/authenticated/s--sig--/uwc/k2/TKT-1-stop-1";
@@ -124,5 +130,51 @@ describe("which missing K2s block approval", () => {
 
   it("has nothing to say about an empty trip", () => {
     expect(k2ApprovalGaps([])).toEqual({ blocking: [], notExpected: [] });
+  });
+});
+
+// ── The approval hand-off ───────────────────────────────────────────────────
+// The screen has TWO entry points that release pay, and the edited one carries
+// an amount plus the reason the server makes mandatory for a changed amount.
+// Those survive a round trip through React state while one modal closes and
+// another opens — previously verified only by reading the code.
+describe("routing an approval through the K2 gate", () => {
+  const CLEAN = { blocking: [] as unknown[] };
+  const BLOCKED = { blocking: [{}] as unknown[] };
+
+  it("approves straight through when nothing is blocking", () => {
+    expect(approvalStep({}, CLEAN).kind).toBe("approve");
+  });
+
+  it("diverts to the confirm when a delivered stop has no K2", () => {
+    expect(approvalStep({}, BLOCKED).kind).toBe("confirm");
+  });
+
+  // ⚠ THE EXPENSIVE ONE. Dropping final_amount here would approve an EDITED
+  // trip at the PROPOSED amount — a wrong payment carrying an audit trail that
+  // says the admin chose it. Identity, not deep equality, so a rebuild of the
+  // object fails too.
+  it("carries an edited amount and its reason through the confirm untouched", () => {
+    const vars = { final_amount: 77.5, reason: "Short load, agreed with Teh" };
+    const step = approvalStep(vars, BLOCKED);
+    expect(step.kind).toBe("confirm");
+    expect(step.vars).toBe(vars);
+    expect(step.vars).toEqual({ final_amount: 77.5, reason: "Short load, agreed with Teh" });
+  });
+
+  it("keeps approve-as-is empty so the server pays its own proposal", () => {
+    // `{}` must stay `{}` — inventing a final_amount here would silently
+    // convert "confirm the engine's number" into an admin override.
+    const step = approvalStep({}, CLEAN);
+    expect(step.vars).toEqual({});
+  });
+
+  // Both entry points converge on one decision, so "Edit rate → approve" cannot
+  // become a one-click bypass of a gate the plain button respects.
+  it("treats the edited path exactly like the plain one", () => {
+    expect(approvalStep({ final_amount: 12 }, BLOCKED).kind).toBe(
+      approvalStep({}, BLOCKED).kind
+    );
+    expect(approvalStep({ final_amount: 12 }, CLEAN).kind).toBe(approvalStep({}, CLEAN).kind);
   });
 });

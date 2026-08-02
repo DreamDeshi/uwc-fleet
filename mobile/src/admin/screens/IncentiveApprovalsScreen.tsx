@@ -26,7 +26,7 @@ import { apiErrorMessage } from "../services/api";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import type { Trip, TripStop } from "../types";
 import { isStopSettled } from "../../lib/stopSettled";
-import { k2ApprovalGaps, k2Evidence, type K2ApprovalGaps } from "../lib/k2Evidence";
+import { approvalStep, k2ApprovalGaps, k2Evidence, type K2ApprovalGaps } from "../lib/k2Evidence";
 
 /** What an approval sends beyond the trip id. `{}` = pay the proposal as-is. */
 type ApprovalVars = { final_amount?: number; reason?: string };
@@ -151,14 +151,15 @@ function ApprovalCard({ trip }: { trip: Trip }) {
    * is the path an admin takes when something already looks off.
    */
   function guardedApprove(vars: ApprovalVars) {
-    if (k2Gaps.blocking.length > 0) {
+    const step = approvalStep(vars, k2Gaps);
+    if (step.kind === "confirm") {
       // RN Modals do not stack, so the edit dialog must close before the gate
       // opens. The amount and reason ride along on `confirmK2`.
       setEditing(false);
-      setConfirmK2(vars);
+      setConfirmK2(step.vars);
       return;
     }
-    void runApproval(vars);
+    void runApproval(step.vars);
   }
 
   const actions = (
@@ -323,6 +324,15 @@ function K2ApprovalGate({
           </Text>
         ))}
       </View>
+      {/* ⚠ States the rule's START DATE rather than asserting the delivery was
+          impossible. Until 29 Jul the gate was on the wrong zone (aee7a28), so
+          a P1/Bayan Lepas stop delivered before then legitimately has no K2 —
+          and a dialog that told the admin it "could not have happened" would be
+          plainly false on exactly the rows most likely to reach this screen
+          first (the queue sorts oldest-delivery-first). */}
+      <Text style={{ fontSize: font.xs, color: colors.textMuted, lineHeight: 18, marginBottom: 12 }}>
+        {t("admin.incentiveApprovals.k2GateSince")}
+      </Text>
       {/* Shown ONLY when the trip actually contains one, so it explains a
           contrast the admin can see on screen rather than describing a case
           that isn't there. Without it, a trip with both kinds of stop leaves
