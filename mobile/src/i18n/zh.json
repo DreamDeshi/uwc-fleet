@@ -15,6 +15,8 @@
     "km": "公里",
     "errorGeneric": "出了点问题。",
     "reconnecting": "正在重新连接…",
+    "updateReady": "新版本已就绪",
+    "updateRestart": "立即重启",
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
     "noData": "这里还没有内容。",
