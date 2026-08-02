@@ -408,6 +408,32 @@ router.patch("/:id", validateBody(adminUpdateUserSchema), async (req, res, next)
       data.phone = normalized;
     }
 
+    // ⚠ WHAT CHANGED, NOT JUST THAT SOMETHING DID. This row used to be a bare
+    // "user.admin_update", which on the one endpoint that can rewrite a LOGIN
+    // IDENTITY meant there was no record of the number an account used to have.
+    // The six seeded drivers still carry placeholder phones, so this trail is
+    // about to matter: after the swap, "who was +60100000103?" has to be
+    // answerable. Same shape as truck.updated / leave.added — AuditLog has no
+    // JSON column, so the detail goes in the action string.
+    //
+    // Computed from the row loaded ABOVE and before the write, and only for
+    // fields that genuinely differ, so a no-op PATCH does not fabricate a
+    // change. Phone is logged in its NORMALIZED form — the value actually
+    // stored, not the raw input, or the trail would not match the column.
+    const changes: string[] = [];
+    if (data.name !== undefined && data.name !== user.name) {
+      changes.push(`name ${user.name}→${data.name}`);
+    }
+    if (data.employee_number !== undefined && data.employee_number !== user.employee_number) {
+      changes.push(`employee_number ${user.employee_number ?? "—"}→${data.employee_number}`);
+    }
+    if (data.department_id !== undefined && data.department_id !== user.department_id) {
+      changes.push(`department ${user.department_id ?? "—"}→${data.department_id}`);
+    }
+    if (data.phone !== undefined && data.phone !== user.phone) {
+      changes.push(`phone ${user.phone}→${data.phone}`);
+    }
+
     const updated = await prisma.user.update({
       where: { id },
       data,
@@ -425,7 +451,7 @@ router.patch("/:id", validateBody(adminUpdateUserSchema), async (req, res, next)
     await prisma.auditLog.create({
       data: {
         user_id: req.user!.id,
-        action: "user.admin_update",
+        action: `user.admin_update${changes.length ? ` ${changes.join(", ")}` : " (no change)"}`,
         table_name: "User",
         record_id: id,
       },

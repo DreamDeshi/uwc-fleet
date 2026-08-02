@@ -58,10 +58,11 @@ describe("admin user management", () => {
     expect(res.status).toBe(200);
     expect(res.body.name).toBe("Renamed By Admin");
     const audit = await prisma.auditLog.findFirst({
-      where: { record_id: targetId, action: "user.admin_update" },
+      where: { record_id: targetId, action: { startsWith: "user.admin_update" } },
     });
     expect(audit).not.toBeNull();
     expect(audit!.user_id).toBe(await userIdByPhone(ADMIN.phone));
+    expect(audit!.action).toContain("name B Target→Renamed By Admin");
   });
 
   it("admin changes a user's phone (normalized, unique) → 200; the user logs in with it", async () => {
@@ -70,6 +71,59 @@ describe("admin user management", () => {
     expect(res.status).toBe(200);
     expect(res.body.phone).toBe("+60177770001"); // normalized
     await expect(loginAs({ phone: "+60177770001", password: TARGET.password })).resolves.toBeTruthy();
+  });
+
+  // ⚠ THE TRAIL ON A LOGIN IDENTITY. This endpoint is the only one that can
+  // rewrite the field users log in WITH, and it used to audit a bare
+  // "user.admin_update" — so after a swap there was no record of the number an
+  // account previously had. The six seeded drivers still carry placeholder
+  // phones, so "who was +60100000103?" is about to be a real question.
+  it("records the OLD → NEW phone in the audit trail", async () => {
+    const admin = await loginAs(ADMIN);
+    const res = await patchUser(admin, targetId, { phone: "017-777 0002" });
+    expect(res.status).toBe(200);
+    const audit = await prisma.auditLog.findFirst({
+      where: { record_id: targetId, action: { startsWith: "user.admin_update" } },
+      orderBy: { timestamp: "desc" },
+    });
+    // The OLD number is the whole point — without it the row proves only that
+    // something changed, not what it was.
+    expect(audit!.action).toContain(`phone ${TARGET.phone}→+60177770002`);
+  });
+
+  it("logs the NORMALIZED phone, not the raw input", async () => {
+    // Or the trail would not match the value actually stored in the column.
+    const admin = await loginAs(ADMIN);
+    await patchUser(admin, targetId, { phone: "017-777 0003" });
+    const audit = await prisma.auditLog.findFirst({
+      where: { record_id: targetId, action: { startsWith: "user.admin_update" } },
+      orderBy: { timestamp: "desc" },
+    });
+    expect(audit!.action).toContain("→+60177770003");
+    expect(audit!.action).not.toContain("017-777 0003");
+  });
+
+  it("records every changed identity field in one row", async () => {
+    const admin = await loginAs(ADMIN);
+    await patchUser(admin, targetId, { name: "Multi Change", phone: "017-777 0004" });
+    const audit = await prisma.auditLog.findFirst({
+      where: { record_id: targetId, action: { startsWith: "user.admin_update" } },
+      orderBy: { timestamp: "desc" },
+    });
+    expect(audit!.action).toContain("name B Target→Multi Change");
+    expect(audit!.action).toContain(`phone ${TARGET.phone}→+60177770004`);
+  });
+
+  it("does not fabricate a change when the value is unchanged", async () => {
+    // A no-op PATCH must not leave a row claiming an identity moved — that
+    // would poison the trail it exists to provide.
+    const admin = await loginAs(ADMIN);
+    await patchUser(admin, targetId, { name: "B Target" });
+    const audit = await prisma.auditLog.findFirst({
+      where: { record_id: targetId, action: { startsWith: "user.admin_update" } },
+      orderBy: { timestamp: "desc" },
+    });
+    expect(audit!.action).toBe("user.admin_update (no change)");
   });
 
   it("rejects a phone already used by another account → 409", async () => {
