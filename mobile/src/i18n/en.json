@@ -20,7 +20,8 @@
     "showPassword": "Show password",
     "hidePassword": "Hide password",
     "noData": "Nothing here yet.",
-    "fileTooLarge": "That file is too large. Please send one under 10 MB."
+    "fileTooLarge": "That file is too large. Please send one under 10 MB.",
+    "passwordTooWeak": "Password must be at least 12 characters and include a lowercase letter, an uppercase letter and a digit."
   },
   "login": {
     "welcome": "Welcome Back",
@@ -59,7 +60,6 @@
     "create": "Create Account",
     "haveAccount": "Already have an account?",
     "passwordMismatch": "Passwords do not match.",
-    "passwordTooShort": "Password must be at least 6 characters.",
     "nameRequired": "Please enter your full name.",
     "employeeRequired": "Please enter your employee number.",
     "departmentRequired": "Please select your department.",
@@ -707,7 +707,6 @@
       "deactivateTitle": "Deactivate this account?",
       "deactivateBody": "Deactivate {{name}}? They will be logged out and cannot sign in until reactivated.",
       "resetPassword": "Reset Password",
-      "passwordTooWeak": "Password must be at least 12 characters and include a lowercase letter, an uppercase letter and a digit.",
       "passwordResetDone": "Password reset. Share the new password securely.",
       "tempPasswordHint": "New temporary password"
     },

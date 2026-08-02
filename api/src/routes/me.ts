@@ -6,6 +6,7 @@ import { ApiError } from "../lib/apiError";
 import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { sensitiveRateLimiter } from "../middleware/rateLimit";
+import { isStrongPassword, passwordProblemMessage } from "../lib/passwordPolicy";
 
 const BCRYPT_COST = 10;
 
@@ -123,9 +124,16 @@ router.patch("/me", validateBody(updateMeSchema), async (req, res, next) => {
 // (refresh_token_hash untouched) so the user isn't logged out of the device
 // they just changed it on; other devices keep working until they re-login.
 // (Admin-forced resets in auth.ts DO revoke sessions — a different threat model.)
+// ⚠ THE SAME FLOOR AS THE ROTATION AND THE ADMIN RESET (lib/passwordPolicy).
+// This accepted six characters until 3 Aug 2026 — the back door that mattered
+// most, because it needs no admin: a driver handed a 16-char rotated password
+// could set it to `abc123` themselves the first time they opened this screen,
+// and the rotation would last exactly that long.
 const changePasswordSchema = z.object({
   current_password: z.string().min(1, "Current password is required."),
-  new_password: z.string().min(6, "New password must be at least 6 characters."),
+  new_password: z
+    .string()
+    .refine(isStrongPassword, (p) => ({ message: passwordProblemMessage(p) })),
 });
 
 router.patch(

@@ -13,6 +13,7 @@ import { PasswordField, PressableField, TextField } from "./Field";
 import { OptionsModal } from "./OptionsModal";
 import { useDepartments, useUpdateProfile, useChangePassword } from "../hooks/queries";
 import { apiErrorMessage } from "../services/api";
+import { isStrongPassword } from "../lib/passwordPolicy";
 
 function ErrorLine({ message }: { message: string | null }) {
   if (!message) return null;
@@ -142,8 +143,11 @@ export function ChangePasswordModal({ visible, onClose }: { visible: boolean; on
       setError(t("account.currentRequired"));
       return;
     }
-    if (next.length < 6) {
-      setError(t("register.passwordTooShort"));
+    // Mirrors the server floor (lib/passwordPolicy). This screen is the one a
+    // driver reaches on their own, so it is where a rotated password would
+    // otherwise have been downgraded first.
+    if (!isStrongPassword(next)) {
+      setError(t("common.passwordTooWeak"));
       return;
     }
     if (next !== confirm) {
