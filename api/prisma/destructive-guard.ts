@@ -87,6 +87,77 @@ export function assertDestructiveAllowed(script: string): void {
   );
 }
 
+/**
+ * Gate for the SCOPED trip wipe (wipe-trips.ts) — the one destructive script
+ * that MAY target production, because there is a legitimate operational reason
+ * to reset trip history on the live trial DB before go-live.
+ *
+ * ⚠ THIS DOES NOT WEAKEN assertDestructiveAllowed, AND MUST NEVER BE USED BY
+ * seed-clean.ts. That script deletes USER ACCOUNTS as well as trips, and on the
+ * live database that includes the client's own requestor login — which is
+ * exactly why its production refusal has no override and must keep having none.
+ * The difference is scope, not appetite for risk: this script touches trip rows
+ * only and cannot delete a user.
+ *
+ * Three independent locks, because a wipe is unrecoverable without a dump:
+ *
+ *  1. ALLOW_TRIP_WIPE=1        — the deliberate opt-in, same shape as elsewhere.
+ *  2. CONFIRM_WIPE_HOST=<host> — for a production target ONLY, the operator must
+ *     retype the exact hostname. This is the lock against the commonest and
+ *     worst mistake: believing you are pointed at dev. A flag you can set from
+ *     memory does not prove you know where you are aimed.
+ *  3. EXPECT_TRIPS=<n>         — must equal the live trip count. An authorisation
+ *     given when there were 3 trips must not silently execute against 300 a
+ *     month later. This one also catches the wrong database entirely: dev and
+ *     prod almost never hold the same number of trips.
+ */
+export function assertTripWipeAllowed(script: string, actualTrips: number): void {
+  const host = targetHost(script);
+  const prod = isProductionHost(host);
+
+  const refuse = (...lines: string[]): never => {
+    console.error(["", `✖ ${script}: refusing to wipe (target: ${host}).`, ...lines, ""].join("\n"));
+    process.exit(1);
+  };
+
+  if (process.env.ALLOW_TRIP_WIPE !== "1") {
+    refuse(
+      "  This permanently DELETES every trip and its children. Re-run with:",
+      `    ALLOW_TRIP_WIPE=1 ... npx tsx prisma/${script}.ts --apply`
+    );
+  }
+
+  if (prod && process.env.CONFIRM_WIPE_HOST !== host) {
+    refuse(
+      `  Target is the PRODUCTION database (${host}).`,
+      "  Retype the host to confirm you know where this is aimed:",
+      `    CONFIRM_WIPE_HOST=${host}`,
+      process.env.CONFIRM_WIPE_HOST
+        ? `  (got "${process.env.CONFIRM_WIPE_HOST}" — does not match)`
+        : "  (CONFIRM_WIPE_HOST is not set)"
+    );
+  }
+
+  const expected = Number(process.env.EXPECT_TRIPS);
+  if (!Number.isInteger(expected)) {
+    refuse(
+      `  Set EXPECT_TRIPS to the trip count you are authorising (live count is ${actualTrips}).`,
+      "  This is what stops an old authorisation running against new data."
+    );
+  }
+  if (expected !== actualTrips) {
+    refuse(
+      `  EXPECT_TRIPS=${expected} but the target holds ${actualTrips} trip(s).`,
+      "  Either the data changed since this was authorised, or this is the wrong",
+      "  database. Re-check before overriding."
+    );
+  }
+
+  console.log(
+    `⚠ ${script}: all locks satisfied — target "${host}"${prod ? " (PRODUCTION)" : ""}, ${actualTrips} trip(s). Proceeding.`
+  );
+}
+
 /** Softer gate for the bootstrap seed: only the production host is refused. */
 export function assertNotProduction(script: string): void {
   const host = targetHost(script);
