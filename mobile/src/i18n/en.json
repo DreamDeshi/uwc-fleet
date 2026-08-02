@@ -32,6 +32,7 @@
     "fillFields": "Please enter your phone number and password.",
     "signIn": "Sign In",
     "createAccount": "Create Account",
+    "forgotPassword": "Forgotten your password? Contact the office — an admin can reset it for you.",
     "footer": "UWC Berhad © 2026"
   },
   "register": {
@@ -706,6 +707,7 @@
       "deactivateTitle": "Deactivate this account?",
       "deactivateBody": "Deactivate {{name}}? They will be logged out and cannot sign in until reactivated.",
       "resetPassword": "Reset Password",
+      "passwordTooWeak": "Password must be at least 12 characters and include a lowercase letter, an uppercase letter and a digit.",
       "passwordResetDone": "Password reset. Share the new password securely.",
       "tempPasswordHint": "New temporary password"
     },

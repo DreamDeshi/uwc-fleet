@@ -32,6 +32,7 @@
     "fillFields": "请输入您的电话号码和密码。",
     "signIn": "登录",
     "createAccount": "创建账户",
+    "forgotPassword": "忘记密码？请联系办公室——管理员可为您重置。",
     "footer": "UWC Berhad © 2026"
   },
   "register": {
@@ -706,6 +707,7 @@
       "deactivateTitle": "停用此账户？",
       "deactivateBody": "停用 {{name}}？该用户将被登出，且在重新激活前无法登录。",
       "resetPassword": "重置密码",
+      "passwordTooWeak": "密码必须至少 12 个字符，并包含小写字母、大写字母和数字。",
       "passwordResetDone": "密码已重置。请安全地分享新密码。",
       "tempPasswordHint": "新临时密码"
     },

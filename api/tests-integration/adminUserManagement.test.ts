@@ -191,6 +191,30 @@ describe("admin user management", () => {
     expect(audit).not.toBeNull();
   });
 
+  // ⚠ THE FLOOR THAT KEEPS A ROTATION ROTATED. This endpoint accepted SIX
+  // characters until 2 Aug 2026 — so an admin could reset any of the eight
+  // freshly-rotated prod accounts back to `abc123` and nothing would complain.
+  // The rule is shared with the rotation CLI (lib/passwordPolicy) precisely so
+  // the two cannot drift.
+  it("rejects a reset below the strength floor → 400", async () => {
+    const admin = await loginAs(ADMIN);
+    const res = await resetPassword(admin, targetId, "abc123");
+    expect(res.status).toBe(400);
+    // And the old password must still work — a rejected reset changes nothing.
+    await expect(loginAs(TARGET)).resolves.toBeTruthy();
+  });
+
+  it("rejects a long password missing a character class → 400", async () => {
+    const admin = await loginAs(ADMIN);
+    expect((await resetPassword(admin, targetId, "alllowercase1234")).status).toBe(400);
+    expect((await resetPassword(admin, targetId, "NoDigitsInHereAtAll")).status).toBe(400);
+  });
+
+  it("refuses to re-set the seeded default that was just rotated away", async () => {
+    const admin = await loginAs(ADMIN);
+    expect((await resetPassword(admin, targetId, "Password123")).status).toBe(400);
+  });
+
   it("password reset is admin-only — a non-admin is forbidden (403)", async () => {
     const target = await loginAs(TARGET);
     expect((await resetPassword(target, targetId, "Whatever123")).status).toBe(403);

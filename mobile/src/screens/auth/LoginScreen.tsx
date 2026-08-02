@@ -119,6 +119,14 @@ export function LoginScreen({ navigation }: Props) {
         variant="outline"
         style={{ marginTop: 12 }}
       />
+      {/* There is NO self-service password recovery — no SMS, no email, no
+          security question — and only an admin can reset one
+          (POST /auth/forgot-password is admin-only despite its name). Until
+          this line existed the dead end was completely silent: a driver who
+          forgot their password just failed to log in, with nothing on screen
+          telling them the fix is to phone the office. Plain text, not a link,
+          because there is no flow to send them to. */}
+      <Text style={styles.forgotHint}>{t("login.forgotPassword")}</Text>
     </>
   );
 
@@ -301,6 +309,15 @@ const styles = StyleSheet.create({
   error: { flex: 1, color: colors.red, fontSize: 14, fontWeight: "600" },
   // Mobile: footer sits at the bottom of the full-height sheet (unchanged).
   footer: { marginTop: "auto", textAlign: "center", color: colors.textFaint, fontSize: 13 },
+  // Muted and small: it is a fallback instruction, not a call to action, and it
+  // must not compete with Sign in / Create account.
+  forgotHint: {
+    marginTop: 18,
+    textAlign: "center",
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
   // Desktop card is content-height, so the footer sits just under the buttons.
   footerDesktop: { marginTop: 24, textAlign: "center", color: colors.textFaint, fontSize: 13 },
 });

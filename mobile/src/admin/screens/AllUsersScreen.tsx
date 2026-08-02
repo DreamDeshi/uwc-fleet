@@ -36,6 +36,7 @@ import {
 import { apiErrorMessage } from "../services/api";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import type { AdminUser, Role, UserStatus } from "../types";
+import { isStrongPassword } from "../../lib/passwordPolicy";
 
 type RoleFilter = "any" | Role;
 
@@ -246,8 +247,11 @@ function ManageUserModal({ user, onClose }: { user: AdminUser; onClose: () => vo
 
   const doReset = () => {
     clear();
-    if (newPassword.length < 6) {
-      setError(t("register.passwordTooShort"));
+    // ⚠ The SERVER floor, mirrored (lib/passwordPolicy). This checked `< 6`
+    // until 2 Aug 2026, which let an admin reset an account below the strength
+    // the prod rotation was held to — quietly undoing it one user at a time.
+    if (!isStrongPassword(newPassword)) {
+      setError(t("admin.users.passwordTooWeak"));
       return;
     }
     resetPassword.mutate(
