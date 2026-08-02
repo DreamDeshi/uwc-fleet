@@ -23,7 +23,12 @@ const BCRYPT_COST = 10;
 
 const registerSchema = z.object({
   phone: z.string().min(8, "Phone number is too short"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  // ⚠ THE SAME FLOOR EVERYWHERE (lib/passwordPolicy). Registration accepted six
+  // characters until 3 Aug 2026, which made it the last way to sit below the
+  // strength the prod accounts were rotated to.
+  password: z
+    .string()
+    .refine(isStrongPassword, (p) => ({ message: passwordProblemMessage(p) })),
   name: z.string().min(1, "Name is required"),
   // Spec REQUESTOR INTERFACE: every user must supply department + employee
   // number before they can register.

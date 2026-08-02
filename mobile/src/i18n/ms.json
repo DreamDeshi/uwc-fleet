@@ -20,7 +20,8 @@
     "showPassword": "Tunjukkan kata laluan",
     "hidePassword": "Sembunyikan kata laluan",
     "noData": "Belum ada apa-apa di sini.",
-    "fileTooLarge": "Fail itu terlalu besar. Sila hantar fail bawah 10 MB."
+    "fileTooLarge": "Fail itu terlalu besar. Sila hantar fail bawah 10 MB.",
+    "passwordTooWeak": "Kata laluan mesti sekurang-kurangnya 12 aksara dan mengandungi huruf kecil, huruf besar dan satu digit."
   },
   "login": {
     "welcome": "Selamat Kembali",
@@ -59,7 +60,6 @@
     "create": "Cipta Akaun",
     "haveAccount": "Sudah ada akaun?",
     "passwordMismatch": "Kata laluan tidak sepadan.",
-    "passwordTooShort": "Kata laluan mesti sekurang-kurangnya 6 aksara.",
     "nameRequired": "Sila masukkan nama penuh anda.",
     "employeeRequired": "Sila masukkan nombor pekerja anda.",
     "departmentRequired": "Sila pilih jabatan anda.",
@@ -707,7 +707,6 @@
       "deactivateTitle": "Nyahaktifkan akaun ini?",
       "deactivateBody": "Nyahaktifkan {{name}}? Mereka akan dilog keluar dan tidak boleh log masuk sehingga diaktifkan semula.",
       "resetPassword": "Set Semula Kata Laluan",
-      "passwordTooWeak": "Kata laluan mesti sekurang-kurangnya 12 aksara dan mengandungi huruf kecil, huruf besar dan satu digit.",
       "passwordResetDone": "Kata laluan ditetapkan semula. Kongsi kata laluan baharu dengan selamat.",
       "tempPasswordHint": "Kata laluan sementara baharu"
     },

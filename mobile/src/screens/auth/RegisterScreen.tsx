@@ -20,6 +20,7 @@ import { colors, layout, radius } from "../../theme";
 import { Button } from "../../components/Button";
 import { PasswordField, PressableField, TextField } from "../../components/Field";
 import { OptionsModal } from "../../components/OptionsModal";
+import { isStrongPassword } from "../../lib/passwordPolicy";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Register">;
 
@@ -56,7 +57,8 @@ export function RegisterScreen({ navigation }: Props) {
 
   const onSubmit = async () => {
     setError(null);
-    if (password.length < 6) return setError(t("register.passwordTooShort"));
+    // Mirrors the server floor (lib/passwordPolicy) — see the module header.
+    if (!isStrongPassword(password)) return setError(t("common.passwordTooWeak"));
     if (password !== confirm) return setError(t("register.passwordMismatch"));
     setLoading(true);
     try {

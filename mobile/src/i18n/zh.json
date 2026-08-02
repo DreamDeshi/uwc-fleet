@@ -20,7 +20,8 @@
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
     "noData": "这里还没有内容。",
-    "fileTooLarge": "文件过大。请发送小于 10 MB 的文件。"
+    "fileTooLarge": "文件过大。请发送小于 10 MB 的文件。",
+    "passwordTooWeak": "密码必须至少 12 个字符，并包含小写字母、大写字母和数字。"
   },
   "login": {
     "welcome": "欢迎回来",
@@ -59,7 +60,6 @@
     "create": "创建账户",
     "haveAccount": "已有账户？",
     "passwordMismatch": "两次输入的密码不一致。",
-    "passwordTooShort": "密码必须至少为 6 个字符。",
     "nameRequired": "请输入您的全名。",
     "employeeRequired": "请输入您的员工编号。",
     "departmentRequired": "请选择您的部门。",
@@ -707,7 +707,6 @@
       "deactivateTitle": "停用此账户？",
       "deactivateBody": "停用 {{name}}？该用户将被登出，且在重新激活前无法登录。",
       "resetPassword": "重置密码",
-      "passwordTooWeak": "密码必须至少 12 个字符，并包含小写字母、大写字母和数字。",
       "passwordResetDone": "密码已重置。请安全地分享新密码。",
       "tempPasswordHint": "新临时密码"
     },
