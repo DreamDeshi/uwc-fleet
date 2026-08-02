@@ -20,13 +20,29 @@ describe("accountStatusError", () => {
     expect(err!.code).toBe("ACCOUNT_DISABLED");
   });
 
-  it("rejects a pending_approval account", () => {
+  // ⚠ TWO SITUATIONS, TWO MESSAGES. This used to answer ACCOUNT_DISABLED for a
+  // pending account too, so a new driver waiting to be approved and an employee
+  // disabled by mistake read the identical sentence and neither learned who to
+  // ask. Still 401 either way — the client must drop its tokens in both cases.
+  it("tells a pending_approval account it is waiting, not disabled", () => {
     const err = accountStatusError("pending_approval");
-    expect(err?.code).toBe("ACCOUNT_DISABLED");
+    expect(err!.statusCode).toBe(401);
+    expect(err!.code).toBe("ACCOUNT_PENDING_APPROVAL");
+    expect(err!.message).toMatch(/waiting for admin approval/i);
   });
 
-  it("rejects when the user row no longer exists (undefined status)", () => {
+  it("names the remedy in both messages", () => {
+    // The point of the copy pass: an error that states the rule and stops is a
+    // dead end. Each of these has to say who can fix it.
+    expect(accountStatusError("disabled")!.message).toMatch(/contact the office/i);
+    expect(accountStatusError("pending_approval")!.message).toMatch(/ask the office/i);
+  });
+
+  it("treats a vanished user row as disabled, not as pending", () => {
+    // An unknown status must fall to the CLOSED end of the two, never to the
+    // "just wait and it will be approved" one.
     expect(accountStatusError(undefined)?.code).toBe("ACCOUNT_DISABLED");
     expect(accountStatusError(null)?.code).toBe("ACCOUNT_DISABLED");
+    expect(accountStatusError("some_future_status")?.code).toBe("ACCOUNT_DISABLED");
   });
 });

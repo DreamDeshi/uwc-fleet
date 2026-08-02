@@ -9,6 +9,7 @@ import {
   type PodOutboxApi,
   type PodOutboxItem,
 } from "./podOutboxCore";
+import { persistPodPhoto, sweepPodPhotos } from "./podPhotoStore";
 
 // POD OFFLINE OUTBOX — durable storage edge (AsyncStorage; localStorage-backed
 // on the web build) + change notification. All queue/merge/replay LOGIC lives
@@ -92,6 +93,11 @@ async function readOutbox(): Promise<PodOutboxItem[]> {
 // nothing was.
 async function writeOutbox(items: PodOutboxItem[]): Promise<void> {
   await AsyncStorage.setItem(OUTBOX_KEY, JSON.stringify(items));
+  // Collect stored photos nothing references any more — items just synced,
+  // dropped, retaken, or superseded by a direct upload. Doing it here, against
+  // the list actually written, covers every one of those paths without a delete
+  // threaded through each. Never throws (lib/podPhotoStore).
+  sweepPodPhotos(items.map((i) => i.photo?.uri).filter((u): u is string => Boolean(u)));
   notify();
 }
 
@@ -113,7 +119,15 @@ export async function enqueuePodItem(patch: OutboxPatch): Promise<void> {
       ? outcome.error
       : new Error("POD outbox unreadable — refusing to overwrite it");
   }
-  await writeOutbox(mergeOutboxItem(outcome.items, patch, new Date().toISOString()));
+  // ⚠ MOVE THE PHOTO SOMEWHERE THE OS WILL NOT RECLAIM, BEFORE STORING THE
+  // REFERENCE. The camera writes into the CACHE directory, which Android evicts
+  // under storage pressure without touching AsyncStorage — leaving a valid
+  // outbox entry pointing at a file that no longer exists, which then fails its
+  // five attempts and drops the delivery. See lib/podPhotoStore.
+  const persisted: OutboxPatch = patch.photo
+    ? { ...patch, photo: { ...patch.photo, uri: persistPodPhoto(patch.photo.uri, patch.stopId, Date.now()) } }
+    : patch;
+  await writeOutbox(mergeOutboxItem(outcome.items, persisted, new Date().toISOString()));
 }
 
 /** Drop a stop's item (the stop completed through the normal online path). */

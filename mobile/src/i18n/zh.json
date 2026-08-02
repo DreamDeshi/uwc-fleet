@@ -21,7 +21,9 @@
     "hidePassword": "隐藏密码",
     "noData": "这里还没有内容。",
     "fileTooLarge": "文件过大。请发送小于 10 MB 的文件。",
-    "passwordTooWeak": "密码必须至少 12 个字符，并包含小写字母、大写字母和数字。"
+    "passwordTooWeak": "密码必须至少 12 个字符，并包含小写字母、大写字母和数字。",
+    "errorOffline": "没有网络连接。请移动到有信号的地方再试——如果紧急，请致电办公室。",
+    "errorTimeout": "服务器响应超时。请重试——如果持续出现，请致电办公室。"
   },
   "login": {
     "welcome": "欢迎回来",
@@ -216,7 +218,8 @@
     "savedOffline": "已保存到本机——恢复网络后将自动上传。",
     "podQueued": "照片已保存——联网后上传",
     "outboxSynced": "已上传保存的送货记录（{{count}}）",
-    "outboxDropped": "有保存的送货记录无法上传（{{count}}）——请检查该行程。"
+    "outboxDropped_one": "有一笔已保存的送达未能上传。请通知办公室——该停靠点可能需要重做。",
+    "outboxDropped_other": "有 {{count}} 笔已保存的送达未能上传。请通知办公室——这些停靠点可能需要重做。"
   },
   "myStats": {
     "title": "我的数据",
