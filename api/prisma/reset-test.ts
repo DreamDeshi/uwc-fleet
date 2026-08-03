@@ -1,8 +1,9 @@
 /**
  * Fast reset of the TEST database between runs: truncate every transactional
  * table (trips, stops, cargo, docs, location logs, audit, leave, fuel, etc.)
- * while KEEPING master data (users, trucks, zones, rates, holidays, consignees,
- * settings). Then re-ensure the test requestor + synthetic consignees.
+ * plus the global AppSetting row, while KEEPING master data (users, trucks,
+ * zones, rates, holidays, consignees). Then re-ensure the test requestor +
+ * synthetic consignees.
  *
  * This is the same wipe the integration harness performs before each test, made
  * available as a CLI (`npm run test:db:reset`) for manual iteration — it does
@@ -40,6 +41,20 @@ export const TRANSACTIONAL_TABLES = [
   "FuelLog",
   "VehicleMaintenance",
   "AuditLog",
+  // Global settings — the singleton row holding `dispatch_mode`. It LOOKS like
+  // master data, but nothing seeds it: the schema default is `manual` and
+  // `getDispatchMode` upserts the row on first read. So truncating restores the
+  // real default rather than destroying configuration.
+  //
+  // It is here because leaving it out made the mode leak across whole runs. A
+  // suite (or an e2e probe whose best-effort restore didn't fire) left it on
+  // `auto`; in auto mode a booking is dispatched the instant it is created, so
+  // `PATCH /trips/:id/approve` — which requires `pending` — 400s. That failed
+  // 148 integration tests with "Only pending trips can be approved.", a message
+  // that names the trip state and points nowhere near a global setting. Worse,
+  // the evidence self-destructs: a later test resets the row, so the value at
+  // rest reads innocent once the run has finished.
+  "AppSetting",
 ] as const;
 
 /**
