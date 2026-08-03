@@ -8,8 +8,10 @@ import { api, prisma, resetDb, loginAs, auth } from "./helpers/harness";
  * account so it never contaminates the seeded logins other test files rely on.
  */
 
-// ≥12 with mixed case + a digit: the floor every password-setting path shares
-// since 3 Aug 2026 (lib/passwordPolicy). The old "SelfTest123" was 11.
+// Mixed case + a digit and at least PASSWORD_MIN_LENGTH characters: the floor
+// every password-setting path shares (lib/passwordPolicy). That floor was 12
+// from 3 Aug 2026 and is 11 from 4 Aug; this fixture sits above it either way,
+// so it does not need to move when the floor does.
 const SELF = { phone: "+60188880001", password: "SelfTester123" };
 
 async function ensureSelfUser() {
@@ -128,11 +130,16 @@ describe("self-service /users/me", () => {
     }
   });
 
-  it("password: refuses the seeded default that prod was rotated away from", async () => {
+  // ⚠ INVERTED 4 Aug 2026 (owner decision). This asserted 400 while the seeded
+  // default was on the weak list. The floor is now 11 and `password123` is off
+  // that list, so a user may set it deliberately. Every other weak-password
+  // assertion above still holds — this one moved because the RULE moved.
+  it("password: allows the seeded default — legal again since 4 Aug 2026", async () => {
     const token = await loginAs(SELF);
     expect(
       (await patchPassword(token, { current_password: SELF.password, new_password: "Password123" })).status
-    ).toBe(400);
+    ).toBe(200);
+    await expect(loginAs({ phone: SELF.phone, password: "Password123" })).resolves.toBeTruthy();
   });
 
   it("password: same as current → 400 PASSWORD_UNCHANGED", async () => {

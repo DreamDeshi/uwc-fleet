@@ -210,9 +210,17 @@ describe("admin user management", () => {
     expect((await resetPassword(admin, targetId, "NoDigitsInHereAtAll")).status).toBe(400);
   });
 
-  it("refuses to re-set the seeded default that was just rotated away", async () => {
+  // ⚠ INVERTED 4 Aug 2026 (owner decision). This asserted 400 — the endpoint
+  // refused to re-set the seeded default that the 2 Aug rotation had removed.
+  // `password123` then came off the weak list and the floor dropped to 11, by
+  // the owner's explicit instruction, so the seeded default is a legal password
+  // again and the prod accounts were rotated back to it. Asserting 200 keeps
+  // this test honest about the rule that is actually in force.
+  it("allows the seeded default — it is a legal password again since 4 Aug 2026", async () => {
     const admin = await loginAs(ADMIN);
-    expect((await resetPassword(admin, targetId, "Password123")).status).toBe(400);
+    expect((await resetPassword(admin, targetId, "Password123")).status).toBe(200);
+    // And it genuinely works, rather than merely being accepted by validation.
+    await expect(loginAs({ phone: TARGET.phone, password: "Password123" })).resolves.toBeTruthy();
   });
 
   it("password reset is admin-only — a non-admin is forbidden (403)", async () => {

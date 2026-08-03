@@ -7,16 +7,18 @@
  * disagree, the app either rejects a password the server would accept, or
  * promises one it will refuse. `passwordPolicy.test.ts` pins the constants.
  *
- * WHY THE FLOOR IS 12 AND NOT 6: the eight seeded prod accounts were rotated on
- * 2 Aug 2026 to 16-char generated passwords. The admin reset path accepted six
- * characters, so a reset could quietly undo that rotation one account at a time.
+ * WHY THE FLOOR IS 11 AND NOT 6: the admin reset path accepted six characters
+ * until 2 Aug 2026, so a reset could quietly undo a rotation one account at a
+ * time. The floor went to 12 that day and to 11 on 4 Aug 2026 — see the server
+ * module for the owner decision behind the second move.
  */
 
 /** Keep in step with PASSWORD_MIN_LENGTH on the server. */
-export const PASSWORD_MIN_LENGTH = 12;
+export const PASSWORD_MIN_LENGTH = 11;
 
+// ⚠ `password123` was removed on 4 Aug 2026 by owner decision — the seeded
+// default is a legal password again. Keep this set identical to the server's.
 const WEAK_PASSWORDS = new Set([
-  "password123",
   "password",
   "changeme",
   "admin123",

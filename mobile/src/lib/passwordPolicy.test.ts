@@ -7,10 +7,11 @@ import { isStrongPassword, PASSWORD_MIN_LENGTH } from "./passwordPolicy";
  * or accepts one it will refuse with a 400 the admin cannot act on.
  */
 describe("password floor (client mirror)", () => {
-  it("is 12 characters, matching the server constant", () => {
+  it("is 11 characters, matching the server constant", () => {
     // ⚠ If this changes, change PASSWORD_MIN_LENGTH on the server in the SAME
-    // commit — the value is what the prod rotation was actually held to.
-    expect(PASSWORD_MIN_LENGTH).toBe(12);
+    // commit. Lowered 12 → 11 on 4 Aug 2026 by owner decision so the prod
+    // accounts could go back to the seeded password.
+    expect(PASSWORD_MIN_LENGTH).toBe(11);
   });
 
   it("accepts a password of the shape the rotation generated", () => {
@@ -30,15 +31,16 @@ describe("password floor (client mirror)", () => {
     expect(isStrongPassword("NoDigitsInHereAtAll")).toBe(false); // no digit
   });
 
-  it("rejects the seeded default even though it has the right classes", () => {
-    // Password123 clears length? No — but the lowercased form is on the weak
-    // list regardless, and padding it must not sneak it through.
-    expect(isStrongPassword("Password123")).toBe(false);
-    expect(isStrongPassword("password123")).toBe(false);
+  // ⚠ INVERTED 4 Aug 2026 (owner decision): `password123` came off the weak
+  // list so the seeded default is usable again. The lowercase spelling is still
+  // refused, but for want of an uppercase letter rather than by the list.
+  it("accepts the seeded default, still refuses its lowercase spelling", () => {
+    expect(isStrongPassword("Password123")).toBe(true); // 11 chars, all classes
+    expect(isStrongPassword("password123")).toBe(false); // no uppercase
   });
 
   it("accepts exactly at the boundary, rejects one short", () => {
-    expect(isStrongPassword("Abcdefghij1k")).toBe(true); // 12
-    expect(isStrongPassword("Abcdefghij1")).toBe(false); // 11
+    expect(isStrongPassword("Abcdefghij1")).toBe(true); // 11
+    expect(isStrongPassword("Abcdefghi1")).toBe(false); // 10
   });
 });

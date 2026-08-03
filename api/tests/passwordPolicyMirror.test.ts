@@ -21,21 +21,26 @@ import * as mobilePolicy from "../../mobile/src/lib/passwordPolicy";
  * passwordProblems/passwordProblemMessage for its error strings, which the
  * client has no use for).
  *
- * ⚠ THE FLOOR IS NOT COSMETIC. It is the strength the eight seeded prod accounts
- * were rotated to on 2 Aug 2026; the admin reset path accepted six characters
- * until the same day, which meant a reset could undo that rotation one account
- * at a time. If these two drift, that hole reopens on one side only.
+ * ⚠ THE FLOOR IS NOT COSMETIC. The admin reset path accepted six characters
+ * until 2 Aug 2026, which meant a reset could undo a rotation one account at a
+ * time. If these two drift, that hole reopens on one side only.
+ *
+ * ⚠ On 4 Aug 2026 the owner lowered the floor to 11 and dropped `password123`
+ * from the weak list so the prod accounts could return to the seeded password.
+ * The mirror guarantee is unchanged; only the verdicts moved. Do not raise
+ * either value back without asking.
  */
 
 const CASES: { pw: string; why: string }[] = [
   // — Accepted —
-  { pw: "jY6Xo9nrW4dR4gYD", why: "the shape the prod rotation actually generated" },
-  { pw: "Abcdefghij1k", why: "exactly at the 12-char boundary" },
+  { pw: "jY6Xo9nrW4dR4gYD", why: "the shape the 2 Aug prod rotation generated" },
+  { pw: "Abcdefghij1", why: "exactly at the 11-char boundary" },
   { pw: "Tr0ubadour&3xtra", why: "symbols are allowed, not required" },
   { pw: "MixedCase12345678", why: "comfortably long" },
+  { pw: "Password123", why: "the seeded default — LEGAL since 4 Aug 2026" },
 
   // — Length —
-  { pw: "Abcdefghij1", why: "one character short of the floor" },
+  { pw: "Abcdefghi1", why: "one character short of the floor" },
   { pw: "Ab1", why: "far too short" },
   { pw: "", why: "empty" },
 
@@ -45,16 +50,19 @@ const CASES: { pw: string; why: string }[] = [
   { pw: "NoDigitsInHereAtAll", why: "no digit" },
   { pw: "1234567890123456", why: "digits only" },
 
-  // — Known defaults, including the one this project shipped with —
-  { pw: "Password123", why: "the seeded default, correct classes" },
-  { pw: "password123", why: "the seeded default, lowercased" },
-  { pw: "PASSWORD123", why: "the seeded default, uppercased" },
+  // — Known defaults still on the weak list —
   { pw: "changeme", why: "known default" },
   { pw: "qwerty123", why: "known default" },
   { pw: "12345678", why: "known default" },
 
+  // — The seeded default's other spellings. These are refused by the CHARACTER
+  //   CLASS rules, not by the weak list, which no longer contains it. They are
+  //   the reason removing `password123` did not open a case-insensitive hole.
+  { pw: "password123", why: "seeded default lowercased — no uppercase" },
+  { pw: "PASSWORD123", why: "seeded default uppercased — no lowercase" },
+
   // — Near misses around the weak list —
-  { pw: "Password1234", why: "12 chars, NOT the exact default string" },
+  { pw: "Password1234", why: "the 12-char stand-in used while the floor was 12" },
   { pw: "MyPassword123", why: "contains a default as a substring only" },
 
   // — Unicode / whitespace, where two regexes can quietly disagree —
@@ -68,7 +76,8 @@ describe("password policy: api ↔ mobile mirror", () => {
     expect(mobilePolicy.PASSWORD_MIN_LENGTH).toBe(apiPolicy.PASSWORD_MIN_LENGTH);
     // Pinned to the literal too: if someone lowers BOTH sides in one commit the
     // comparison above still passes, and the rotation floor would drop silently.
-    expect(apiPolicy.PASSWORD_MIN_LENGTH).toBe(12);
+    // 11 since 4 Aug 2026 (owner decision) — see api/src/lib/passwordPolicy.ts.
+    expect(apiPolicy.PASSWORD_MIN_LENGTH).toBe(11);
   });
 
   it("agrees on every case in the matrix", () => {
@@ -90,8 +99,17 @@ describe("password policy: api ↔ mobile mirror", () => {
     expect(verdicts).toContain(false);
   });
 
-  it("rejects the seeded default whatever its casing", () => {
-    for (const pw of ["Password123", "password123", "PASSWORD123", "PaSsWoRd123"]) {
+  // ⚠ INVERTED 4 Aug 2026 (owner decision). This used to assert that every
+  // casing of the seeded default was refused. `password123` is no longer on the
+  // weak list, so the mixed-case spellings are now LEGAL — that is the point of
+  // the change, not a regression. What still has to hold is that both twins
+  // agree, and that the all-one-case spellings stay refused on class grounds.
+  it("accepts the seeded default in mixed case, still refuses the single-case spellings", () => {
+    for (const pw of ["Password123", "PaSsWoRd123"]) {
+      expect(apiPolicy.isStrongPassword(pw), pw).toBe(true);
+      expect(mobilePolicy.isStrongPassword(pw), pw).toBe(true);
+    }
+    for (const pw of ["password123", "PASSWORD123"]) {
       expect(apiPolicy.isStrongPassword(pw), pw).toBe(false);
       expect(mobilePolicy.isStrongPassword(pw), pw).toBe(false);
     }
