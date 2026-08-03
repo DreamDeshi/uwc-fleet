@@ -23,6 +23,11 @@ export const api = () => supertest(app);
  * Reset to a known state between tests: wipe transactional tables (trips,
  * stops, cargo, leave, …) and re-ensure the test requestor + consignees. Master
  * data (trucks, zones, rates, holidays) is preserved, so this is fast.
+ *
+ * This also clears the global AppSetting row, so every test starts in the
+ * schema-default `manual` dispatch mode no matter what a previous test, suite
+ * or e2e run left behind. A test that needs `auto` must set it AFTER calling
+ * this — see prisma/reset-test.ts for why it is reset rather than preserved.
  */
 export async function resetDb(): Promise<void> {
   await truncateTransactional(prisma);
