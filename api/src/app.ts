@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
-import rateLimit from "express-rate-limit";
+import { createGlobalRateLimiter, resolveRateLimit } from "./middleware/rateLimit";
 import authRoutes from "./routes/auth";
 import usersRoutes from "./routes/users";
 import meRoutes from "./routes/me";
@@ -48,26 +48,20 @@ const corsOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:8081")
   .map((o) => o.trim())
   .filter(Boolean);
 app.use(cors({ origin: corsOrigins }));
-// Requests per minute per IP. RATE_LIMIT_MAX overrides the default 100; 0
-// disables throttling entirely — intended ONLY for local testing (the browser
-// e2e suite drives one API instance from one IP, so the whole Playwright run
-// shares a single budget and trips it after a few specs). Unset, blank, or
-// invalid values keep the production default, so a typo can never weaken the
-// deployed limiter.
-const rateLimitRaw = process.env.RATE_LIMIT_MAX?.trim();
-const rateLimitParsed = rateLimitRaw ? Number(rateLimitRaw) : NaN;
-const RATE_LIMIT_MAX =
-  Number.isInteger(rateLimitParsed) && rateLimitParsed >= 0 ? rateLimitParsed : 100;
-if (RATE_LIMIT_MAX > 0) {
-  app.use(
-    rateLimit({
-      windowMs: 60 * 1000,
-      limit: RATE_LIMIT_MAX,
-      standardHeaders: true,
-      legacyHeaders: false,
-    })
-  );
-}
+// Requests per minute per USER (per IP when unauthenticated) — see
+// middleware/rateLimit for why the key is not the IP alone. RATE_LIMIT_MAX
+// overrides the default; 0 disables throttling entirely, intended ONLY for
+// local testing (the browser e2e suite drives one API instance from one IP).
+// Unset, blank or invalid values keep the production default, so a typo can
+// never weaken the deployed limiter.
+//
+// 300/min is sized against real client behaviour rather than picked: the admin
+// board polls ~20 req/min per open session with nobody touching it, so this is
+// ~15x idle and ~3x a heavy interaction minute. Because the budget is per
+// PERSON it no longer has to grow with UWC's headcount — the old per-IP 100 was
+// already exhausted by five idle office sessions.
+const RATE_LIMIT_MAX = resolveRateLimit(process.env.RATE_LIMIT_MAX, 300);
+app.use(createGlobalRateLimiter(RATE_LIMIT_MAX));
 app.use(express.json());
 
 /**
