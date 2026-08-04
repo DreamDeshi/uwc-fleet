@@ -42,6 +42,11 @@ const TAB_BAR_STYLE = {
   paddingBottom: Platform.OS === "web" ? 16 : 8,
 } as const;
 
+// See DriverTabs for why minHeight is required: the taller BAR did not stop
+// RN-Web clipping the label's own 11px box, which sliced every descender, and
+// `height` cannot fix it because the Text class is display:inline.
+const TAB_BAR_LABEL_STYLE = { fontSize: 12, lineHeight: 16, minHeight: 18, fontWeight: "700" } as const;
+
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
@@ -91,7 +96,7 @@ export function AdminTabs() {
         headerShown: false,
         tabBarActiveTintColor: colors.blue,
         tabBarInactiveTintColor: colors.textFaint,
-        tabBarLabelStyle: { fontSize: 12, fontWeight: "700" },
+        tabBarLabelStyle: TAB_BAR_LABEL_STYLE,
         tabBarStyle: TAB_BAR_STYLE,
       }}
     >

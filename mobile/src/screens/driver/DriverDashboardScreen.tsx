@@ -348,10 +348,18 @@ function FuelBand({
         <MaterialCommunityIcons name="gas-station" size={23} color={nudge ? "#d97706" : colors.blue} />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={styles.fuelTitle} numberOfLines={1}>
+        {/* Two lines, because one truncates the PLATE — the only part that
+            identifies which truck this is about. "Rekod minyak untuk PND 1888"
+            (ms) is 6 chars longer than the English and lost its plate to an
+            ellipsis: "Rekod minyak untuk P…". English still fits on one line,
+            so this only changes the taller languages. */}
+        <Text style={styles.fuelTitle} numberOfLines={2}>
           {plate ? t("driver.logFuelFor", { plate }) : t("profile.logFuel")}
         </Text>
-        <Text style={[styles.fuelSub, nudge && styles.fuelSubNudge]} numberOfLines={1}>
+        {/* Same reason as the title: the Malay nudge
+            ("belum ada isian direkodkan — log minyak?") lost its call to action
+            to the ellipsis, leaving a statement with no prompt. */}
+        <Text style={[styles.fuelSub, nudge && styles.fuelSubNudge]} numberOfLines={2}>
           {sub}
         </Text>
       </View>
