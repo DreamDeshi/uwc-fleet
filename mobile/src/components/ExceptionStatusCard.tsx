@@ -17,12 +17,19 @@ import { apiErrorMessage } from "../services/api";
 // offline/queued (owner ruling, 7 Jul), and a reported exception is neither —
 // it reached the office. Amber carries "pending, someone is looking at it",
 // the same semantics the fuel nudge and the awaiting-approval chip use.
-const STATE_TONE: Record<string, string> = {
-  reported: "#d97706",
-  more_evidence: colors.yellow,
-  verified: colors.teal,
-  rejected: colors.red,
-  resolved: colors.green,
+//
+// ⚠ Each state carries its own FOREGROUND. The badge used to paint every tone
+// under a single white label, which put `more_evidence` — white on yellow — at
+// about 1.4:1. That is the ONE state that asks the driver for something back,
+// so it was the least readable badge in the app and the only one that matters
+// urgently. Yellow keeps dark text (the same pairing statusColors.pending
+// uses, 9.91:1); the rest use the accessible fills.
+const STATE_TONE: Record<string, { bg: string; fg: string }> = {
+  reported: { bg: colors.amberText, fg: colors.white },
+  more_evidence: { bg: colors.yellow, fg: colors.navy },
+  verified: { bg: colors.teal, fg: colors.white },
+  rejected: { bg: colors.redDeep, fg: colors.white },
+  resolved: { bg: colors.greenText, fg: colors.white },
 };
 
 /**
@@ -91,17 +98,17 @@ export function ExceptionStatusCard({ tripId }: { tripId: string }) {
     }
   };
 
-  const tone = STATE_TONE[exc.current_state] ?? colors.grey;
+  const tone = STATE_TONE[exc.current_state] ?? { bg: colors.grey, fg: colors.white };
   const needsEvidence = canDriverAddEvidence(exc.current_state);
   const reportedAt = exc.reported_at ? formatTime(exc.reported_at) : null;
 
   return (
-    <View style={[styles.card, { borderLeftColor: tone }]}>
+    <View style={[styles.card, { borderLeftColor: tone.bg }]}>
       <View style={styles.row}>
-        <Ionicons name="alert-circle" size={17} color={tone} />
+        <Ionicons name="alert-circle" size={17} color={tone.bg} />
         <Text style={styles.title}>{t("exception.bannerTitle")}</Text>
-        <View style={[styles.badge, { backgroundColor: tone }]}>
-          <Text style={styles.badgeText}>{t(exceptionStateLabelKey(exc.current_state))}</Text>
+        <View style={[styles.badge, { backgroundColor: tone.bg }]}>
+          <Text style={[styles.badgeText, { color: tone.fg }]}>{t(exceptionStateLabelKey(exc.current_state))}</Text>
         </View>
       </View>
 

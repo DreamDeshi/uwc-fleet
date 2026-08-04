@@ -313,8 +313,10 @@ function PrimaryTripCard({
 }
 
 // ── Fuel ──────────────────────────────────────────────────────────────────
-// Amber (#d97706) is the owner-approved exception to the orange rule: it is a
-// reminder, not an offline state, and it never blocks anything.
+// Amber is the owner-approved exception to the orange rule: it is a reminder,
+// not an offline state, and it never blocks anything. The hue is unchanged; it
+// moved from a hardcoded #d97706 (3.19:1) to `colors.amberText` (5.02:1) on
+// 4 Aug 2026, because this band is read through a windscreen in daylight.
 function FuelBand({
   plate,
   nudge,
@@ -345,7 +347,7 @@ function FuelBand({
       accessibilityRole="button"
     >
       <View style={[styles.fuelIcon, nudge && styles.fuelIconNudge]}>
-        <MaterialCommunityIcons name="gas-station" size={23} color={nudge ? "#d97706" : colors.blue} />
+        <MaterialCommunityIcons name="gas-station" size={23} color={nudge ? colors.amberText : colors.blue} />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         {/* Two lines, because one truncates the PLATE — the only part that
@@ -547,14 +549,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     ...shadow.card,
   },
-  fuelBandNudge: { borderWidth: 1.5, borderColor: "#d97706" },
+  fuelBandNudge: { borderWidth: 1.5, borderColor: colors.amberText },
   fuelIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
   fuelIconNudge: { backgroundColor: colors.tintOrange },
   fuelTitle: { fontSize: 15, fontWeight: "800", color: colors.navy },
   fuelSub: { fontSize: 13, color: colors.textMuted, marginTop: 1 },
-  fuelSubNudge: { color: "#d97706", fontWeight: "700" },
+  fuelSubNudge: { color: colors.amberText, fontWeight: "700" },
   fuelPill: { minHeight: 44, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center" },
-  fuelPillNudge: { backgroundColor: "#d97706" },
+  // A FILL under the white "Log" label — 3.19:1 at #d97706, 5.02:1 here.
+  fuelPillNudge: { backgroundColor: colors.amberText },
   fuelPillText: { fontSize: 14, fontWeight: "800", color: colors.white },
 
   receipt: {

@@ -87,8 +87,11 @@ const VARIANTS: Record<
 > = {
   primary: { bg: colors.blue, fg: colors.white, shadow: actionShadow.blue },
   accent: { bg: colors.yellow, fg: colors.navy, shadow: actionShadow.yellow },
-  success: { bg: colors.green, fg: colors.white, shadow: actionShadow.green },
-  danger: { bg: colors.red, fg: colors.white, shadow: actionShadow.red },
+  // ⚠ greenText/redDeep, not green/red — these are FILLS under white text.
+  // `success` is the driver's primary action ("Delivered", "Start trip"), tapped
+  // outdoors in direct sun, and it sat at 3.00:1 until 4 Aug 2026.
+  success: { bg: colors.greenText, fg: colors.white, shadow: actionShadow.green },
+  danger: { bg: colors.redDeep, fg: colors.white, shadow: actionShadow.red },
   outline: { bg: colors.white, fg: colors.blue, border: colors.blue },
 };
 
