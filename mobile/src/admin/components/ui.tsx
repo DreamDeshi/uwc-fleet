@@ -466,8 +466,12 @@ export function FilterHeader<F extends string>({
       <Button variant="primary" full onPress={onAdd}>{`+ ${addLabel}`}</Button>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <FilterDropdown<F> value={filter} onChange={onFilterChange} options={filterOptions} prefix={filterPrefix} />
+        {/* Two lines: one truncated the LAST count away in Malay — "0 Dalam
+            Trip · 8 Tersedia · 0 Tidak B…" hid the off-duty figure entirely.
+            The English string fits on one line, so shorter locales are
+            unaffected; only ms/zh gain the second line when they need it. */}
         {countsText ? (
-          <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: font.xs, color: colors.textMuted, textAlign: "right" }}>
+          <Text numberOfLines={2} style={{ flexShrink: 1, fontSize: font.xs, color: colors.textMuted, textAlign: "right" }}>
             {countsText}
           </Text>
         ) : null}

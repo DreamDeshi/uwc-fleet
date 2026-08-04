@@ -15,16 +15,25 @@
  * than the one it replaces.
  */
 
-/** Minimum length. Matches what the prod rotation actually used. */
-export const PASSWORD_MIN_LENGTH = 12;
+/**
+ * Minimum length.
+ *
+ * ⚠ OWNER DECISION, 4 Aug 2026: lowered 12 → 11 so the eight prod accounts could
+ * go back to the memorable seeded password. This is deliberate, not drift — do
+ * NOT "restore" it to 12 without asking the owner first.
+ */
+export const PASSWORD_MIN_LENGTH = 11;
 
 /**
- * Passwords a rotation must never re-introduce. `password123` is here because
- * it IS the seeded default this project shipped with (published in three
- * READMEs), so re-setting it is the specific regression worth blocking.
+ * Passwords a rotation must never re-introduce.
+ *
+ * ⚠ `password123` was removed from this set on 4 Aug 2026 by owner decision, so
+ * that the seeded default `Password123` is a legal password again. The lowercase
+ * and uppercase spellings are still refused, but by the character-class rules
+ * rather than by this list. Re-adding it would lock every prod account out of
+ * its own password — ask the owner before you do.
  */
 export const WEAK_PASSWORDS = new Set([
-  "password123",
   "password",
   "changeme",
   "admin123",

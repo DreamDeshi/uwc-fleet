@@ -113,7 +113,7 @@ export function BookingDetailScreen() {
   // ── Card fragments (identical markup; stacked on phone, two columns on PC) ──
   const pendingNotice = trip.status === "pending" ? (
     <View style={styles.notice}>
-      <Ionicons name="information-circle-outline" size={18} color="#d97706" />
+      <Ionicons name="information-circle-outline" size={18} color={colors.amberText} />
       <Text style={styles.noticeText}>{t("bookingDetail.pendingNotice")}</Text>
     </View>
   ) : null;

@@ -9,14 +9,27 @@ export const colors = {
   yellow: "#FFCC00", // accent / pending
   navy: "#1A1F5E", // headings
   bg: "#f4f6fb", // app background
-  green: "#3DAA35", // success / completed — as a FILL (status pills, buttons)
-  // Green as TEXT. `green` on white is 3:1 — fine for a large pill fill, short
-  // of 4.5:1 for a figure a driver reads in sunlight. Every green NUMBER (money,
-  // percentile band) uses this darker shade instead; fills keep `green`, so the
-  // status pills are unchanged.
+  // Brand green — DECORATIVE ONLY (dots, thin accents, icons on a light
+  // background). ⚠ Do NOT put white text on it: white on #3DAA35 is 3.00:1.
+  green: "#3DAA35",
+  // The ACCESSIBLE green, used two ways: as green TEXT on a light background
+  // (5.05:1 on white), and as a FILL underneath white text (also 5.05:1 —
+  // contrast is symmetric). The 4 Aug 2026 sweep found the original comment
+  // here was half right: it moved green NUMBERS off `green`, but left the
+  // white-on-green FILLS at 3.00:1 — including the driver's primary "Delivered"
+  // button and the completed status pill, both read outdoors in direct sun.
   greenText: "#2A7F24",
-  red: "#E53935", // error / rejected
-  orange: "#F97316", // warning / offline-queued
+  red: "#E53935", // error — DECORATIVE ONLY, white on it is 4.23:1
+  // Red as a FILL under white text (5.62:1). `red` itself falls just short of
+  // AA, which is why the danger button and the rejected pill use this instead.
+  redDeep: "#C62828",
+  orange: "#F97316", // warning / offline-queued — FILLS ONLY, 2.80:1 as text
+  // Amber = "pending, someone is looking at it" (owner-approved exception to the
+  // orange rule — a reminder, not an offline state). It was hardcoded as
+  // #d97706 in six places at 3.19:1; this is the same hue at 5.02:1, and it
+  // works as text on white/tints AND as a fill under white text.
+  amber: "#d97706", // decorative only — see amberText
+  amberText: "#B45309",
   grey: "#64748b", // neutral / cancelled
   violet: "#6D28D9", // in-progress (live) — admin design-system family
   teal: "#0F766E", // approved — admin design-system family
@@ -24,7 +37,14 @@ export const colors = {
   // greys
   text: "#1A1F5E",
   textMuted: "#666666",
-  textFaint: "#9aa5c4",
+  // ⚠ Darkened 4 Aug 2026: #9aa5c4 was 2.46:1 on white — it failed AA outright
+  // and was used 146x across 51 files, including `tabBarInactiveTintColor`, so
+  // three of four tab labels sat below the line at all times. It had only ever
+  // been fixed case by case (see TripDetailsScreen's delivery address). This
+  // value is 4.97:1 on white / 4.60:1 on `bg`, and is deliberately kept LIGHTER
+  // than textMuted (5.74:1) so the three-tier text hierarchy survives the fix
+  // instead of collapsing into two.
+  textFaint: "#646F91",
   border: "#e0e4ef",
   borderLight: "#e8ecf4",
   fieldBg: "#f4f6fb",
@@ -59,9 +79,13 @@ export const statusColors: Record<TripStatus, { bg: string; fg: string }> = {
   // ("Awaiting Approval") and, where money is at stake, by the Earnings pending
   // badge. Deliberately not orange (the 7 Jul ruling reserves orange for
   // offline/queued) and not grey (that reads as `cancelled`).
-  pending_approval: { bg: colors.green, fg: colors.white },
-  completed: { bg: colors.green, fg: colors.white },
-  rejected: { bg: colors.red, fg: colors.white },
+  // ⚠ greenText/redDeep, not green/red: these pills carry WHITE text, and the
+  // brand hues are 3.00:1 and 4.23:1 under white. Same hue family, same
+  // semantics, same admin parity (the admin board renders these as tinted
+  // backgrounds with dark text, so it was never matching these exact values).
+  pending_approval: { bg: colors.greenText, fg: colors.white },
+  completed: { bg: colors.greenText, fg: colors.white },
+  rejected: { bg: colors.redDeep, fg: colors.white },
   cancelled: { bg: colors.grey, fg: colors.white },
 };
 

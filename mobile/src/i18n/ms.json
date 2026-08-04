@@ -21,7 +21,7 @@
     "hidePassword": "Sembunyikan kata laluan",
     "noData": "Belum ada apa-apa di sini.",
     "fileTooLarge": "Fail itu terlalu besar. Sila hantar fail bawah 10 MB.",
-    "passwordTooWeak": "Kata laluan mesti sekurang-kurangnya 12 aksara dan mengandungi huruf kecil, huruf besar dan satu digit.",
+    "passwordTooWeak": "Kata laluan mesti sekurang-kurangnya 11 aksara dan mengandungi huruf kecil, huruf besar dan satu digit.",
     "errorOffline": "Tiada sambungan internet. Pergi ke kawasan bertalian dan cuba lagi — hubungi pejabat jika mendesak.",
     "errorTimeout": "Pelayan mengambil masa terlalu lama untuk membalas. Cuba lagi — hubungi pejabat jika ia berterusan."
   },

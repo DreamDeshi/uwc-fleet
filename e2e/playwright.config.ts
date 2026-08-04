@@ -16,6 +16,12 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./tests",
+  // uiAuditSweep is a CAPTURE tool, not a check: it walks every screen in three
+  // languages at two widths, writes ~90 PNGs and a findings JSON, and asserts
+  // nothing. Three minutes of CI that can never fail is three minutes wasted, so
+  // it runs on demand via playwright.audit.config.ts. The assertions it led to
+  // live in tabLabelBox.spec.ts and i18nLayoutSweep.spec.ts, which DO run here.
+  testIgnore: /uiAuditSweep\.spec\.ts/,
   // Capture the backend's dispatch_mode before the run and restore that exact
   // value after — resetState() flips it to manual per spec and a prod run once
   // left the live trial that way.

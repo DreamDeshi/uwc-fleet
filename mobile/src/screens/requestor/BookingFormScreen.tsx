@@ -1635,6 +1635,6 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 20, fontWeight: "800", color: colors.navy, marginBottom: 8 },
   modalTicket: { fontSize: 14, fontWeight: "700", color: colors.blue, letterSpacing: 0.6, marginBottom: 8 },
   pendingChip: { backgroundColor: "#fffbeb", paddingHorizontal: 14, paddingVertical: 4, borderRadius: radius.pill },
-  pendingChipText: { color: "#d97706", fontSize: 13, fontWeight: "800" },
+  pendingChipText: { color: colors.amberText, fontSize: 13, fontWeight: "800" },
   modalBody: { fontSize: 14, color: colors.textMuted, textAlign: "center", marginTop: 16, lineHeight: 19 },
 });

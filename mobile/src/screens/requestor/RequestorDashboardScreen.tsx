@@ -118,7 +118,7 @@ export function RequestorDashboardScreen() {
         <View style={{ flex: 1, padding: 14 }}>
           <View style={styles.pendingHead}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Ionicons name="time-outline" size={16} color="#d97706" />
+              <Ionicons name="time-outline" size={16} color={colors.amberText} />
               <Text style={styles.pendingLabel}>{t("requestor.pendingApproval")}</Text>
             </View>
             <View style={styles.awaitPill}>
@@ -142,7 +142,7 @@ export function RequestorDashboardScreen() {
     <View style={styles.statRow}>
       <StatBox value={stats.total} label={t("history.all")} color={colors.blue} bg={colors.tintBlue} onPress={() => openBookings("all")} />
       <StatBox value={stats.completed} label={t("history.completed")} color={colors.green} bg={colors.tintGreen} onPress={() => openBookings("completed")} />
-      <StatBox value={stats.pending} label={t("requestor.pendingShort")} color="#d97706" bg={colors.tintYellow} onPress={() => openBookings("active")} />
+      <StatBox value={stats.pending} label={t("requestor.pendingShort")} color={colors.amberText} bg={colors.tintYellow} onPress={() => openBookings("active")} />
     </View>
   );
 
@@ -325,9 +325,9 @@ const styles = StyleSheet.create({
   pendingCard: { backgroundColor: colors.white, borderRadius: radius.lg, flexDirection: "row", overflow: "hidden", borderWidth: 2, borderStyle: "dashed", borderColor: "#FFB74D" },
   pendingStripe: { width: 5, backgroundColor: colors.yellow },
   pendingHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
-  pendingLabel: { fontSize: 13, fontWeight: "700", color: "#d97706", textTransform: "uppercase" },
+  pendingLabel: { fontSize: 13, fontWeight: "700", color: colors.amberText, textTransform: "uppercase" },
   awaitPill: { backgroundColor: "#fffbeb", paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.pill },
-  awaitText: { color: "#d97706", fontSize: 13, fontWeight: "700" },
+  awaitText: { color: colors.amberText, fontSize: 13, fontWeight: "700" },
   pendingTicket: { fontSize: 13, fontWeight: "700", color: colors.blue, marginBottom: 4 },
   pendingRoute: { fontSize: 14, fontWeight: "600", color: colors.navy },
   pendingMeta: { fontSize: 13, color: colors.textMuted, marginTop: 4 },

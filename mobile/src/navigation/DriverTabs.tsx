@@ -15,6 +15,21 @@ const TAB_BAR_STYLE = {
   paddingTop: 6,
   paddingBottom: Platform.OS === "web" ? 16 : 8,
 } as const;
+
+// ⚠ minHeight is NOT decorative, and it is the ONLY thing that works here.
+// Giving the BAR more height fixed the row but not the label: RN-Web renders a
+// 12px Text into an 11px box with overflow:hidden, so every descender was
+// sliced — "Trips" read as "Trins" and "My Stats" lost the tail of its y.
+// Measured 4 Aug 2026 at 390/360/412px wide: clientHeight 11 vs scrollHeight 16
+// on all four labels.
+//
+// The label carries RN-Web's `display: inline` Text class, so `height` and
+// `height: auto` are both IGNORED — verified in-page, they leave the 5px clip
+// untouched. `overflow: visible` also clears it but throws away the
+// text-overflow:ellipsis that long ms/zh labels need to avoid colliding with
+// the next tab. minHeight grows the box AND keeps the ellipsis.
+// Keep in step with RequestorTabs/AdminTabs.
+const TAB_BAR_LABEL_STYLE = { fontSize: 12, lineHeight: 16, minHeight: 18, fontWeight: "700" } as const;
 import { usePodOutboxFlush } from "../hooks/usePodOutbox";
 import { DriverDashboardScreen } from "../screens/driver/DriverDashboardScreen";
 import { TripsStack } from "./TripsStack";
@@ -42,7 +57,7 @@ export function DriverTabs() {
         headerShown: false,
         tabBarActiveTintColor: colors.blue,
         tabBarInactiveTintColor: colors.textFaint,
-        tabBarLabelStyle: { fontSize: 12, fontWeight: "700" },
+        tabBarLabelStyle: TAB_BAR_LABEL_STYLE,
         tabBarStyle: TAB_BAR_STYLE,
       }}
     >
