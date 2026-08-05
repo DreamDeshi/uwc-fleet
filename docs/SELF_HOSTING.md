@@ -50,7 +50,7 @@ real traffic is a handful of office staff plus 6–8 drivers.
 |---|---|---|
 | **API RAM** | 1 GB (512 MB workable) | A single Node process, no in-memory caching layer, uploads streamed through `multer` memory storage — so peak is driven by concurrent upload size, not dataset size. |
 | **Web RAM** | 256 MB | `serve.mjs` is a zero-dependency static file server. |
-| **DB RAM** | 1–2 GB | 20 tables, ~1,600 consignees, and trip volume in the tens per day. |
+| **DB RAM** | 1–2 GB | 25 tables, ~1,600 consignees, and trip volume in the tens per day. |
 | **Disk (DB)** | 20 GB | Vastly more than the data needs; sized for WAL, backups and years of growth. |
 | **Disk (app)** | 5 GB | `node_modules` for both workspaces plus build output. |
 | **CPU** | 2 vCPU | Comfortable for build and run. |
@@ -194,12 +194,25 @@ photos are silently discarded and pay evidence is lost.
    CREATE DATABASE uwc;
    CREATE USER uwc_app WITH PASSWORD '...';
    GRANT ALL PRIVILEGES ON DATABASE uwc TO uwc_app;
+   ALTER DATABASE uwc OWNER TO uwc_app;   -- see the warning below
    ```
 
    The Prisma migrations create tables, enums, indexes and constraints, so the
    user needs DDL rights on the schema.
 
-2. Apply the schema — **42 migrations** currently:
+   > ### ⚠ On PostgreSQL 15 and later, the `GRANT` alone is not enough
+   >
+   > `GRANT ALL PRIVILEGES ON DATABASE` confers CONNECT, TEMP and the right to
+   > create *new* schemas — it does **not** confer `CREATE` on the existing
+   > `public` schema. PostgreSQL 15 revoked that from `PUBLIC`, and 16 keeps it.
+   >
+   > Without the `ALTER DATABASE ... OWNER` line above, `migrate deploy` fails on
+   > its first statement with **`permission denied for schema public`**.
+   >
+   > `GRANT ALL ON SCHEMA public TO uwc_app;` is an equivalent fix if you would
+   > rather not transfer database ownership.
+
+2. Apply the schema — **41 migrations** currently:
 
    ```bash
    cd api
@@ -365,6 +378,36 @@ delete the stored object.
 **Recommendation:** migrate hosting and the database first, leave Cloudinary in
 place, and treat storage replacement as a separate project. The two changes have
 independent risk and there is no benefit to coupling them.
+
+### If UWC's server provides storage only, not application hosting
+
+A reasonable middle path is to leave the application where it is and move only
+the media and the backups onto UWC storage. **Backups work in that arrangement
+unconditionally** — a nightly `pg_dump` is a one-way write with no latency or
+reachability constraint, and putting it on UWC-controlled storage is a straight
+improvement.
+
+**Media is conditional, and these are the two questions to answer first:**
+
+1. **Is the storage reachable from the application host over the public
+   internet, on HTTPS?** The API writes every upload and the phones read every
+   photo back — both from outside UWC's network, on mobile data. Storage that
+   lives behind the corporate firewall (an SMB/NFS share, a NAS appliance) is
+   not reachable from a cloud-hosted API, and no amount of application change
+   makes it so. If the answer is no, media cannot move while the application is
+   hosted externally. This question gates everything else.
+
+2. **Is it S3-compatible?** If yes (MinIO, Ceph, StorageGRID, ECS and similar),
+   presigned expiring URLs map directly onto what §8 describes and the change is
+   contained to the two seams above. If it is plain file storage with no
+   presigned-URL support, the API has to stream the bytes itself on every read —
+   which works, but adds bandwidth and latency on the application host and gives
+   up CDN delivery.
+
+⚠ Note what a media-only move does **not** achieve. The database holds consignee
+names, addresses, phone numbers, driver identities and GPS traces. If the goal
+is for UWC's own data to sit on UWC's own infrastructure, moving the photos while
+the database stays hosted externally addresses the smaller half of that.
 
 ---
 
