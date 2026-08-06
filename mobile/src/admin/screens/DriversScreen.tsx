@@ -147,9 +147,15 @@ export function DriversScreen() {
         </Card>
       ) : (
         // Wide: the web admin's 2-column card grid; narrow: single column.
+        //
+        // Card width is flexBasis + minWidth, NOT width: "48.9%". Two of those
+        // plus this row's 16px gap come to 97.8% + 16px, which exceeds the
+        // container below ~727px wide and clipped the right-hand card. A
+        // percentage cannot account for a gap it does not know about; flexbox
+        // owns the gap, so let it do the arithmetic. Same fix in TrucksScreen.
         <View style={{ flexDirection: wide ? "row" : "column", flexWrap: wide ? "wrap" : "nowrap", gap: 16 }}>
           {filtered.map((d) => (
-            <View key={d.id} style={wide ? { width: "48.9%", flexGrow: 1 } : undefined}>
+            <View key={d.id} style={wide ? { flexGrow: 1, flexBasis: "45%", minWidth: 320 } : undefined}>
               <DriverCard driver={d} perf={perfById.get(d.id)} onManage={() => setManaging(d)} />
             </View>
           ))}
@@ -178,8 +184,14 @@ function DriverCard({ driver: d, perf, onManage }: { driver: DriverPerf; perf?: 
     <Card style={{ borderLeftWidth: 5, borderLeftColor: meta.dot }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
         <Avatar name={d.name} size={46} />
+        {/* minHeight reserves two lines of the name. Malaysian names routinely
+            run long ("Muhamad Zulkhairi Bin Yusuf"), and unbounded they wrapped
+            to a second line — so a card for a long-named driver stood taller
+            than the one beside it in the grid and the two fell out of
+            alignment. Reserving the space makes every header the same height
+            whether the name wraps or not, without truncating anyone's name. */}
         <View style={{ flex: 1, minWidth: 120 }}>
-          <Text style={{ fontSize: 15, fontWeight: "700", color: colors.text }}>{d.name}</Text>
+          <Text numberOfLines={2} style={{ fontSize: 15, lineHeight: 20, minHeight: 40, fontWeight: "700", color: colors.text }}>{d.name}</Text>
           <Text style={{ fontSize: font.sm, color: colors.textMuted }}>
             {d.phone}
             {d.assigned_truck ? ` · ${d.assigned_truck.plate}` : ""}
