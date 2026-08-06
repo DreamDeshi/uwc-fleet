@@ -153,9 +153,16 @@ export function TrucksScreen() {
               <EmptyState message={t("admin.trucks.noMatch")} />
             </Card>
           ) : (
+            // Card width is flexBasis + minWidth, NOT width: "48.9%". Two of
+            // those plus this row's 16px gap come to 97.8% + 16px, which
+            // exceeds the container below ~727px wide — so at the low end of
+            // `wide` the pair overflowed by a fraction and clipped the
+            // right-hand card's last stat. A percentage cannot account for a
+            // gap it does not know about; flexbox owns the gap, so let it do
+            // the arithmetic. Same fix in DriversScreen.
             <View style={{ flexDirection: wide ? "row" : "column", flexWrap: wide ? "wrap" : "nowrap", gap: 16 }}>
               {filtered.map((tr) => (
-                <View key={tr.plate} style={wide ? { width: "48.9%", flexGrow: 1 } : undefined}>
+                <View key={tr.plate} style={wide ? { flexGrow: 1, flexBasis: "45%", minWidth: 320 } : undefined}>
                   <TruckCard truck={tr} onManage={() => setManaging(tr)} />
                 </View>
               ))}
@@ -591,12 +598,31 @@ function DocRow({ label, date, alert }: { label: string; date: string | null; al
   );
 }
 
+// Two lines of the value font. Every cell reserves this whether or not its
+// value wraps, which is what keeps the row — and therefore the cards either
+// side of it in the grid — a constant height.
+const MINI_VALUE_LINE = 18;
+const MINI_VALUE_BOX = MINI_VALUE_LINE * 2;
+
 function Mini({ label, value, divider, wrap }: { label: string; value: string; divider?: boolean; wrap?: boolean }) {
   return (
     <View style={{ flex: 1, minWidth: 0, paddingVertical: 9, paddingHorizontal: 10, borderLeftWidth: divider ? 1 : 0, borderLeftColor: colors.divider, alignItems: "center" }}>
-      <Text numberOfLines={wrap ? 3 : 1} style={{ fontSize: font.md, fontWeight: "700", color: colors.text, textAlign: "center" }}>
-        {value}
-      </Text>
+      {/* ⚠ The reserved box is why this is a View and not just a taller Text.
+          The driver cell was numberOfLines={3} with no reserved height, so a
+          long name ("Muhamad Zulkhairi Bin Yusuf" — three lines) grew this row
+          by ~36px while the neighbouring truck's row stayed one line. Cards sit
+          side by side in a wrapping grid, so the two ended up visibly different
+          heights and everything below them lost alignment. Short placeholder
+          names (Driver 1…8) never trigger it, so it is invisible on demo data
+          and appears only once real names are seeded. */}
+      <View style={{ minHeight: MINI_VALUE_BOX, justifyContent: "center" }}>
+        <Text
+          numberOfLines={wrap ? 2 : 1}
+          style={{ fontSize: font.md, lineHeight: MINI_VALUE_LINE, fontWeight: "700", color: colors.text, textAlign: "center" }}
+        >
+          {value}
+        </Text>
+      </View>
       <Text numberOfLines={1} style={{ fontSize: 12, color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>
         {label}
       </Text>
