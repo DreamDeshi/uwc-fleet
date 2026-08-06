@@ -192,6 +192,7 @@
     "statusAssigned": "Ditugaskan",
     "statusInProgress": "Dalam Perjalanan",
     "statusPendingApproval": "Menunggu Kelulusan",
+    "statusDelivered": "Telah Dihantar",
     "statusCompleted": "Selesai",
     "statusRejected": "Ditolak",
     "statusCancelled": "Dibatalkan",

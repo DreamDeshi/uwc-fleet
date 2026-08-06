@@ -75,6 +75,15 @@ export function DriverTabs() {
         options={({ route }) => ({
           title: t("tabs.trips"),
           tabBarStyle: tabBarStyleForTrips(route),
+          // Leaving the tab returns the stack to the list. Without this the
+          // nested stack keeps whatever screen was on top — React Navigation
+          // defaults popToTopOnBlur to false — so a driver who backed out of a
+          // finished trip onto TripDetails, or who left ActiveTrip by the back
+          // chevron rather than "Back to dashboard" (the ONE path that calls
+          // popToTop), found the Trips tab reopening on that trip instead of
+          // his history. It looked intermittent because the outcome depended on
+          // which of the two exits he used.
+          popToTopOnBlur: true,
           tabBarIcon: ({ color, size }) => <Ionicons name="list" size={size} color={color} />,
         })}
       />
