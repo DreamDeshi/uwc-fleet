@@ -21,7 +21,17 @@ export default defineConfig({
   // nothing. Three minutes of CI that can never fail is three minutes wasted, so
   // it runs on demand via playwright.audit.config.ts. The assertions it led to
   // live in tabLabelBox.spec.ts and i18nLayoutSweep.spec.ts, which DO run here.
-  testIgnore: /uiAuditSweep\.spec\.ts/,
+  //
+  // manualShots is the same kind of thing and is excluded for the same reason,
+  // plus one of its own: it writes to ~/Desktop/pic, a path that does not exist
+  // on a runner. It produces the user-manual figures on demand via
+  // playwright.manual.config.ts.
+  // demoShots is excluded for a third reason: it requires DEMO_WEB_URL and
+  // throws without it BY DESIGN, so that a poster capture can never silently
+  // fall back to localhost or reach production. On a runner with no such
+  // variable that refusal is correct behaviour, not a failure — it just must
+  // not be run here. It ships via playwright.demoshots.config.ts.
+  testIgnore: /(uiAuditSweep|manualShots|demoShots)\.spec\.ts/,
   // Capture the backend's dispatch_mode before the run and restore that exact
   // value after — resetState() flips it to manual per spec and a prod run once
   // left the live trial that way.
