@@ -53,11 +53,18 @@ async function main() {
   let requestor = await prisma.user.findFirst({ where: { role: "requestor" }, orderBy: { created_at: "asc" } });
   if (!requestor) throw new Error("No requestor found — register one in the app first.");
 
-  // Make the requestor look real for the demo (name + department).
+  // Give the requestor a NEUTRAL placeholder identity, matching the public
+  // spec's "Driver 1…8" convention.
+  //
+  // ⚠ This used to read "Tan Wei Ming". That name is invented, not UWC data —
+  // but it is indistinguishable from a real person to anyone reading the
+  // screen, which makes it unusable on an instance whose whole purpose is
+  // being shown to outsiders (SDG poster/viva, Aug 2026). A demo that is
+  // anonymous only to people who know which names are fake is not anonymous.
   const warehouse = await prisma.department.findUnique({ where: { name: "Warehouse" } });
   requestor = await prisma.user.update({
     where: { id: requestor.id },
-    data: { name: "Tan Wei Ming", department_id: warehouse?.id ?? undefined },
+    data: { name: "Requestor 1", department_id: warehouse?.id ?? undefined },
   });
 
   const routeTypes = await prisma.routeType.findMany();

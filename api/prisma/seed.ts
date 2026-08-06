@@ -100,7 +100,8 @@ if (privateSpecPath) {
     [
       "",
       "⚠  PRIVATE DRIVER OVERLAY NOT FOUND — seeding PLACEHOLDER driver identities",
-      "   (Driver 1–6 / D001–D006), NOT the real UWC names/employee numbers.",
+      `   (Driver 1–${spec.driver_assignments.length} / D001–D${String(spec.driver_assignments.length).padStart(3, "0")}),`,
+      "   NOT the real UWC names/employee numbers.",
       "   Looked in:",
       ...PRIVATE_SPEC_CANDIDATES.map((p) => `     - ${p}`),
       "   To seed the real identities: set UWC_REFS_DIR (or UWC_PRIVATE_SPEC_PATH)",
