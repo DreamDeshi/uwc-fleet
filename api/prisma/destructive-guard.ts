@@ -30,7 +30,9 @@ import dotenv from "dotenv";
 // DATABASE_URL=... on the command line still wins.
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
-const PROD_HOST_MARKERS = ["rlwy.net", "railway.internal", "railway.app"];
+import { parseTarget, seedGate, isProductionHost as isProdHost, PROD_HOST_MARKERS } from "./seedGate";
+
+export { PROD_HOST_MARKERS };
 
 function targetHost(script: string): string {
   const url = process.env.DATABASE_URL;
@@ -51,25 +53,40 @@ function targetHost(script: string): string {
 }
 
 function isProductionHost(host: string): boolean {
-  return PROD_HOST_MARKERS.some((marker) => host.includes(marker));
+  return isProdHost(host);
+}
+
+/**
+ * Apply the seed gate (prisma/seedGate.ts) and exit on refusal.
+ *
+ * A Railway host is refused unless the database NAMES itself a demo instance
+ * AND the operator retypes the host. Production carries no demo name, so it
+ * stays unreachable — see seedGate.ts for why that, and not a hostname
+ * allowlist, is the discriminator.
+ */
+function applySeedGate(script: string): void {
+  const target = parseTarget(process.env.DATABASE_URL);
+  if (!target) {
+    console.error(
+      `\n✖ ${script}: DATABASE_URL is not set or not parseable — refusing to run against an unknown target.\n`
+    );
+    process.exit(1);
+  }
+  const gate = seedGate(script, target, process.env);
+  if (!gate.ok) {
+    console.error(["", ...gate.lines, ""].join("\n"));
+    process.exit(1);
+  }
+  if (gate.note) console.log(`⚠ ${script}: ${gate.note}. Proceeding.`);
 }
 
 /** Hard gate for data-DELETING scripts: prod is always refused; everywhere else needs ALLOW_DESTRUCTIVE=1. */
 export function assertDestructiveAllowed(script: string): void {
   const host = targetHost(script);
-  if (isProductionHost(host)) {
-    console.error(
-      [
-        "",
-        `✖ ${script}: DATABASE_URL points at the PRODUCTION database (${host}).`,
-        "  Refusing to run a destructive seed against production — set ALLOW_DESTRUCTIVE=1",
-        "  AND point DATABASE_URL at a non-prod DB. There is deliberately no override for",
-        "  the production host: this script permanently deletes live trial data.",
-        "",
-      ].join("\n")
-    );
-    process.exit(1);
-  }
+  // Refuses a live Railway database outright; lets a NAMED demo database
+  // through only with the host retyped. ALLOW_DESTRUCTIVE below still applies
+  // on top, so a demo wipe needs both.
+  applySeedGate(script);
   if (process.env.ALLOW_DESTRUCTIVE !== "1") {
     console.error(
       [
@@ -158,21 +175,14 @@ export function assertTripWipeAllowed(script: string, actualTrips: number): void
   );
 }
 
-/** Softer gate for the bootstrap seed: only the production host is refused. */
+/**
+ * Softer gate for the bootstrap seed: a live database is refused.
+ *
+ * "Live" is now a property of the target, not just its host — a Railway
+ * database NAMED as a demo instance (see seedGate.ts) may be seeded once the
+ * operator retypes its host. Everything that is not a Railway host behaves
+ * exactly as before.
+ */
 export function assertNotProduction(script: string): void {
-  const host = targetHost(script);
-  if (isProductionHost(host)) {
-    console.error(
-      [
-        "",
-        `✖ ${script}: DATABASE_URL points at the PRODUCTION database (${host}).`,
-        "  Refusing to run against production: re-seeding overwrites all truck rates,",
-        "  deductions and document-expiry dates immediately, bypassing the next-day",
-        "  rate cutoff and any admin edits. Fix live values via the admin UI",
-        "  (rate editor / reset-to-spec / document editor) or a deliberate direct DB fix.",
-        "",
-      ].join("\n")
-    );
-    process.exit(1);
-  }
+  applySeedGate(script);
 }
