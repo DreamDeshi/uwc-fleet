@@ -1151,6 +1151,10 @@ const styles = StyleSheet.create({
 
   // 1 — map band
   mapBand: { height: 196, position: "relative", backgroundColor: colors.tintBlue },
+  // zIndex, not elevation — see the note on TripDetailsScreen's backBtn. This
+  // screen does not show the bug today only because ActiveTripMap.web is a
+  // placeholder rather than a Leaflet map; the moment web gets a real map here
+  // it would, so the guard is set now rather than after it reappears.
   backBtn: {
     position: "absolute",
     left: 12,
@@ -1160,9 +1164,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 1,
     ...shadow.card,
   },
-  badgeFloat: { position: "absolute", right: 12 },
+  badgeFloat: { position: "absolute", right: 12, zIndex: 1 },
   trackBadge: {
     flexDirection: "row",
     alignItems: "center",

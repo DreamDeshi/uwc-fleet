@@ -453,6 +453,15 @@ function InfoCard({
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
+  // ⚠ zIndex is load-bearing on WEB and cannot be replaced by `elevation`.
+  // This button floats over LiveTripMap, which on web is a real Leaflet map,
+  // and Leaflet's own CSS gives its panes z-index 200–800. RN-Web compiles the
+  // `elevation: 3` inside shadow.card to a box-shadow, NOT a stacking order, so
+  // without an explicit zIndex the map painted straight over the button and the
+  // driver had no visible way back out of a trip he opened from his history.
+  // ActiveTripScreen's identical overlay escaped it only because its web map is
+  // a placeholder, not Leaflet — so the bug reproduced on ONE screen and read
+  // like a styling one-off.
   backBtn: {
     position: "absolute",
     left: 12,
@@ -462,9 +471,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 1,
     ...shadow.card,
   },
-  badgeFloat: { position: "absolute", right: 12 },
+  // Same stacking context as backBtn — the status badge was buried too.
+  badgeFloat: { position: "absolute", right: 12, zIndex: 1 },
   body: { padding: 16, width: "100%", maxWidth: layout.content, alignSelf: "center" },
   chipsRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" },
   ticketChip: { backgroundColor: colors.blue, paddingHorizontal: 12, paddingVertical: 5, borderRadius: radius.sm },
