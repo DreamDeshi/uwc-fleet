@@ -290,17 +290,6 @@ export function TripsScreen() {
     </Text>
   );
 
-  // Always visible, open or closed. The board opens date-limited to today, so
-  // this is the answer to "why am I not seeing yesterday's trip?" — a question
-  // the collapsed filter row would otherwise make unanswerable at a glance.
-  const dateSummary =
-    dateFrom || dateTo ? (
-      <Text style={{ fontSize: font.sm, color: colors.textMuted }} numberOfLines={1}>
-        {dateFrom && dateTo && dateFrom === dateTo
-          ? dateFrom
-          : `${dateFrom || "…"} → ${dateTo || "…"}`}
-      </Text>
-    ) : null;
 
   const statusOptions = [
     { value: "", label: t("admin.trips.statusAll") },
@@ -333,7 +322,12 @@ export function TripsScreen() {
   );
 
   // Driver/zone/date filters active behind the narrow disclosure.
+  // NARROW: the disclosure hides driver, zone AND the dates.
   const secondaryCount = [driverId, zone, dateFrom, dateTo].filter(Boolean).length;
+  // WIDE: the dates stay on the header row, so counting them here would claim
+  // filters are hidden that are in plain sight. Two layouts, two counts —
+  // deliberately not one shared number, because they conceal different things.
+  const secondaryCountWide = [driverId, zone].filter(Boolean).length;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -349,18 +343,28 @@ export function TripsScreen() {
           <View style={{ flexDirection: "row", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <DispatchToggle />
             <SearchInput value={q} onChange={setQ} placeholder={t("admin.trips.searchPlaceholder")} />
+            {/* ⚠ The date range stays OUT of the disclosure, unlike driver and
+                zone. It defaults to today (Mr Teh, 16 Jul: the board opens on
+                today's trips), so it is the one filter that is ALWAYS active —
+                and widening it is the common move, not a rare one: two e2e
+                specs drive it directly. Collapsing it both hid a filter that
+                was silently limiting the board and put an everyday control
+                behind an extra click. Driver and zone are genuinely secondary;
+                these are not. */}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.from")}</Text>
+              <DateInputInline value={dateFrom} onChange={setDateFrom} />
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.to")}</Text>
+              <DateInputInline value={dateTo} onChange={setDateTo} />
+            </View>
             <View style={{ marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              {/* ⚠ The date range is ALWAYS active — it defaults to today (Mr
-                  Teh, 16 Jul: the board should open on today). Collapsing the
-                  date inputs out of view would hide a filter that is silently
-                  limiting the board, so the range is surfaced here whether the
-                  disclosure is open or shut. */}
-              {dateSummary}
               {attentionChip}
               {resultsLabel}
               <MoreFiltersToggle
                 open={filtersOpen}
-                count={secondaryCount}
+                count={secondaryCountWide}
                 onPress={() => setFiltersOpen(!filtersOpen)}
               />
               {hasFilters && (
@@ -378,14 +382,6 @@ export function TripsScreen() {
                 onPress={() => setDriverPickerOpen(true)}
               />
               <FilterSelect label={zone || t("admin.trips.allZones")} onPress={() => setZonePickerOpen(true)} />
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.from")}</Text>
-                <DateInputInline value={dateFrom} onChange={setDateFrom} />
-              </View>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.to")}</Text>
-                <DateInputInline value={dateTo} onChange={setDateTo} />
-              </View>
               {presetsRow}
             </View>
           ) : null}
