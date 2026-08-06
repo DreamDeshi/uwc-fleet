@@ -59,7 +59,14 @@ test("@desktop admin dispatch board", async ({ page }) => {
   // Wait on the board's own heading, not a ticket number: tickets live inside a
   // scrolled column and the regex matched an off-screen node before the board
   // had painted.
-  await expect(page.getByText("PENDING DISPATCH", { exact: false }).first()).toBeVisible({ timeout: 60_000 });
+  //
+  // ⚠ "Pending Dispatch", not "PENDING DISPATCH". The caps on screen are a CSS
+  // textTransform, not the string — the source is admin.trips.groupPending.
+  // The uppercase literal still MATCHED at runtime, because exact:false is
+  // case-insensitive, so this only surfaced when the selector-drift guard
+  // compared it against live copy. A selector that works by accident is one
+  // rename away from failing for a reason nobody can see.
+  await expect(page.getByText("Pending Dispatch", { exact: false }).first()).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(2_000);
   await assertAnonymous(page, "admin dispatch board");
   await page.screenshot({ path: `${OUT}/01-admin-dispatch-board.png`, fullPage: false });
