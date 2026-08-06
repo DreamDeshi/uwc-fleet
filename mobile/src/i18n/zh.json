@@ -192,6 +192,7 @@
     "statusAssigned": "已分配",
     "statusInProgress": "进行中",
     "statusPendingApproval": "等待批准",
+    "statusDelivered": "已送达",
     "statusCompleted": "已完成",
     "statusRejected": "已拒绝",
     "statusCancelled": "已取消",

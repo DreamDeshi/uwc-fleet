@@ -192,6 +192,7 @@
     "statusAssigned": "Assigned",
     "statusInProgress": "In Progress",
     "statusPendingApproval": "Awaiting Approval",
+    "statusDelivered": "Delivered",
     "statusCompleted": "Completed",
     "statusRejected": "Rejected",
     "statusCancelled": "Cancelled",
