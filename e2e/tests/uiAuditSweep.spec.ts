@@ -76,7 +76,13 @@ function copy(lang: Lang, p: string): string {
 
 interface Finding {
   screen: string;
-  kind: "clipped-text" | "offscreen-control" | "zero-size-control" | "empty-screen";
+  kind:
+    | "clipped-text"
+    | "offscreen-control"
+    | "zero-size-control"
+    | "empty-screen"
+    | "container-overflow"
+    | "sibling-height-mismatch";
   detail: string;
   text?: string;
 }
@@ -94,6 +100,30 @@ interface Finding {
  * reliable signal that something is interactive is `cursor: pointer`. A control
  * whose box has no area, or which sits outside the viewport horizontally (or
  * below the fold on a screen that does not scroll), cannot be tapped.
+ *
+ * CONTAINER OVERFLOW: a child wider than its parent's content box, where the
+ * parent does not scroll so the overflow has nowhere to go.
+ *
+ * ⚠ It does NOT catch the `width: "48.9%"` + `gap: 16` fault the admin grids
+ * shipped, and it was a mistake to think it would. Measured in a browser: at a
+ * 700px container those cards do not overflow at all — flex-wrap sends the
+ * second one to its own row, so the grid silently collapses from two columns
+ * to one. Premature WRAPPING, not overflow. That symptom has no reliable
+ * signature in the DOM (a wrapped row is normally correct), so it stays a
+ * human-review finding. The detector is kept because a child genuinely
+ * spilling a non-scrolling parent is still a bug — just not that one.
+ *
+ * SIBLING HEIGHT MISMATCH: cards in one wrapping flex row whose heights differ.
+ * Added after unbounded driver names ("Muhamad Zulkhairi Bin Yusuf" wraps to
+ * three lines in a narrow stat cell) made one card taller than its neighbour
+ * and threw the grid out of alignment. Every earlier detector passed it —
+ * nothing was clipped, hidden or unreachable; the row was merely misaligned,
+ * which is precisely the class no assertion here could see.
+ *
+ * ⚠ Only as good as the DATA. The demo/test seed uses "Driver 1"…"Driver 8",
+ * which never wrap, so a sweep against placeholder names will NOT reproduce
+ * this. Run it against realistic long names — that is the condition that hid
+ * the class for three weeks.
  */
 async function auditDom(page: Page, screen: string): Promise<Finding[]> {
   return page.evaluate((screenName) => {
@@ -132,6 +162,26 @@ async function auditDom(page: Page, screen: string): Promise<Finding[]> {
         }
       }
 
+      // — a child spilling out of its parent's content box
+      // Guarded on the PARENT clipping or the child genuinely sticking out:
+      // an intentionally scrollable container (overflow:auto/scroll) is not a
+      // bug, so only report where the overflow has nowhere to go.
+      const parent = el.parentElement;
+      if (parent && rect.width > 0) {
+        const pcs = getComputedStyle(parent);
+        const prect = parent.getBoundingClientRect();
+        const parentScrollsX = pcs.overflowX === "auto" || pcs.overflowX === "scroll";
+        const spill = Math.round(rect.right - prect.right);
+        if (!parentScrollsX && prect.width > 0 && spill > 1 && cs.position !== "fixed" && cs.position !== "absolute") {
+          out.push({
+            screen: screenName,
+            kind: "container-overflow",
+            detail: `overflows its parent by ${spill}px (child ${Math.round(rect.width)}px in ${Math.round(prect.width)}px box)`,
+            text: trim(text),
+          });
+        }
+      }
+
       // — controls that cannot be reached
       if (cs.cursor === "pointer" && text) {
         if (rect.width === 0 || rect.height === 0) {
@@ -154,6 +204,64 @@ async function auditDom(page: Page, screen: string): Promise<Finding[]> {
             kind: "offscreen-control",
             detail: `control sits below the fold on a screen that does not scroll (bottom ${Math.round(rect.bottom)} > ${vh})`,
             text: trim(text),
+          });
+        }
+      }
+    }
+
+    // — cards in one wrapping row that do not share a height
+    //
+    // Per-CONTAINER, not per-element: the fault is a relationship between
+    // siblings, which is why every element-at-a-time detector above walked
+    // straight past it. Only wrapping flex rows are considered — that is the
+    // card-grid shape — and only children that actually share a row (same top,
+    // within 2px), because items on different rows are supposed to differ.
+    for (const row of Array.from(document.querySelectorAll<HTMLElement>("*"))) {
+      const rcs = getComputedStyle(row);
+      if (rcs.display !== "flex" || rcs.flexWrap !== "wrap" || rcs.flexDirection !== "row") continue;
+      const kids = Array.from(row.children) as HTMLElement[];
+      if (kids.length < 2) continue;
+
+      // ⚠ Measure the CARD, not the flex item. A wrapping row defaults to
+      // align-items: stretch, so the direct children are ALWAYS equal height —
+      // measuring them means this detector can never fire. The visible
+      // misalignment is the card INSIDE the stretched wrapper, which takes its
+      // content height. Verified: wrappers 69/69 while the cards were 53/69.
+      const inner = (k: HTMLElement): HTMLElement => {
+        let cur = k;
+        while (cur.childElementCount === 1) cur = cur.firstElementChild as HTMLElement;
+        return cur;
+      };
+
+      const boxes = kids
+        .map((k) => {
+          const el = inner(k);
+          return { el, r: el.getBoundingClientRect() };
+        })
+        .filter((b) => b.r.width > 0 && b.r.height > 0);
+
+      const byRow = new Map<number, { el: HTMLElement; r: DOMRect }[]>();
+      for (const b of boxes) {
+        const key = Math.round(b.r.top / 2) * 2;
+        const bucket = byRow.get(key) ?? [];
+        bucket.push(b);
+        byRow.set(key, bucket);
+      }
+
+      for (const bucket of byRow.values()) {
+        if (bucket.length < 2) continue;
+        const heights = bucket.map((b) => b.r.height);
+        const min = Math.min(...heights);
+        const max = Math.max(...heights);
+        // 4px absorbs sub-pixel flex rounding; anything more is a real
+        // difference a reader will see as misalignment.
+        if (max - min > 4) {
+          const tallest = bucket.find((b) => b.r.height === max)!;
+          out.push({
+            screen: screenName,
+            kind: "sibling-height-mismatch",
+            detail: `${bucket.length} cards share a row but differ in height by ${Math.round(max - min)}px (${Math.round(min)}..${Math.round(max)})`,
+            text: trim(tallest.el.textContent || ""),
           });
         }
       }
