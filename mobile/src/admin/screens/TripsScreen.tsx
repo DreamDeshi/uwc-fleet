@@ -290,6 +290,18 @@ export function TripsScreen() {
     </Text>
   );
 
+  // Always visible, open or closed. The board opens date-limited to today, so
+  // this is the answer to "why am I not seeing yesterday's trip?" — a question
+  // the collapsed filter row would otherwise make unanswerable at a glance.
+  const dateSummary =
+    dateFrom || dateTo ? (
+      <Text style={{ fontSize: font.sm, color: colors.textMuted }} numberOfLines={1}>
+        {dateFrom && dateTo && dateFrom === dateTo
+          ? dateFrom
+          : `${dateFrom || "…"} → ${dateTo || "…"}`}
+      </Text>
+    ) : null;
+
   const statusOptions = [
     { value: "", label: t("admin.trips.statusAll") },
     { value: "pending", label: t("admin.status.pending") },
@@ -325,32 +337,32 @@ export function TripsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      {/* The board gets whatever vertical space the chrome above it leaves, so
+          every row up there is charged against the thing admin actually came to
+          read. It was a Dispatch Mode card + a three-row filter card ≈ 320px of
+          permanent header, leaving a cramped strip to scroll on a laptop. Now:
+          one card, Dispatch Mode folded into the top row, and the
+          driver/zone/date controls collapsed behind a disclosure. */}
       {wide ? (
-      <View style={{ flex: 1, paddingVertical: 24, paddingHorizontal: 28, gap: 16 }}>
-        <Card pad={12} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-          <DispatchToggle />
-        </Card>
-
-        {/* ── Search + filters ── */}
-        <Card pad={12} style={{ gap: 12 }}>
+      <View style={{ flex: 1, paddingVertical: 16, paddingHorizontal: 28, gap: 12 }}>
+        <Card pad={10} style={{ gap: 10 }}>
           <View style={{ flexDirection: "row", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <DispatchToggle />
             <SearchInput value={q} onChange={setQ} placeholder={t("admin.trips.searchPlaceholder")} />
-            <FilterSelect
-              label={selectedDriver ? selectedDriver.name : t("admin.trips.allDrivers")}
-              onPress={() => setDriverPickerOpen(true)}
-            />
-            <FilterSelect label={zone || t("admin.trips.allZones")} onPress={() => setZonePickerOpen(true)} />
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.from")}</Text>
-              <DateInputInline value={dateFrom} onChange={setDateFrom} />
-            </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.to")}</Text>
-              <DateInputInline value={dateTo} onChange={setDateTo} />
-            </View>
             <View style={{ marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              {/* ⚠ The date range is ALWAYS active — it defaults to today (Mr
+                  Teh, 16 Jul: the board should open on today). Collapsing the
+                  date inputs out of view would hide a filter that is silently
+                  limiting the board, so the range is surfaced here whether the
+                  disclosure is open or shut. */}
+              {dateSummary}
               {attentionChip}
               {resultsLabel}
+              <MoreFiltersToggle
+                open={filtersOpen}
+                count={secondaryCount}
+                onPress={() => setFiltersOpen(!filtersOpen)}
+              />
               {hasFilters && (
                 <Button variant="ghost" size="sm" onPress={clearFilters}>
                   {t("admin.trips.clearFilters")}
@@ -359,7 +371,24 @@ export function TripsScreen() {
             </View>
           </View>
           {statusSegments}
-          {presetsRow}
+          {filtersOpen ? (
+            <View style={{ flexDirection: "row", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <FilterSelect
+                label={selectedDriver ? selectedDriver.name : t("admin.trips.allDrivers")}
+                onPress={() => setDriverPickerOpen(true)}
+              />
+              <FilterSelect label={zone || t("admin.trips.allZones")} onPress={() => setZonePickerOpen(true)} />
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.from")}</Text>
+                <DateInputInline value={dateFrom} onChange={setDateFrom} />
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.to")}</Text>
+                <DateInputInline value={dateTo} onChange={setDateTo} />
+              </View>
+              {presetsRow}
+            </View>
+          ) : null}
         </Card>
 
         {/* ── Board + detail ── */}
@@ -399,24 +428,9 @@ export function TripsScreen() {
               {attentionChip}
               <Pressable
                 onPress={() => setFiltersOpen(!filtersOpen)}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 5,
-                  borderRadius: radius.pill,
-                  paddingVertical: 5,
-                  paddingHorizontal: 11,
-                  borderWidth: 1,
-                  borderColor: secondaryCount > 0 ? colors.blue : colors.border,
-                  backgroundColor: secondaryCount > 0 ? colors.blueTint : colors.card,
-                }}
+                style={{ borderRadius: radius.pill }}
               >
-                <Ionicons name="options-outline" size={13} color={secondaryCount > 0 ? colors.blue : colors.textMuted} />
-                <Text style={{ fontSize: font.sm, fontWeight: "700", color: secondaryCount > 0 ? colors.blue : colors.textMuted }}>
-                  {t("admin.trips.moreFilters")}
-                  {secondaryCount > 0 ? ` · ${secondaryCount}` : ""}
-                </Text>
-                <Ionicons name={filtersOpen ? "chevron-up" : "chevron-down"} size={12} color={secondaryCount > 0 ? colors.blue : colors.textMuted} />
+                <MoreFiltersToggle open={filtersOpen} count={secondaryCount} />
               </Pressable>
               <View style={{ marginLeft: "auto" }}>{resultsLabel}</View>
             </View>
@@ -605,6 +619,56 @@ function FilterSelect({ label, onPress, style }: { label: string; onPress: () =>
       <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: font.md, color: colors.text }}>{label}</Text>
       <Ionicons name="chevron-down" size={14} color={colors.textMuted} style={{ marginLeft: "auto" }} />
     </Pressable>
+  );
+}
+
+/**
+ * The "More filters · n" disclosure pill.
+ *
+ * Shared by BOTH layouts on purpose. The narrow layout has had this since it
+ * was written; the wide layout kept every filter permanently expanded, which
+ * cost the board ~90px of header it could not spare. Extracting the pill rather
+ * than copying it is what stops the two drifting — the count colouring and the
+ * chevron direction are the kind of detail that gets updated in one copy only.
+ *
+ * `count` drives the active-state colouring: a collapsed disclosure hiding
+ * live filters must not look identical to one hiding none.
+ *
+ * Renders the pill only; the caller owns the Pressable, because the two layouts
+ * wrap it differently.
+ */
+function MoreFiltersToggle({ open, count, onPress }: { open: boolean; count: number; onPress?: () => void }) {
+  const { t } = useTranslation();
+  const active = count > 0;
+  const fg = active ? colors.blue : colors.textMuted;
+  const body = (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 5,
+        borderRadius: radius.pill,
+        paddingVertical: 5,
+        paddingHorizontal: 11,
+        borderWidth: 1,
+        borderColor: active ? colors.blue : colors.border,
+        backgroundColor: active ? colors.blueTint : colors.card,
+      }}
+    >
+      <Ionicons name="options-outline" size={13} color={fg} />
+      <Text style={{ fontSize: font.sm, fontWeight: "700", color: fg }}>
+        {t("admin.trips.moreFilters")}
+        {active ? ` · ${count}` : ""}
+      </Text>
+      <Ionicons name={open ? "chevron-up" : "chevron-down"} size={12} color={fg} />
+    </View>
+  );
+  return onPress ? (
+    <Pressable onPress={onPress} style={{ borderRadius: radius.pill }}>
+      {body}
+    </Pressable>
+  ) : (
+    body
   );
 }
 
