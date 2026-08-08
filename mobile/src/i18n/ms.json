@@ -897,7 +897,16 @@
       "awaitingDispatch": "Menunggu penghantaran",
       "daySummary": "{{trips}} trip hari ini · {{completed}} siap · {{trucks}} lori aktif",
       "completedToday": "Selesai hari ini",
-      "manage": "Urus"
+      "manage": "Urus",
+      "headerSummary": "{{date}} · {{trips}} perjalanan, {{trucks}} lori aktif",
+      "stripDispatchFailed_one": "{{count}} perjalanan perlu perhatian — tiada lori yang muat",
+      "stripDispatchFailed_other": "{{count}} perjalanan perlu perhatian — tiada lori yang muat",
+      "stripAwaitingManual_one": "{{count}} tempahan menunggu penghantaran",
+      "stripAwaitingManual_other": "{{count}} tempahan menunggu penghantaran",
+      "notOnMap_one": "Tiada pada peta · {{count}}",
+      "notOnMap_other": "Tiada pada peta · {{count}}",
+      "noDriver": "tiada pemandu",
+      "mapCoverageNote": "Hanya lori yang menghantar isyarat GPS langsung muncul pada peta — yang lain disenaraikan di sini."
     },
     "dashboard": {
       "loadError": "Tidak dapat memuatkan papan pemuka.",

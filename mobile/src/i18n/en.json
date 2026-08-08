@@ -897,7 +897,16 @@
       "awaitingDispatch": "Awaiting dispatch",
       "daySummary": "{{trips}} trips today · {{completed}} completed · {{trucks}} trucks active",
       "completedToday": "Completed today",
-      "manage": "Manage"
+      "manage": "Manage",
+      "headerSummary": "{{date}} · {{trips}} trips, {{trucks}} trucks active",
+      "stripDispatchFailed_one": "{{count}} trip needs attention — no truck fits it",
+      "stripDispatchFailed_other": "{{count}} trips need attention — no truck fits them",
+      "stripAwaitingManual_one": "{{count}} booking awaiting dispatch",
+      "stripAwaitingManual_other": "{{count}} bookings awaiting dispatch",
+      "notOnMap_one": "Not on the map · {{count}}",
+      "notOnMap_other": "Not on the map · {{count}}",
+      "noDriver": "no driver",
+      "mapCoverageNote": "Only trucks sending a live GPS fix appear on the map — everything else, online or not, is listed here."
     },
     "dashboard": {
       "loadError": "Could not load dashboard.",

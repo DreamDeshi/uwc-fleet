@@ -897,7 +897,16 @@
       "awaitingDispatch": "等待调度",
       "daySummary": "今日 {{trips}} 趟 · 完成 {{completed}} · 在勤 {{trucks}} 辆",
       "completedToday": "今日完成",
-      "manage": "管理"
+      "manage": "管理",
+      "headerSummary": "{{date}} · {{trips}} 趟行程，{{trucks}} 辆车在跑",
+      "stripDispatchFailed_one": "{{count}} 趟行程需要处理 — 没有合适的车",
+      "stripDispatchFailed_other": "{{count}} 趟行程需要处理 — 没有合适的车",
+      "stripAwaitingManual_one": "{{count}} 单预订等待派车",
+      "stripAwaitingManual_other": "{{count}} 单预订等待派车",
+      "notOnMap_one": "不在地图上 · {{count}}",
+      "notOnMap_other": "不在地图上 · {{count}}",
+      "noDriver": "无司机",
+      "mapCoverageNote": "只有正在发送实时 GPS 的车辆会出现在地图上 — 其余车辆无论是否在线都列在这里。"
     },
     "dashboard": {
       "loadError": "无法加载仪表板。",

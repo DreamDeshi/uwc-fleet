@@ -25,9 +25,18 @@ import { AttentionPanel, attentionHasRows } from "../components/AttentionPanel";
 import { AdminSearchButton } from "../components/AdminSearchButton";
 import { exceptionsEnabled, changeRequestsEnabled } from "../../lib/featureFlags";
 import { AdminFleetMap } from "../platform/map";
+import { formatDate } from "../../lib/format";
+import { homeAttention, trackedCount, untrackedTrucks } from "../lib/adminHome";
 import { DashboardWide } from "./DashboardWide";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
+
+// Tile icon colours that clear AA on their own tint. The admin theme's `amber`
+// (#d97706) and `green` (#3DAA35) are the DECORATIVE hues — 3.19:1 and 3.00:1 —
+// which is fine for a dot and not for a glyph the dispatcher has to identify.
+// Same values the mobile theme calls amberText / greenText.
+const ACCENT_AMBER = "#B45309";
+const ACCENT_GREEN = "#2A7F24";
 
 function greetingKey(hour: number): "goodMorning" | "goodAfternoon" | "goodEvening" {
   if (hour < 12) return "goodMorning";
@@ -53,6 +62,10 @@ export function AdminHomeScreen() {
   const approvalCount = pendingApprovals.data?.length ?? 0;
   const k = dashboard.data;
   const liveCount = (live.data ?? []).filter((p) => !p.stale).length;
+  const strip = homeAttention(k);
+  // Trucks the map CANNOT show, and why — see lib/adminHome.
+  const untracked = untrackedTrucks(trucks.data ?? [], live.data ?? []);
+  const onMap = trackedCount(trucks.data ?? [], live.data ?? []);
   const refreshing = dashboard.isRefetching || pending.isRefetching || attention.isRefetching;
   const refetchAll = () => {
     dashboard.refetch();
@@ -69,20 +82,31 @@ export function AdminHomeScreen() {
   // Promoted MORE functions as a 4-across tap grid — same destinations, new
   // entry points. Users carries the pending-users badge, subsuming the old
   // approvals row that used to sit below the map.
-  const quickTiles: { route: string; labelKey: string; icon: IoniconName; count?: number }[] = [
-    { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline", count: approvalCount },
+  // Frame 1 gives each tile its OWN tint rather than eight identical blue
+  // squares — colour is the thing the eye lands on first in a grid this dense,
+  // and the tints reuse the same semantic families as the rest of the app
+  // (money green, report blue, people violet, approvals amber).
+  const quickTiles: {
+    route: string;
+    labelKey: string;
+    icon: IoniconName;
+    count?: number;
+    tint: string;
+    fg: string;
+  }[] = [
+    { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline", count: approvalCount, tint: colors.orangeTint, fg: ACCENT_AMBER },
     ...(changeRequestsEnabled()
-      ? [{ route: "AdminChangeRequests", labelKey: "admin.nav.changeRequests", icon: "git-pull-request-outline" as IoniconName }]
+      ? [{ route: "AdminChangeRequests", labelKey: "admin.nav.changeRequests", icon: "git-pull-request-outline" as IoniconName, tint: colors.violetTint, fg: colors.violet }]
       : []),
-    { route: "AdminIncentives", labelKey: "admin.nav.incentives", icon: "cash-outline" },
-    { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline" },
-    { route: "AdminSustainability", labelKey: "admin.nav.sustainability", icon: "leaf-outline" },
-    { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline" },
-    { route: "AdminUsers", labelKey: "admin.users.title", icon: "people-outline", count: pendingCount },
-    { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },
-    { route: "AdminCalendar", labelKey: "admin.nav.calendar", icon: "calendar-outline" },
+    { route: "AdminIncentives", labelKey: "admin.nav.incentives", icon: "cash-outline", tint: colors.greenTint, fg: ACCENT_GREEN },
+    { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline", tint: colors.blueTint, fg: colors.blue },
+    { route: "AdminSustainability", labelKey: "admin.nav.sustainability", icon: "leaf-outline", tint: colors.greenTint, fg: ACCENT_GREEN },
+    { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline", tint: colors.blueTint, fg: colors.blue },
+    { route: "AdminUsers", labelKey: "admin.users.title", icon: "people-outline", count: pendingCount, tint: colors.violetTint, fg: colors.violet },
+    { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline", tint: colors.yellowTint, fg: ACCENT_AMBER },
+    { route: "AdminCalendar", labelKey: "admin.nav.calendar", icon: "calendar-outline", tint: colors.blueTint, fg: colors.blue },
     // Failed-delivery / exception lane (feature-gated — hidden while the flag is off).
-    ...(exceptionsEnabled() ? [{ route: "AdminExceptions", labelKey: "exception.laneTitle", icon: "warning-outline" as IoniconName }] : []),
+    ...(exceptionsEnabled() ? [{ route: "AdminExceptions", labelKey: "exception.laneTitle", icon: "warning-outline" as IoniconName, tint: colors.orangeTint, fg: ACCENT_AMBER }] : []),
   ];
 
   return (
@@ -91,20 +115,51 @@ export function AdminHomeScreen() {
       contentContainerStyle={{ paddingBottom: 24 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refetchAll} />}
     >
-      {/* Greeting header — the requestor/driver home header, admin-flavoured. */}
+      {/* Greeting header — the requestor/driver home header, admin-flavoured.
+          The mark stays (headers carry the white mark-only crop, standing
+          ruling) even though frame 1 drops it; search stays because losing it
+          would be a regression, not a redesign. */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.headerTop}>
           <BrandLogo white mark height={30} style={{ marginRight: 12 }} />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.greetingTime}>{greeting} 👋</Text>
             <Text numberOfLines={1} style={styles.hi}>{user?.name ?? ""}</Text>
+            {/* Frame 1's "Fri 9 Aug · 6 trips, 8 trucks active" — the day in one
+                line, replacing the role row (the shield pill below says Admin,
+                and the role never changes while you read it). */}
             <View style={styles.roleRow}>
               <Ionicons name="shield-checkmark-outline" size={12} color="rgba(255,255,255,0.65)" />
-              <Text style={styles.role}>{t("admin.roleLabel")}</Text>
+              <Text style={styles.role} numberOfLines={1}>
+                {k
+                  ? t("admin.home.headerSummary", {
+                      date: formatDate(new Date()),
+                      trips: k.trips_today,
+                      trucks: k.active_trucks,
+                    })
+                  : t("admin.roleLabel")}
+              </Text>
             </View>
           </View>
           <AdminSearchButton />
         </View>
+
+        {/* ONE line, the most blocked thing — see lib/adminHome. A dispatcher's
+            first question on opening the app is "is anything stuck?"; the
+            answer used to be a panel halfway down the scroll. */}
+        {strip ? (
+          <TouchableOpacity
+            style={styles.strip}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate("AdminTrips")}
+          >
+            <Ionicons name="warning" size={17} color={colors.yellow} />
+            <Text style={styles.stripText} numberOfLines={2}>
+              {t(strip.key, { count: strip.count })}
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.7)" />
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       <View style={styles.content}>
@@ -147,6 +202,18 @@ export function AdminHomeScreen() {
                 </Text>
               </View>
             )}
+            {/* The failure named inside the card that counts it — frame 1. The
+                count above says "1 needs attention"; this says which kind, so
+                the tap has a destination in mind. */}
+            {k && k.auto_dispatch_failed > 0 ? (
+              <View style={styles.heroAlert}>
+                <Ionicons name="warning" size={13} color={colors.red} />
+                <Text style={styles.heroAlertText} numberOfLines={2}>
+                  {t("admin.home.stripDispatchFailed", { count: k.auto_dispatch_failed })}
+                </Text>
+                <Ionicons name="chevron-forward" size={13} color={colors.red} />
+              </View>
+            ) : null}
           </TouchableOpacity>
         </View>
 
@@ -161,8 +228,8 @@ export function AdminHomeScreen() {
                 activeOpacity={0.7}
                 onPress={() => navigation.navigate("AdminMore", { screen: tile.route, initial: false })}
               >
-                <View style={styles.tileIcon}>
-                  <Ionicons name={tile.icon} size={22} color={colors.blue} />
+                <View style={[styles.tileIcon, { backgroundColor: tile.tint }]}>
+                  <Ionicons name={tile.icon} size={22} color={tile.fg} />
                   {tile.count ? (
                     <View style={styles.tileBadge}>
                       <Text style={styles.tileBadgeText}>{tile.count > 99 ? "99+" : tile.count}</Text>
@@ -201,6 +268,47 @@ export function AdminHomeScreen() {
             <View style={{ padding: 10 }}>
               <AdminFleetMap trucks={trucks.data ?? []} live={live.data ?? []} height={280} />
             </View>
+
+            {/* Frame 1's idle list. ONLY trucks with a live GPS fix can be
+                markers, so a truck that is off, parked or in the workshop was
+                simply absent — indistinguishable from one the map had lost.
+                Listing them, with the reason, closes that hole. */}
+            {untracked.length > 0 ? (
+              <View style={styles.idleWrap}>
+                <Text style={styles.idleHead}>
+                  {t("admin.home.notOnMap", { count: untracked.length })}
+                </Text>
+                {untracked.map((tr) => (
+                  <View key={tr.plate} style={styles.idleRow}>
+                    <View style={styles.idleIcon}>
+                      <Ionicons name="bus" size={14} color={colors.blue} />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.idlePlate}>{tr.plate}</Text>
+                      <Text style={styles.idleMeta} numberOfLines={1}>
+                        {[tr.type, tr.driver?.name ?? t("admin.home.noDriver")].filter(Boolean).join(" · ")}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.idlePill,
+                        tr.status === "maintenance" && { backgroundColor: colors.orangeTint },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.idlePillText,
+                          tr.status === "maintenance" && { color: ACCENT_AMBER },
+                        ]}
+                      >
+                        {t(`admin.trucks.status${tr.status === "maintenance" ? "Maintenance" : tr.status === "active" ? "Active" : "Idle"}`)}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+                <Text style={styles.idleNote}>{t("admin.home.mapCoverageNote")}</Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -331,4 +439,43 @@ const styles = StyleSheet.create({
   },
   tileBadgeText: { color: "#fff", fontSize: 10, fontWeight: "800" },
   tileLabel: { fontSize: 11, fontWeight: "600", color: colors.text, textAlign: "center", marginTop: 6, lineHeight: 14 },
+
+  // Attention strip on the blue (frame 1).
+  strip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    marginTop: 14,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  stripText: { flex: 1, color: "#fff", fontSize: font.sm, fontWeight: "700" },
+
+  // The named failure inside the card that counts it.
+  heroAlert: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#FFF5F5",
+    borderWidth: 1,
+    borderColor: "#f3c2c0",
+    borderRadius: 11,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 2,
+  },
+  heroAlertText: { flex: 1, fontSize: font.xs, fontWeight: "700", color: colors.text, lineHeight: 16 },
+
+  // Trucks the map cannot show.
+  idleWrap: { borderTopWidth: 1, borderTopColor: colors.divider },
+  idleHead: { paddingHorizontal: 14, paddingVertical: 11, fontSize: font.xs, fontWeight: "800", color: colors.text, backgroundColor: colors.panel },
+  idleRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.divider },
+  idleIcon: { width: 30, height: 30, borderRadius: 9, backgroundColor: colors.blueTint, alignItems: "center", justifyContent: "center" },
+  idlePlate: { fontSize: font.sm, fontWeight: "700", color: colors.text },
+  idleMeta: { fontSize: font.xs, color: colors.textMuted, marginTop: 1 },
+  idlePill: { backgroundColor: colors.divider, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },
+  idlePillText: { fontSize: font.xs, fontWeight: "700", color: colors.textMuted },
+  idleNote: { paddingHorizontal: 14, paddingVertical: 9, fontSize: font.xs, color: colors.textFaint, borderTopWidth: 1, borderTopColor: colors.divider, lineHeight: 16 },
 });
