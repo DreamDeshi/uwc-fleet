@@ -26,12 +26,12 @@ import {
   CONSIGNEE_SEARCH_MIN,
 } from "../../hooks/queries";
 import { apiErrorMessage } from "../../services/api";
-import { colors, layout, radius, shadow } from "../../theme";
+import { actionShadow, colors, layout, radius, shadow } from "../../theme";
 import { useWide } from "../../hooks/useWide";
 import { Button } from "../../components/Button";
-import { FieldLabel, PressableField } from "../../components/Field";
-import { OptionsModal } from "../../components/OptionsModal";
+import { FieldLabel } from "../../components/Field";
 import { NewConsigneeModal } from "../../components/NewConsigneeModal";
+import { ORIGIN_LABEL } from "../../lib/trip";
 import { LoadingState } from "../../components/States";
 import { useToast } from "../../components/Toast";
 import { pickDocumentFile, PickedPhoto } from "../../lib/photo";
@@ -58,23 +58,31 @@ import {
   STEP_CONFIRM,
   type BookingDraft,
 } from "../../lib/bookingSteps";
+import { pickupToSlot, tripRemarks, type PickupSlot } from "../../lib/bookingEdit";
+import { clampSlotToDay, nextBookableSlot, slotToDate } from "../../lib/pickupCalendar";
+import { PickupSheet } from "../../components/PickupSheet";
 import {
-  pickupToSlot,
-  tripRemarks,
-  PICKUP_HOURS,
-  PICKUP_WINDOW_START_HOUR,
-  PICKUP_WINDOW_END_HOUR,
-} from "../../lib/bookingEdit";
+  availableDirections,
+  availableFamilies,
+  buildRouteMatrix,
+  choiceForId,
+  findRouteType,
+  resolveDirection,
+  type RouteDirection,
+  type RouteFamily,
+} from "../../lib/routeDirection";
 import { formatDate, formatTime } from "../../lib/format";
 import { uuidv4 } from "../../lib/uuid";
-import { Consignee, Trip } from "../../types";
+import { Consignee, RouteType, Trip } from "../../types";
 import { changeRequestsEnabled } from "../../lib/featureFlags";
 
 type Nav = BottomTabNavigationProp<RequestorTabParamList>;
 
-// Grab-style flow: 3 steps. Date/time/remarks (all defaulted) folded into the
-// final Confirm step so there's no near-empty "When" page.
-const STEPS = ["stepWhere", "stepWhat", "stepConfirm"] as const;
+// Four steps (requestor design). "When" was folded into Confirm while the
+// pickup was two defaulted dropdowns; it now carries a calendar and a clock
+// dial, which is a page of its own. See lib/bookingSteps for why the step
+// indices live there rather than being counted off this array.
+const STEPS = ["stepWhere", "stepWhat", "stepWhen", "stepConfirm"] as const;
 // Display order (commonest first, then largest → smallest) — deliberately NOT
 // the lib's order; palletQtys is indexed by this. Typed as BookablePalletSize so
 // an ASCII "4x4" — or a re-added deprecated 1×1/1×2 (removed per Q1, R1
@@ -135,24 +143,10 @@ const truncateName = (name: string) =>
 // Default pickup = the NEXT bookable slot, never a fixed "Today 09:00": the
 // server rejects past pickups at create, so a fixed morning default would make
 // every same-day afternoon booking fail until the user noticed the time field.
-// Next full hour inside the 07:00–02:00 picker window.
-//
-// The window wraps midnight (item 12), so the roll-forward has three cases
-// rather than two. Note 23:00 + 1 = 24:00 is midnight TOMORROW: it stays a
-// valid pickup, but as hour 0 on dayOffset 1 — the one case where "the next
-// hour" changes the calendar day.
-function nextBookableSlot(): { dayOffset: number; hour: number } {
-  const nextHour = new Date().getHours() + 1;
-  // Small hours (now 00:00–01:59 → next 01:00–02:00): still today's tail of
-  // yesterday's shift.
-  if (nextHour <= PICKUP_WINDOW_END_HOUR) return { dayOffset: 0, hour: nextHour };
-  // The closed gap (now 02:00–05:59 → next 03:00–06:59): wait for today's open.
-  if (nextHour <= PICKUP_WINDOW_START_HOUR) return { dayOffset: 0, hour: PICKUP_WINDOW_START_HOUR };
-  // Inside the day, up to and including 23:00.
-  if (nextHour <= 23) return { dayOffset: 0, hour: nextHour };
-  // 23:00 → midnight: hour 0 of the NEXT calendar day, still this shift.
-  return { dayOffset: 1, hour: 0 };
-}
+// The roll-forward (including the closed 03:00–06:00 gap and the midnight wrap)
+// now lives in lib/pickupCalendar, where it is unit-tested and shared with the
+// picker's own disabled states — the two must agree or the form pre-fills a
+// slot the dial then dims.
 
 export function BookingFormScreen() {
   const { t } = useTranslation();
@@ -160,10 +154,19 @@ export function BookingFormScreen() {
   const navigation = useNavigation<Nav>();
   const wide = useWide();
 
-  // Mounted two ways: as the NewBooking TAB (no params → create) and as the
-  // pushed EditBooking stack screen ({ tripId } → edit a still-pending booking).
-  const routeParams = useRoute().params as { tripId?: string } | undefined;
+  // Mounted three ways: NewBooking with no params (create), NewBooking with
+  // `rebookTripId` (create, pre-filled from a finished booking — frame 9b's
+  // Rebook), and the pushed EditBooking screen with `tripId` (edit a
+  // still-pending booking).
+  //
+  // The two ids are deliberately NOT the same param: `tripId` means "write to
+  // this booking". A rebook that reused it would turn a copy into an overwrite
+  // of the very booking being copied.
+  const routeParams = useRoute().params as
+    | { tripId?: string; rebookTripId?: string }
+    | undefined;
   const editTripId = routeParams?.tripId;
+  const rebookTripId = routeParams?.rebookTripId;
   const isEdit = Boolean(editTripId);
 
   const {
@@ -232,9 +235,11 @@ export function BookingFormScreen() {
   const [dimQty, setDimQty] = useState(1);
   const [remarks, setRemarks] = useState("");
 
-  // Date/time chosen from quick pickers (no native datepicker dependency).
-  const [dayOffset, setDayOffset] = useState(() => nextBookableSlot().dayOffset);
-  const [hour, setHour] = useState(() => nextBookableSlot().hour);
+  // Date/time chosen from the calendar + clock sheet (no native datepicker
+  // dependency). One slot rather than separate day/hour state — the picker
+  // commits all three fields together, so splitting them would let a half-
+  // applied choice exist between renders.
+  const [slot, setSlot] = useState<PickupSlot>(() => nextBookableSlot());
   // DG-R7: the NewBooking TAB never unmounts, so these mount-time defaults
   // went stale — hours later the pre-filled slot was in the past and the
   // submit bounced with PICKUP_IN_PAST. Refresh the default every time the
@@ -244,13 +249,10 @@ export function BookingFormScreen() {
   useFocusEffect(
     useCallback(() => {
       if (isEdit || slotTouched.current) return;
-      const slot = nextBookableSlot();
-      setDayOffset(slot.dayOffset);
-      setHour(slot.hour);
+      setSlot(nextBookableSlot());
     }, [isEdit])
   );
-  const [dayOpen, setDayOpen] = useState(false);
-  const [timeOpen, setTimeOpen] = useState(false);
+  const [pickupOpen, setPickupOpen] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [ticket, setTicket] = useState<string | null>(null);
@@ -274,36 +276,32 @@ export function BookingFormScreen() {
     loadTemplates().then(setTemplates);
   }, []);
 
-  const pickupDate = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() + dayOffset);
-    d.setHours(hour, 0, 0, 0);
-    return d;
-  }, [dayOffset, hour]);
+  const pickupDate = useMemo(() => slotToDate(new Date(), slot), [slot]);
 
-  const dayOptions = useMemo(
-    () =>
-      Array.from({ length: 7 }, (_, i) => {
-        const d = new Date();
-        d.setDate(d.getDate() + i);
-        const label = i === 0 ? `Today · ${formatDate(d)}` : i === 1 ? `Tomorrow · ${formatDate(d)}` : formatDate(d);
-        return { label, value: String(i) };
-      }),
-    []
-  );
-  // 07:00…23:00 then 00:00…02:00 — PICKUP_HOURS is already in operating-day
-  // order, so the list reads the way the shift runs instead of wrapping back to
-  // midnight in the middle.
-  const timeOptions = useMemo(
-    () =>
-      PICKUP_HOURS.map((h) => {
-        const d = new Date();
-        d.setHours(h, 0, 0, 0);
-        return { label: formatTime(d), value: String(h) };
-      }),
-    []
-  );
+  // Route Type + Direction (design frames 1 and 3) are a presentation of the
+  // SERVER's six route types, not a new field — see lib/routeDirection. The
+  // form still submits `route_type_id` from this list.
+  const routeMatrix = useMemo(() => buildRouteMatrix(routeTypes as RouteType[]), [routeTypes]);
+  const selectedChoice = choiceForId(routeMatrix, routeTypeId);
+  // Held separately from the resolved id so the two controls stay independent:
+  // picking a family before a direction is a legitimate half-made choice.
+  const [family, setFamily] = useState<RouteFamily | undefined>();
+  const [direction, setDirection] = useState<RouteDirection>("delivery");
+  // A route type arriving from edit/rebook/template must light up the controls.
+  useEffect(() => {
+    if (!selectedChoice) return;
+    setFamily(selectedChoice.family);
+    setDirection(selectedChoice.direction);
+  }, [selectedChoice?.id]);
+
+  const chooseRoute = (nextFamily: RouteFamily, preferred: RouteDirection) => {
+    setFamily(nextFamily);
+    const dir = resolveDirection(routeMatrix, nextFamily, preferred);
+    if (!dir) return; // family with nothing behind it — leave the id untouched
+    setDirection(dir);
+    const choice = findRouteType(routeMatrix, nextFamily, dir);
+    if (choice) setRouteTypeId(choice.id);
+  };
 
   const legacyPallets = legacyCargo.reduce((a, c) => a + c.quantity, 0);
   // totalPallets counts the preserved legacy lines too, so a legacy-only edit is
@@ -352,10 +350,10 @@ export function BookingFormScreen() {
     setDimL("");
     setDimQty(1);
     setRemarks("");
-    const slot = nextBookableSlot();
     slotTouched.current = false; // fresh form — the default may auto-refresh again
-    setDayOffset(slot.dayOffset);
-    setHour(slot.hour);
+    setSlot(nextBookableSlot());
+    setFamily(undefined);
+    setDirection("delivery");
     setDocs([]);
     setError(null);
   };
@@ -485,12 +483,24 @@ export function BookingFormScreen() {
     seededRef.current = true;
     prefillFromTrip(editTrip);
     setRemarks(tripRemarks(editTrip.cargo_details));
-    const slot = pickupToSlot(editTrip.pickup_datetime, new Date());
-    if (slot) {
-      setDayOffset(slot.dayOffset);
-      setHour(slot.hour);
-    }
+    const stored = pickupToSlot(editTrip.pickup_datetime, new Date());
+    if (stored) setSlot(stored);
   }, [isEdit, editTrip]);
+
+  // REBOOK: copy route, stops and cargo from a finished booking into a NEW one.
+  // The pickup is deliberately NOT copied — the old one is in the past, and the
+  // next bookable slot is the only sane default for a trip being re-run.
+  const rebookSeeded = useRef(false);
+  const rebookSource = useMemo(
+    () => (rebookTripId ? trips.find((tr) => tr.id === rebookTripId) : undefined),
+    [rebookTripId, trips]
+  );
+  useEffect(() => {
+    if (!rebookSource || rebookSeeded.current) return;
+    rebookSeeded.current = true;
+    prefillFromTrip(rebookSource);
+    setRemarks(tripRemarks(rebookSource.cargo_details));
+  }, [rebookSource]);
 
   // The live draft, in the shape lib/bookingSteps judges.
   const draft: BookingDraft = {
@@ -667,12 +677,15 @@ export function BookingFormScreen() {
     <>
       {step === 0 && (
         <StepWhere
-          wide={wide}
-          routeTypes={routeTypes}
+          routeMatrix={routeMatrix}
           routeTypesFailed={rtError && !rtLoading}
           onRetryRouteTypes={() => refetchRouteTypes()}
           routeTypeId={routeTypeId}
           setRouteTypeId={setRouteTypeId}
+          family={family}
+          direction={direction}
+          onChooseRoute={chooseRoute}
+          resolvedRouteName={selectedChoice?.name}
           stops={stops}
           setStops={setStops}
           recent={recentConsignees}
@@ -704,15 +717,19 @@ export function BookingFormScreen() {
         />
       )}
       {step === 2 && (
+        <StepWhen
+          pickupDate={pickupDate}
+          onPickPickup={() => setPickupOpen(true)}
+          remarks={remarks}
+          setRemarks={setRemarks}
+        />
+      )}
+      {step === 3 && (
         <StepConfirm
           routeTypeName={routeTypes.find((r) => r.id === routeTypeId)?.name}
           stops={stops}
           cargoSummaryText={cargoSummaryText}
           pickupDate={pickupDate}
-          remarks={remarks}
-          setRemarks={setRemarks}
-          onPickDate={() => setDayOpen(true)}
-          onPickTime={() => setTimeOpen(true)}
           onEditStep={setStep}
           docs={docs}
           onAddDoc={onAddDoc}
@@ -822,28 +839,18 @@ export function BookingFormScreen() {
         </>
       )}
 
-      {/* Pickers */}
-      <OptionsModal
-        visible={dayOpen}
-        title={t("booking.pickupDate")}
-        options={dayOptions}
-        selectedValue={String(dayOffset)}
-        onSelect={(v) => {
+      {/* Pickup — calendar, then the hour and minute dials (frames 5, 6, 6b) */}
+      <PickupSheet
+        visible={pickupOpen}
+        slot={slot}
+        onConfirm={(next) => {
           slotTouched.current = true; // user's explicit choice — never auto-refresh over it
-          setDayOffset(Number(v));
+          // The sheet's own clock is a render old by the time Confirm lands;
+          // re-clamp against NOW so a slot that expired while the sheet was
+          // open cannot be committed and then rejected at submit.
+          setSlot(clampSlotToDay(next, new Date()));
         }}
-        onClose={() => setDayOpen(false)}
-      />
-      <OptionsModal
-        visible={timeOpen}
-        title={t("booking.pickupTime")}
-        options={timeOptions}
-        selectedValue={String(hour)}
-        onSelect={(v) => {
-          slotTouched.current = true; // user's explicit choice — never auto-refresh over it
-          setHour(Number(v));
-        }}
-        onClose={() => setTimeOpen(false)}
+        onClose={() => setPickupOpen(false)}
       />
 
       {/* Save-as-template name dialog */}
@@ -917,12 +924,15 @@ export function BookingFormScreen() {
 
 // ── Step 1: Where (route type + multi-stop consignees) ───────────────────
 function StepWhere({
-  wide,
-  routeTypes,
+  routeMatrix,
   routeTypesFailed,
   onRetryRouteTypes,
   routeTypeId,
   setRouteTypeId,
+  family,
+  direction,
+  onChooseRoute,
+  resolvedRouteName,
   stops,
   setStops,
   recent,
@@ -932,12 +942,15 @@ function StepWhere({
   onApplyTemplate,
   onDeleteTemplate,
 }: {
-  wide: boolean;
-  routeTypes: { id: string; name: string }[];
+  routeMatrix: ReturnType<typeof buildRouteMatrix>;
   routeTypesFailed: boolean;
   onRetryRouteTypes: () => void;
   routeTypeId?: string;
   setRouteTypeId: (id: string) => void;
+  family?: RouteFamily;
+  direction: RouteDirection;
+  onChooseRoute: (family: RouteFamily, direction: RouteDirection) => void;
+  resolvedRouteName?: string;
   stops: Consignee[];
   setStops: React.Dispatch<React.SetStateAction<Consignee[]>>;
   recent: Consignee[];
@@ -951,6 +964,7 @@ function StepWhere({
   const [search, setSearch] = useState("");
   const { data: results = [], isFetching } = useConsignees(search);
   const [newOpen, setNewOpen] = useState(false);
+  const [startOpen, setStartOpen] = useState(false);
 
   const addStop = (c: Consignee) => {
     setStops((prev) => (prev.find((s) => s.id === c.id) ? prev : [...prev, c]));
@@ -961,46 +975,41 @@ function StepWhere({
   // Recent consignees not already added — surfaced as 1-tap chips.
   const recentAvailable = recent.filter((c) => !stops.some((s) => s.id === c.id));
 
+  const families = availableFamilies(routeMatrix);
+  const directions = family ? availableDirections(routeMatrix, family) : [];
+  const query = search.trim();
+  const noResults = query.length >= CONSIGNEE_SEARCH_MIN && results.length === 0 && !isFetching;
+
   return (
     <View>
-      {canRebook ? (
-        <TouchableOpacity style={styles.rebookBtn} onPress={onRebook} activeOpacity={0.85}>
-          <Ionicons name="repeat" size={18} color={colors.white} />
-          <Text style={styles.rebookText}>{t("booking.rebookLast")}</Text>
-        </TouchableOpacity>
-      ) : null}
-
-      {/* Saved booking templates — 1-tap reload of a named recurring order. */}
-      {templates.length > 0 ? (
-        <View style={styles.templateWrap}>
-          <Text style={styles.recentLabel}>{t("booking.savedTemplates")}</Text>
-          <View style={styles.recentChips}>
-            {templates.map((tpl) => (
-              <View key={tpl.name} style={styles.templateChip}>
-                <TouchableOpacity
-                  style={styles.templateChipMain}
-                  onPress={() => onApplyTemplate(tpl)}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons name="bookmark" size={13} color={colors.blue} />
-                  <Text style={styles.templateChipText} numberOfLines={1}>
-                    {truncateName(tpl.name)}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => onDeleteTemplate(tpl.name)} hitSlop={8} style={styles.templateChipX}>
-                  <Ionicons name="close" size={13} color={colors.textFaint} />
-                </TouchableOpacity>
-              </View>
-            ))}
+      {/* ONE entry for both fast paths (design frame 1). Rebook and templates
+          used to be a full-width button plus a chip row, which pushed the
+          actual route controls below the fold on a small phone. */}
+      {canRebook || templates.length > 0 ? (
+        <TouchableOpacity style={styles.startCard} onPress={() => setStartOpen(true)} activeOpacity={0.85}>
+          <View style={styles.startIcon}>
+            <Ionicons name="repeat" size={16} color={colors.blue} />
           </View>
-        </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.startTitle}>{t("booking.startFromPrevious")}</Text>
+            <Text style={styles.startSub}>
+              {[
+                canRebook ? t("booking.startLastTrip") : null,
+                templates.length > 0 ? t("booking.startTemplates", { count: templates.length }) : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.blue} />
+        </TouchableOpacity>
       ) : null}
 
       <FieldLabel>{t("booking.routeType")}</FieldLabel>
       {/* DG-R8: a failed route-types fetch used to render an EMPTY grid, then
           Next blocked on "choose a route type" with no way forward. Say what
           broke and offer a retry. */}
-      {routeTypesFailed && routeTypes.length === 0 ? (
+      {routeTypesFailed && families.length === 0 && routeMatrix.unmatched.length === 0 ? (
         <View style={styles.routeTypesError}>
           <Ionicons name="cloud-offline-outline" size={18} color={colors.red} />
           <Text style={styles.routeTypesErrorText}>{t("booking.routeTypesFailed")}</Text>
@@ -1009,39 +1018,87 @@ function StepWhere({
           </TouchableOpacity>
         </View>
       ) : null}
-      <View style={styles.routeGrid}>
-        {routeTypes.map((r) => {
-          const active = routeTypeId === r.id;
+
+      <View style={styles.familyRow}>
+        {families.map((f) => {
+          const active = family === f;
           return (
             <TouchableOpacity
-              key={r.id}
-              style={[styles.routeCard, wide && styles.routeCardWide, active && styles.routeCardActive]}
-              onPress={() => setRouteTypeId(r.id)}
+              key={f}
+              style={[styles.familyChip, active && styles.familyChipActive]}
+              onPress={() => onChooseRoute(f, direction)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
             >
-              <Text style={[styles.routeCardText, active && { color: colors.blue }]}>{r.name}</Text>
+              <Text style={[styles.familyChipText, active && styles.familyChipTextActive]} numberOfLines={1}>
+                {t(`booking.family_${f}`)}
+              </Text>
             </TouchableOpacity>
           );
         })}
       </View>
 
-      <FieldLabel>{t("booking.consignee")}</FieldLabel>
-
-      {/* Recent consignees — tap to add without typing (Grab-style) */}
-      {recentAvailable.length > 0 ? (
-        <View style={styles.recentWrap}>
-          <Text style={styles.recentLabel}>{t("booking.recentConsignees")}</Text>
-          <View style={styles.recentChips}>
-            {recentAvailable.map((c) => (
-              <TouchableOpacity key={c.id} style={styles.recentChip} onPress={() => addStop(c)}>
-                <Ionicons name="add" size={14} color={colors.blue} />
-                <Text style={styles.recentChipText} numberOfLines={1}>
-                  {truncateName(c.company_name)}
+      {/* A route type the server sent that this app cannot decompose is still
+          bookable — it just gets its own chip rather than being hidden. */}
+      {routeMatrix.unmatched.length > 0 ? (
+        <View style={styles.familyRow}>
+          {routeMatrix.unmatched.map((r) => {
+            const active = routeTypeId === r.id;
+            return (
+              <TouchableOpacity
+                key={r.id}
+                style={[styles.familyChip, active && styles.familyChipActive]}
+                onPress={() => setRouteTypeId(r.id)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+              >
+                <Text style={[styles.familyChipText, active && styles.familyChipTextActive]} numberOfLines={1}>
+                  {r.name}
                 </Text>
               </TouchableOpacity>
-            ))}
-          </View>
+            );
+          })}
         </View>
       ) : null}
+
+      {family && directions.length > 1 ? (
+        <>
+          <Text style={styles.microLabel}>{t("booking.direction")}</Text>
+          <View style={styles.directionBar}>
+            {directions.map((d) => {
+              const active = direction === d;
+              return (
+                <TouchableOpacity
+                  key={d}
+                  style={[styles.directionBtn, active && styles.directionBtnActive]}
+                  onPress={() => onChooseRoute(family, d)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                >
+                  <Ionicons
+                    name={d === "delivery" ? "arrow-forward" : "arrow-back"}
+                    size={13}
+                    color={active ? colors.white : colors.textMuted}
+                  />
+                  <Text style={[styles.directionText, active && styles.directionTextActive]}>
+                    {t(`booking.direction_${d}`)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </>
+      ) : null}
+
+      {/* The resolved route type, echoed back — two controls, one answer. */}
+      {resolvedRouteName ? (
+        <View style={styles.resolvedRow}>
+          <Ionicons name="checkmark-circle" size={14} color={colors.greenText} />
+          <Text style={styles.resolvedText}>{resolvedRouteName}</Text>
+        </View>
+      ) : null}
+
+      <FieldLabel>{t("booking.consignee")}</FieldLabel>
 
       {/* Selected stops */}
       {stops.map((c, i) => (
@@ -1062,9 +1119,8 @@ function StepWhere({
       ))}
 
       {/* Search */}
-      <Text style={styles.searchFromLabel}>{t("booking.searchFrom")}</Text>
-      <View style={styles.searchBox}>
-        <Ionicons name="search" size={18} color={colors.textFaint} />
+      <View style={[styles.searchBox, query.length > 0 && styles.searchBoxActive]}>
+        <Ionicons name="search" size={18} color={query.length > 0 ? colors.blue : colors.textFaint} />
         <TextInput
           value={search}
           onChangeText={setSearch}
@@ -1072,10 +1128,31 @@ function StepWhere({
           placeholderTextColor={colors.textFaint}
           style={styles.searchInput}
         />
-        {isFetching ? <Ionicons name="ellipsis-horizontal" size={18} color={colors.textFaint} /> : null}
+        {isFetching ? (
+          <Ionicons name="ellipsis-horizontal" size={18} color={colors.textFaint} />
+        ) : query.length > 0 ? (
+          <TouchableOpacity onPress={() => setSearch("")} hitSlop={10} accessibilityLabel={t("common.clear")}>
+            <Ionicons name="close-circle" size={20} color={colors.textFaint} />
+          </TouchableOpacity>
+        ) : null}
       </View>
 
-      {search.trim().length >= CONSIGNEE_SEARCH_MIN ? (
+      {noResults ? (
+        // Frame 2. The old dead end was one grey line ("No consignee found")
+        // above a link the requestor had to notice — and the manual form then
+        // opened blank, so they typed the name twice.
+        <View style={styles.emptySearchCard}>
+          <View style={styles.emptySearchIcon}>
+            <Ionicons name="business-outline" size={26} color={colors.blue} />
+          </View>
+          <Text style={styles.emptySearchTitle}>{t("booking.noMatchTitle", { query })}</Text>
+          <Text style={styles.emptySearchBody}>{t("booking.noMatchBody")}</Text>
+          <TouchableOpacity style={styles.emptySearchBtn} onPress={() => setNewOpen(true)} activeOpacity={0.85}>
+            <Ionicons name="add" size={20} color={colors.white} />
+            <Text style={styles.emptySearchBtnText}>{t("booking.addAsNewCompany", { query })}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : query.length >= CONSIGNEE_SEARCH_MIN ? (
         <View style={styles.results}>
           {results.slice(0, 10).map((c) => (
             <TouchableOpacity key={c.id} style={styles.resultRow} onPress={() => addStop(c)}>
@@ -1088,22 +1165,126 @@ function StepWhere({
               <Ionicons name="add-circle" size={22} color={colors.blue} />
             </TouchableOpacity>
           ))}
-          {results.length === 0 && !isFetching ? (
-            <Text style={styles.noResult}>{t("booking.noConsigneeFound")}</Text>
-          ) : null}
         </View>
-      ) : search.trim().length > 0 ? (
+      ) : query.length > 0 ? (
         <Text style={styles.searchHint}>{t("booking.searchMinHint", { count: CONSIGNEE_SEARCH_MIN })}</Text>
       ) : null}
 
-      {/* Last-resort manual entry — subtle, below the search results. */}
-      <TouchableOpacity style={styles.addNew} onPress={() => setNewOpen(true)}>
-        <Ionicons name="create-outline" size={14} color={colors.textMuted} />
-        <Text style={styles.addNewText}>{t("booking.addManually")}</Text>
+      {/* Recent consignees — tap to add without typing (Grab-style) */}
+      {recentAvailable.length > 0 && !noResults ? (
+        <View style={styles.recentWrap}>
+          <Text style={styles.microLabel}>{t("booking.recentConsignees")}</Text>
+          <View style={styles.recentChips}>
+            {recentAvailable.map((c) => (
+              <TouchableOpacity key={c.id} style={styles.recentChip} onPress={() => addStop(c)}>
+                <Ionicons name="add" size={14} color={colors.blue} />
+                <Text style={styles.recentChipText} numberOfLines={1}>
+                  {truncateName(c.company_name)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      {/* Manual entry — a real button now, not a link under the fold. */}
+      <TouchableOpacity style={styles.addManuallyBtn} onPress={() => setNewOpen(true)} activeOpacity={0.85}>
+        <Ionicons name="create-outline" size={18} color={colors.blue} />
+        <Text style={styles.addManuallyText}>{t("booking.addManually")}</Text>
       </TouchableOpacity>
 
-      <NewConsigneeModal visible={newOpen} onClose={() => setNewOpen(false)} onCreated={addStop} />
+      <NewConsigneeModal
+        visible={newOpen}
+        // Frame 2 promises "Add «yeoh brothers» as a new company" — so the name
+        // has to arrive in the form already typed, or the button lied.
+        initialName={noResults ? query : undefined}
+        onClose={() => setNewOpen(false)}
+        onCreated={addStop}
+      />
+
+      <StartFromModal
+        visible={startOpen}
+        canRebook={canRebook}
+        templates={templates}
+        onClose={() => setStartOpen(false)}
+        onRebook={onRebook}
+        onApplyTemplate={onApplyTemplate}
+        onDeleteTemplate={onDeleteTemplate}
+      />
     </View>
+  );
+}
+
+// The two fast paths, behind one card (design frame 1).
+function StartFromModal({
+  visible,
+  canRebook,
+  templates,
+  onClose,
+  onRebook,
+  onApplyTemplate,
+  onDeleteTemplate,
+}: {
+  visible: boolean;
+  canRebook: boolean;
+  templates: BookingTemplate[];
+  onClose: () => void;
+  onRebook: () => void;
+  onApplyTemplate: (tpl: BookingTemplate) => void;
+  onDeleteTemplate: (name: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.sheetBackdrop}>
+        <View style={styles.sheet}>
+          <View style={styles.sheetHead}>
+            <Text style={styles.sheetTitle}>{t("booking.startFromPrevious")}</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={10}>
+              <Ionicons name="close" size={22} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={{ maxHeight: 380 }}>
+            {canRebook ? (
+              <TouchableOpacity
+                style={styles.startRow}
+                onPress={() => {
+                  onRebook();
+                  onClose();
+                }}
+              >
+                <Ionicons name="time-outline" size={18} color={colors.blue} />
+                <Text style={styles.startRowText}>{t("booking.rebookLast")}</Text>
+                <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+              </TouchableOpacity>
+            ) : null}
+            {templates.map((tpl) => (
+              <View key={tpl.name} style={styles.startRow}>
+                <Ionicons name="bookmark" size={18} color={colors.blue} />
+                <TouchableOpacity
+                  style={{ flex: 1 }}
+                  onPress={() => {
+                    onApplyTemplate(tpl);
+                    onClose();
+                  }}
+                >
+                  <Text style={styles.startRowText} numberOfLines={1}>
+                    {tpl.name}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => onDeleteTemplate(tpl.name)}
+                  hitSlop={10}
+                  accessibilityLabel={t("booking.deleteTemplate", { name: tpl.name })}
+                >
+                  <Ionicons name="trash-outline" size={18} color={colors.textFaint} />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1225,9 +1406,32 @@ function StepWhat({
             </>
           )}
 
-          <View style={styles.totalPill}>
-            <Ionicons name="cube" size={16} color={colors.blue} />
-            <Text style={styles.totalPillText}>{t("booking.totalPallets", { count: totalPallets })}</Text>
+          {/* The load against the largest truck, as a bar (design frame 3).
+              Measured in 4×4-EQUIVALENTS, the same unit the server enforces —
+              the headline count is pallets, the bar is slots, and they differ
+              whenever the load isn't all 4×4s. Both are labelled. */}
+          <View style={styles.capacityCard}>
+            <View style={styles.capacityHead}>
+              <Text style={styles.capacityCount}>{t("booking.totalPallets", { count: totalPallets })}</Text>
+              <Text style={styles.capacitySlots}>
+                {t("booking.truckSlots", {
+                  used: Math.round(totalEquivalents * 10) / 10,
+                  max: LARGEST_TRUCK_PALLETS,
+                })}
+              </Text>
+            </View>
+            <View style={styles.capacityTrack}>
+              <View
+                style={[
+                  styles.capacityFill,
+                  {
+                    width: `${Math.min(100, (totalEquivalents / LARGEST_TRUCK_PALLETS) * 100)}%`,
+                    backgroundColor:
+                      totalEquivalents > LARGEST_TRUCK_PALLETS ? colors.amberText : colors.blue,
+                  },
+                ]}
+              />
+            </View>
           </View>
           {totalEquivalents > LARGEST_TRUCK_PALLETS ? (
             <View style={styles.warnNote}>
@@ -1308,16 +1512,58 @@ function StepWhat({
   );
 }
 
+// ── Step 3: When (pickup slot + remarks) ─────────────────────────────────
+// Its own page again (requestor design frame 4). It carries no submittability
+// requirement — the slot is always pre-filled with a valid one — so Next never
+// blocks here; see lib/bookingSteps.
+function StepWhen({
+  pickupDate,
+  onPickPickup,
+  remarks,
+  setRemarks,
+}: {
+  pickupDate: Date;
+  onPickPickup: () => void;
+  remarks: string;
+  setRemarks: (v: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <View>
+      <FieldLabel>{t("booking.pickupDate")}</FieldLabel>
+      <TouchableOpacity style={styles.slotField} onPress={onPickPickup} activeOpacity={0.8}>
+        <Ionicons name="calendar-outline" size={18} color={colors.textMuted} />
+        <Text style={styles.slotValue}>{formatDate(pickupDate)}</Text>
+        <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+      </TouchableOpacity>
+
+      <FieldLabel>{t("booking.pickupTime")}</FieldLabel>
+      <TouchableOpacity style={styles.slotField} onPress={onPickPickup} activeOpacity={0.8}>
+        <Ionicons name="time-outline" size={18} color={colors.textMuted} />
+        <Text style={styles.slotValue}>{formatTime(pickupDate)}</Text>
+        <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+      </TouchableOpacity>
+      <Text style={styles.slotHint}>{t("booking.fleetHoursHint")}</Text>
+
+      <FieldLabel>{t("booking.remarks")}</FieldLabel>
+      <TextInput
+        value={remarks}
+        onChangeText={setRemarks}
+        placeholder={t("booking.remarksPlaceholder")}
+        placeholderTextColor={colors.textFaint}
+        multiline
+        style={styles.textarea}
+      />
+    </View>
+  );
+}
+
 // ── Step 4: Confirm ──────────────────────────────────────────────────────
 function StepConfirm({
   routeTypeName,
   stops,
   cargoSummaryText,
   pickupDate,
-  remarks,
-  setRemarks,
-  onPickDate,
-  onPickTime,
   onEditStep,
   docs,
   onAddDoc,
@@ -1330,10 +1576,6 @@ function StepConfirm({
   stops: Consignee[];
   cargoSummaryText: string;
   pickupDate: Date;
-  remarks: string;
-  setRemarks: (v: string) => void;
-  onPickDate: () => void;
-  onPickTime: () => void;
   onEditStep: (s: number) => void;
   docs: PickedPhoto[];
   onAddDoc: () => void;
@@ -1354,89 +1596,85 @@ function StepConfirm({
       {children}
     </View>
   );
-  const Row = ({ k, v }: { k: string; v: string }) => (
-    <View style={styles.confirmRow}>
-      <Text style={styles.confirmKey}>{k}</Text>
-      <Text style={styles.confirmVal}>{v}</Text>
-    </View>
-  );
 
   return (
     <View>
-      <View style={styles.reviewHint}>
-        <Ionicons name="information-circle-outline" size={18} color={colors.blue} />
-        <Text style={styles.reviewHintText}>{t("booking.reviewHint")}</Text>
+      <View style={styles.reviewBanner}>
+        <Ionicons name="shield-checkmark-outline" size={18} color={colors.yellow} />
+        <Text style={styles.reviewBannerText}>{t("booking.reviewHint")}</Text>
       </View>
 
-      <Section title={t("booking.route")} editStep={0}>
-        <Row k={t("booking.routeType")} v={routeTypeName ?? "—"} />
-        {/* Mr. Teh 16 Jul: "Can show the zone area and cargo pickup point after
-            requestor select customer name in confirmation page?" — the pickup
-            origin (single-origin model today) plus each stop's zone + area. */}
-        <Row k={t("booking.pickupPoint")} v="UWC Batu Kawan" />
-        {stops.map((c, i) => (
-          <Row
-            key={c.id}
-            k={t("booking.stopN", { n: i + 1 })}
-            v={`${c.company_name}\n${[c.zone?.name ? `${c.zone_code} — ${c.zone.name}` : c.zone_code, c.area].filter(Boolean).join(" · ")}`}
-          />
-        ))}
-      </Section>
-
-      <Section title={t("booking.stepWhat")} editStep={1}>
-        <Row k={t("trip.cargo")} v={cargoSummaryText} />
-      </Section>
-
-      {/* Schedule is edited inline here (date/time default to today, so the old
-          standalone "When" step was just friction). */}
-      <View style={styles.confirmCard}>
-        <Text style={[styles.confirmTitle, { marginBottom: 10 }]}>{t("booking.schedule")}</Text>
-        <PressableField
-          label={t("booking.pickupDate")}
-          leftIcon="calendar-outline"
-          value={formatDate(pickupDate)}
-          onPress={onPickDate}
-        />
-        <PressableField
-          label={t("booking.pickupTime")}
-          leftIcon="time-outline"
-          value={formatTime(pickupDate)}
-          onPress={onPickTime}
-        />
-        <FieldLabel>{t("booking.remarks")}</FieldLabel>
-        <TextInput
-          value={remarks}
-          onChangeText={setRemarks}
-          placeholder={t("booking.remarksPlaceholder")}
-          placeholderTextColor={colors.textFaint}
-          multiline
-          style={styles.textarea}
-        />
-      </View>
-
-      {/* Documents — attach DO / invoice before submitting (optional). Uploaded
-          once the booking is created; can also be added later from details. */}
-      <View style={styles.confirmCard}>
-        <Text style={[styles.confirmTitle, { marginBottom: 6 }]}>{t("booking.documents")}</Text>
-        <Text style={styles.docHint}>{t("booking.documentsHint")}</Text>
+      {/* Documents lead — this is the one thing on the page that is NOT already
+          decided, and it is the step requestors forget. Uploaded once the
+          booking is created; can also be added later from details. */}
+      <View style={styles.docCard}>
+        <View style={styles.docCardHead}>
+          <Text style={styles.docCardTitle}>{t("booking.documentsLabel")}</Text>
+          <Text style={styles.docCardOptional}>{t("booking.optional")}</Text>
+        </View>
 
         {docs.map((d, i) => (
           <View key={`${d.uri}-${i}`} style={styles.docAttachRow}>
-            <Ionicons name="document-text-outline" size={18} color={colors.blue} />
+            <Ionicons name="document-text-outline" size={16} color={colors.blue} />
             <Text style={styles.docAttachName} numberOfLines={1}>
               {d.name}
             </Text>
             <TouchableOpacity onPress={() => onRemoveDoc(i)} hitSlop={10} disabled={uploadingDoc}>
-              <Ionicons name="close-circle" size={20} color={colors.textFaint} />
+              <Ionicons name="close-circle" size={18} color={colors.textFaint} />
             </TouchableOpacity>
           </View>
         ))}
 
-        <TouchableOpacity style={styles.addNew} onPress={onAddDoc} disabled={uploadingDoc}>
-          <Ionicons name="cloud-upload-outline" size={18} color={colors.blue} />
-          <Text style={styles.addNewText}>{t("booking.attachDocument")}</Text>
+        <TouchableOpacity style={styles.dropZone} onPress={onAddDoc} disabled={uploadingDoc} activeOpacity={0.85}>
+          <Ionicons name="cloud-upload-outline" size={24} color={colors.amberText} />
+          <Text style={styles.dropZoneTitle}>{t("booking.attachDocument")}</Text>
+          <Text style={styles.dropZoneSub}>{t("booking.documentsHint")}</Text>
         </TouchableOpacity>
       </View>
+
+      <Section title={t("booking.schedule")} editStep={2}>
+        <View style={styles.confirmLine}>
+          <View style={styles.confirmIcon}>
+            <Ionicons name="calendar-outline" size={16} color={colors.blue} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.confirmLineMain}>{formatTime(pickupDate)}</Text>
+            <Text style={styles.confirmLineSub}>
+              {formatDate(pickupDate)} · {ORIGIN_LABEL}
+            </Text>
+          </View>
+        </View>
+      </Section>
+
+      <Section title={routeTypeName ?? t("booking.route")} editStep={0}>
+        {/* Mr. Teh 16 Jul: "Can show the zone area and cargo pickup point after
+            requestor select customer name in confirmation page?" — the pickup
+            origin (single-origin model today) plus each stop's zone + area. */}
+        {stops.map((c, i) => (
+          <View key={c.id} style={styles.confirmStop}>
+            <View style={styles.confirmStopSeq}>
+              <Text style={styles.confirmStopSeqText}>{i + 1}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.confirmStopName}>{c.company_name}</Text>
+              <Text style={styles.confirmStopMeta}>
+                {[c.zone?.name ? `${c.zone_code} — ${c.zone.name}` : c.zone_code, c.area]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </Text>
+            </View>
+          </View>
+        ))}
+      </Section>
+
+      <Section title={t("trip.cargo")} editStep={1}>
+        <View style={styles.confirmLine}>
+          <View style={styles.confirmIcon}>
+            <Ionicons name="cube-outline" size={16} color={colors.blue} />
+          </View>
+          <Text style={styles.confirmLineMain}>{cargoSummaryText}</Text>
+        </View>
+      </Section>
 
       {/* Save this booking as a reusable template (device-local). Only offered
           once the booking is complete, so a reloaded template is submittable. */}
@@ -1499,20 +1737,66 @@ const styles = StyleSheet.create({
   summaryStopSeqText: { color: colors.white, fontSize: 12, fontWeight: "800" },
   summaryStopName: { flex: 1, fontSize: 14, fontWeight: "600", color: colors.navy },
 
-  rebookBtn: {
+  // ── Step 1: start-from card, route family + direction ──
+  startCard: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: colors.blue,
+    gap: 10,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
     borderRadius: radius.md,
-    paddingVertical: 14,
-    marginBottom: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 16,
     ...shadow.card,
   },
-  rebookText: { color: colors.white, fontSize: 14, fontWeight: "700" },
-  recentWrap: { marginBottom: 12 },
-  recentLabel: { fontSize: 12, fontWeight: "700", color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 },
+  startIcon: { width: 32, height: 32, borderRadius: 9, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
+  startTitle: { fontSize: 14, fontWeight: "700", color: colors.navy },
+  startSub: { fontSize: 13, color: colors.textMuted, marginTop: 1 },
+  sheetBackdrop: { flex: 1, backgroundColor: "rgba(26,31,94,0.32)", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 28,
+    width: "100%",
+    maxWidth: 460,
+    alignSelf: "center",
+  },
+  sheetHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.bg },
+  sheetTitle: { fontSize: 17, fontWeight: "800", color: colors.navy },
+  startRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: colors.bg },
+  startRowText: { flex: 1, fontSize: 15, fontWeight: "700", color: colors.navy },
+
+  familyRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
+  familyChip: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: "auto",
+    minWidth: 0,
+    minHeight: 44,
+    paddingHorizontal: 10,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  familyChipActive: { borderWidth: 2, borderColor: colors.blue, backgroundColor: colors.tintBlue },
+  familyChipText: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
+  familyChipTextActive: { color: colors.blue },
+  microLabel: { fontSize: 12, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.6, marginTop: 8, marginBottom: 6 },
+  directionBar: { flexDirection: "row", backgroundColor: "#eceff6", borderRadius: 11, padding: 3, gap: 3 },
+  directionBtn: { flex: 1, minHeight: 36, borderRadius: 8, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
+  directionBtnActive: { backgroundColor: colors.blue },
+  directionText: { fontSize: 13, fontWeight: "700", color: colors.textMuted },
+  directionTextActive: { color: colors.white },
+  resolvedRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
+  resolvedText: { fontSize: 13, fontWeight: "700", color: colors.blue },
+
+  recentWrap: { marginTop: 12 },
   recentChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   recentChip: {
     flexDirection: "row",
@@ -1571,16 +1855,56 @@ const styles = StyleSheet.create({
   stopChipArea: { fontSize: 13, color: colors.textFaint, marginTop: 2 },
 
   searchBox: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: 14, minHeight: 50 },
+  searchBoxActive: { borderColor: colors.blue },
   searchInput: { flex: 1, fontSize: 15, color: colors.navy, paddingVertical: 12 },
   results: { backgroundColor: colors.white, borderRadius: radius.md, marginTop: 8, overflow: "hidden", ...shadow.card },
   resultRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.bg },
   resultName: { fontSize: 14, fontWeight: "600", color: colors.navy },
   resultArea: { fontSize: 13, color: colors.textFaint, marginTop: 2 },
-  noResult: { padding: 14, fontSize: 14, color: colors.textMuted },
   searchHint: { paddingHorizontal: 4, paddingTop: 8, fontSize: 13, color: colors.textFaint },
-  searchFromLabel: { paddingHorizontal: 4, marginBottom: 6, fontSize: 12, color: colors.textFaint },
-  addNew: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 14, paddingVertical: 8 },
-  addNewText: { fontSize: 13, fontWeight: "600", color: colors.textMuted },
+
+  // Frame 2 — the "nothing matched" state, which used to be one grey line.
+  emptySearchCard: {
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.borderLight,
+    padding: 20,
+    marginTop: 12,
+    alignItems: "center",
+    ...shadow.card,
+  },
+  emptySearchIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
+  emptySearchTitle: { fontSize: 16, fontWeight: "800", color: colors.navy, marginTop: 12, textAlign: "center" },
+  emptySearchBody: { fontSize: 14, color: colors.textMuted, lineHeight: 20, textAlign: "center", marginTop: 6 },
+  emptySearchBtn: {
+    alignSelf: "stretch",
+    marginTop: 16,
+    minHeight: 52,
+    borderRadius: radius.md,
+    backgroundColor: colors.blue,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    ...actionShadow.blue,
+  },
+  emptySearchBtnText: { flexShrink: 1, fontSize: 15, fontWeight: "800", color: colors.white, textAlign: "center" },
+
+  addManuallyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 48,
+    marginTop: 14,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+  },
+  addManuallyText: { fontSize: 15, fontWeight: "700", color: colors.blue },
 
   cargoTabs: { flexDirection: "row", gap: 8, marginBottom: 20 },
   cargoTab: { flex: 1, height: 44, borderRadius: radius.md, borderWidth: 2, borderColor: colors.border, backgroundColor: colors.white, alignItems: "center", justifyContent: "center" },
@@ -1599,8 +1923,20 @@ const styles = StyleSheet.create({
   stepBtnPlus: { width: 32, height: 32, borderRadius: 10, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center" },
   stepBtnPlusText: { fontSize: 20, fontWeight: "700", color: colors.white },
   stepVal: { fontSize: 16, fontWeight: "800", color: colors.navy, minWidth: 24, textAlign: "center" },
-  totalPill: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.tintBlue, borderRadius: radius.sm, padding: 12, marginTop: 10 },
-  totalPillText: { fontSize: 13, fontWeight: "700", color: colors.blue },
+  capacityCard: {
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.borderLight,
+    padding: 14,
+    marginTop: 12,
+    ...shadow.card,
+  },
+  capacityHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 8 },
+  capacityCount: { fontSize: 17, fontWeight: "800", color: colors.navy, flexShrink: 1 },
+  capacitySlots: { fontSize: 13, fontWeight: "700", color: colors.blue },
+  capacityTrack: { height: 8, borderRadius: 999, backgroundColor: colors.bg, marginTop: 10, overflow: "hidden" },
+  capacityFill: { height: "100%", borderRadius: 999, minWidth: 2 },
   warnNote: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.tintYellow, borderRadius: radius.sm, padding: 12, marginTop: 10, borderWidth: 1, borderColor: "#FCD34D" },
   warnNoteText: { flex: 1, fontSize: 13, fontWeight: "600", color: "#92400e", lineHeight: 17 },
   cargoNote: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.tintBlue, borderRadius: radius.md, padding: 12, marginTop: 20 },
@@ -1613,15 +1949,45 @@ const styles = StyleSheet.create({
   dimTimes: { fontSize: 18, color: colors.textMuted, fontWeight: "700" },
   dimFt: { fontSize: 14, color: colors.textMuted, fontWeight: "600" },
 
-  confirmCard: { backgroundColor: colors.white, borderRadius: radius.md, padding: 16, marginBottom: 12, borderWidth: 1.5, borderColor: colors.borderLight },
-  confirmHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  confirmTitle: { fontSize: 13, fontWeight: "700", color: colors.blue, textTransform: "uppercase", letterSpacing: 0.6 },
+  // ── Step 3: When ──
+  slotField: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: colors.white,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    minHeight: 52,
+  },
+  slotValue: { flex: 1, fontSize: 15, fontWeight: "600", color: colors.navy },
+  slotHint: { fontSize: 13, color: colors.textMuted, lineHeight: 18, marginTop: 8 },
+
+  confirmCard: { backgroundColor: colors.white, borderRadius: radius.md, padding: 14, marginBottom: 10, borderWidth: 1.5, borderColor: colors.borderLight },
+  confirmHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8 },
+  confirmTitle: { flexShrink: 1, fontSize: 13, fontWeight: "700", color: colors.blue, textTransform: "uppercase", letterSpacing: 0.6 },
   editLink: { fontSize: 13, fontWeight: "700", color: colors.blue },
-  confirmRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 5 },
-  confirmKey: { fontSize: 14, color: colors.textFaint },
-  confirmVal: { fontSize: 14, fontWeight: "600", color: colors.navy, flex: 1, textAlign: "right", marginLeft: 12 },
-  reviewHint: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.tintBlue, borderRadius: radius.md, padding: 14, marginBottom: 16 },
-  reviewHintText: { flex: 1, fontSize: 13, fontWeight: "600", color: colors.blue },
+  confirmLine: { flexDirection: "row", alignItems: "center", gap: 10 },
+  confirmIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
+  confirmLineMain: { flex: 1, fontSize: 15, fontWeight: "800", color: colors.navy },
+  confirmLineSub: { fontSize: 13, color: colors.textMuted, marginTop: 1 },
+  confirmStop: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 },
+  confirmStopSeq: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
+  confirmStopSeqText: { fontSize: 12, fontWeight: "800", color: colors.blue },
+  confirmStopName: { fontSize: 14, fontWeight: "700", color: colors.navy },
+  confirmStopMeta: { fontSize: 13, color: colors.textMuted, marginTop: 1 },
+
+  reviewBanner: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.blue, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10 },
+  reviewBannerText: { flex: 1, fontSize: 13, fontWeight: "700", color: colors.white, lineHeight: 17 },
+
+  docCard: { backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 2, borderColor: colors.yellow, padding: 12, marginBottom: 10 },
+  docCardHead: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 },
+  docCardTitle: { fontSize: 12, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase", color: colors.amberText },
+  docCardOptional: { fontSize: 12, fontWeight: "700", color: colors.textFaint },
+  dropZone: { borderWidth: 2, borderStyle: "dashed", borderColor: colors.yellow, borderRadius: radius.md, backgroundColor: "#FFFBEB", paddingVertical: 14, paddingHorizontal: 12, alignItems: "center", gap: 4 },
+  dropZoneTitle: { fontSize: 14, fontWeight: "800", color: colors.navy, textAlign: "center" },
+  dropZoneSub: { fontSize: 12, color: colors.amberText, textAlign: "center" },
   docHint: { fontSize: 13, color: colors.textMuted, lineHeight: 17, marginBottom: 12 },
   docAttachRow: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.bg, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8 },
   docAttachName: { flex: 1, fontSize: 14, fontWeight: "600", color: colors.navy },

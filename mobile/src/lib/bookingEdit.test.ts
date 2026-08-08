@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { pickupToSlot, tripRemarks, PICKUP_HOURS, isPickupHour } from "./bookingEdit";
+import {
+  pickupToSlot,
+  tripRemarks,
+  PICKUP_HOURS,
+  PICKUP_MAX_DAY_OFFSET,
+  isPickupHour,
+} from "./bookingEdit";
 
 // Fixed "now": a Wednesday 10:30 local time.
 const NOW = new Date(2026, 6, 15, 10, 30, 0, 0);
@@ -14,27 +20,27 @@ const iso = (dayOffset: number, hour: number, minute = 0) => {
 
 describe("pickupToSlot — reversing a stored pickup into the form's buckets", () => {
   it("round-trips a representable pickup (tomorrow 09:00)", () => {
-    expect(pickupToSlot(iso(1, 9), NOW)).toEqual({ dayOffset: 1, hour: 9 });
+    expect(pickupToSlot(iso(1, 9), NOW)).toEqual({ dayOffset: 1, hour: 9, minute: 0 });
   });
 
   it("today later-hour pickup is representable", () => {
-    expect(pickupToSlot(iso(0, 14), NOW)).toEqual({ dayOffset: 0, hour: 14 });
+    expect(pickupToSlot(iso(0, 14), NOW)).toEqual({ dayOffset: 0, hour: 14, minute: 0 });
   });
 
   it("the picker-window edges (07:00 and 02:00, day 0 and day 6) are representable", () => {
-    expect(pickupToSlot(iso(0, 18), NOW)).toEqual({ dayOffset: 0, hour: 18 });
-    expect(pickupToSlot(iso(6, 8), NOW)).toEqual({ dayOffset: 6, hour: 8 });
+    expect(pickupToSlot(iso(0, 18), NOW)).toEqual({ dayOffset: 0, hour: 18, minute: 0 });
+    expect(pickupToSlot(iso(6, 8), NOW)).toEqual({ dayOffset: 6, hour: 8, minute: 0 });
     // 07:00 — the hour the fleet window has always opened, but which the old
     // 08..18 picker never offered.
-    expect(pickupToSlot(iso(1, 7), NOW)).toEqual({ dayOffset: 1, hour: 7 });
+    expect(pickupToSlot(iso(1, 7), NOW)).toEqual({ dayOffset: 1, hour: 7, minute: 0 });
     // 02:00 — the latest pickup, item 12.
-    expect(pickupToSlot(iso(1, 2), NOW)).toEqual({ dayOffset: 1, hour: 2 });
+    expect(pickupToSlot(iso(1, 2), NOW)).toEqual({ dayOffset: 1, hour: 2, minute: 0 });
   });
 
   it("the small hours past midnight are representable (the window wraps — item 12)", () => {
-    expect(pickupToSlot(iso(1, 0), NOW)).toEqual({ dayOffset: 1, hour: 0 }); // 00:00
-    expect(pickupToSlot(iso(1, 1), NOW)).toEqual({ dayOffset: 1, hour: 1 }); // 01:00
-    expect(pickupToSlot(iso(1, 23), NOW)).toEqual({ dayOffset: 1, hour: 23 }); // 23:00
+    expect(pickupToSlot(iso(1, 0), NOW)).toEqual({ dayOffset: 1, hour: 0, minute: 0 }); // 00:00
+    expect(pickupToSlot(iso(1, 1), NOW)).toEqual({ dayOffset: 1, hour: 1, minute: 0 }); // 01:00
+    expect(pickupToSlot(iso(1, 23), NOW)).toEqual({ dayOffset: 1, hour: 23, minute: 0 }); // 23:00
   });
 
   it("offers every hour of the operating day, in shift order, and nothing else", () => {
@@ -51,25 +57,44 @@ describe("pickupToSlot — reversing a stored pickup into the form's buckets", (
   it("today at an earlier hour is still representable — the day hasn't passed", () => {
     // The picker itself allows choosing 08:00 today at 10:30; the server only
     // rejects it if the pickup CHANGED. Keeping the stored value must win.
-    expect(pickupToSlot(iso(0, 8), NOW)).toEqual({ dayOffset: 0, hour: 8 });
+    expect(pickupToSlot(iso(0, 8), NOW)).toEqual({ dayOffset: 0, hour: 8, minute: 0 });
   });
 
-  it("beyond the 7-day window is not representable", () => {
-    expect(pickupToSlot(iso(7, 9), NOW)).toBeNull();
+  it("a week out is representable now the calendar reaches a year ahead", () => {
+    // This used to be null: the picker was a 7-entry dropdown. The API has
+    // never had an upper bound on pickup_datetime — only the past edge.
+    expect(pickupToSlot(iso(7, 9), NOW)).toEqual({ dayOffset: 7, hour: 9, minute: 0 });
+    expect(pickupToSlot(iso(PICKUP_MAX_DAY_OFFSET, 9), NOW)).toEqual({
+      dayOffset: PICKUP_MAX_DAY_OFFSET,
+      hour: 9,
+      minute: 0,
+    });
+  });
+
+  it("beyond the year window is not representable", () => {
+    expect(pickupToSlot(iso(PICKUP_MAX_DAY_OFFSET + 1, 9), NOW)).toBeNull();
   });
 
   it("outside picker hours — the 02:00–07:00 closed gap — is not representable", () => {
     // 19:00 USED to be unrepresentable and now is not: the operating day runs
     // to 02:00 (item 12). What remains unbookable is the gap when the fleet is
     // shut, 03:00–06:00.
-    expect(pickupToSlot(iso(1, 19), NOW)).toEqual({ dayOffset: 1, hour: 19 });
+    expect(pickupToSlot(iso(1, 19), NOW)).toEqual({ dayOffset: 1, hour: 19, minute: 0 });
     expect(pickupToSlot(iso(1, 3), NOW)).toBeNull();
     expect(pickupToSlot(iso(1, 5), NOW)).toBeNull();
     expect(pickupToSlot(iso(1, 6), NOW)).toBeNull();
   });
 
-  it("a non-whole-hour pickup is not representable", () => {
-    expect(pickupToSlot(iso(1, 9, 30), NOW)).toBeNull();
+  it("a pickup on the 5-minute dial grid is representable", () => {
+    expect(pickupToSlot(iso(1, 9, 30), NOW)).toEqual({ dayOffset: 1, hour: 9, minute: 30 });
+    expect(pickupToSlot(iso(1, 9, 55), NOW)).toEqual({ dayOffset: 1, hour: 9, minute: 55 });
+  });
+
+  it("an OFF-GRID minute is not representable", () => {
+    // The dial cannot show 09:07, so seeding it with that value would silently
+    // round the requestor's pickup the moment they saved an unrelated edit.
+    expect(pickupToSlot(iso(1, 9, 7), NOW)).toBeNull();
+    expect(pickupToSlot(iso(1, 9, 31), NOW)).toBeNull();
   });
 
   it("garbage input is not representable", () => {

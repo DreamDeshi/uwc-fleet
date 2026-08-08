@@ -10,7 +10,18 @@ import { statusLabelKey } from "../lib/statusLabel";
 // and TripCard, so the same status reaches readers with opposite stakes in it.
 // Which words each role gets is decided in lib/statusLabel.ts; the colour is
 // NOT role-dependent and stays as theme.statusColors sets it.
-export function StatusBadge({ status, small }: { status: TripStatus; small?: boolean }) {
+export function StatusBadge({
+  status,
+  small,
+  label,
+}: {
+  status: TripStatus;
+  small?: boolean;
+  /** Overrides the words only — the COLOUR still comes from `status`, so a
+   *  derived label ("Arrived", which is not a TripStatus) cannot invent a hue
+   *  the dispatcher's board does not use for the same booking. */
+  label?: string;
+}) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const c = statusColors[status] ?? statusColors.pending;
@@ -23,7 +34,7 @@ export function StatusBadge({ status, small }: { status: TripStatus; small?: boo
       ]}
     >
       <Text style={[styles.text, { color: c.fg }, small && { fontSize: 12 }]}>
-        {t(statusLabelKey(status, user?.role)).toUpperCase()}
+        {(label ?? t(statusLabelKey(status, user?.role))).toUpperCase()}
       </Text>
     </View>
   );

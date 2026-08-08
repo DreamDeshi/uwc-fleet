@@ -36,9 +36,16 @@
 // So the rule is: validate every step UP TO AND INCLUDING the one you are on,
 // and let the caller ask about the last step to mean "everything".
 
+// The wizard's steps. "When" (date, time, remarks) was folded into Confirm
+// while the pickup was two defaulted dropdowns; the requestor design gives it a
+// calendar and a clock dial, which is a page of its own. It owns no
+// SUBMITTABILITY requirement — every field on it is pre-filled with a valid
+// value — so stepIssue has no branch for it, and `firstBookingIssue` walking
+// past it is correct rather than an omission.
 export const STEP_WHERE = 0;
 export const STEP_WHAT = 1;
-export const STEP_CONFIRM = 2;
+export const STEP_WHEN = 2;
+export const STEP_CONFIRM = 3;
 
 /** The parts of the booking form that decide submittability. */
 export interface BookingDraft {

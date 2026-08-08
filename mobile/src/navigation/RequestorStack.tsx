@@ -4,6 +4,8 @@ import { RequestorStackParamList } from "./types";
 import { RequestorShell } from "./RequestorDrawer";
 import { BookingDetailScreen } from "../screens/requestor/BookingDetailScreen";
 import { BookingFormScreen } from "../screens/requestor/BookingFormScreen";
+import { SavedConsigneesScreen } from "../screens/requestor/SavedConsigneesScreen";
+import { BookingTemplatesScreen } from "../screens/requestor/BookingTemplatesScreen";
 
 const Stack = createNativeStackNavigator<RequestorStackParamList>();
 
@@ -23,6 +25,12 @@ export function RequestorStack() {
           (pending bookings only — the detail screen gates the button, the server
           enforces it). */}
       <Stack.Screen name="EditBooking" component={BookingFormScreen} />
+      {/* Pushed from Profile — not tabs. Small utilities live on existing
+          screens; these two are management views the booking form has no room
+          for (deleting a template used to require starting a booking you did
+          not want). */}
+      <Stack.Screen name="SavedConsignees" component={SavedConsigneesScreen} />
+      <Stack.Screen name="BookingTemplates" component={BookingTemplatesScreen} />
     </Stack.Navigator>
   );
 }
