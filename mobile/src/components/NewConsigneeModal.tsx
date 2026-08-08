@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
@@ -34,10 +34,14 @@ export function NewConsigneeModal({
   visible,
   onClose,
   onCreated,
+  initialName,
 }: {
   visible: boolean;
   onClose: () => void;
   onCreated: (c: Consignee) => void;
+  /** Seeds the company name — the booking form's "Add «X» as a new company"
+   *  button promises the search text carries over, so it has to. */
+  initialName?: string;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -59,6 +63,13 @@ export function NewConsigneeModal({
     setCompany(""); setZone(undefined); setContact(""); setPhone(""); setArea("");
     setStateName(""); setPostcode(""); setError(null); setSimilar(null);
   };
+
+  // Seed on OPEN, not on mount: the modal is kept mounted by the booking form,
+  // so a mount-time seed would only ever fire once and the second failed search
+  // would open an empty form.
+  useEffect(() => {
+    if (visible) setCompany(initialName ?? "");
+  }, [visible, initialName]);
 
   const submit = async (force = false) => {
     setError(null);
@@ -121,6 +132,12 @@ export function NewConsigneeModal({
             </TouchableOpacity>
           </View>
           <ScrollView keyboardShouldPersistTaps="handled">
+            {/* An admin gate, said once and up front (design frame 13) — the
+                requestor should know before filling the form, not after. */}
+            <View style={styles.reviewNote}>
+              <Ionicons name="information-circle-outline" size={18} color={colors.amberText} />
+              <Text style={styles.reviewNoteText}>{t("booking.adminReviewsNew")}</Text>
+            </View>
             <TextField label={t("booking.companyName")} value={company} onChangeText={setCompany} placeholder="Sdn Bhd…" />
             {/* The zone drives BOTH auto-dispatch and driver pay, chosen by the
                 one persona who doesn't know what a zone is — so the field must
@@ -185,8 +202,28 @@ export function NewConsigneeModal({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
-  sheet: { backgroundColor: colors.white, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: 20, maxHeight: "88%" },
+  backdrop: { flex: 1, backgroundColor: "rgba(26,31,94,0.32)", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: "88%",
+    width: "100%",
+    maxWidth: 460,
+    alignSelf: "center",
+  },
+  reviewNote: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: colors.tintYellow,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 14,
+  },
+  reviewNoteText: { flex: 1, fontSize: 13, lineHeight: 18, color: colors.amberText, fontWeight: "600" },
   head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
   title: { fontSize: 17, fontWeight: "800", color: colors.navy },
   error: { color: colors.red, fontSize: 14, fontWeight: "600", marginBottom: 8 },

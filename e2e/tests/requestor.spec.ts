@@ -15,13 +15,34 @@ import { mobileLogin } from "../helpers/ui";
  * dashboard. At ≥1024px the requestor app now mounts its DESKTOP SHELL (a left
  * sidebar drawer, `useWide` / RequestorDrawer) instead of the bottom tabs — so
  * "Bookings" becomes a sidebar item and the booking form reflows into columns.
- * The underlying booking FLOW is identical in both layouts (same 3-step wizard,
+ * The underlying booking FLOW is identical in both layouts (same 4-step wizard,
  * same strings — BookingFormScreen's `wide` flag only changes layout, not copy),
- * and the phone layout is the app's stable, untouched primary form factor. We
- * therefore pin this flow spec to a PHONE viewport so its text/placeholder
- * selectors stay valid; the desktop shell's wide layout is exercised visually by
- * screenshots.spec.
+ * and the phone layout is the app's primary form factor. We therefore pin this
+ * flow spec to a PHONE viewport so its text/placeholder selectors stay valid;
+ * the desktop shell's wide layout is exercised visually by screenshots.spec.
+ *
+ * ⚠ HOME IS ASSERTED VIA THE TAB BAR, not a hero string. The requestor redesign
+ * gives the phone Home two shapes — a "Next Booking" hero when something is
+ * live, a first-run empty state when nothing ever was — so no single card is
+ * always present. The bottom tab bar is: it mounts with the signed-in shell and
+ * does not exist on the login screen, which is exactly the distinction these
+ * two tests need.
  */
+
+// The route-type control is a family chip + a direction toggle (the six seeded
+// route types are {Customer|Supplier|Inter-Plant} × {Delivery|Return}). Mirrors
+// mobile/src/lib/routeDirection.ts — deliberately re-derived here rather than
+// imported, so a change to that mapping shows up as a RED test rather than
+// both sides moving together and proving nothing.
+function routeChips(routeTypeName: string): { family: string; direction: string } {
+  const norm = routeTypeName.toLowerCase().replace(/[\s_-]+/g, "");
+  const family = norm.startsWith("customer")
+    ? "Customer"
+    : norm.startsWith("supplier")
+      ? "Supplier"
+      : "Inter-Plant";
+  return { family, direction: norm.includes("return") ? "Return" : "Delivery" };
+}
 test.describe("Requestor (mobile web)", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
@@ -32,9 +53,9 @@ test.describe("Requestor (mobile web)", () => {
   test("1. logs in with correct credentials and lands on the home screen", async ({ page }) => {
     await mobileLogin(page, REQUESTOR);
 
-    // Home screen: the requestor dashboard CTA. Its presence also proves we left
-    // the login screen (the Sign In button is gone).
-    await expect(page.getByText("Where do you need delivery?")).toBeVisible();
+    // Signed-in shell: the bottom tab bar. Its presence also proves we left the
+    // login screen (the Sign In button is gone).
+    await expect(page.getByText("Insights", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Sign In", { exact: true })).toHaveCount(0);
   });
 
@@ -44,8 +65,8 @@ test.describe("Requestor (mobile web)", () => {
     // The server's 401 message is surfaced verbatim under the password field.
     // selector-ok: server-supplied message from api/src/routes/auth.ts, never localised
     await expect(page.getByText("Phone number or password is incorrect.")).toBeVisible();
-    // Still on the login screen.
-    await expect(page.getByText("Where do you need delivery?")).toHaveCount(0);
+    // Still on the login screen — the signed-in shell never mounted.
+    await expect(page.getByText("Insights", { exact: true })).toHaveCount(0);
   });
 
   test("3. books a single-stop delivery that appears in history as Pending", async ({ page }) => {
@@ -58,14 +79,21 @@ test.describe("Requestor (mobile web)", () => {
     ]);
 
     await mobileLogin(page, REQUESTOR);
-    await expect(page.getByText("Where do you need delivery?")).toBeVisible();
 
-    // Open the booking form.
-    await page.getByText("Where do you need delivery?").click();
+    // Open the booking form from the Bookings tab's floating "+". Home's entry
+    // point changes wording with the account's state ("Need another truck?" vs
+    // the first-run "New Booking"); the FAB is the one that does not.
+    await page.getByText("Bookings", { exact: true }).first().click();
+    await page.getByLabel("New Booking").click();
     await expect(page.getByText("New Trip Request")).toBeVisible();
 
-    // ── Step 1: Where ── choose a route type, then search + add a consignee.
-    await page.getByText(routeType.name, { exact: true }).click();
+    // ── Step 1: Where ── pick the route family + direction, then search + add
+    // a consignee. The two controls together resolve to one route_type_id; the
+    // resolved name is echoed back below them.
+    const chips = routeChips(routeType.name);
+    await page.getByText(chips.family, { exact: true }).click();
+    await page.getByText(chips.direction, { exact: true }).click();
+    await expect(page.getByText(routeType.name, { exact: true })).toBeVisible();
 
     await page.getByPlaceholder("Type company name, area, or location…").fill(consignee.term);
     // The same consignee can appear twice on this screen: once in the "Recent
@@ -90,7 +118,13 @@ test.describe("Requestor (mobile web)", () => {
     await expect(page.getByText("Total: 1 pallets")).toBeVisible();
     await page.getByText("Next", { exact: true }).click();
 
-    // ── Step 3: Confirm ── submit.
+    // ── Step 3: When ── the pickup slot is pre-filled with the next bookable
+    // one, so this step is a pass-through. Asserted, not skipped: if the
+    // default ever stopped being valid, Next would block here.
+    await expect(page.getByText("Pickup Date", { exact: true })).toBeVisible();
+    await page.getByText("Next", { exact: true }).click();
+
+    // ── Step 4: Confirm ── submit.
     await page.getByText("Submit Booking", { exact: true }).click();
 
     // Success modal with the new ticket number. Anchored: hidden inactive

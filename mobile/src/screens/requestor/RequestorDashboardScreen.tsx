@@ -14,8 +14,10 @@ import { colors, layout, radius, shadow } from "../../theme";
 import { Card } from "../../components/Card";
 import { StatusBadge } from "../../components/StatusBadge";
 import { LoadingState, ErrorState } from "../../components/States";
-import { formatDate, formatTime } from "../../lib/format";
-import { tripDestination, ORIGIN_LABEL } from "../../lib/trip";
+import { dayMonth, formatDate, formatTime } from "../../lib/format";
+import { tripConsigneeName, tripDestination, ORIGIN_LABEL } from "../../lib/trip";
+import { isDelivered } from "../../lib/tripStatus";
+import { homeStatusStrip, requestorHome } from "../../lib/requestorHome";
 import { initials } from "../../lib/format";
 import { Trip } from "../../types";
 
@@ -40,7 +42,7 @@ export function RequestorDashboardScreen() {
   const wide = useWide();
   const { data: trips, isLoading, isError, refetch, isRefetching } = useTrips();
 
-  const { active, pending, recent, stats } = useMemo(() => {
+  const { active, pending, recent, stats, home, strip } = useMemo(() => {
     const list = (trips ?? []).slice().sort(
       (a, b) => +new Date(b.created_at) - +new Date(a.created_at)
     );
@@ -56,7 +58,8 @@ export function RequestorDashboardScreen() {
       completed: monthTrips.filter((tr) => tr.status === "completed").length,
       pending: monthTrips.filter((tr) => tr.status === "pending" || tr.status === "approved").length,
     };
-    return { active, pending, recent, stats };
+    const home = requestorHome(list, now);
+    return { active, pending, recent, stats, home, strip: homeStatusStrip(home.next, now) };
   }, [trips]);
 
   const openDetail = (tripId: string) => navigation.navigate("BookingDetail", { tripId });
@@ -178,18 +181,170 @@ export function RequestorDashboardScreen() {
     <View style={[styles.header, { paddingTop: insets.top + 12, paddingBottom: wide ? 24 : 44 }, wide && styles.headerWide]}>
       <View style={wide ? styles.fillCol : styles.centerCol}>
         <View style={styles.headerTop}>
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.greetingTime}>{greeting} 👋</Text>
-            <Text style={styles.hi}>{user?.name ?? ""}</Text>
-            {user?.department?.name ? (
-              <View style={styles.deptRow}>
-                <Ionicons name="business-outline" size={12} color="rgba(255,255,255,0.65)" />
-                <Text style={styles.dept}>{user.department.name}</Text>
-              </View>
-            ) : null}
+            <Text style={styles.hi} numberOfLines={2}>{user?.name ?? ""}</Text>
+            <Text style={styles.headerMeta} numberOfLines={1}>
+              {[
+                formatDate(new Date()),
+                home.todayCount > 0 ? t("requestor.bookingsToday", { count: home.todayCount }) : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </Text>
           </View>
+          {home.monthCount > 0 ? (
+            <View style={styles.monthPill}>
+              <Ionicons name="cube-outline" size={14} color={colors.white} />
+              <Text style={styles.monthPillText}>{t("requestor.thisMonthShort", { count: home.monthCount })}</Text>
+            </View>
+          ) : null}
+        </View>
+        {/* One line of news, or nothing — a pending booking has no news, and
+            filling the slot anyway is how a status strip becomes wallpaper. */}
+        {strip ? (
+          <View style={styles.strip}>
+            <Ionicons name="navigate" size={16} color={colors.yellow} />
+            <Text style={styles.stripText} numberOfLines={2}>
+              {t(strip.key, { hours: strip.hours, minutes: strip.minutes })}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+
+  // ── The phone hero: the one booking that is next (design frame 10) ──
+  const relativeDay = (d: Date) => {
+    const now = new Date();
+    const midnight = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+    const days = Math.round((+midnight(d) - +midnight(now)) / 86_400_000);
+    if (days === 0) return t("requestor.today");
+    if (days === 1) return t("requestor.tomorrow");
+    return formatDate(d);
+  };
+
+  const nextCard = home.next ? (
+    <View style={styles.heroCard}>
+      <View style={styles.heroHead}>
+        <View style={styles.heroPill}>
+          <Text style={styles.heroPillText}>{t("requestor.nextBooking")}</Text>
+        </View>
+        <Text style={styles.heroTicket}>{home.next.ticket_number}</Text>
+      </View>
+      <Text style={styles.heroWhen}>
+        {relativeDay(new Date(home.next.pickup_datetime))} · {formatTime(home.next.pickup_datetime)}
+      </Text>
+
+      <View style={{ marginTop: 4 }}>
+        <View style={styles.ladderRow}>
+          <View style={styles.ladderDone}>
+            <Ionicons name="checkmark" size={13} color={colors.greenText} />
+          </View>
+          <Text style={styles.ladderOrigin}>{ORIGIN_LABEL}</Text>
+        </View>
+        <View style={styles.ladderConnector} />
+        <View style={styles.ladderStop}>
+          <View style={styles.ladderRing} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.ladderName} numberOfLines={1}>{tripConsigneeName(home.next)}</Text>
+            <Text style={styles.ladderMeta} numberOfLines={1}>
+              {[
+                tripDestination(home.next),
+                home.next.driver?.name,
+                home.next.truck_plate,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </Text>
+          </View>
+          <Text style={styles.ladderSeq}>{t("booking.stopN", { n: 1 })}</Text>
         </View>
       </View>
+
+      <TouchableOpacity
+        style={styles.trackBtn}
+        onPress={() => openDetail(home.next!.id)}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="navigate-outline" size={18} color={colors.white} />
+        <Text style={styles.trackBtnText}>{t("requestor.trackBooking")}</Text>
+      </TouchableOpacity>
+    </View>
+  ) : null;
+
+  const bookAgainCard = (
+    <TouchableOpacity style={styles.againCard} activeOpacity={0.9} onPress={() => navigation.navigate("NewBooking")}>
+      <View style={styles.againIcon}>
+        <Ionicons name="add" size={20} color={colors.blue} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.againTitle}>{t("requestor.needAnother")}</Text>
+        <Text style={styles.againSub} numberOfLines={2}>{t("requestor.needAnotherSub")}</Text>
+      </View>
+      {/* ⚠ `requestor.book` must never equal `tabs.bookings` in ANY locale.
+          It did in Chinese — both were 预订 — which made this button and the
+          Bookings tab literally the same word for two different destinations.
+          The zh copy is "立即预订" (book NOW) for that reason; do not "tidy" it
+          back. The i18n layout sweep is what caught it. */}
+      <View style={styles.againBtn}>
+        <Text style={styles.againBtnText}>{t("requestor.book")}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const firstBookingCard = (
+    <View style={styles.emptyHero}>
+      <View style={styles.emptyHeroIcon}>
+        <Ionicons name="cube-outline" size={30} color={colors.blue} />
+      </View>
+      <Text style={styles.emptyHeroTitle}>{t("requestor.noBookingsTitle")}</Text>
+      <Text style={styles.emptyHeroBody}>{t("requestor.noBookingsBody")}</Text>
+      <TouchableOpacity
+        style={styles.emptyHeroBtn}
+        onPress={() => navigation.navigate("NewBooking")}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="add" size={19} color={colors.white} />
+        <Text style={styles.emptyHeroBtnText}>{t("tabs.newBooking")}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const activityCard = (
+    <View style={{ gap: 8 }}>
+      <Text style={styles.microLabel}>{t("requestor.recentActivity")}</Text>
+      {home.recent.length === 0 ? (
+        <View style={styles.activityEmpty}>
+          <Text style={styles.activityEmptyText}>{t("common.noData")}</Text>
+        </View>
+      ) : (
+        <View style={styles.activityCard}>
+          {home.recent.map((tr, i) => {
+            const done = isDelivered(tr.status);
+            return (
+              <TouchableOpacity
+                key={tr.id}
+                style={[styles.activityRow, i < home.recent.length - 1 && styles.divider]}
+                onPress={() => openDetail(tr.id)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={done ? "checkmark-circle-outline" : "close-circle-outline"}
+                  size={18}
+                  color={done ? colors.greenText : colors.textFaint}
+                />
+                <Text style={styles.activityText} numberOfLines={1}>
+                  {t(done ? "requestor.activityDelivered" : "requestor.activityClosed", {
+                    ticket: tr.ticket_number,
+                  })}
+                </Text>
+                <Text style={styles.activityDate}>{dayMonth(tr.pickup_datetime).day} {dayMonth(tr.pickup_datetime).mon}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 
@@ -232,7 +387,7 @@ export function RequestorDashboardScreen() {
     );
   }
 
-  // ── Narrow (phone) — the shipped single-column layout, unchanged ──
+  // ── Narrow (phone) — the requestor design, frames 10 and 10b ──
   return (
     <ScrollView
       style={styles.fill}
@@ -241,26 +396,13 @@ export function RequestorDashboardScreen() {
     >
       {header}
 
-      {/* Grab-style CTA — real layout overlap (negative margin) instead of a
-          translateY transform, which left a subpixel blue seam along the
-          card's edge on react-native-web. */}
-      <View style={styles.ctaWrap}>{ctaCard}</View>
-
-      <View style={{ height: 16 }} />
-
-      {active ? <View style={styles.section}>{activeCard}</View> : null}
-      {pending ? <View style={styles.section}>{pendingCard}</View> : null}
-
-      {/* This month stats */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t("requestor.thisMonth")}</Text>
-        {statsRow}
-      </View>
-
-      {/* Recent activity */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t("requestor.recentActivity")}</Text>
-        {recentCard(4)}
+      <View style={styles.phoneBody}>
+        {/* A requestor with only PAST bookings is not a new one: they get the
+            hero replaced, but keep their activity list. Frame 10b's empty state
+            is for `hasEverBooked === false` alone. */}
+        {home.next ? nextCard : firstBookingCard}
+        {home.next ? bookAgainCard : null}
+        {activityCard}
       </View>
     </ScrollView>
   );
@@ -282,9 +424,55 @@ const styles = StyleSheet.create({
   headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   // Bigger, bolder greeting so the header reads balanced (owner feedback).
   greetingTime: { color: "rgba(255,255,255,0.85)", fontSize: 16, fontWeight: "700" },
-  hi: { color: colors.white, fontSize: 26, fontWeight: "800", marginTop: 3 },
-  deptRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 5 },
-  dept: { color: "rgba(255,255,255,0.7)", fontSize: 14 },
+  hi: { color: colors.white, fontSize: 24, fontWeight: "900", marginTop: 3, lineHeight: 29 },
+  headerMeta: { color: "#c9d6f0", fontSize: 13, marginTop: 4 },
+  monthPill: { flexShrink: 0, height: 32, paddingHorizontal: 12, borderRadius: radius.pill, backgroundColor: "rgba(255,255,255,0.14)", flexDirection: "row", alignItems: "center", gap: 6 },
+  monthPillText: { color: colors.white, fontSize: 13, fontWeight: "800" },
+  strip: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: radius.md, paddingHorizontal: 16, paddingVertical: 12, marginTop: 14 },
+  stripText: { flex: 1, color: colors.white, fontSize: 14, fontWeight: "700" },
+
+  // ── Phone body (design frames 10 / 10b) ──
+  phoneBody: { padding: 16, marginTop: -28, gap: 14, width: "100%", maxWidth: layout.content, alignSelf: "center" },
+  microLabel: { fontSize: 12, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase", color: colors.textFaint },
+
+  heroCard: { backgroundColor: colors.white, borderRadius: radius.xl, padding: 20, gap: 14, ...shadow.floating },
+  heroHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  heroPill: { height: 28, paddingHorizontal: 12, borderRadius: radius.pill, backgroundColor: colors.tintBlue, justifyContent: "center" },
+  heroPillText: { fontSize: 12, fontWeight: "800", letterSpacing: 0.4, textTransform: "uppercase", color: colors.blue },
+  heroTicket: { fontSize: 13, color: colors.textFaint, flexShrink: 1 },
+  heroWhen: { fontSize: 28, fontWeight: "900", color: colors.navy, letterSpacing: -0.6, lineHeight: 34 },
+  ladderRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  ladderDone: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.tintGreen, alignItems: "center", justifyContent: "center" },
+  ladderOrigin: { flex: 1, fontSize: 14, fontWeight: "700", color: colors.navy },
+  ladderConnector: { width: 1, height: 16, backgroundColor: colors.border, marginLeft: 9.5 },
+  ladderStop: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: colors.tintBlue, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12 },
+  ladderRing: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.blue },
+  ladderName: { fontSize: 15, fontWeight: "800", color: colors.navy },
+  ladderMeta: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+  ladderSeq: { fontSize: 11, fontWeight: "800", letterSpacing: 0.4, textTransform: "uppercase", color: colors.blue },
+  trackBtn: { minHeight: 52, borderRadius: radius.md, backgroundColor: colors.blue, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  trackBtnText: { fontSize: 16, fontWeight: "800", color: colors.white },
+
+  againCard: { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.lg, paddingHorizontal: 16, paddingVertical: 14 },
+  againIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
+  againTitle: { fontSize: 14, fontWeight: "800", color: colors.navy },
+  againSub: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+  againBtn: { flexShrink: 0, minHeight: 34, paddingHorizontal: 14, borderRadius: radius.pill, backgroundColor: colors.blue, justifyContent: "center" },
+  againBtnText: { fontSize: 13, fontWeight: "800", color: colors.white },
+
+  emptyHero: { backgroundColor: colors.white, borderRadius: radius.xl, paddingHorizontal: 24, paddingVertical: 32, alignItems: "center", gap: 14, ...shadow.floating },
+  emptyHeroIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
+  emptyHeroTitle: { fontSize: 18, fontWeight: "800", color: colors.navy, textAlign: "center" },
+  emptyHeroBody: { fontSize: 14, color: colors.textMuted, lineHeight: 20, textAlign: "center" },
+  emptyHeroBtn: { alignSelf: "stretch", minHeight: 52, borderRadius: radius.md, backgroundColor: colors.blue, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  emptyHeroBtnText: { fontSize: 15, fontWeight: "800", color: colors.white },
+
+  activityCard: { backgroundColor: colors.white, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.borderLight, overflow: "hidden" },
+  activityRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
+  activityText: { flex: 1, fontSize: 14, fontWeight: "700", color: colors.navy },
+  activityDate: { fontSize: 12, color: colors.textFaint },
+  activityEmpty: { backgroundColor: colors.white, borderRadius: radius.lg, borderWidth: 1.5, borderStyle: "dashed", borderColor: colors.border, paddingVertical: 20, alignItems: "center" },
+  activityEmptyText: { fontSize: 13, color: colors.textFaint },
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 2, borderColor: colors.yellow, alignItems: "center", justifyContent: "center" },
   avatarText: { color: colors.white, fontSize: 15, fontWeight: "800" },
   ctaWrap: { paddingHorizontal: 20, marginTop: -28, width: "100%", maxWidth: layout.content, alignSelf: "center" },

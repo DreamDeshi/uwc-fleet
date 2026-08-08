@@ -15,19 +15,27 @@ import { mobileLogin } from "../helpers/ui";
  * ≥1024px desktop shell reflows the form but the flow/copy are identical).
  *
  * Locator note: inactive tab scenes (Home) stay in the DOM under the active
- * one, and Home's recent cards render "<ticket> · <date>" — so a bare ticket
- * (or "<ticket> ·") locator can resolve UNDER the active Bookings scene and
- * never receive the click. The Bookings-list phone row is the only element
- * rendering "<ticket> · <route type>"; openBooking targets exactly that.
+ * one and also render the ticket — as a bare number on the Next Booking hero,
+ * and inside "<ticket> delivered" in Recent Activity — so a plain ticket
+ * locator can resolve UNDER the active Bookings scene and never receive the
+ * click. Only the Bookings-list phone card renders the ticket FOLLOWED BY " · ",
+ * so that is what this anchors on.
+ *
+ * (It used to anchor on "<ticket> · <route type>". The requestor redesign put
+ * the cargo shape there instead — "<ticket> · 1 stop · 1 pallet" — which is why
+ * matching the whole composite is the wrong shape for this locator: it pins
+ * copy the test does not care about.)
  */
+function bookingCard(page: import("@playwright/test").Page, ticket: string) {
+  return page.getByText(new RegExp(`^${ticket} · `)).first();
+}
+
 async function openBooking(
   page: import("@playwright/test").Page,
   trip: { ticket_number: string; [k: string]: unknown }
 ): Promise<void> {
-  const routeTypeName = (trip as { route_type?: { name?: string } }).route_type?.name ?? "";
-  expect(routeTypeName, "seeded trip should include its route type").toBeTruthy();
   await page.getByText("Bookings", { exact: true }).first().click();
-  await page.getByText(`${trip.ticket_number} · ${routeTypeName}`).first().click();
+  await bookingCard(page, trip.ticket_number).click();
 }
 test.describe("Requestor booking edit (mobile web)", () => {
   test.use({ viewport: { width: 390, height: 844 } });
@@ -50,15 +58,16 @@ test.describe("Requestor booking edit (mobile web)", () => {
     await expect(editBtn).toBeVisible();
     await editBtn.click();
 
-    // The wizard opens in edit mode, pre-seeded, on the Confirm step. ("Stop 1"
-    // is unique to the wizard's Route section — the consignee name itself also
-    // exists as a hidden copy on the detail screen underneath, so a bare
-    // getByText(name).first() can resolve to that hidden node.)
+    // The wizard opens in edit mode, pre-seeded, on the Confirm step.
+    // "Schedule" is the Confirm step's own card title — the consignee name
+    // itself also exists as a hidden copy on the detail screen underneath, so a
+    // bare getByText(name).first() can resolve to that hidden node.
     await expect(page.getByText("Review before submitting.")).toBeVisible();
-    await expect(page.getByText("Stop 1", { exact: true })).toBeVisible();
+    await expect(page.getByText("Schedule", { exact: true })).toBeVisible();
 
-    // Cargo section's "Edit" link (Route=first, What=second) → bump to 2 pallets.
-    await page.getByText("Edit", { exact: true }).nth(1).click();
+    // Cargo section's "Edit" link. Confirm's cards are Schedule, Route, Cargo —
+    // in that order — and the Documents card carries no Edit link.
+    await page.getByText("Edit", { exact: true }).nth(2).click();
     // Label renamed by the Q1/Q10 structured-cargo change.
     await expect(page.getByText("Cargo Size & Quantity")).toBeVisible();
     // selector-ok: the quantity stepper glyph is not a translated string
@@ -66,10 +75,12 @@ test.describe("Requestor booking edit (mobile web)", () => {
     await expect(page.getByText("Total: 2 pallets")).toBeVisible();
     await page.getByText("Next", { exact: true }).click();
 
-    // Remarks live inline on the Confirm step.
+    // Remarks moved onto the "When" step with the pickup calendar and dial.
+    await expect(page.getByText("Pickup Date", { exact: true })).toBeVisible();
     await page
       .getByPlaceholder("Special instructions for this delivery…")
       .fill("Handle with care");
+    await page.getByText("Next", { exact: true }).click();
     await page.getByText("Save Changes", { exact: true }).click();
 
     // Back on the detail screen with the edited cargo (invalidation refetch).
@@ -94,8 +105,10 @@ test.describe("Requestor booking edit (mobile web)", () => {
     await mobileLogin(page, REQUESTOR);
     await openBooking(page, trip);
 
-    // Detail is open (its unique card label is visible) but Edit is not offered.
-    await expect(page.getByText("Trip Details", { exact: true })).toBeVisible();
+    // Detail is open (the progress bar's own labels are visible) but Edit is
+    // not offered. "Trip Details" was the card label before the requestor
+    // redesign replaced that card with the fact rows and the stage bar.
+    await expect(page.getByText("En Route", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Edit Booking", { exact: true })).toHaveCount(0);
   });
 });
