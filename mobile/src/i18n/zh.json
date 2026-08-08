@@ -56,7 +56,7 @@
     "phone": "电话号码",
     "phonePlaceholder": "12-345 6789",
     "password": "密码",
-    "passwordPlaceholder": "至少 6 个字符",
+    "passwordPlaceholder": "至少 {{count}} 个字符",
     "confirmPassword": "确认密码",
     "confirmPlaceholder": "请再次输入密码",
     "verifyNotice": "您的员工编号和部门将在激活前由管理员验证。",
@@ -897,7 +897,16 @@
       "awaitingDispatch": "等待调度",
       "daySummary": "今日 {{trips}} 趟 · 完成 {{completed}} · 在勤 {{trucks}} 辆",
       "completedToday": "今日完成",
-      "manage": "管理"
+      "manage": "管理",
+      "headerSummary": "{{date}} · {{trips}} 趟行程，{{trucks}} 辆车在跑",
+      "stripDispatchFailed_one": "{{count}} 趟行程需要处理 — 没有合适的车",
+      "stripDispatchFailed_other": "{{count}} 趟行程需要处理 — 没有合适的车",
+      "stripAwaitingManual_one": "{{count}} 单预订等待派车",
+      "stripAwaitingManual_other": "{{count}} 单预订等待派车",
+      "notOnMap_one": "不在地图上 · {{count}}",
+      "notOnMap_other": "不在地图上 · {{count}}",
+      "noDriver": "无司机",
+      "mapCoverageNote": "只有正在发送实时 GPS 的车辆会出现在地图上 — 其余车辆无论是否在线都列在这里。"
     },
     "dashboard": {
       "loadError": "无法加载仪表板。",

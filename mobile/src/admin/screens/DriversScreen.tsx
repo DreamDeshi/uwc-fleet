@@ -4,7 +4,7 @@
 // board + performance badges + the leave calendar manager (leave affects
 // dispatch availability only — never login).
 import React, { useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { useNavigation } from "@react-navigation/native";
@@ -52,10 +52,16 @@ const STATUS_META: Record<DriverStatus, { labelKey: string; bg: string; fg: stri
 };
 
 function scoreColor(score: number): { bg: string; fg: string } {
-  if (score >= 75) return { bg: colors.greenTint, fg: colors.green };
-  if (score >= 50) return { bg: colors.yellowTint, fg: colors.amber };
+  if (score >= 75) return { bg: colors.greenTint, fg: ACCENT_GREEN };
+  if (score >= 50) return { bg: colors.yellowTint, fg: ACCENT_AMBER };
   return { bg: colors.redTint, fg: colors.red };
 }
+
+// Accessible on-tint text. The admin theme's `green` (3.00:1) and `amber`
+// (3.19:1) are decorative hues — fine for a dot, not for a score someone
+// reads. Same values the mobile theme calls greenText / amberText.
+const ACCENT_GREEN = "#2A7F24";
+const ACCENT_AMBER = "#B45309";
 
 type Filter = "all" | DriverStatus;
 
@@ -174,6 +180,8 @@ function DriverCard({ driver: d, perf, onManage }: { driver: DriverPerf; perf?: 
   const mode = useLayoutMode();
   const meta = STATUS_META[d.status];
   const disabled = d.account_status === "disabled";
+  // The band greys for anyone who cannot take work right now.
+  const offDuty = disabled || d.status === "off_duty";
   // Wide: Performance is a drawer sibling. Narrow: it lives in the MORE
   // tab's stack (bottom-bar shell), pushed with a back button.
   const openPerformance = () =>
@@ -181,29 +189,32 @@ function DriverCard({ driver: d, perf, onManage }: { driver: DriverPerf; perf?: 
       ? navigation.navigate("AdminPerformance")
       : navigation.navigate("AdminMore", { screen: "AdminPerformance", initial: false });
   return (
-    <Card style={{ borderLeftWidth: 5, borderLeftColor: meta.dot }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
-        <Avatar name={d.name} size={46} />
-        {/* minHeight reserves two lines of the name. Malaysian names routinely
-            run long ("Muhamad Zulkhairi Bin Yusuf"), and unbounded they wrapped
-            to a second line — so a card for a long-named driver stood taller
-            than the one beside it in the grid and the two fell out of
-            alignment. Reserving the space makes every header the same height
-            whether the name wraps or not, without truncating anyone's name. */}
-        <View style={{ flex: 1, minWidth: 120 }}>
-          <Text numberOfLines={2} style={{ fontSize: 15, lineHeight: 20, minHeight: 40, fontWeight: "700", color: colors.text }}>{d.name}</Text>
-          <Text style={{ fontSize: font.sm, color: colors.textMuted }}>
-            {d.phone}
-            {d.assigned_truck ? ` · ${d.assigned_truck.plate}` : ""}
-          </Text>
+    // Frame 2: identity on a NAVY band with the plate as a real number-plate
+    // chip, the body plain below it. Off duty / disabled greys the band, so a
+    // driver who cannot take work reads differently at a glance from one who
+    // can — which the old left border alone had to carry.
+    <Card pad={0} style={{ overflow: "hidden" }}>
+      <View style={[styles.idBand, offDuty && styles.idBandOff]}>
+        <Avatar name={d.name} size={44} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          {/* minHeight reserves two lines of the name. Malaysian names routinely
+              run long ("Muhamad Zulkhairi Bin Yusuf"), and unbounded they wrapped
+              to a second line — so a card for a long-named driver stood taller
+              than the one beside it in the grid and the two fell out of
+              alignment. Reserving the space makes every header the same height
+              whether the name wraps or not, without truncating anyone's name. */}
+          <Text numberOfLines={2} style={styles.idName}>{d.name}</Text>
+          <Text style={styles.idPhone}>{d.phone}</Text>
         </View>
-        {perf && <ScoreBadge perf={perf} onPress={openPerformance} />}
-        {/* Leave is date-scoped — a badge alongside status, not a status. */}
-        {d.on_leave_today && (
-          <Pill bg={colors.yellowTint} fg={colors.amber} dot={colors.orange}>
-            {t("admin.drivers.onLeave")}
-          </Pill>
-        )}
+        {d.assigned_truck ? (
+          <View style={styles.plateChip}>
+            <Text style={styles.plateChipText}>{d.assigned_truck.plate}</Text>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={{ padding: 14 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
         {disabled ? (
           <Pill bg={colors.redTint} fg={colors.red} dot={colors.red}>
             {t("admin.users.statusDisabled")}
@@ -213,6 +224,13 @@ function DriverCard({ driver: d, perf, onManage }: { driver: DriverPerf; perf?: 
             {t(meta.labelKey)}
           </Pill>
         )}
+        {/* Leave is date-scoped — a badge alongside status, not a status. */}
+        {d.on_leave_today && (
+          <Pill bg={colors.yellowTint} fg={ACCENT_AMBER} dot={colors.orange}>
+            {t("admin.drivers.onLeave")}
+          </Pill>
+        )}
+        {perf && <ScoreBadge perf={perf} onPress={openPerformance} />}
       </View>
 
       <View style={{ flexDirection: "row", backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.md, overflow: "hidden" }}>
@@ -246,9 +264,28 @@ function DriverCard({ driver: d, perf, onManage }: { driver: DriverPerf; perf?: 
           {t("admin.drivers.manage")}
         </Button>
       </View>
+      </View>
     </Card>
   );
 }
+
+const styles = StyleSheet.create({
+  idBand: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: colors.navy,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  idBandOff: { backgroundColor: "#4B5563" },
+  idName: { fontSize: 15, lineHeight: 19, minHeight: 38, fontWeight: "800", color: "#fff" },
+  idPhone: { fontSize: font.xs, color: "#c9d6f0", marginTop: 1 },
+  // A real number plate: black, monospaced, letter-spaced — the thing an admin
+  // reads off the lorry in the yard.
+  plateChip: { flexShrink: 0, backgroundColor: "#000", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  plateChipText: { color: "#fff", fontSize: font.xs, fontWeight: "700", letterSpacing: 0.4 },
+});
 
 function Stat({ label, value, divider }: { label: string; value: string; divider?: boolean }) {
   return (

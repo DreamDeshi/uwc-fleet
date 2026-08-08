@@ -20,7 +20,7 @@ import { colors, layout, radius } from "../../theme";
 import { Button } from "../../components/Button";
 import { PasswordField, PressableField, TextField } from "../../components/Field";
 import { OptionsModal } from "../../components/OptionsModal";
-import { isStrongPassword } from "../../lib/passwordPolicy";
+import { isStrongPassword, PASSWORD_MIN_LENGTH } from "../../lib/passwordPolicy";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Register">;
 
@@ -196,7 +196,11 @@ export function RegisterScreen({ navigation }: Props) {
               label={t("register.password")}
               value={password}
               onChangeText={setPassword}
-              placeholder={t("register.passwordPlaceholder")}
+              // Interpolated from the CONSTANT, never a literal. All three
+              // locales promised "minimum 6 characters" while the floor has
+              // been 11 since 4 Aug 2026 — so the field told a new driver their
+              // 6-character password was fine and the submit then rejected it.
+              placeholder={t("register.passwordPlaceholder", { count: PASSWORD_MIN_LENGTH })}
             />
             <PasswordField
               label={t("register.confirmPassword")}
