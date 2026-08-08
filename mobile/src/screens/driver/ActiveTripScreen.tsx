@@ -4,7 +4,7 @@
 // read from that file, not guessed.
 //
 // Layout (top → bottom), replacing the old full-screen map + bottom sheet:
-//   1. 196px map band (back button, tracking badge)
+//   1. map band (back button, tracking badge) — see MAP_BAND_* below
 //   2. progress header + SEGMENTED rail — one flex segment per stop, so it
 //      reads the same at 2 stops or 12
 //   3. unfinished-stop banner (a POD uploaded but Delivered never tapped)
@@ -17,7 +17,7 @@
 // behavioural addition is the POD REVIEW step: capture no longer uploads
 // straight away, it opens PhotoReviewModal and the upload runs on "Use photo".
 import React, { useRef, useState } from "react";
-import { Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -106,6 +106,27 @@ const DELIVERED_ALREADY_CODES = [
   "TRIP_NOT_ACTIVE",
 ];
 
+// ── Map band height ───────────────────────────────────────────────────────
+// The design pack specifies a flat 196px band, drawn against a ~844px phone.
+// That number does not travel: the band is the ONLY fixed-height block above a
+// `flex: 1` scroll body, so every extra pixel of a taller screen went to the
+// body — which on a one- or two-stop trip is already part empty. The result on
+// a 932px device was a 196px letterbox of map above a growing band of nothing.
+//
+// So scale the band with the viewport instead, and bound it at both ends:
+//   MIN — the design value, so the short phones the pack was drawn for are
+//         unchanged and the stop card keeps its room on the smallest screens.
+//   MAX — so a tablet or a desktop browser (the driver app has no wide layout;
+//         it just stretches) cannot push the current-stop card out of view.
+const MAP_BAND_MIN = 196;
+const MAP_BAND_MAX = 330;
+const MAP_BAND_RATIO = 0.3;
+function mapBandHeight(viewportHeight: number): number {
+  return Math.round(
+    Math.min(MAP_BAND_MAX, Math.max(MAP_BAND_MIN, viewportHeight * MAP_BAND_RATIO))
+  );
+}
+
 // Zone tag shading on the upcoming-stop cards, by STATE (design rule):
 // Penang pale, Kedah solid blue, Perak navy. The current-stop card's own tag
 // is deliberately flat (fieldBg/navy) in every zone.
@@ -118,6 +139,7 @@ function zoneTagColors(zone?: string | null): { bg: string; fg: string } {
 export function ActiveTripScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { height: viewportHeight } = useWindowDimensions();
   const navigation = useNavigation<Nav>();
   const toast = useToast();
   const { params } = useRoute<Rt>();
@@ -613,9 +635,12 @@ export function ActiveTripScreen() {
 
   return (
     <View style={styles.fill}>
-      {/* 1 ── Map band (196px). Native renders react-native-maps; the web
-              build swaps in a placeholder via ActiveTripMap.web.tsx. */}
-      <View style={styles.mapBand}>
+      {/* 1 ── Map band, sized from the viewport (mapBandHeight). Native renders
+              react-native-maps; the web build swaps in Leaflet via
+              ActiveTripMap.web.tsx. Both fill the band — absoluteFill on native,
+              100%/InvalidateOnLayout on web — so the height is the band's alone
+              to decide. */}
+      <View style={[styles.mapBand, { height: mapBandHeight(viewportHeight) }]}>
         <ActiveTripMap
           region={region}
           dest={dest}
@@ -1150,7 +1175,9 @@ const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
 
   // 1 — map band
-  mapBand: { height: 196, position: "relative", backgroundColor: colors.tintBlue },
+  // Height is supplied per-render from the viewport (mapBandHeight); the floor
+  // is repeated here so the band is never zero-height if that override is lost.
+  mapBand: { minHeight: MAP_BAND_MIN, position: "relative", backgroundColor: colors.tintBlue },
   // zIndex, not elevation — see the note on TripDetailsScreen's backBtn. This
   // screen does not show the bug today only because ActiveTripMap.web is a
   // placeholder rather than a Leaflet map; the moment web gets a real map here
