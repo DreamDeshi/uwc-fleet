@@ -129,7 +129,9 @@ test.describe("Structured cargo & templates (requestor, mobile web)", () => {
     await page.getByText(chips.family, { exact: true }).click();
     await page.getByText(chips.direction, { exact: true }).click();
     await page.getByPlaceholder("Type company name, area, or location…").fill(consignee.term);
-    const result = page.getByText(consignee.display, { exact: true }).last();
+    // `.first()` = the search result. Recents render BELOW the results since the
+    // requestor redesign (they used to be above, which is why this was `.last()`).
+    const result = page.getByText(consignee.display, { exact: true }).first();
     await expect(result).toBeVisible();
     await result.click();
     await page.getByText("Next", { exact: true }).click();

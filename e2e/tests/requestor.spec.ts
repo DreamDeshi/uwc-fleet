@@ -96,14 +96,17 @@ test.describe("Requestor (mobile web)", () => {
     await expect(page.getByText(routeType.name, { exact: true })).toBeVisible();
 
     await page.getByPlaceholder("Type company name, area, or location…").fill(consignee.term);
-    // The same consignee can appear twice on this screen: once in the "Recent
-    // consignees" strip (populated from the requestor's past trips — this account
-    // books repeatedly across the suite) and once in the search-results list.
-    // Both render the full name (names ≤ RECENT_CHIP_MAX_CHARS aren't truncated),
-    // so an unscoped exact-text match is a strict-mode violation. The results row
-    // renders AFTER the recent strip, so .last() targets the actual search result
-    // we intend to click. (screenshots.spec guards the same locator with .first().)
-    const result = page.getByText(consignee.display, { exact: true }).last();
+    // The same consignee can appear twice on this screen: once in the search
+    // results and once in the "Recent" strip (populated from the requestor's
+    // past trips — this account books repeatedly across the suite). Both render
+    // the full name (names ≤ RECENT_CHIP_MAX_CHARS aren't truncated), so an
+    // unscoped exact-text match is a strict-mode violation.
+    //
+    // ⚠ The order FLIPPED in the requestor redesign: recents used to render
+    // above the results and now render below them, so `.first()` is the search
+    // result — and `.last()`, which used to be, is now the chip. `.first()` is
+    // also the one highest on screen, furthest from the fixed Next footer.
+    const result = page.getByText(consignee.display, { exact: true }).first();
     await expect(result).toBeVisible();
     await result.click();
 

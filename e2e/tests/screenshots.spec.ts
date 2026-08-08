@@ -1,4 +1,4 @@
-import { test } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import fs from "fs";
 import path from "path";
 import { DRIVER, REQUESTOR, MOBILE_URL } from "../helpers/accounts";
@@ -130,11 +130,16 @@ test("REQUESTOR — all screens", async ({ page }) => {
   await page.getByText(family, { exact: true }).click();
   await page.getByText(norm.includes("return") ? "Return" : "Delivery", { exact: true }).click();
   await page.getByPlaceholder("Type company name, area, or location…").fill(consignee.term);
-  try {
-    await page.getByText(consignee.display, { exact: true }).first().click({ timeout: 8000 });
-  } catch {
-    /* search may not surface it at this viewport; still advance/capture */
-  }
+  // WAIT for the row, then click it — no try/catch. This used to swallow a
+  // failed selection and "still advance", which cannot work: Next has always
+  // required a stop, so a swallowed miss left the walk on step 1 and captured
+  // it under the step-2 name. It only ever passed because `.first()` used to
+  // resolve to a RECENT chip (rendered above the results before the redesign),
+  // which is on screen instantly and needs no round-trip. `.first()` is now the
+  // top search result, so the wait has to be real.
+  const result = page.getByText(consignee.display, { exact: true }).first();
+  await expect(result).toBeVisible({ timeout: 20_000 });
+  await result.click();
   await page.getByText("Next", { exact: true }).click();
   await shot(page, "requestor-booking-step2", "Cargo Size & Quantity");
 
