@@ -4,7 +4,7 @@
 // alerts, the truck card grid (load visualiser, stats, claim-rate pills,
 // document rows) and the renewal modal that un-blocks a truck for dispatch.
 import React, { useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useTranslation } from "react-i18next";
@@ -32,6 +32,9 @@ const STATUS_META: Record<string, { labelKey: string; bg: string; fg: string; do
   maintenance: { labelKey: "admin.trucks.statusMaintenance", bg: colors.orangeTint, fg: "#B45309", dot: colors.orange },
   retired: { labelKey: "admin.trucks.statusRetired", bg: "#f3f4f6", fg: "#4B5563", dot: "#9CA3AF" },
 };
+
+// Accessible on-tint text — colors.amber is 3.19:1, a decorative hue.
+const ACCENT_AMBER = "#B45309";
 
 type Filter = "all" | "active" | "idle" | "maintenance" | "retired";
 
@@ -437,8 +440,9 @@ function TruckCard({ truck: tr, onManage }: { truck: Truck; onManage: () => void
 
   return (
     <Card
+      pad={0}
       style={[
-        { borderLeftWidth: 5, borderLeftColor: retired ? "#9CA3AF" : hasAlert ? colors.orange : meta.dot },
+        { overflow: "hidden" },
         hasAlert && { borderColor: "#FFB74D" },
         retired && { backgroundColor: "#fafafb", borderColor: "#e5e7eb" },
       ]}
@@ -457,7 +461,8 @@ function TruckCard({ truck: tr, onManage }: { truck: Truck; onManage: () => void
             borderRadius: radius.md,
             paddingVertical: 8,
             paddingHorizontal: 12,
-            marginBottom: 14,
+            margin: 14,
+            marginBottom: 0,
           }}
         >
           <Ionicons name="ban-outline" size={16} color="#6b7280" />
@@ -469,19 +474,30 @@ function TruckCard({ truck: tr, onManage }: { truck: Truck; onManage: () => void
           </Button>
         </View>
       )}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 }}>
-        <Avatar size={46} glyph={<Ionicons name="bus" size={22} color={colors.yellow} />} />
+      {/* Frame 3: identity on a NAVY band (grey once the truck is out of
+          service or in the workshop), the plate reading as the plate. */}
+      <View
+        style={[
+          truckStyles.idBand,
+          (retired || tr.status === "maintenance") && truckStyles.idBandOff,
+        ]}
+      >
+        <Avatar size={44} glyph={<Ionicons name={retired ? "construct" : "bus"} size={20} color={colors.yellow} />} />
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontSize: font.lg, fontWeight: "800", letterSpacing: 0.3, color: colors.text }}>{tr.plate}</Text>
-          <Text style={{ fontSize: font.sm, color: colors.textMuted }}>
+          <Text style={truckStyles.idPlate}>{tr.plate}</Text>
+          <Text style={truckStyles.idMeta}>
             {tr.type} · {t("admin.trucks.palletsCount", { count: tr.max_pallets })}
           </Text>
         </View>
-        <Pill bg={meta.bg} fg={meta.fg} dot={meta.dot}>
-          {t(meta.labelKey)}
-        </Pill>
+        {/* On the dark band the pill's light tint would vanish, so it wears a
+            translucent white fill with a coloured dot instead. */}
+        <View style={truckStyles.bandPill}>
+          <View style={[truckStyles.bandDot, { backgroundColor: meta.dot }]} />
+          <Text style={truckStyles.bandPillText}>{t(meta.labelKey)}</Text>
+        </View>
       </View>
 
+      <View style={{ padding: 14 }}>
       <View style={{ marginBottom: 14 }}>
         <LoadCapacityBar load={tr.current_load} capacity={tr.max_pallets} />
       </View>
@@ -505,7 +521,7 @@ function TruckCard({ truck: tr, onManage }: { truck: Truck; onManage: () => void
       {/* Claim rates — display only; edits live on the Incentives screen. */}
       <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
         <RatePill label={t("admin.trucks.rateWeekday")} value={formatMoney(tr.entitled_claim_weekday)} color={colors.blue} bg={colors.blueTint} />
-        <RatePill label={t("admin.trucks.rateWeekend")} value={formatMoney(tr.entitled_claim_offpeak)} color={colors.amber} bg={colors.yellowTint} />
+        <RatePill label={t("admin.trucks.rateWeekend")} value={formatMoney(tr.entitled_claim_offpeak)} color={ACCENT_AMBER} bg={colors.yellowTint} />
         <RatePill label={t("admin.trucks.rateDeduction")} value={t("admin.trucks.pts", { count: tr.daily_deduction_points })} color={colors.red} bg={colors.redTint} />
       </View>
 
@@ -522,10 +538,38 @@ function TruckCard({ truck: tr, onManage }: { truck: Truck; onManage: () => void
           {t("admin.trucks.updateDocs")}
         </Button>
       </View>
+      </View>
       {editingDocs && <EditDocumentsModal truck={tr} onClose={() => setEditingDocs(false)} />}
     </Card>
   );
 }
+
+const truckStyles = StyleSheet.create({
+  idBand: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: colors.navy,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  idBandOff: { backgroundColor: "#6b6f80" },
+  // Monospaced + letter-spaced so the plate reads as a plate, not as a label.
+  idPlate: { fontSize: font.lg, fontWeight: "800", letterSpacing: 0.4, color: "#fff" },
+  idMeta: { fontSize: font.xs, color: "#c9d6f0", marginTop: 1 },
+  bandPill: {
+    flexShrink: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderRadius: radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  bandDot: { width: 6, height: 6, borderRadius: 3 },
+  bandPillText: { fontSize: font.xs, fontWeight: "700", color: "#fff" },
+});
 
 // Record renewed insurance / permit / road-tax expiry dates — the
 // operational lever that puts a renewed truck back in the dispatch pool
