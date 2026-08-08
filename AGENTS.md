@@ -531,10 +531,14 @@ Standing owner design rulings (do not revert):
 \- Headers use the WHITE mark-only logo crop (`uwc-mark-white.png` via
 &#x20; `BrandLogo mark`), placed LEFT of the title. No avatar/name blocks in
 &#x20; headers.
-\- The LOGIN screen carries the full WHITE logo (`BrandLogo white`) on its blue
-&#x20; panel — owner ruling 29 Jul 2026, adopting the driver design pack's
-&#x20; frame 01. This REPLACES the earlier rule that login kept the full-colour
-&#x20; logo; the colour logo no longer appears on that screen at all.
+\- The LOGIN screen, ON A PHONE, is a LIGHT screen carrying the full COLOUR logo
+&#x20; (`BrandLogo` default, height 84) centred over two pale decorative discs —
+&#x20; owner ruling 9 Aug 2026, adopting the admin design pack's frame 17.
+&#x20; This SUPERSEDES the 29 Jul 2026 ruling (white logo on a blue panel), which
+&#x20; had itself replaced an earlier colour-logo rule. Both were the owner's; the
+&#x20; later one governs. The blue brand panel SURVIVES on DESKTOP (≥1024px),
+&#x20; where it is a column beside the form rather than a header above it, and it
+&#x20; still carries `BrandLogo white`.
 \- No yellow underline accents on mobile headers.
 \- Requestor home keeps the navy/dashed card style.
 \- Orange is reserved for offline/queued states only — never as a general

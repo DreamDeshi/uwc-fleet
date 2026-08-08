@@ -56,7 +56,7 @@
     "phone": "Nombor Telefon",
     "phonePlaceholder": "12-345 6789",
     "password": "Kata Laluan",
-    "passwordPlaceholder": "Minimum 6 aksara",
+    "passwordPlaceholder": "Minimum {{count}} aksara",
     "confirmPassword": "Sahkan Kata Laluan",
     "confirmPlaceholder": "Masukkan semula kata laluan",
     "verifyNotice": "Nombor pekerja dan jabatan anda akan disahkan oleh admin sebelum diaktifkan.",

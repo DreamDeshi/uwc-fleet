@@ -156,31 +156,39 @@ export function LoginScreen({ navigation }: Props) {
     );
   }
 
-  // ── Phone (unchanged): blue brand header + a form sheet with rounded shoulders. ──
+  // ── Phone: a LIGHT screen carrying the full-colour logo (admin design pack,
+  //    frame 17 — owner ruling 9 Aug 2026).
+  //
+  //    ⚠ This REVERSES the 29 Jul ruling that put the WHITE logo on a blue
+  //    panel. Both rulings are the owner's and this one is later; AGENTS.md has
+  //    been updated in the same commit so the written rule and the screen agree
+  //    — a stale "do not revert" note is worse than none, because the next
+  //    person to read it would revert a deliberate decision.
+  //
+  //    The blue panel survives on DESKTOP above, where it is a brand column
+  //    beside the form rather than a header above it.
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView contentContainerStyle={styles.flexGrow} keyboardShouldPersistTaps="handled">
-        <View style={[styles.header, { paddingTop: insets.top + 28 }]}>
-          <View style={styles.discBig} pointerEvents="none" />
-          <View style={styles.discSmall} pointerEvents="none" />
-          <View>
-            {/* WHITE logo on the blue, per frame 01 and the owner's 29 Jul
-                ruling ("use the new login, it's fine if white"). This SUPERSEDES
-                the older rule that the login screen kept the full-colour logo —
-                the colour logo that used to sit in the white sheet below is
-                gone, so the brand is stated once. */}
-            <BrandLogo white height={76} />
-            <Text style={styles.welcome}>{t("login.welcome")}</Text>
-            <Text style={styles.subtitle}>{t("login.subtitle")}</Text>
-            {/* "FLEET MANAGEMENT PORTAL" — frame 01 carries it on the phone
-                header too; only the desktop split had it. */}
-            <Text style={styles.tagline}>{t("common.tagline")}</Text>
-          </View>
-        </View>
+    <KeyboardAvoidingView style={styles.phoneRoot} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      {/* Decorative only, and behind everything: pointerEvents="none" so the
+          discs can never eat a tap meant for a field. */}
+      <View style={styles.discTint} pointerEvents="none" />
+      <View style={styles.discTintWarm} pointerEvents="none" />
+      <ScrollView
+        contentContainerStyle={[styles.phoneScroll, { paddingTop: insets.top + 32, paddingBottom: insets.bottom + 20 }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        <BrandLogo height={84} style={styles.phoneLogo} />
+        <Text style={styles.phoneWelcome}>{t("login.welcome")}</Text>
+        <Text style={styles.phoneSubtitle}>{t("login.subtitle")}</Text>
 
-        <View style={styles.form}>
-          {fields}
-          <Text style={styles.footer}>{t("login.footer")}</Text>
+        <View style={styles.phoneFields}>{fields}</View>
+
+        {/* The tagline reads as a footer rule here rather than a header line —
+            two short yellow strokes either side, per the frame. */}
+        <View style={styles.taglineRow}>
+          <View style={styles.taglineDash} />
+          <Text style={styles.taglineText}>{t("common.tagline")}</Text>
+          <View style={styles.taglineDash} />
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -188,14 +196,6 @@ export function LoginScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.blue },
-  flexGrow: { flexGrow: 1 },
-  header: {
-    backgroundColor: colors.blue,
-    paddingHorizontal: 24,
-    paddingBottom: 56,
-    overflow: "hidden",
-  },
   discBig: {
     position: "absolute",
     right: -70,
@@ -214,29 +214,22 @@ const styles = StyleSheet.create({
     borderRadius: 70,
     backgroundColor: "rgba(255,204,0,0.10)",
   },
-  welcome: { color: colors.white, fontSize: 26, fontWeight: "800", marginTop: 22 },
-  subtitle: { color: "rgba(255,255,255,0.7)", fontSize: 15, marginTop: 4 },
-  tagline: {
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    marginTop: 20,
-  },
-  form: {
-    flex: 1,
-    padding: 24,
-    paddingTop: 28,
-    marginTop: -24,
-    backgroundColor: colors.white,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    // Desktop: the form becomes a centred card instead of a full-width sheet.
-    width: "100%",
-    maxWidth: layout.auth,
-    alignSelf: "center",
-  },
+  // ── Phone (admin design pack, frame 17): a light screen, colour logo ──
+  phoneRoot: { flex: 1, backgroundColor: colors.white, overflow: "hidden" },
+  phoneScroll: { flexGrow: 1, paddingHorizontal: 28, width: "100%", maxWidth: layout.auth, alignSelf: "center" },
+  // Solid pale tints, not translucent whites — the surface underneath is white
+  // now, so a translucent disc would be invisible.
+  discTint: { position: "absolute", right: -60, top: -60, width: 220, height: 220, borderRadius: 110, backgroundColor: colors.tintBlue },
+  discTintWarm: { position: "absolute", left: -50, top: 220, width: 150, height: 150, borderRadius: 75, backgroundColor: colors.tintYellow },
+  phoneLogo: { alignSelf: "center" },
+  phoneWelcome: { fontSize: 24, fontWeight: "900", color: colors.navy, textAlign: "center", marginTop: 20, letterSpacing: -0.4 },
+  phoneSubtitle: { fontSize: 14, color: colors.textMuted, textAlign: "center", marginTop: 5 },
+  // `flex: 1` pushes the tagline to the bottom on a tall phone while letting the
+  // fields grow past it on a short one (the scroll view keeps them reachable).
+  phoneFields: { flex: 1, marginTop: 36 },
+  taglineRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 22 },
+  taglineDash: { width: 16, height: 2, borderRadius: 1, backgroundColor: colors.yellow },
+  taglineText: { fontSize: 12, color: colors.textFaint, letterSpacing: 0.5, textTransform: "uppercase" },
 
   // ── Desktop split ──
   desktopRoot: { flex: 1, flexDirection: "row", backgroundColor: colors.bg },
@@ -307,8 +300,6 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   error: { flex: 1, color: colors.red, fontSize: 14, fontWeight: "600" },
-  // Mobile: footer sits at the bottom of the full-height sheet (unchanged).
-  footer: { marginTop: "auto", textAlign: "center", color: colors.textFaint, fontSize: 13 },
   // Muted and small: it is a fallback instruction, not a call to action, and it
   // must not compete with Sign in / Create account.
   forgotHint: {

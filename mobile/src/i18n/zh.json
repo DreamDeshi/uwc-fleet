@@ -56,7 +56,7 @@
     "phone": "电话号码",
     "phonePlaceholder": "12-345 6789",
     "password": "密码",
-    "passwordPlaceholder": "至少 6 个字符",
+    "passwordPlaceholder": "至少 {{count}} 个字符",
     "confirmPassword": "确认密码",
     "confirmPlaceholder": "请再次输入密码",
     "verifyNotice": "您的员工编号和部门将在激活前由管理员验证。",
