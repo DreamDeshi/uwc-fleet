@@ -1,7 +1,7 @@
 import type { CargoDetail } from "../types";
 
-// The booking form's quick pickers offer whole hours across the fleet operating
-// window within the next 7 days (see BookingFormScreen dayOptions/timeOptions).
+// The booking form's pickers offer 5-minute slots across the fleet operating
+// window, on any date within a year (calendar + dial — see lib/pickupCalendar).
 // When a booking is opened for EDITING, its stored pickup_datetime has to be
 // reversed into those buckets so an untouched pickup round-trips unchanged (the
 // server only enforces the not-in-the-past rule when the pickup actually
@@ -17,7 +17,31 @@ import type { CargoDetail } from "../types";
 // unbookable from the form. Starting the list at 07:00 closes that gap.
 export const PICKUP_WINDOW_START_HOUR = 7;
 export const PICKUP_WINDOW_END_HOUR = 2;
-export const PICKUP_MAX_DAY_OFFSET = 6;
+
+/**
+ * How far ahead the calendar lets a requestor book: a full year, per the
+ * requestor design ("Bookable through … · full year ahead").
+ *
+ * This is a CLIENT-SIDE affordance only. `createTripSchema` has never had an
+ * upper bound — it refines pickup_datetime on the past edge alone (with a 15
+ * minute grace) — so widening the picker from 7 days to a year submits nothing
+ * the API did not already accept. The old 6 was the dropdown's length, not a
+ * rule.
+ */
+export const PICKUP_MAX_DAY_OFFSET = 365;
+
+/**
+ * The minute dial's granularity. The server stores whatever instant it is sent,
+ * so this is purely how fine the picker lets you aim; every previously created
+ * booking is on :00, which is still on the grid.
+ */
+export const PICKUP_MINUTE_STEP = 5;
+
+/** The dial's minute ring: 00, 05, … 55. */
+export const PICKUP_MINUTES: readonly number[] = Array.from(
+  { length: 60 / PICKUP_MINUTE_STEP },
+  (_, i) => i * PICKUP_MINUTE_STEP
+);
 
 /**
  * The bookable hours in OPERATING-DAY order: 07:00…23:00 then 00:00…02:00, so
@@ -34,17 +58,24 @@ export function isPickupHour(hour: number): boolean {
   return PICKUP_HOURS.includes(hour);
 }
 
+/** A pickup as the form holds it: a calendar day offset plus a wall-clock time. */
+export interface PickupSlot {
+  dayOffset: number;
+  hour: number;
+  minute: number;
+}
+
 /**
- * Map a stored pickup to the form's {dayOffset, hour} buckets, or null when it
- * isn't representable (already past, beyond the 7-day window, outside picker
- * hours, or not on a whole hour) — the caller then falls back to the next
- * bookable slot and the user sees the new pickup on the Confirm step. Uses
+ * Map a stored pickup to the form's {dayOffset, hour, minute} buckets, or null
+ * when it isn't representable (already past, beyond the year window, outside
+ * picker hours, or off the 5-minute grid) — the caller then falls back to the
+ * next bookable slot and the user sees the new pickup on the Confirm step. Uses
  * device-local time throughout, matching how the form builds pickupDate.
  */
 export function pickupToSlot(
   pickupIso: string,
   now: Date
-): { dayOffset: number; hour: number } | null {
+): PickupSlot | null {
   const pickup = new Date(pickupIso);
   if (Number.isNaN(pickup.getTime())) return null;
 
@@ -61,8 +92,12 @@ export function pickupToSlot(
   if (dayOffset < 0 || dayOffset > PICKUP_MAX_DAY_OFFSET) return null;
   const hour = pickup.getHours();
   if (!isPickupHour(hour)) return null;
-  if (pickup.getMinutes() !== 0) return null;
-  return { dayOffset, hour };
+  const minute = pickup.getMinutes();
+  // Off-grid minutes (a booking placed by an admin, or by a future finer
+  // picker) are NOT representable: the dial could not show them, so seeding it
+  // with 09:07 would silently round the requestor's pickup on save.
+  if (minute % PICKUP_MINUTE_STEP !== 0) return null;
+  return { dayOffset, hour, minute };
 }
 
 /**

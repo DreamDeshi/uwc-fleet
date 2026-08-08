@@ -3,6 +3,9 @@ import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "rea
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RequestorStackParamList } from "../../navigation/types";
 import { useAuth } from "../../context/AuthContext";
 import { colors, layout, radius, shadow } from "../../theme";
 import { Button } from "../../components/Button";
@@ -24,6 +27,10 @@ import { AppUpdatesCard } from "../../components/AppUpdatesCard";
 export function ProfileScreen() {
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
+  // Typed against the requestor stack because only the requestor rows navigate;
+  // on the driver stack those rows are never rendered, so the routes are never
+  // reached from there.
+  const navigation = useNavigation<NativeStackNavigationProp<RequestorStackParamList>>();
   const { user, logout, setLanguage } = useAuth();
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -61,7 +68,26 @@ export function ProfileScreen() {
     { label: t("profile.department"), value: user?.department?.name ?? "—", icon: "business-outline" },
   ];
 
+  // The requestor design (frame 12) adds two shortcuts to things that only
+  // existed inside the booking form. They are REQUESTOR-ONLY: a driver has no
+  // consignee list of their own and books nothing, so the rows would be dead
+  // ends on the shared screen.
+  const isRequestor = user?.role === "requestor";
   const actions: { label: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }[] = [
+    ...(isRequestor
+      ? ([
+          {
+            label: t("account.savedConsignees"),
+            icon: "people-outline" as const,
+            onPress: () => navigation.navigate("SavedConsignees"),
+          },
+          {
+            label: t("account.bookingTemplates"),
+            icon: "repeat-outline" as const,
+            onPress: () => navigation.navigate("BookingTemplates"),
+          },
+        ])
+      : []),
     { label: t("account.editProfile"), icon: "create-outline", onPress: () => setEditOpen(true) },
     { label: t("account.changePassword"), icon: "lock-closed-outline", onPress: () => setPwOpen(true) },
     { label: t("feedback.title"), icon: "megaphone-outline", onPress: () => setFeedbackOpen(true) },

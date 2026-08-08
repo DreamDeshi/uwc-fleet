@@ -8,12 +8,12 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RequestorStackParamList, RequestorTabParamList } from "../../navigation/types";
 import { useTrips } from "../../hooks/queries";
 import { useWide } from "../../hooks/useWide";
-import { colors, layout, radius, shadow } from "../../theme";
+import { actionShadow, colors, layout, radius, shadow } from "../../theme";
 import { Header } from "../../components/Header";
 import { StatusBadge } from "../../components/StatusBadge";
-import { LoadingState, ErrorState, EmptyState } from "../../components/States";
+import { LoadingState, ErrorState } from "../../components/States";
 import { dayMonth, formatDate } from "../../lib/format";
-import { tripDestination, ORIGIN_LABEL } from "../../lib/trip";
+import { tripConsigneeName, tripDestination, totalPallets, ORIGIN_LABEL } from "../../lib/trip";
 import { ACTIVE_STATUSES, DELIVERED_STATUSES } from "../../lib/tripStatus";
 import { Trip } from "../../types";
 
@@ -49,28 +49,63 @@ export function BookingListScreen() {
     return list;
   }, [trips, filter]);
 
+  const activeCount = useMemo(
+    () => (trips ?? []).filter((tr) => ACTIVE_STATUSES.includes(tr.status)).length,
+    [trips]
+  );
+
   const openTrip = (id: string) => navigation.navigate("BookingDetail", { tripId: id });
+
+  // The empty state has to answer the tab that produced it: "no bookings yet"
+  // is wrong when the requestor has twenty completed ones and simply filtered
+  // to Active.
+  const emptyState = (
+    <View style={styles.empty}>
+      <View style={styles.emptyIcon}>
+        <Ionicons name="clipboard-outline" size={30} color={colors.blue} />
+      </View>
+      <Text style={styles.emptyTitle}>
+        {t(filter === "all" ? "history.emptyTitle" : `history.emptyTitle_${filter}`)}
+      </Text>
+      <Text style={styles.emptyBody}>
+        {t(filter === "all" ? "history.emptyBody" : `history.emptyBody_${filter}`)}
+      </Text>
+      {filter !== "completed" ? (
+        <TouchableOpacity
+          style={styles.emptyBtn}
+          onPress={() => navigation.navigate("NewBooking")}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="add" size={18} color={colors.white} />
+          <Text style={styles.emptyBtnText}>{t("tabs.newBooking")}</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
 
   return (
     <View style={styles.fill}>
       <Header
         title={t("tabs.bookings")}
         right={
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          // The count that means something is how many are still IN FLIGHT —
+          // "37 trips" is a lifetime total nobody acts on. On a PC the "+" stays
+          // in the header; on a phone it is the floating button below, which is
+          // reachable one-handed.
+          activeCount > 0 ? (
             <View style={styles.countPill}>
-              <Text style={styles.countText}>{t("history.tripsCount", { count: trips?.length ?? 0 })}</Text>
+              <Text style={styles.countText}>{t("history.activeCount", { count: activeCount })}</Text>
             </View>
-            {/* New Booking moved off the tab bar — this "+" and the Home hero CTA
-                are the two entry points into the booking form. */}
+          ) : wide ? (
             <TouchableOpacity
               onPress={() => navigation.navigate("NewBooking")}
               accessibilityLabel={t("tabs.newBooking")}
               hitSlop={8}
-              style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" }}
+              style={styles.headerAdd}
             >
               <Ionicons name="add" size={24} color={colors.white} />
             </TouchableOpacity>
-          </View>
+          ) : null
         }
       />
       <View style={wide ? styles.fillCol : styles.centerCol}>
@@ -98,22 +133,34 @@ export function BookingListScreen() {
           contentContainerStyle={styles.tableWrap}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
           ListHeaderComponent={filtered.length > 0 ? <TableHeader t={t} /> : null}
-          ListEmptyComponent={<EmptyState message={t("history.empty")} icon="cube-outline" />}
+          ListEmptyComponent={emptyState}
           renderItem={({ item, index }) => (
             <TableRow trip={item} last={index === filtered.length - 1} onPress={() => openTrip(item.id)} />
           )}
         />
       ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={(tr) => tr.id}
-          contentContainerStyle={{ padding: 16, paddingTop: 4, flexGrow: 1, width: "100%", maxWidth: layout.content, alignSelf: "center" }}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
-          ListEmptyComponent={<EmptyState message={t("history.empty")} icon="cube-outline" />}
-          renderItem={({ item }) => (
-            <BookingRow trip={item} onPress={() => openTrip(item.id)} />
-          )}
-        />
+        <>
+          <FlatList
+            data={filtered}
+            keyExtractor={(tr) => tr.id}
+            contentContainerStyle={{ padding: 16, paddingTop: 4, paddingBottom: 96, flexGrow: 1, width: "100%", maxWidth: layout.content, alignSelf: "center" }}
+            refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+            ListEmptyComponent={emptyState}
+            renderItem={({ item }) => (
+              <BookingRow trip={item} onPress={() => openTrip(item.id)} />
+            )}
+          />
+          {/* New Booking is not a tab; this and the Home hero CTA are the two
+              ways in. Floating over the list so it survives scrolling. */}
+          <TouchableOpacity
+            style={styles.fab}
+            onPress={() => navigation.navigate("NewBooking")}
+            accessibilityLabel={t("tabs.newBooking")}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="add" size={26} color={colors.navy} />
+          </TouchableOpacity>
+        </>
       )}
     </View>
   );
@@ -152,25 +199,40 @@ function TableRow({ trip, last, onPress }: { trip: Trip; last: boolean; onPress:
   );
 }
 
-// ── Narrow card (phone) — unchanged ─────────────────────────────────────────
+// ── Narrow card (phone) — design frame 8 ───────────────────────────────────
 function BookingRow({ trip, onPress }: { trip: Trip; onPress: () => void }) {
+  const { t } = useTranslation();
   const dm = dayMonth(trip.pickup_datetime);
+  // A finished booking's date block goes grey. The blue block is a "this is
+  // still live" signal, and every card wearing it made the list read as though
+  // nothing had ever completed.
+  const live = ACTIVE_STATUSES.includes(trip.status);
+  const stops = trip.stops?.length ?? 0;
+  const pallets = totalPallets(trip);
   return (
     <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={styles.card}>
-      <View style={styles.dateBlock}>
-        <Text style={styles.dateDay}>{dm.day}</Text>
-        <Text style={styles.dateMon}>{dm.mon}</Text>
+      <View style={[styles.dateBlock, !live && styles.dateBlockPast]}>
+        <Text style={[styles.dateDay, !live && styles.dateDayPast]}>{dm.day}</Text>
+        <Text style={[styles.dateMon, !live && styles.dateMonPast]}>{dm.mon}</Text>
       </View>
       <View style={styles.cardBody}>
-        <View style={styles.cardTop}>
-          <Text style={styles.route} numberOfLines={1}>
-            {ORIGIN_LABEL} → {tripDestination(trip)}
-          </Text>
+        {/* The consignee, not "UWC → area": the requestor knows where it left
+            from — what they scan for is who it is going to. */}
+        <Text style={styles.route} numberOfLines={1}>
+          {tripConsigneeName(trip)}
+        </Text>
+        <Text style={styles.meta} numberOfLines={1}>
+          {[
+            trip.ticket_number,
+            stops > 0 ? t("history.stopCount", { count: stops }) : null,
+            pallets > 0 ? t("history.palletCount", { count: pallets }) : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </Text>
+        <View style={styles.cardBadge}>
           <StatusBadge status={trip.status} small />
         </View>
-        <Text style={styles.meta}>
-          {trip.ticket_number} · {trip.route_type?.name ?? ""}
-        </Text>
       </View>
     </TouchableOpacity>
   );
@@ -230,13 +292,38 @@ const styles = StyleSheet.create({
   },
   tdCell: { fontSize: 14, color: colors.navy },
 
-  // Narrow card
-  card: { flexDirection: "row", backgroundColor: colors.white, borderRadius: radius.lg, overflow: "hidden", marginBottom: 10, ...shadow.card },
-  dateBlock: { width: 56, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center", paddingVertical: 16 },
-  dateDay: { color: colors.white, fontSize: 22, fontWeight: "800" },
-  dateMon: { color: colors.yellow, fontSize: 12, fontWeight: "700", letterSpacing: 0.6 },
-  cardBody: { flex: 1, padding: 12, justifyContent: "center" },
-  cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
-  route: { flex: 1, fontSize: 14, fontWeight: "700", color: colors.navy },
-  meta: { fontSize: 12, color: colors.textFaint, marginTop: 4 },
+  headerAdd: { width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" },
+
+  // Narrow card (design frame 8)
+  card: { flexDirection: "row", backgroundColor: colors.white, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderLight, overflow: "hidden", marginBottom: 10, ...shadow.card },
+  dateBlock: { width: 64, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center", paddingVertical: 16, gap: 2 },
+  dateBlockPast: { backgroundColor: "#eceff6" },
+  dateDay: { color: colors.white, fontSize: 20, fontWeight: "900" },
+  dateDayPast: { color: colors.navy },
+  dateMon: { color: colors.yellow, fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
+  dateMonPast: { color: colors.textMuted },
+  cardBody: { flex: 1, paddingHorizontal: 16, paddingVertical: 14, gap: 6 },
+  route: { fontSize: 15, fontWeight: "800", color: colors.navy },
+  meta: { fontSize: 13, color: colors.textMuted },
+  cardBadge: { alignSelf: "flex-start" },
+
+  fab: {
+    position: "absolute",
+    right: 20,
+    bottom: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.yellow,
+    alignItems: "center",
+    justifyContent: "center",
+    ...actionShadow.yellow,
+  },
+
+  empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingVertical: 40, gap: 14 },
+  emptyIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
+  emptyTitle: { fontSize: 17, fontWeight: "800", color: colors.navy, textAlign: "center" },
+  emptyBody: { fontSize: 14, color: colors.textMuted, lineHeight: 20, textAlign: "center", maxWidth: 280 },
+  emptyBtn: { minHeight: 48, paddingHorizontal: 22, borderRadius: radius.md, backgroundColor: colors.blue, flexDirection: "row", alignItems: "center", gap: 8 },
+  emptyBtnText: { fontSize: 15, fontWeight: "800", color: colors.white },
 });

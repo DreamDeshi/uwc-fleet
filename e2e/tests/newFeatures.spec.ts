@@ -94,6 +94,27 @@ test.describe("Structured cargo & templates (requestor, mobile web)", () => {
     await resetState();
   });
 
+  // The route-type control is a family chip + a direction toggle (the six
+  // seeded route types are {Customer|Supplier|Inter-Plant} × {Delivery|Return}).
+  // Mirrors mobile/src/lib/routeDirection.ts.
+  function routeChips(routeTypeName: string): { family: string; direction: string } {
+    const norm = routeTypeName.toLowerCase().replace(/[\s_-]+/g, "");
+    const family = norm.startsWith("customer")
+      ? "Customer"
+      : norm.startsWith("supplier")
+        ? "Supplier"
+        : "Inter-Plant";
+    return { family, direction: norm.includes("return") ? "Return" : "Delivery" };
+  }
+
+  /** Open the booking form from the Bookings tab's floating "+". Home's own
+   *  entry point changes wording with the account's state; the FAB does not. */
+  async function openBookingForm(page: Page): Promise<void> {
+    await page.getByText("Bookings", { exact: true }).first().click();
+    await page.getByLabel("New Booking").click();
+    await expect(page.getByText("New Trip Request")).toBeVisible();
+  }
+
   /** Drive the wizard through Step 1 (route + consignee) to the cargo step. */
   async function toCargoStep(page: Page): Promise<void> {
     const { accessToken } = await login(REQUESTOR);
@@ -103,15 +124,26 @@ test.describe("Structured cargo & templates (requestor, mobile web)", () => {
     ]);
 
     await mobileLogin(page, REQUESTOR);
-    await page.getByText("Where do you need delivery?").click();
-    await expect(page.getByText("New Trip Request")).toBeVisible();
-    await page.getByText(routeType.name, { exact: true }).click();
+    await openBookingForm(page);
+    const chips = routeChips(routeType.name);
+    await page.getByText(chips.family, { exact: true }).click();
+    await page.getByText(chips.direction, { exact: true }).click();
     await page.getByPlaceholder("Type company name, area, or location…").fill(consignee.term);
-    const result = page.getByText(consignee.display, { exact: true }).last();
+    // `.first()` = the search result. Recents render BELOW the results since the
+    // requestor redesign (they used to be above, which is why this was `.last()`).
+    const result = page.getByText(consignee.display, { exact: true }).first();
     await expect(result).toBeVisible();
     await result.click();
     await page.getByText("Next", { exact: true }).click();
     await expect(page.getByText("Cargo Type")).toBeVisible();
+  }
+
+  /** Cargo step → Confirm. "When" sits between them, pre-filled and passive. */
+  async function toConfirmStep(page: Page): Promise<void> {
+    await page.getByText("Next", { exact: true }).click();
+    await expect(page.getByText("Pickup Date", { exact: true })).toBeVisible();
+    await page.getByText("Next", { exact: true }).click();
+    await expect(page.getByText("Review before submitting.")).toBeVisible();
   }
 
   async function submitAndReadTicket(page: Page): Promise<string> {
@@ -146,7 +178,7 @@ test.describe("Structured cargo & templates (requestor, mobile web)", () => {
     await expect(page.getByPlaceholder("Width")).toHaveCount(0);
     // selector-ok: the quantity stepper glyph is not a translated string
     await page.getByText("+", { exact: true }).first().click();
-    await page.getByText("Next", { exact: true }).click();
+    await toConfirmStep(page);
 
     const ticket = await submitAndReadTicket(page);
 
@@ -168,7 +200,7 @@ test.describe("Structured cargo & templates (requestor, mobile web)", () => {
     await page.getByPlaceholder("Length").fill("4");
     // Quantity stepper defaults to 1; the manual-assignment hint shows.
     await expect(page.getByText("The dispatcher assigns the truck manually for this cargo.")).toBeVisible();
-    await page.getByText("Next", { exact: true }).click();
+    await toConfirmStep(page);
 
     const ticket = await submitAndReadTicket(page);
 
@@ -189,7 +221,7 @@ test.describe("Structured cargo & templates (requestor, mobile web)", () => {
     await toCargoStep(page);
     // selector-ok: the quantity stepper glyph is not a translated string
     await page.getByText("+", { exact: true }).first().click(); // 1× first pallet size
-    await page.getByText("Next", { exact: true }).click();
+    await toConfirmStep(page);
 
     // Confirm step → save as template.
     await page.getByText("Save as template", { exact: true }).click();
@@ -198,12 +230,14 @@ test.describe("Structured cargo & templates (requestor, mobile web)", () => {
     await page.getByText("Save template", { exact: true }).click();
     await expect(page.getByText("Template saved.")).toBeVisible();
 
-    // Submit the booking itself, then start a NEW booking: the template chip
-    // must appear on Step 1 and prefill the whole wizard when tapped.
+    // Submit the booking itself, then start a NEW booking: the saved template
+    // must be reachable from Step 1 and prefill the whole wizard when tapped.
+    // Rebook and templates now share ONE entry card rather than a button plus a
+    // chip row, so the template lives one tap deeper.
     await submitAndReadTicket(page);
     await page.getByText("Back to Dashboard", { exact: true }).click();
-    await page.getByText("Where do you need delivery?").click();
-    await expect(page.getByText("Saved templates")).toBeVisible();
+    await openBookingForm(page);
+    await page.getByText("Start from a previous booking", { exact: true }).click();
     await page.getByText(name, { exact: true }).click();
 
     // Applying jumps ahead with route/stops/cargo restored — the wizard can now
@@ -395,9 +429,11 @@ test.describe("Exception workflow (flag-on, all three roles)", () => {
       });
 
       await mobileLogin(page, REQUESTOR);
-      const routeTypeName = (assigned as { route_type?: { name?: string } }).route_type?.name ?? "";
+      // Anchored on "<ticket> · " because only the Bookings card renders that;
+      // Home's hero shows a bare ticket and its activity rows "<ticket>
+      // delivered", both of which stay mounted under the active scene.
       await page.getByText("Bookings", { exact: true }).first().click();
-      await page.getByText(`${assigned.ticket_number} · ${routeTypeName}`).first().click();
+      await page.getByText(new RegExp(`^${assigned.ticket_number} · `)).first().click();
 
       // The redacted banner is there…
       await expect(page.getByText("Delivery exception")).toBeVisible();

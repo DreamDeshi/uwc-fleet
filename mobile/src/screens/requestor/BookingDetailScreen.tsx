@@ -16,9 +16,16 @@ import { useWide } from "../../hooks/useWide";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
 import { Header } from "../../components/Header";
-import { RouteLine } from "../../components/RouteLine";
+import { StatusBadge } from "../../components/StatusBadge";
 import { LiveTripMap } from "../../components/LiveTripMap";
 import { StatusTimeline } from "../../components/StatusTimeline";
+import {
+  bookingActions,
+  bookingStage,
+  bookingStatusKey,
+  BOOKING_STAGES,
+  type BookingAction,
+} from "../../lib/bookingProgress";
 import { exceptionsEnabled } from "../../lib/featureFlags";
 import { RequestorExceptionBanner } from "../../components/RequestorExceptionBanner";
 import { LoadingState, ErrorState } from "../../components/States";
@@ -43,6 +50,7 @@ export function BookingDetailScreen() {
   const uploadDoc = useUploadTripDocument();
   const toast = useToast();
   const [confirm, setConfirm] = useState(false);
+  const [reasonOpen, setReasonOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Track the truck's latest position while the trip is in transit. The map
@@ -58,15 +66,22 @@ export function BookingDetailScreen() {
   // the remaining stops need re-booking.
   const partiallyDelivered = (trip.stops ?? []).some((s) => s.status !== "delivered");
   const banner = bannerFor(trip.status, { partiallyDelivered });
-  const canCancel = trip.status === "pending" || trip.status === "approved";
-  // Editing is narrower than cancelling: strictly pending (the server enforces
-  // the same rule — once a driver is claimed the booking is immutable).
-  const canEdit = trip.status === "pending";
-  // Once a lorry is assigned the booking is no longer the requestor's to change
-  // directly (Mr. Teh A19) — but they are not stuck: Request Change sends the
-  // same edit to the dispatcher for approval.
-  const canRequestChange = changeRequestsEnabled() && trip.status === "assigned";
-  const canShare = ["assigned", "in_progress", "pending_approval", "completed"].includes(trip.status);
+
+  // Which buttons this status offers (design frame 9b) — one table, in a lib,
+  // rather than eight independent booleans that drifted apart.
+  const stops = trip.stops ?? [];
+  const podStops = stops.filter((s) => s.pod_photo);
+  const actions = bookingActions(trip.status, {
+    hasDriverPhone: Boolean(trip.driver?.phone),
+    hasPod: podStops.length > 0,
+    // Once a lorry is assigned the booking is no longer the requestor's to
+    // change directly (Mr. Teh A19) — but they are not stuck: Request Change
+    // sends the same edit to the dispatcher for approval.
+    changeRequestsEnabled: changeRequestsEnabled(),
+  });
+  const can = (a: BookingAction) => actions.includes(a);
+  const stage = bookingStage(trip.status);
+  const statusLabel = t(bookingStatusKey(trip.status, stops));
 
   async function shareTracking() {
     if (!trip) return;
@@ -110,6 +125,40 @@ export function BookingDetailScreen() {
 
   const documents = trip.documents ?? [];
 
+  // ── Status + progress (design frame 9) ─────────────────────────────────────
+  // A booking that never travelled gets NO bar: four ticks would imply progress
+  // that will never happen. That is the frame's rule and bookingStage's.
+  const progressCard = (
+    <Card style={{ marginBottom: 12 }}>
+      <View style={styles.statusPillRow}>
+        <StatusBadge status={trip.status} label={statusLabel} />
+      </View>
+      {stage !== null ? (
+        <>
+          <View style={styles.progressBar}>
+            {BOOKING_STAGES.map((s, i) => (
+              <View
+                key={s}
+                style={[styles.progressSeg, i < stage && { backgroundColor: colors.blue }]}
+              />
+            ))}
+          </View>
+          <View style={styles.progressLabels}>
+            {BOOKING_STAGES.map((s, i) => (
+              <Text
+                key={s}
+                style={[styles.progressLabel, i === stage - 1 && styles.progressLabelActive]}
+                numberOfLines={1}
+              >
+                {t(`bookingDetail.stage_${s}`)}
+              </Text>
+            ))}
+          </View>
+        </>
+      ) : null}
+    </Card>
+  );
+
   // ── Card fragments (identical markup; stacked on phone, two columns on PC) ──
   const pendingNotice = trip.status === "pending" ? (
     <View style={styles.notice}>
@@ -130,25 +179,26 @@ export function BookingDetailScreen() {
     </View>
   ) : null;
 
+  // Navy card, plate on a black chip — the frame treats the driver as the one
+  // person on this screen, and the plate as the thing checked against the lorry
+  // that turns up.
   const driverCard = trip.driver ? (
-    <Card style={{ marginBottom: 12 }}>
-      <Text style={styles.cardLabel}>{t("bookingDetail.assignedDriver")}</Text>
-      <View style={styles.driverRow}>
-        <View style={styles.driverAvatar}>
-          <Text style={styles.driverAvatarText}>{nameInitials(trip.driver.name)}</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.driverName}>{trip.driver.name}</Text>
-          <Text style={styles.driverSub}>{trip.truck_plate} {trip.truck?.type ? `(${trip.truck.type})` : ""}</Text>
-          {trip.driver.phone ? <Text style={styles.driverPhone}>📞 {trip.driver.phone}</Text> : null}
-        </View>
-        {trip.driver.phone ? (
-          <TouchableOpacity style={styles.callBtn} onPress={() => Linking.openURL(`tel:${trip.driver!.phone}`)}>
-            <Ionicons name="call" size={20} color={colors.white} />
-          </TouchableOpacity>
-        ) : null}
+    <View style={styles.driverCard}>
+      <View style={styles.driverAvatar}>
+        <Text style={styles.driverAvatarText}>{nameInitials(trip.driver.name)}</Text>
       </View>
-    </Card>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.driverName} numberOfLines={1}>{trip.driver.name}</Text>
+        <Text style={styles.driverSub} numberOfLines={1}>
+          {[t("bookingDetail.assignedDriver"), trip.truck?.type].filter(Boolean).join(" · ")}
+        </Text>
+      </View>
+      {trip.truck_plate ? (
+        <View style={styles.plate}>
+          <Text style={styles.plateText}>{trip.truck_plate}</Text>
+        </View>
+      ) : null}
+    </View>
   ) : null;
 
   const liveCard = trip.status === "in_progress" ? (
@@ -164,41 +214,85 @@ export function BookingDetailScreen() {
   ) : null;
 
   const detailsCard = (
-    <Card style={{ marginBottom: 12 }}>
-      <View style={styles.detailHead}>
-        <Text style={styles.cardLabel}>{t("bookingDetail.tripDetails")}</Text>
-        <View style={styles.ticketChip}>
-          <Text style={styles.ticketChipText}>{trip.ticket_number}</Text>
-        </View>
+    <Card style={{ marginBottom: 12 }} padded={false}>
+      <View style={styles.factRow}>
+        <Ionicons name="calendar-outline" size={18} color={colors.blue} />
+        <Text style={styles.factKey}>{t("bookingDetail.dateTime")}</Text>
+        <Text style={styles.factVal} numberOfLines={1}>{formatDateTime(trip.pickup_datetime)}</Text>
+      </View>
+      <View style={[styles.factRow, styles.factDivider]}>
+        <Ionicons name="cube-outline" size={18} color={colors.blue} />
+        <Text style={styles.factKey}>{t("bookingDetail.cargo")}</Text>
+        <Text style={styles.factVal} numberOfLines={1}>{cargoSummary(trip)}</Text>
       </View>
       {trip.route_type ? (
-        <View style={styles.typeChip}>
-          <Text style={styles.typeChipText}>{trip.route_type.name}</Text>
+        <View style={[styles.factRow, styles.factDivider]}>
+          <Ionicons name="git-branch-outline" size={18} color={colors.blue} />
+          <Text style={styles.factKey}>{t("booking.routeType")}</Text>
+          <Text style={styles.factVal} numberOfLines={1}>{trip.route_type.name}</Text>
         </View>
       ) : null}
-      <View style={{ marginTop: 14 }}>
-        <RouteLine from={ORIGIN_LABEL} to={tripConsigneeName(trip)} />
-      </View>
-      <View style={styles.detailGrid}>
-        <Detail k={t("bookingDetail.dateTime")} v={formatDateTime(trip.pickup_datetime)} />
-        <Detail k={t("bookingDetail.cargo")} v={cargoSummary(trip)} />
-        <Detail k={t("bookingDetail.consignee")} v={tripDestination(trip)} />
-      </View>
       {/* Per-trip CO₂e ESTIMATE (SDG visibility) — delivered trips only,
           labelled as an estimate (lib/tripCo2). */}
       {DELIVERED_STATUSES.includes(trip.status)
         ? (() => {
-            const co2 = estimateTripCo2(trip.stops ?? []);
+            const co2 = estimateTripCo2(stops);
             return co2 ? (
-              <View style={styles.co2Row}>
-                <Ionicons name="leaf-outline" size={14} color="#16A34A" />
-                <Text style={styles.co2Text}>{t("trip.co2Estimate", { km: co2.km, kg: co2.co2Kg })}</Text>
+              <View style={[styles.factRow, styles.factDivider]}>
+                <Ionicons name="leaf-outline" size={18} color="#16A34A" />
+                <Text style={styles.factKey}>{t("bookingDetail.co2Label")}</Text>
+                <Text style={styles.factVal} numberOfLines={1}>
+                  {t("trip.co2Estimate", { km: co2.km, kg: co2.co2Kg })}
+                </Text>
               </View>
             ) : null;
           })()
         : null}
     </Card>
   );
+
+  // Every stop, numbered — a multi-stop booking used to show only the first
+  // consignee anywhere on this screen.
+  const routeCard = stops.length > 0 ? (
+    <View style={{ marginBottom: 12, gap: 8 }}>
+      <Text style={styles.sectionLabel}>{t("booking.route")}</Text>
+      <Card padded={false}>
+        <View style={styles.stopRow}>
+          <View style={styles.originDot} />
+          <Text style={styles.stopName} numberOfLines={1}>{ORIGIN_LABEL}</Text>
+        </View>
+        {[...stops]
+          .sort((a, b) => a.sequence - b.sequence)
+          .map((s) => (
+            <View key={s.id} style={[styles.stopRow, styles.factDivider]}>
+              <View style={styles.stopSeq}>
+                <Text style={styles.stopSeqText}>{s.sequence}</Text>
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.stopName} numberOfLines={1}>
+                  {s.consignee?.company_name ?? "—"}
+                </Text>
+                <Text style={styles.stopMeta} numberOfLines={1}>
+                  {[
+                    s.consignee?.zone?.name
+                      ? `${s.consignee.zone_code} — ${s.consignee.zone.name}`
+                      : s.consignee?.zone_code,
+                    s.consignee?.area,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </Text>
+              </View>
+              {s.status === "delivered" ? (
+                <Ionicons name="checkmark-circle" size={18} color={colors.greenText} />
+              ) : s.arrived_at ? (
+                <Ionicons name="location" size={18} color={colors.blue} />
+              ) : null}
+            </View>
+          ))}
+      </Card>
+    </View>
+  ) : null;
 
   const documentsCard = (
     <Card style={{ marginBottom: 12 }}>
@@ -232,7 +326,6 @@ export function BookingDetailScreen() {
   // Proof-of-delivery photos. The server has always shipped stop.pod_photo to
   // the trip's requestor as a freshly-signed viewable URL (signTripResponse) —
   // this card finally renders it. Shown once any stop has a POD.
-  const podStops = (trip.stops ?? []).filter((s) => s.pod_photo);
   const podCard =
     podStops.length > 0 ? (
       <Card style={{ marginBottom: 12 }}>
@@ -297,9 +390,11 @@ export function BookingDetailScreen() {
           // ── Wide (PC) — details + tracking on the left, docs + timeline right ──
           <View style={styles.wideRow}>
             <View style={styles.wideMain}>
+              {progressCard}
               {driverCard}
               {liveCard}
               {detailsCard}
+              {routeCard}
             </View>
             <View style={styles.wideSide}>
               {documentsCard}
@@ -308,11 +403,14 @@ export function BookingDetailScreen() {
             </View>
           </View>
         ) : (
-          // ── Narrow (phone) — the shipped stacked layout ──
+          // ── Narrow (phone) — design frame 9's order: where it is, who has it,
+          // where it is going, then the paperwork.
           <>
+            {progressCard}
             {driverCard}
             {liveCard}
             {detailsCard}
+            {routeCard}
             {documentsCard}
             {podCard}
             {timelineCard}
@@ -322,43 +420,79 @@ export function BookingDetailScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </ScrollView>
 
-      {/* Edit (pending only) + Cancel */}
-      {canCancel || canShare ? (
+      {/* Per-status bottom bar (design frame 9b) — driven by bookingActions, so
+          every status has at least one thing to do and none offers a button the
+          server would refuse. */}
+      {actions.length > 0 ? (
         <View style={[styles.bottom, { paddingBottom: insets.bottom + 12 }]}>
           <View style={wide ? styles.bottomInner : undefined}>
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              {canShare ? (
+            <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+              {can("call") && trip.driver?.phone ? (
+                <Button
+                  title={t("bookingDetail.callDriver")}
+                  onPress={() => Linking.openURL(`tel:${trip.driver!.phone}`)}
+                  style={{ flex: 1, minWidth: 140 }}
+                  icon={<Ionicons name="call" size={18} color={colors.white} />}
+                />
+              ) : null}
+              {can("share") ? (
                 <Button
                   title={t("bookingDetail.shareTracking")}
                   variant="outline"
                   onPress={shareTracking}
-                  style={{ flex: 1 }}
+                  style={{ flex: 1, minWidth: 140 }}
                   icon={<Ionicons name="share-social-outline" size={18} color={colors.blue} />}
                 />
               ) : null}
-              {canEdit ? (
+              {can("edit") ? (
                 <Button
                   title={t("bookingDetail.editRequest")}
                   onPress={() => navigation.navigate("EditBooking", { tripId: trip.id })}
-                  style={{ flex: 1 }}
+                  style={{ flex: 1, minWidth: 140 }}
                   icon={<Ionicons name="create-outline" size={18} color={colors.white} />}
                 />
               ) : null}
-              {canRequestChange ? (
+              {can("requestChange") ? (
                 <Button
                   variant="outline"
                   title={t("bookingDetail.requestChange")}
                   onPress={() => navigation.navigate("EditBooking", { tripId: trip.id })}
-                  style={{ flex: 1 }}
+                  style={{ flex: 1, minWidth: 140 }}
                   icon={<Ionicons name="git-pull-request-outline" size={18} color={colors.navy} />}
                 />
               ) : null}
-              {canCancel ? (
+              {can("viewPod") ? (
+                <Button
+                  title={t("bookingDetail.viewPod")}
+                  variant="outline"
+                  onPress={() => Linking.openURL(podStops[0].pod_photo!)}
+                  style={{ flex: 1, minWidth: 140 }}
+                  icon={<Ionicons name="image-outline" size={18} color={colors.blue} />}
+                />
+              ) : null}
+              {can("rebook") ? (
+                <Button
+                  title={t("bookingDetail.rebook")}
+                  onPress={() => navigation.navigate("NewBooking", { rebookTripId: trip.id })}
+                  style={{ flex: 1, minWidth: 140 }}
+                  icon={<Ionicons name="repeat" size={18} color={colors.white} />}
+                />
+              ) : null}
+              {can("seeReason") ? (
+                <Button
+                  title={t("bookingDetail.seeReason")}
+                  variant="outline"
+                  onPress={() => setReasonOpen(true)}
+                  style={{ flex: 1, minWidth: 140 }}
+                  icon={<Ionicons name="information-circle-outline" size={18} color={colors.blue} />}
+                />
+              ) : null}
+              {can("cancel") ? (
                 <Button
                   title={t("bookingDetail.cancelRequest")}
                   variant="outline"
                   onPress={() => setConfirm(true)}
-                  style={{ flex: 1, borderColor: colors.red }}
+                  style={{ flex: 1, minWidth: 140, borderColor: colors.red }}
                   icon={<Ionicons name="close-circle-outline" size={18} color={colors.blue} />}
                 />
               ) : null}
@@ -366,6 +500,30 @@ export function BookingDetailScreen() {
           </View>
         </View>
       ) : null}
+
+      {/* Frame 9b flags "See Reason" as blocked on a data source. It is not —
+          the admin's rejection writes trip.rejection_reason, and the inline
+          notice above has rendered it for months. This is the same text on
+          demand, with an honest fallback when the admin left it blank. */}
+      <Modal visible={reasonOpen} transparent animationType="fade" onRequestClose={() => setReasonOpen(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalIcon}>
+              <Ionicons name="close-circle-outline" size={28} color={colors.red} />
+            </View>
+            <Text style={styles.modalTitle}>{t("bookingDetail.rejectionReason")}</Text>
+            <Text style={styles.modalBody}>
+              {trip.rejection_reason?.trim() || t("bookingDetail.rejectionNoReason")}
+            </Text>
+            <Button
+              title={t("common.close")}
+              variant="outline"
+              onPress={() => setReasonOpen(false)}
+              style={{ alignSelf: "stretch", marginTop: 20 }}
+            />
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={confirm} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
@@ -463,13 +621,34 @@ const styles = StyleSheet.create({
   rejectTitle: { fontSize: 12, fontWeight: "700", color: colors.red, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 },
   rejectText: { fontSize: 14, fontWeight: "600", color: "#991b1b", lineHeight: 18 },
   cardLabel: { fontSize: 13, fontWeight: "700", color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.6 },
-  driverRow: { flexDirection: "row", alignItems: "center", marginTop: 10 },
-  driverAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.yellow, marginRight: 12 },
+  sectionLabel: { fontSize: 12, fontWeight: "800", color: colors.textFaint, textTransform: "uppercase", letterSpacing: 1 },
+
+  statusPillRow: { flexDirection: "row", marginBottom: 12 },
+  progressBar: { flexDirection: "row", gap: 10 },
+  progressSeg: { flex: 1, height: 4, borderRadius: 2, backgroundColor: colors.border },
+  progressLabels: { flexDirection: "row", marginTop: 8 },
+  progressLabel: { flex: 1, fontSize: 11, fontWeight: "700", color: colors.textFaint, textAlign: "center" },
+  progressLabelActive: { color: colors.blue },
+
+  driverCard: { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: colors.navy, borderRadius: radius.md, padding: 16, marginBottom: 12 },
+  driverAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.yellow },
   driverAvatarText: { color: colors.yellow, fontSize: 16, fontWeight: "800" },
-  driverName: { fontSize: 15, fontWeight: "700", color: colors.navy },
-  driverSub: { fontSize: 14, color: colors.textMuted, marginTop: 3 },
-  driverPhone: { fontSize: 14, color: colors.blue, marginTop: 3, fontWeight: "600" },
-  callBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.green, alignItems: "center", justifyContent: "center" },
+  driverName: { fontSize: 15, fontWeight: "800", color: colors.white },
+  driverSub: { fontSize: 13, color: "#c9d6f0", marginTop: 2 },
+  plate: { flexShrink: 0, minHeight: 28, paddingHorizontal: 12, borderRadius: 8, backgroundColor: "#111318", justifyContent: "center" },
+  plateText: { color: colors.white, fontSize: 13, fontWeight: "700", letterSpacing: 1 },
+
+  factRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
+  factDivider: { borderTopWidth: 1, borderTopColor: colors.bg },
+  factKey: { flex: 1, fontSize: 14, color: colors.textMuted },
+  factVal: { flexShrink: 1, fontSize: 14, fontWeight: "700", color: colors.navy, textAlign: "right" },
+
+  stopRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
+  originDot: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.border },
+  stopSeq: { width: 22, height: 22, borderRadius: 11, backgroundColor: colors.tintBlue, alignItems: "center", justifyContent: "center" },
+  stopSeqText: { fontSize: 11, fontWeight: "800", color: colors.blue },
+  stopName: { flex: 1, fontSize: 14, fontWeight: "700", color: colors.navy },
+  stopMeta: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
   detailHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   uploadBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.tintBlue, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill },
   uploadBtnText: { color: colors.blue, fontSize: 13, fontWeight: "700" },

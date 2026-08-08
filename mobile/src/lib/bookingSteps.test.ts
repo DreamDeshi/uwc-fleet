@@ -5,6 +5,7 @@ import {
   stepIssue,
   STEP_WHERE,
   STEP_WHAT,
+  STEP_WHEN,
   STEP_CONFIRM,
   type BookingDraft,
 } from "./bookingSteps";
@@ -64,6 +65,36 @@ describe("firstBookingIssue — the check a jump to Confirm cannot walk around",
   it("a complete draft has nothing wrong anywhere", () => {
     expect(firstBookingIssue(complete, STEP_CONFIRM)).toBeNull();
     expect(landingStep(complete)).toBe(STEP_CONFIRM);
+  });
+
+  it("the When step owns no requirement — every field on it is pre-filled", () => {
+    // Deliberate, not an omission. The pickup slot defaults to the next
+    // bookable one and remarks are optional, so Next must never block there.
+    // If a required field is ever added to When, this is the test that has to
+    // change first.
+    expect(stepIssue(complete, STEP_WHEN)).toBeNull();
+    expect(
+      stepIssue(
+        { routeTypeId: null, stopCount: 0, cargoType: "pallet", totalPallets: 0, boxQty: 0, dimsOk: false },
+        STEP_WHEN
+      )
+    ).toBeNull();
+  });
+
+  it("still reports an EARLIER step's problem while standing on When", () => {
+    // The template and rebook shortcuts can land on Confirm, which is past
+    // When; walking back through it must not launder a broken draft.
+    expect(firstBookingIssue({ ...complete, totalPallets: 0 }, STEP_WHEN)).toEqual({
+      step: STEP_WHAT,
+      key: "booking.addCargo",
+    });
+  });
+
+  it("the step constants stay in wizard order", () => {
+    // firstBookingIssue walks 0..upToStep, so these are indices into the
+    // wizard, not labels — a reorder that broke this would silently skip a
+    // step's validation.
+    expect([STEP_WHERE, STEP_WHAT, STEP_WHEN, STEP_CONFIRM]).toEqual([0, 1, 2, 3]);
   });
 });
 

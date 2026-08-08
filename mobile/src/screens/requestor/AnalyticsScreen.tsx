@@ -1,14 +1,16 @@
-import React, { useMemo } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useMemo, useState } from "react";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
-import { useMyAnalytics } from "../../hooks/queries";
+import { useMyAnalytics, useTrips } from "../../hooks/queries";
 import { useWide } from "../../hooks/useWide";
 import { colors, layout, radius, statusColors } from "../../theme";
 import { Card } from "../../components/Card";
 import { LoadingState, ErrorState } from "../../components/States";
 import { WeeklyEarningsChart, WeekDatum } from "../../components/WeeklyEarningsChart";
+import { periodStats, weekSeries, type InsightsPeriod } from "../../lib/requestorInsights";
+import { monthYear, weekdayShortNames } from "../../lib/format";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function monthShort(key: string): string {
@@ -16,11 +18,21 @@ function monthShort(key: string): string {
   return MONTHS[m - 1] ?? key;
 }
 
+/** "YYYY-MM" for `monthYear`, which is the app's localised month formatter. */
+function monthKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export function AnalyticsScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const wide = useWide();
   const { data, isLoading, isError, refetch, isRefetching } = useMyAnalytics();
+  // The trips list is already loaded and polled by every requestor screen, and
+  // it carries stops and cargo — so the design's period toggle, week chart and
+  // stat tiles need no API change. See lib/requestorInsights for why.
+  const { data: trips = [] } = useTrips();
+  const [period, setPeriod] = useState<InsightsPeriod>("month");
 
   const totalTrips = useMemo(() => {
     if (!data) return 0;
@@ -28,12 +40,114 @@ export function AnalyticsScreen() {
     return s.completed + s.pending + s.assigned + s.in_progress + s.cancelled;
   }, [data]);
 
+  const { stats, week, weekMax } = useMemo(() => {
+    const now = new Date();
+    const week = weekSeries(trips, now);
+    return {
+      stats: periodStats(trips, period, now),
+      week,
+      weekMax: Math.max(1, ...week.map((b) => b.count)),
+    };
+  }, [trips, period]);
+
   const header = (
     <View style={[styles.header, { paddingTop: insets.top + 12 }, wide && styles.headerWide]}>
       <View style={wide ? styles.fillCol : styles.centerCol}>
         <Text style={styles.title}>{t("analytics.title")}</Text>
         <Text style={styles.subtitle}>{t("analytics.subtitle")}</Text>
       </View>
+    </View>
+  );
+
+  const periodTabs = (
+    <View style={styles.periodBar}>
+      {(["month", "quarter"] as const).map((p) => {
+        const active = period === p;
+        return (
+          <TouchableOpacity
+            key={p}
+            style={[styles.periodBtn, active && styles.periodBtnActive]}
+            onPress={() => setPeriod(p)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+          >
+            <Text style={[styles.periodText, active && styles.periodTextActive]} numberOfLines={1}>
+              {t(p === "month" ? "analytics.periodMonth" : "analytics.periodQuarter")}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
+  const heroBlock = (
+    <View style={styles.hero}>
+      <Text style={styles.heroLabel}>
+        {period === "month" ? monthYear(monthKey(new Date())) : t("analytics.periodQuarter")}
+      </Text>
+      <Text style={styles.heroValue}>{t("analytics.tripsValue", { count: stats.total })}</Text>
+      {/* No baseline → no claim. "▲ ∞%" against a zero prior period is not a
+          fact, and a flat "0%" would read as "no change" rather than "no data". */}
+      <Text style={styles.heroDelta}>
+        {stats.deltaPct === null
+          ? t("analytics.noBaseline")
+          : t(stats.deltaPct >= 0 ? "analytics.deltaUp" : "analytics.deltaDown", {
+              pct: Math.abs(stats.deltaPct),
+            })}
+      </Text>
+      <View style={styles.heroChip}>
+        <Ionicons name="shield-checkmark" size={15} color={colors.yellow} />
+        <Text style={styles.heroChipText}>{t("analytics.trackedToDelivery")}</Text>
+      </View>
+    </View>
+  );
+
+  const weekBlock = (
+    <Card>
+      <Text style={styles.weekTitle}>{t("analytics.thisWeek")}</Text>
+      <View style={styles.weekChart}>
+        {week.map((bar) => (
+          <View
+            key={bar.index}
+            style={[
+              styles.weekBar,
+              {
+                // A zero day still gets a visible stub, so the axis reads as
+                // seven days rather than a chart with holes in it.
+                height: Math.max(6, (bar.count / weekMax) * 84),
+                backgroundColor: bar.isToday ? colors.blue : "#eceff6",
+              },
+            ]}
+          />
+        ))}
+      </View>
+      <View style={styles.weekAxis}>
+        {weekdayShortNames().map((d, i) => (
+          <Text
+            key={`${d}-${i}`}
+            style={[styles.weekAxisLabel, week[i]?.isToday && styles.weekAxisLabelToday]}
+            numberOfLines={1}
+          >
+            {d}
+          </Text>
+        ))}
+      </View>
+    </Card>
+  );
+
+  const tilesBlock = (
+    <View style={styles.tileRow}>
+      <Tile
+        icon="cube-outline"
+        value={stats.avgPallets === null ? "—" : String(stats.avgPallets)}
+        label={t("analytics.avgPallets")}
+      />
+      <Tile icon="checkmark-done-outline" value={String(stats.completed)} label={t("analytics.tripsDone")} />
+      <Tile
+        icon="trending-up-outline"
+        value={stats.cancelledPct === null ? "—" : `${stats.cancelledPct}%`}
+        label={t("analytics.cancelledRate")}
+      />
     </View>
   );
 
@@ -206,6 +320,14 @@ export function AnalyticsScreen() {
       >
         {header}
         <View style={styles.wideBody}>
+          {periodTabs}
+          <View style={styles.wideRow}>
+            <View style={{ flex: 1 }}>{heroBlock}</View>
+            <View style={{ flex: 1.4, gap: 18 }}>
+              {weekBlock}
+              {tilesBlock}
+            </View>
+          </View>
           <View style={styles.wideRow}>
             <View style={{ flex: 1.5 }}>{monthlyBlock}</View>
             <View style={{ flex: 1 }}>{statusBlock}</View>
@@ -220,7 +342,8 @@ export function AnalyticsScreen() {
     );
   }
 
-  // ── Narrow (phone) — the shipped single-column stack, unchanged ──
+  // ── Narrow (phone) — design frame 11 on top, the pre-aggregated sections the
+  // frame does not draw kept below it. Nothing a requestor had is removed.
   return (
     <ScrollView
       style={styles.fill}
@@ -228,12 +351,38 @@ export function AnalyticsScreen() {
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
     >
       {header}
+      <View style={styles.section}>{periodTabs}</View>
+      <View style={[styles.section, { gap: 14 }]}>
+        {heroBlock}
+        {weekBlock}
+        {tilesBlock}
+      </View>
       <View style={styles.section}>{monthlyBlock}</View>
       <View style={styles.section}>{statusBlock}</View>
       <View style={styles.section}>{destinationsBlock}</View>
       <View style={styles.section}>{cargoBlock}</View>
       <View style={styles.section}>{approvalBlock}</View>
     </ScrollView>
+  );
+}
+
+function Tile({
+  icon,
+  value,
+  label,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  value: string;
+  label: string;
+}) {
+  return (
+    <View style={styles.tile}>
+      <Ionicons name={icon} size={20} color={colors.blue} />
+      <Text style={styles.tileValue}>{value}</Text>
+      <Text style={styles.tileLabel} numberOfLines={2}>
+        {label}
+      </Text>
+    </View>
   );
 }
 
@@ -252,6 +401,32 @@ const styles = StyleSheet.create({
   fillCol: { width: "100%" },
   wideBody: { width: "100%", paddingHorizontal: 28, paddingTop: 18, gap: 18 },
   wideRow: { flexDirection: "row", alignItems: "flex-start", gap: 18 },
+
+  // ── Design frame 11 ──
+  periodBar: { flexDirection: "row", gap: 4, backgroundColor: "#eceff6", borderRadius: radius.md, padding: 5, alignSelf: "stretch", maxWidth: 420 },
+  periodBtn: { flexGrow: 1, flexShrink: 1, flexBasis: "auto", minWidth: 0, minHeight: 38, paddingHorizontal: 8, borderRadius: 11, alignItems: "center", justifyContent: "center" },
+  periodBtnActive: { backgroundColor: colors.blue },
+  periodText: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
+  periodTextActive: { color: colors.white },
+
+  hero: { backgroundColor: colors.blue, borderRadius: radius.xl, padding: 22, gap: 10 },
+  heroLabel: { fontSize: 12, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase", color: "#c9d6f0" },
+  heroValue: { fontSize: 36, fontWeight: "900", color: colors.white, letterSpacing: -1, lineHeight: 42 },
+  heroDelta: { fontSize: 13, color: "#c9d6f0" },
+  heroChip: { alignSelf: "flex-start", marginTop: 4, flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "rgba(255,255,255,0.14)", borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 7 },
+  heroChipText: { flexShrink: 1, fontSize: 12, fontWeight: "700", color: colors.white },
+
+  weekTitle: { fontSize: 16, fontWeight: "800", color: colors.navy, marginBottom: 14 },
+  weekChart: { flexDirection: "row", alignItems: "flex-end", gap: 10, height: 90, paddingHorizontal: 2 },
+  weekBar: { flex: 1, borderTopLeftRadius: 5, borderTopRightRadius: 5 },
+  weekAxis: { flexDirection: "row", marginTop: 10 },
+  weekAxisLabel: { flex: 1, textAlign: "center", fontSize: 12, fontWeight: "700", color: colors.textFaint },
+  weekAxisLabelToday: { color: colors.blue },
+
+  tileRow: { flexDirection: "row", gap: 10 },
+  tile: { flex: 1, minWidth: 0, backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.borderLight, paddingVertical: 14, paddingHorizontal: 8, alignItems: "center", gap: 6 },
+  tileValue: { fontSize: 18, fontWeight: "900", color: colors.navy },
+  tileLabel: { fontSize: 11, fontWeight: "700", letterSpacing: 0.3, textTransform: "uppercase", color: colors.textMuted, textAlign: "center" },
 
   monthLabels: { flexDirection: "row", marginTop: 8, paddingHorizontal: 4 },
   monthCol: { flex: 1, alignItems: "center" },
