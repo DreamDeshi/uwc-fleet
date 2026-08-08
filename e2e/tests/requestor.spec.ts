@@ -96,17 +96,21 @@ test.describe("Requestor (mobile web)", () => {
     await expect(page.getByText(routeType.name, { exact: true })).toBeVisible();
 
     await page.getByPlaceholder("Type company name, area, or location…").fill(consignee.term);
-    // The same consignee can appear twice on this screen: once in the search
-    // results and once in the "Recent" strip (populated from the requestor's
-    // past trips — this account books repeatedly across the suite). Both render
-    // the full name (names ≤ RECENT_CHIP_MAX_CHARS aren't truncated), so an
-    // unscoped exact-text match is a strict-mode violation.
+    // ⚠ PICK THE VISIBLE MATCH — never `.first()` or `.last()`. This name is on
+    // screen up to four times, in two different senses:
     //
-    // ⚠ The order FLIPPED in the requestor redesign: recents used to render
-    // above the results and now render below them, so `.first()` is the search
-    // result — and `.last()`, which used to be, is now the chip. `.first()` is
-    // also the one highest on screen, furthest from the fixed Next footer.
-    const result = page.getByText(consignee.display, { exact: true }).first();
+    //  - VISIBLE, on this form: the search-results row and the "Recent" chip
+    //    (names ≤ RECENT_CHIP_MAX_CHARS aren't truncated, so both are exact).
+    //  - HIDDEN, underneath: React Navigation keeps the tab scenes mounted, and
+    //    once this account has bookings, Home's Next-Booking hero and every
+    //    Bookings card render the consignee name too.
+    //
+    // Both ordinal guesses have now been wrong. `.last()` was written for a
+    // layout where recents rendered ABOVE the results; the redesign moved them
+    // below. `.first()` then picked a HIDDEN ghost from a tab scene and waited
+    // 20s for it to become visible, which it never does. Filtering to visible
+    // first is the only form that does not depend on either.
+    const result = page.getByText(consignee.display, { exact: true }).locator("visible=true").first();
     await expect(result).toBeVisible();
     await result.click();
 

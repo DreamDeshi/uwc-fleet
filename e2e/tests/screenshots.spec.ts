@@ -133,11 +133,12 @@ test("REQUESTOR — all screens", async ({ page }) => {
   // WAIT for the row, then click it — no try/catch. This used to swallow a
   // failed selection and "still advance", which cannot work: Next has always
   // required a stop, so a swallowed miss left the walk on step 1 and captured
-  // it under the step-2 name. It only ever passed because `.first()` used to
-  // resolve to a RECENT chip (rendered above the results before the redesign),
-  // which is on screen instantly and needs no round-trip. `.first()` is now the
-  // top search result, so the wait has to be real.
-  const result = page.getByText(consignee.display, { exact: true }).first();
+  // it under the step-2 name.
+  //
+  // VISIBLE-first, not `.first()`: the tab scenes stay mounted underneath and
+  // render this consignee's name too once the account has bookings. See the
+  // note in requestor.spec.ts.
+  const result = page.getByText(consignee.display, { exact: true }).locator("visible=true").first();
   await expect(result).toBeVisible({ timeout: 20_000 });
   await result.click();
   await page.getByText("Next", { exact: true }).click();
