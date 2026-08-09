@@ -445,17 +445,25 @@ export function TripsScreen() {
           </Card>
 
           <Card pad={12} style={{ gap: 10 }}>
+            {/* THREE rows, none of them orphaned (owner, 9 Aug: "it looks
+                messy"). It was four: the status dropdown had a full-width box
+                to itself for one word, and "Save view" sat alone on its own
+                line. Now the two SCOPE controls share a row, and the chip,
+                Save view and the count share the next — so every row is used
+                edge to edge instead of trailing off. */}
             <SearchInput value={q} onChange={setQ} placeholder={t("admin.trips.searchPlaceholder")} style={{ minWidth: 0, alignSelf: "stretch" }} />
-            {statusSegments}
-            {presetsRow}
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              {attentionChip}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>{statusSegments}</View>
               <Pressable
                 onPress={() => setFiltersOpen(!filtersOpen)}
                 style={{ borderRadius: radius.pill }}
               >
                 <MoreFiltersToggle open={filtersOpen} count={secondaryCount} />
               </Pressable>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              {attentionChip}
+              {presetsRow}
               <View style={{ marginLeft: "auto" }}>{resultsLabel}</View>
             </View>
             {filtersOpen && (
