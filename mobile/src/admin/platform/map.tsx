@@ -8,7 +8,7 @@
 // hardcoded 9km radius for every zone) — see map.web.tsx header for the detail.
 // (The Android Google-Maps key is configured in app.json since 22 Jul 2026 —
 // the old "blank map until the key is set" caveat no longer applies.)
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ImageRequireSource, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import MapView, { Callout, Marker } from "react-native-maps";
 import { Ionicons } from "@expo/vector-icons";
@@ -121,6 +121,26 @@ export function AdminFleetMap({
   const { t } = useTranslation();
   const isWide = useWide();
   const tracksViewChanges = useMarkerFreeze(live);
+  // Frame the trucks that are actually out there — parity with map.web.tsx's
+  // FitToFleet; see the reasoning in that file. A fixed region is always wrong
+  // for somebody: wide enough for Ipoh makes Penang a smudge, tight enough for
+  // Penang loses Ipoh.
+  const mapRef = useRef<MapView | null>(null);
+  const fitKey = live.map((p) => `${p.latitude},${p.longitude}`).join("|");
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m) return;
+    if (live.length === 0) {
+      m.animateToRegion(REGION, 300);
+      return;
+    }
+    // The PLANT is always included so the frame never floats off the depot.
+    m.fitToCoordinates(
+      [{ latitude: PLANT_ORIGIN.lat, longitude: PLANT_ORIGIN.lng }, ...live.map((p) => ({ latitude: p.latitude, longitude: p.longitude }))],
+      { edgePadding: { top: 48, right: 48, bottom: 48, left: 48 }, animated: true }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitKey]);
   const liveByPlate = new Map(live.map((p) => [p.plate, p]));
   // A truck gets a map marker ONLY when it has a real fix (live or stale). Every
   // other truck has no live position and must never be drawn at a fake
@@ -237,7 +257,7 @@ export function AdminFleetMap({
       }}
     >
       <View style={isWide ? { flex: 1, borderRadius: 12, overflow: "hidden" } : { height, borderRadius: 12, overflow: "hidden" }}>
-        <MapView style={StyleSheet.absoluteFill} initialRegion={REGION}>
+        <MapView ref={mapRef} style={StyleSheet.absoluteFill} initialRegion={REGION}>
           {/* Zone code labels only — no catchment circles.
               DETERMINISTIC MARKER GEOMETRY (27 Jul 2026, third and final
               layer of the plant-pin saga — device-screenshot diagnosis):

@@ -8,8 +8,8 @@
 // overlapped into a blob at zoom 8 and their permanent labels collided with the
 // truck pills. Nothing in the data can draw a true catchment: Consignee stores
 // zone_code only, no coordinates. Only the code label remains.
-import React from "react";
-import { AttributionControl, MapContainer, TileLayer, Marker, Tooltip } from "react-leaflet";
+import React, { useEffect } from "react";
+import { AttributionControl, MapContainer, TileLayer, Marker, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import { InvalidateOnLayout } from "../../components/leafletCommon";
 import { useTranslation } from "react-i18next";
@@ -89,6 +89,37 @@ const plantIcon = L.divIcon({
   iconAnchor: [8, 28],
 });
 
+
+/**
+ * Frame the trucks that are actually out there.
+ *
+ * A fixed centre+zoom is always wrong for somebody: wide enough for Ipoh makes
+ * Penang a smudge, tight enough for Penang loses Ipoh. Fitting to the live
+ * fixes is right by construction — on an ordinary day every truck is in the
+ * northern corridor and the map opens tight on it; the day one runs to Ipoh,
+ * the map opens wide enough to show it.
+ *
+ * The PLANT is always included, so the frame never floats away from the depot.
+ * Falls back to the static default when nothing is live. `maxZoom` stops a
+ * single truck zooming to rooftop level.
+ */
+function FitToFleet({ points }: { points: [number, number][] }) {
+  const map = useMap();
+  // Join on the coordinates, not the array identity — the live query re-fetches
+  // every 15s and returns a NEW array each time, which would re-fit (and fight
+  // the user's own pan) on every poll even when nothing moved.
+  const key = points.map((p) => p.join(",")).join("|");
+  useEffect(() => {
+    if (points.length === 0) {
+      map.setView(MAP_CENTER, MAP_ZOOM);
+      return;
+    }
+    map.fitBounds([[PLANT_ORIGIN.lat, PLANT_ORIGIN.lng], ...points], { padding: [36, 36], maxZoom: 13 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, map]);
+  return null;
+}
+
 export function AdminFleetMap({
   trucks,
   live = [],
@@ -132,6 +163,7 @@ export function AdminFleetMap({
       attributionControl={false}
     >
       <InvalidateOnLayout />
+      <FitToFleet points={live.map((p) => [p.latitude, p.longitude] as [number, number])} />
       {/* ⚠ THE "© OpenStreetMap" CREDIT IS NOT OPTIONAL. OSM data is ODbL,
           which REQUIRES attribution wherever the tiles are shown — dropping it
           would put the app in breach of the tile terms, and OSM has blocked

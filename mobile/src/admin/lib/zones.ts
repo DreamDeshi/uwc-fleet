@@ -49,13 +49,17 @@ export const ZONE_BY_CODE: Record<string, ZoneInfo> = Object.fromEntries(
 // Butterworth, Juru, Batu Kawan (the plant) and Kulim — rather than on the
 // midpoint of every zone we serve.
 //
-// ⚠ TRADE-OFF, DELIBERATE (owner, 9 Aug 2026: "need to zoom in to penang
-// more"). At zoom 8 the whole region fitted, Ipoh included, and Penang was a
-// smudge — which is where nearly every trip actually happens. At 10 the
-// northern corridor is legible and A1 (Taiping), A2 (Ipoh) and KL start OUTSIDE
-// the default frame. Nothing is unreachable: the map pans and zooms, and a
-// truck down there still has a marker. If long-haul trips become common,
-// fitting the view to the live trucks beats any fixed number here.
+// ⚠ THIS IS ONLY THE FALLBACK. Both map builds now FIT THE VIEW TO THE LIVE
+// TRUCKS (map.web.tsx's FitToFleet, map.tsx's fitToCoordinates), always
+// including the plant — so on any day with a truck out, this centre and zoom
+// are never used. They frame the depot when NOTHING is live, which is the only
+// time there is nothing better to aim at.
+//
+// Zoom 8 used to be the permanent view and made Penang a smudge in order to
+// keep Ipoh on screen (owner, 9 Aug 2026: "need to zoom in to penang more").
+// Fitting to the fleet removes that dilemma rather than picking a side: an
+// ordinary day opens tight on the northern corridor; the day a truck runs to
+// Ipoh, the frame opens to include it.
 export const MAP_CENTER: [number, number] = [5.35, 100.48];
 export const MAP_ZOOM = 10;
 
