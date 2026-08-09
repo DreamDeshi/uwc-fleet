@@ -9,7 +9,7 @@
 //   everything else (overload, unroadworthy, DRIVER_ON_LEAVE, raced
 //   CONCURRENT_ASSIGNMENT / TRIP_STATE_CHANGED) → plain error, no override.
 import React, { useEffect, useMemo, useState } from "react";
-import { Linking, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
+import { Linking, Pressable, RefreshControl, ScrollView, Text, TextInput, View, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import {
@@ -61,6 +61,8 @@ import { FilterPresets } from "../components/FilterPresets";
 import { UndoBar, useUndoableAction, type UndoActionType, type UndoController } from "../components/UndoBar";
 import { OptionsModal } from "../../components/OptionsModal";
 import type { Trip, SchedulingConflictInfo } from "../types";
+
+const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
 
 const GROUP_ORDER = ["pending", "active", "completed", "cancelled"] as const;
 const GROUP_META: Record<string, { labelKey: string; dot: string; tint: string; fg: string }> = {
@@ -758,7 +760,11 @@ function TripCard({
         </View>
       )}
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 7, gap: 8 }}>
-        <Text style={{ fontSize: font.md, fontWeight: "800", color: colors.blue, letterSpacing: 0.2 }}>{trip.ticket_number}</Text>
+        {/* Monospaced, per the design pack: a ticket is a CODE you read
+            character by character and compare against another screen, and a
+            proportional font makes TR-20880 / TR-20830 harder to tell apart at
+            a glance. Same reason the plates are monospaced. */}
+        <Text style={{ fontFamily: MONO, fontSize: font.md, fontWeight: "700", color: colors.blue, letterSpacing: 0.2 }}>{trip.ticket_number}</Text>
         <TripStatusBadge status={trip.status} />
       </View>
       <View style={{ marginBottom: 7 }}>
