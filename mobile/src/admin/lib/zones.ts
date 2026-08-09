@@ -45,9 +45,19 @@ export const ZONE_BY_CODE: Record<string, ZoneInfo> = Object.fromEntries(
   ZONES.map((z) => [z.code, z])
 );
 
-// Map center / zoom that frames the whole operating region (Penang → Ipoh).
-export const MAP_CENTER: [number, number] = [5.1, 100.55];
-export const MAP_ZOOM = 8;
+// Default map view. Centred on the WORKING CORRIDOR — Penang Island,
+// Butterworth, Juru, Batu Kawan (the plant) and Kulim — rather than on the
+// midpoint of every zone we serve.
+//
+// ⚠ TRADE-OFF, DELIBERATE (owner, 9 Aug 2026: "need to zoom in to penang
+// more"). At zoom 8 the whole region fitted, Ipoh included, and Penang was a
+// smudge — which is where nearly every trip actually happens. At 10 the
+// northern corridor is legible and A1 (Taiping), A2 (Ipoh) and KL start OUTSIDE
+// the default frame. Nothing is unreachable: the map pans and zooms, and a
+// truck down there still has a marker. If long-haul trips become common,
+// fitting the view to the live trucks beats any fixed number here.
+export const MAP_CENTER: [number, number] = [5.35, 100.48];
+export const MAP_ZOOM = 10;
 
 /** The zone a fix-less truck is drawn in: its first RECOGNISED priority zone. */
 export function primaryZone(zones: string[]): string {

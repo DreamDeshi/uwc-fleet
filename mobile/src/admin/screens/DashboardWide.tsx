@@ -215,8 +215,11 @@ export function DashboardWide() {
               <LegendDot color={colors.green} label={t("admin.trucks.statusActive")} />
             </View>
           </View>
-          <View style={{ flex: 1, padding: 12 }}>
-            <AdminFleetMap trucks={truckList} live={live.data ?? []} fill />
+          {/* Fixed height, NOT `fill` — the card sits in a flex row beside the
+              340px rail, so `fill` grew the map to whatever the rail happened
+              to be, which on a tall dashboard was most of the screen. */}
+          <View style={{ padding: 12 }}>
+            <AdminFleetMap trucks={truckList} live={live.data ?? []} height={320} />
           </View>
         </Card>
 

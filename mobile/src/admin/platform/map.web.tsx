@@ -9,7 +9,7 @@
 // truck pills. Nothing in the data can draw a true catchment: Consignee stores
 // zone_code only, no coordinates. Only the code label remains.
 import React from "react";
-import { MapContainer, TileLayer, Marker, Tooltip } from "react-leaflet";
+import { AttributionControl, MapContainer, TileLayer, Marker, Tooltip } from "react-leaflet";
 import L from "leaflet";
 import { InvalidateOnLayout } from "../../components/leafletCommon";
 import { useTranslation } from "react-i18next";
@@ -121,8 +121,24 @@ export function AdminFleetMap({
   const idle = trucks.filter((tr) => !liveByPlate.has(tr.plate));
 
   const mapCard = (
-    <MapContainer center={MAP_CENTER} zoom={MAP_ZOOM} scrollWheelZoom style={{ height: "100%", width: "100%" }}>
+    <MapContainer
+      center={MAP_CENTER}
+      zoom={MAP_ZOOM}
+      scrollWheelZoom
+      style={{ height: "100%", width: "100%" }}
+      // The default control is replaced below so the LEAFLET PREFIX can go
+      // while the data credit stays. Do NOT set this to remove attribution
+      // outright — see the note on AttributionControl.
+      attributionControl={false}
+    >
       <InvalidateOnLayout />
+      {/* ⚠ THE "© OpenStreetMap" CREDIT IS NOT OPTIONAL. OSM data is ODbL,
+          which REQUIRES attribution wherever the tiles are shown — dropping it
+          would put the app in breach of the tile terms, and OSM has blocked
+          apps for it. What IS optional is Leaflet's own "Leaflet" prefix (the
+          little flag bottom-right): the library's docs say that one may be
+          removed. `prefix={false}` removes exactly that and nothing else. */}
+      <AttributionControl prefix={false} />
       <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
       {/* Zone code labels only — no catchment circles (see file header) */}
