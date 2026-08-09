@@ -8,9 +8,10 @@
 // hardcoded 9km radius for every zone) — see map.web.tsx header for the detail.
 // (The Android Google-Maps key is configured in app.json since 22 Jul 2026 —
 // the old "blank map until the key is set" caveat no longer applies.)
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ImageRequireSource, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import MapView, { Callout, Marker } from "react-native-maps";
+import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { useWide } from "../../hooks/useWide";
 import { MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES } from "../lib/zones";
@@ -102,10 +103,17 @@ export function AdminFleetMap({
   live = [],
   height = 400,
   fill = false,
+  idleCollapsed = false,
 }: {
   trucks: Truck[];
   live?: LivePosition[];
   height?: number;
+  // ONE summary line instead of the full list (admin Home). The list is the
+  // right thing on the Fleet screen, where you went looking for lorries; on
+  // Home it was the tallest block on the page and made the screen feel like it
+  // never ended. Collapsed by default here, one tap to open — nothing is
+  // hidden, it just stops being the first thing you scroll past.
+  idleCollapsed?: boolean;
   // fill: take the parent's full height (flex:1) instead of a fixed px height —
   // used where the map sits in a stretched card beside a taller rail.
   fill?: boolean;
@@ -113,6 +121,26 @@ export function AdminFleetMap({
   const { t } = useTranslation();
   const isWide = useWide();
   const tracksViewChanges = useMarkerFreeze(live);
+  // Frame the trucks that are actually out there — parity with map.web.tsx's
+  // FitToFleet; see the reasoning in that file. A fixed region is always wrong
+  // for somebody: wide enough for Ipoh makes Penang a smudge, tight enough for
+  // Penang loses Ipoh.
+  const mapRef = useRef<MapView | null>(null);
+  const fitKey = live.map((p) => `${p.latitude},${p.longitude}`).join("|");
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m) return;
+    if (live.length === 0) {
+      m.animateToRegion(REGION, 300);
+      return;
+    }
+    // The PLANT is always included so the frame never floats off the depot.
+    m.fitToCoordinates(
+      [{ latitude: PLANT_ORIGIN.lat, longitude: PLANT_ORIGIN.lng }, ...live.map((p) => ({ latitude: p.latitude, longitude: p.longitude }))],
+      { edgePadding: { top: 48, right: 48, bottom: 48, left: 48 }, animated: true }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitKey]);
   const liveByPlate = new Map(live.map((p) => [p.plate, p]));
   // A truck gets a map marker ONLY when it has a real fix (live or stale). Every
   // other truck has no live position and must never be drawn at a fake
@@ -126,6 +154,9 @@ export function AdminFleetMap({
   // below renders exactly as before — the ship-early contract).
   const groups = groupFleet(trucks, (p) => liveByPlate.has(p));
   const grouped = !isWide && groups.length > 1;
+  // Home passes idleCollapsed; the Fleet screen does not, so it keeps the
+  // full list exactly as before.
+  const [idleOpen, setIdleOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     customer: true, // the dispatch pool — open by default
     interplant: false, // two dedicated shuttles — folded, counts still visible
@@ -133,20 +164,39 @@ export function AdminFleetMap({
 
   const renderIdleRow = (tr: Truck) => {
     const tag = statusTag(tr.status);
+    // ⚠ THE PILL MARKS THE EXCEPTION, NOT THE RULE. Every row in this list is
+    // off the map, and on a quiet fleet that is the whole fleet — so tagging
+    // each one "Idle" printed the same pill seven times while the group header
+    // already said "7 idle". Seven identical pills is noise that hides the one
+    // truck that is actually different, which is the only reason to scan here.
+    const exceptional = tr.status !== "idle";
     return (
       <View
         key={tr.plate}
         style={{
           flexDirection: "row",
           alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
+          gap: 10,
           paddingHorizontal: 12,
           paddingVertical: 7,
           borderBottomWidth: 1,
           borderBottomColor: colors.divider,
         }}
       >
+        {/* A leading glyph so the column reads as vehicles at a glance rather
+            than as a wall of blue text. */}
+        <View
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 8,
+            backgroundColor: exceptional ? tag.bg : colors.blueTint,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name="bus" size={13} color={exceptional ? tag.fg : colors.blue} />
+        </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text numberOfLines={1} style={{ fontWeight: "700", fontSize: 13, color: colors.navy }}>{tr.plate}</Text>
           <Text numberOfLines={1} style={{ fontSize: 11, color: colors.textMuted }}>
@@ -154,9 +204,11 @@ export function AdminFleetMap({
             {tr.driver ? ` · ${tr.driver.name}` : ""}
           </Text>
         </View>
-        <View style={{ backgroundColor: tag.bg, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 }}>
-          <Text style={{ color: tag.fg, fontSize: 10, fontWeight: "700" }}>{t(tag.labelKey)}</Text>
-        </View>
+        {exceptional ? (
+          <View style={{ backgroundColor: tag.bg, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 }}>
+            <Text style={{ color: tag.fg, fontSize: 10, fontWeight: "700" }}>{t(tag.labelKey)}</Text>
+          </View>
+        ) : null}
       </View>
     );
   };
@@ -205,7 +257,7 @@ export function AdminFleetMap({
       }}
     >
       <View style={isWide ? { flex: 1, borderRadius: 12, overflow: "hidden" } : { height, borderRadius: 12, overflow: "hidden" }}>
-        <MapView style={StyleSheet.absoluteFill} initialRegion={REGION}>
+        <MapView ref={mapRef} style={StyleSheet.absoluteFill} initialRegion={REGION}>
           {/* Zone code labels only — no catchment circles.
               DETERMINISTIC MARKER GEOMETRY (27 Jul 2026, third and final
               layer of the plant-pin saga — device-screenshot diagnosis):
@@ -329,7 +381,28 @@ export function AdminFleetMap({
           rows, so on phones the list renders in full and the PAGE scrolls;
           the wide sidebar keeps its own scroll (nestedScrollEnabled for the
           Android case). */}
-      {idle.length > 0 && (
+      {idle.length > 0 && idleCollapsed && !idleOpen ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: false }}
+          onPress={() => setIdleOpen(true)}
+          style={{
+            flexDirection: "row", alignItems: "center", gap: 9,
+            backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+            borderRadius: 12, paddingHorizontal: 13, paddingVertical: 11,
+          }}
+        >
+          <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: colors.blueTint,
+                         alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ fontSize: 12, color: colors.blue, fontWeight: "800" }}>{idle.length}</Text>
+          </View>
+          <Text style={{ flex: 1, fontSize: 12.5, fontWeight: "700", color: colors.text }}>
+            {t("admin.trucks.statusIdle")} · {t("admin.fleetGroups.notTracked")}
+          </Text>
+          <Text style={{ fontSize: 12, fontWeight: "700", color: colors.blue }}>{t("admin.fleetGroups.showAll")}</Text>
+        </Pressable>
+      ) : null}
+      {idle.length > 0 && (!idleCollapsed || idleOpen) && (
         <View
           style={{
             width: isWide ? 190 : undefined,

@@ -1,23 +1,36 @@
-// Admin Settings — the in-app admin's preferences hub. Reached from the PC
-// sidebar's "System" group and the phone MORE tab, it renders content only
-// (the shell draws the header). Today it holds the language switcher; it is
-// structured as a stack of cards so future settings drop in as new sections.
+// Admin Settings — the in-app admin's preferences hub, reached from the PC
+// sidebar's "System" group and the phone MORE tab.
 //
-// Language switching reuses the SAME mechanism the driver/requestor Profile
-// screen uses — useAuth().setLanguage → i18n.changeLanguage (live re-render
-// across every screen via react-i18next) + PATCH /users/me (persisted per
-// account, re-applied on next login by AuthContext.fetchMe). No parallel i18n.
+// ⚠ ON A PHONE THIS IS THE SAME SHELL AS THE DRIVER/REQUESTOR PROFILE
+// (screens/shared/ProfileScreen), by owner instruction 9 Aug 2026: "they are
+// not the same, but they have to look similar". Identity on the blue header,
+// a read-only facts card, action rows, an inline LANGUAGE SEGMENT, App &
+// Updates, then Log Out. Only the CONTENT differs — the admin keeps its
+// system rows and the feedback inbox, and has no truck plate.
+//
+// It previously diverged in four visible ways, all fixed here: no blue
+// identity header (a small white avatar card instead), no facts card at all,
+// language as a VERTICAL RADIO LIST rather than the segment, and sign-out as a
+// quiet row rather than the danger button every other role gets.
+//
+// Language switching reuses the SAME mechanism the Profile screen uses —
+// useAuth().setLanguage → i18n.changeLanguage (live re-render across every
+// screen via react-i18next) + PATCH /users/me (persisted per account,
+// re-applied on next login by AuthContext.fetchMe). No parallel i18n.
 import React, { useState } from "react";
-import { Image, Linking, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { Image, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { useNavigation } from "@react-navigation/native";
 import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
-import { colors, font, radius } from "../theme";
-import { Avatar, Button, Card, ConfirmDialog, SectionTitle } from "../components/ui";
+import { colors, font, radius, shadow } from "../theme";
+import { Button, Card, ConfirmDialog, SectionTitle } from "../components/ui";
+import { Button as AppButton } from "../../components/Button";
 import { api } from "../services/api";
 import { useLayoutMode } from "../hooks/useLayoutMode";
+import { initials } from "../../lib/format";
 import { AppLanguage } from "../../types";
 import { EditProfileModal, ChangePasswordModal } from "../../components/AccountModals";
 import { FeedbackModal } from "../../components/FeedbackModal";
@@ -35,6 +48,7 @@ const LANGUAGES: { code: AppLanguage; labelKey: string }[] = [
 export function AdminSettingsScreen() {
   const { t, i18n } = useTranslation();
   const { user, logout, setLanguage } = useAuth();
+  const insets = useSafeAreaInsets();
   const mode = useLayoutMode();
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
   const [editOpen, setEditOpen] = useState(false);
@@ -53,140 +67,146 @@ export function AdminSettingsScreen() {
     { key: "feedback", labelKey: "feedback.title", icon: "megaphone-outline", onPress: () => setFeedbackOpen(true) },
   ];
 
+  // Role · Department · Employee number as one line, exactly as the shared
+  // Profile builds it. Empty parts drop out rather than leaving separators.
+  const subtitle = [t("admin.roleLabel"), user?.department?.name, user?.employee_number]
+    .filter(Boolean)
+    .join(" · ");
+
+  const facts: { label: string; value: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+    { label: t("profile.phone"), value: user?.phone ?? "—", icon: "call-outline" },
+    { label: t("profile.employeeNumber"), value: user?.employee_number ?? "—", icon: "id-card-outline" },
+    { label: t("profile.department"), value: user?.department?.name ?? "—", icon: "business-outline" },
+  ];
+
   return (
     <>
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={
-        mode === "wide"
-          ? { paddingVertical: 24, paddingHorizontal: 28, gap: 16 }
-          : { padding: 14, gap: 16 }
-      }
-    >
-      {/* Centre the settings column on wide so cards don't stretch across a
-          1440px monitor; full-bleed on phones. */}
-      <View style={mode === "wide" ? { maxWidth: 680, width: "100%", alignSelf: "center", gap: 16 } : { gap: 16 }}>
-        {/* Identity — mobile "Profile" tab only; on wide the sidebar carries it. */}
-        {narrow ? (
-          <Card style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <Avatar name={user?.name} size={44} />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text numberOfLines={1} style={{ fontSize: font.lg, fontWeight: "700", color: colors.text }}>{user?.name ?? "—"}</Text>
-              <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 1 }}>{t("admin.roleLabel")}</Text>
+    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }}>
+      {/* Identity ON the blue — phone only; on wide the sidebar carries it.
+          Same block as the driver/requestor Profile. */}
+      {narrow ? (
+        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+          <View style={styles.identityRow}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initials(user?.name ?? "")}</Text>
             </View>
-          </Card>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.name} numberOfLines={2}>{user?.name ?? "—"}</Text>
+              {subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text> : null}
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      <View
+        style={
+          mode === "wide"
+            ? { paddingVertical: 24, paddingHorizontal: 28, maxWidth: 680, width: "100%", alignSelf: "center" }
+            : { padding: 16 }
+        }
+      >
+        {/* Facts the office owns — read-only, plainly secondary. Phone only:
+            on wide these already sit in the sidebar's account block. */}
+        {narrow ? (
+          <View style={styles.card}>
+            {facts.map((f, i) => (
+              <View key={f.label} style={[styles.row, i < facts.length - 1 && styles.rowDivider]}>
+                <Ionicons name={f.icon} size={18} color={colors.textFaint} />
+                <Text style={styles.rowLabel}>{f.label}</Text>
+                <Text style={styles.rowValue} numberOfLines={1}>{f.value}</Text>
+              </View>
+            ))}
+          </View>
         ) : null}
 
         {/* Account — self-service profile + password (any role, incl. admin) */}
-        <Card>
-          <SectionTitle title={t("account.section")} />
-          <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, overflow: "hidden", marginTop: 4 }}>
-            {accountRows.map((r, i) => (
-              <TouchableOpacity
-                key={r.key}
-                onPress={r.onPress}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 12,
-                  paddingVertical: 15,
-                  paddingHorizontal: 16,
-                  backgroundColor: colors.card,
-                  borderTopWidth: i === 0 ? 0 : 1,
-                  borderTopColor: colors.divider,
-                }}
-              >
-                <Ionicons name={r.icon} size={20} color={colors.blue} />
-                <Text style={{ flex: 1, fontSize: font.md, fontWeight: "600", color: colors.text }}>
-                  {t(r.labelKey)}
-                </Text>
-                <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        </Card>
-
-        <Card>
-          <SectionTitle title={t("profile.preferences")} />
-          <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: -4, marginBottom: 14, lineHeight: 19 }}>
-            {t("admin.settings.languageHint")}
-          </Text>
-
-          <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, overflow: "hidden" }}>
-            {LANGUAGES.map((l, i) => {
-              const active = current === l.code;
-              return (
-                <TouchableOpacity
-                  key={l.code}
-                  onPress={() => setLanguage(l.code)}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: active }}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 12,
-                    paddingVertical: 15,
-                    paddingHorizontal: 16,
-                    backgroundColor: active ? colors.blueTint : colors.card,
-                    borderTopWidth: i === 0 ? 0 : 1,
-                    borderTopColor: colors.divider,
-                  }}
-                >
-                  <Ionicons
-                    name={active ? "checkmark-circle" : "ellipse-outline"}
-                    size={20}
-                    color={active ? colors.blue : colors.textFaint}
-                  />
-                  <Text style={{ flex: 1, fontSize: font.md, fontWeight: active ? "800" : "600", color: active ? colors.blue : colors.text }}>
-                    {t(l.labelKey)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </Card>
-
-        {/* System — audit log lives here now (moved out of the top-level nav). */}
-        <Card>
-          <SectionTitle title={t("admin.navGroups.system")} />
-          <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, overflow: "hidden", marginTop: 4 }}>
+        <Text style={styles.sectionLabel}>{t("account.section")}</Text>
+        <View style={styles.card}>
+          {accountRows.map((r, i) => (
             <TouchableOpacity
-              onPress={() => navigation.navigate("AdminAudit")}
-              style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 15, paddingHorizontal: 16, backgroundColor: colors.card }}
+              key={r.key}
+              onPress={r.onPress}
+              style={[styles.row, i < accountRows.length - 1 && styles.rowDivider]}
+              activeOpacity={0.7}
+              accessibilityRole="button"
             >
-              <Ionicons name="receipt-outline" size={20} color={colors.blue} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: font.md, fontWeight: "600", color: colors.text }}>{t("admin.audit.navLabel")}</Text>
-                <Text style={{ fontSize: font.xs, color: colors.textMuted, marginTop: 2 }}>{t("admin.audit.subtitle")}</Text>
-              </View>
+              <Ionicons name={r.icon} size={19} color={colors.blue} />
+              <Text style={styles.actionLabel}>{t(r.labelKey)}</Text>
               <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
             </TouchableOpacity>
-          </View>
-        </Card>
+          ))}
+        </View>
+
+        {/* System — admin-only, and the reason this screen is not just Profile.
+            Audit log lives here (moved out of the top-level nav). */}
+        <Text style={styles.sectionLabel}>{t("admin.navGroups.system")}</Text>
+        <View style={styles.card}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate("AdminAudit")}
+            style={styles.row}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+          >
+            <Ionicons name="receipt-outline" size={19} color={colors.blue} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionLabel}>{t("admin.audit.navLabel")}</Text>
+              <Text style={styles.actionSub}>{t("admin.audit.subtitle")}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+          </TouchableOpacity>
+        </View>
+
+        {/* One inline segmented control, not three stacked radio rows — the
+            shared Profile's control, and the reason this screen used to look
+            like a different app. See ProfileScreen for why the buttons size
+            from content (flexBasis "auto") instead of equal thirds: at 320px
+            an equal third starves "Bahasa Malaysia" and it wraps. */}
+        <Text style={styles.sectionLabel}>{t("profile.language")}</Text>
+        <View style={styles.segment}>
+          {LANGUAGES.map((l) => {
+            const active = current === l.code;
+            return (
+              <TouchableOpacity
+                key={l.code}
+                style={[styles.segmentBtn, active && styles.segmentBtnActive]}
+                onPress={() => setLanguage(l.code)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+              >
+                <Text style={[styles.segmentText, active && styles.segmentTextActive]} numberOfLines={1}>
+                  {t(l.labelKey)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
         {/* User feedback inbox (28 Jul 2026) — what drivers / requestors /
             admins submitted through "Report a problem or idea". This is the
             owner's dev-planning inbox; embedded here per the no-new-screens
-            rule. */}
-        <FeedbackInboxCard />
+            rule. Admin-only, so it keeps its own panel look. */}
+        <View style={{ marginTop: 20 }}>
+          <FeedbackInboxCard />
+        </View>
 
         {/* App & updates — OTA ground truth (27 Jul 2026). Shows WHICH update
             this install is actually running (the platform update id, null on
             the embedded bundle) so "did the phone get the update?" is a fact,
             not a guess — plus a manual check that downloads and restarts in
             one tap, replacing the two-cold-launch dance. */}
-        <AppUpdatesCard />
+        <AppUpdatesCard style={{ marginTop: 20 }} />
 
-        {/* Sign out — mobile "Profile" tab only (matches driver/requestor). */}
+        {/* Sign out — phone only, and the same DANGER BUTTON every other role
+            gets. It used to be a quiet row, which made the one irreversible
+            action on the screen the least prominent thing on it. */}
         {narrow ? (
-          <Card>
-            <TouchableOpacity onPress={() => setConfirmOut(true)} style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 2 }}>
-              <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: colors.redTint, alignItems: "center", justifyContent: "center" }}>
-                <Ionicons name="log-out-outline" size={18} color={colors.red} />
-              </View>
-              <Text style={{ flex: 1, fontSize: font.md, fontWeight: "600", color: colors.red }}>{t("admin.signOut")}</Text>
-            </TouchableOpacity>
-          </Card>
+          <AppButton
+            title={t("admin.signOut")}
+            variant="danger"
+            onPress={() => setConfirmOut(true)}
+            style={{ marginTop: 20 }}
+            icon={<Ionicons name="log-out-outline" size={18} color="#fff" />}
+          />
         ) : null}
       </View>
     </ScrollView>
@@ -206,6 +226,73 @@ export function AdminSettingsScreen() {
     </>
   );
 }
+
+// Mirrors screens/shared/ProfileScreen's stylesheet so the two screens read as
+// one family. Values are the ADMIN theme's tokens — navy, blue and yellow are
+// identical across both themes; only the greys differ by a shade.
+const styles = StyleSheet.create({
+  header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 22 },
+  identityRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.navy,
+    borderWidth: 2,
+    borderColor: colors.yellow,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { color: colors.yellow, fontSize: 22, fontWeight: "800" },
+  name: { color: "#fff", fontSize: 20, fontWeight: "800", lineHeight: 25 },
+  subtitle: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: "600", marginTop: 2 },
+
+  card: { backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, ...shadow.card },
+  row: { minHeight: 52, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: colors.divider },
+  rowLabel: { fontSize: font.md, color: colors.textMuted },
+  rowValue: { marginLeft: "auto", fontSize: font.md, fontWeight: "700", color: colors.text, flexShrink: 1 },
+  actionLabel: { flex: 1, fontSize: 15, fontWeight: "700", color: colors.text },
+  actionSub: { fontSize: font.xs, color: colors.textMuted, marginTop: 2 },
+
+  sectionLabel: {
+    fontSize: font.xs,
+    fontWeight: "700",
+    color: colors.textFaint,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginTop: 20,
+    marginBottom: 8,
+  },
+
+  segment: {
+    flexDirection: "row",
+    gap: 4,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: 4,
+    ...shadow.card,
+  },
+  // flexBasis "auto" + flexGrow, NOT flex: 1 — equal thirds starve the longest
+  // label and "Bahasa Malaysia" wraps at 320px. See ProfileScreen for the full
+  // reasoning; the selected state changes COLOUR ONLY for the same reason.
+  segmentBtn: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: "auto",
+    minWidth: 0,
+    height: 44,
+    paddingHorizontal: 6,
+    borderRadius: radius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  segmentBtnActive: { backgroundColor: colors.blue },
+  segmentText: { fontSize: font.md, fontWeight: "700", color: colors.textMuted },
+  segmentTextActive: { color: "#fff" },
+});
 
 // The owner's feedback inbox — everything submitted through "Report a
 // problem or idea" (any role), newest first. Reads GET /feedback (admin-only,

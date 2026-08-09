@@ -264,7 +264,6 @@
   },
   "profile": {
     "language": "Bahasa",
-    "preferences": "Keutamaan",
     "english": "English",
     "malay": "Bahasa Malaysia",
     "chinese": "简体中文",
@@ -700,7 +699,6 @@
       "loadingMore": "Memuatkan…"
     },
     "settings": {
-      "languageHint": "Digunakan di semua skrin; disimpan ke akaun anda.",
       "feedbackTitle": "Maklum balas pengguna",
       "feedbackEmpty": "Tiada maklum balas lagi.",
       "feedbackLoadFailed": "Tidak dapat memuatkan maklum balas.",
@@ -903,9 +901,6 @@
       "stripDispatchFailed_other": "{{count}} perjalanan perlu perhatian — tiada lori yang muat",
       "stripAwaitingManual_one": "{{count}} tempahan menunggu penghantaran",
       "stripAwaitingManual_other": "{{count}} tempahan menunggu penghantaran",
-      "notOnMap_one": "Tiada pada peta · {{count}}",
-      "notOnMap_other": "Tiada pada peta · {{count}}",
-      "noDriver": "tiada pemandu",
       "mapCoverageNote": "Hanya lori yang menghantar isyarat GPS langsung muncul pada peta — yang lain disenaraikan di sini."
     },
     "dashboard": {
@@ -1075,7 +1070,9 @@
       "countActive": "{{n}} aktif",
       "countIdle": "{{n}} melahu",
       "countMaintenance": "{{n}} penyelenggaraan",
-      "countRetired": "{{n}} bersara"
+      "countRetired": "{{n}} bersara",
+      "notTracked": "tiada pada peta",
+      "showAll": "Tunjuk semua"
     },
     "trucks": {
       "fuelMovedLink": "Bahan api & CO₂e → Kelestarian",

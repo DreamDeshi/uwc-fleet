@@ -16,3 +16,27 @@
   background: transparent;
   border: none;
 }
+
+/* ── Attribution ─────────────────────────────────────────────────────────────
+   ⚠ THIS TONES THE CREDIT DOWN. IT MUST NOT HIDE IT.
+
+   The Leaflet PREFIX (the little flag + "Leaflet") is gone via
+   `<AttributionControl prefix={false} />` — the library permits that. What
+   remains is "© OpenStreetMap", and that is REQUIRED: the tiles are ODbL data
+   served under the OSMF tile usage policy, which makes attribution a condition
+   of use. `display:none`, `opacity:0`, zero font-size or a transparent colour
+   here would put the app in breach and risks OSM blocking it.
+
+   So: smaller, quieter, out of the way — still legible against the tiles. */
+.leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.72);
+  padding: 1px 5px;
+  border-radius: 4px 0 0 0;
+  font-size: 9px;
+  line-height: 14px;
+  color: #6b7280;
+}
+.leaflet-control-attribution a {
+  color: #6b7280;
+  text-decoration: none;
+}

@@ -264,7 +264,6 @@
   },
   "profile": {
     "language": "语言",
-    "preferences": "偏好设置",
     "english": "English",
     "malay": "Bahasa Malaysia",
     "chinese": "简体中文",
@@ -700,7 +699,6 @@
       "loadingMore": "加载中…"
     },
     "settings": {
-      "languageHint": "应用于所有屏幕；保存到您的账户。",
       "feedbackTitle": "用户反馈",
       "feedbackEmpty": "暂无反馈。",
       "feedbackLoadFailed": "无法加载反馈。",
@@ -903,9 +901,6 @@
       "stripDispatchFailed_other": "{{count}} 趟行程需要处理 — 没有合适的车",
       "stripAwaitingManual_one": "{{count}} 单预订等待派车",
       "stripAwaitingManual_other": "{{count}} 单预订等待派车",
-      "notOnMap_one": "不在地图上 · {{count}}",
-      "notOnMap_other": "不在地图上 · {{count}}",
-      "noDriver": "无司机",
       "mapCoverageNote": "只有正在发送实时 GPS 的车辆会出现在地图上 — 其余车辆无论是否在线都列在这里。"
     },
     "dashboard": {
@@ -1075,7 +1070,9 @@
       "countActive": "{{n}} 活跃",
       "countIdle": "{{n}} 空闲",
       "countMaintenance": "{{n}} 维修中",
-      "countRetired": "{{n}} 已退役"
+      "countRetired": "{{n}} 已退役",
+      "notTracked": "不在地图上",
+      "showAll": "显示全部"
     },
     "trucks": {
       "fuelMovedLink": "燃油与 CO₂e → 可持续发展",

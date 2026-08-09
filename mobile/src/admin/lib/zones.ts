@@ -45,9 +45,23 @@ export const ZONE_BY_CODE: Record<string, ZoneInfo> = Object.fromEntries(
   ZONES.map((z) => [z.code, z])
 );
 
-// Map center / zoom that frames the whole operating region (Penang → Ipoh).
-export const MAP_CENTER: [number, number] = [5.1, 100.55];
-export const MAP_ZOOM = 8;
+// Default map view. Centred on the WORKING CORRIDOR — Penang Island,
+// Butterworth, Juru, Batu Kawan (the plant) and Kulim — rather than on the
+// midpoint of every zone we serve.
+//
+// ⚠ THIS IS ONLY THE FALLBACK. Both map builds now FIT THE VIEW TO THE LIVE
+// TRUCKS (map.web.tsx's FitToFleet, map.tsx's fitToCoordinates), always
+// including the plant — so on any day with a truck out, this centre and zoom
+// are never used. They frame the depot when NOTHING is live, which is the only
+// time there is nothing better to aim at.
+//
+// Zoom 8 used to be the permanent view and made Penang a smudge in order to
+// keep Ipoh on screen (owner, 9 Aug 2026: "need to zoom in to penang more").
+// Fitting to the fleet removes that dilemma rather than picking a side: an
+// ordinary day opens tight on the northern corridor; the day a truck runs to
+// Ipoh, the frame opens to include it.
+export const MAP_CENTER: [number, number] = [5.35, 100.48];
+export const MAP_ZOOM = 10;
 
 /** The zone a fix-less truck is drawn in: its first RECOGNISED priority zone. */
 export function primaryZone(zones: string[]): string {

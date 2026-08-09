@@ -8,8 +8,8 @@
 // overlapped into a blob at zoom 8 and their permanent labels collided with the
 // truck pills. Nothing in the data can draw a true catchment: Consignee stores
 // zone_code only, no coordinates. Only the code label remains.
-import React from "react";
-import { MapContainer, TileLayer, Marker, Tooltip } from "react-leaflet";
+import React, { useEffect } from "react";
+import { AttributionControl, MapContainer, TileLayer, Marker, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import { InvalidateOnLayout } from "../../components/leafletCommon";
 import { useTranslation } from "react-i18next";
@@ -89,15 +89,53 @@ const plantIcon = L.divIcon({
   iconAnchor: [8, 28],
 });
 
+
+/**
+ * Frame the trucks that are actually out there.
+ *
+ * A fixed centre+zoom is always wrong for somebody: wide enough for Ipoh makes
+ * Penang a smudge, tight enough for Penang loses Ipoh. Fitting to the live
+ * fixes is right by construction — on an ordinary day every truck is in the
+ * northern corridor and the map opens tight on it; the day one runs to Ipoh,
+ * the map opens wide enough to show it.
+ *
+ * The PLANT is always included, so the frame never floats away from the depot.
+ * Falls back to the static default when nothing is live. `maxZoom` stops a
+ * single truck zooming to rooftop level.
+ */
+function FitToFleet({ points }: { points: [number, number][] }) {
+  const map = useMap();
+  // Join on the coordinates, not the array identity — the live query re-fetches
+  // every 15s and returns a NEW array each time, which would re-fit (and fight
+  // the user's own pan) on every poll even when nothing moved.
+  const key = points.map((p) => p.join(",")).join("|");
+  useEffect(() => {
+    if (points.length === 0) {
+      map.setView(MAP_CENTER, MAP_ZOOM);
+      return;
+    }
+    map.fitBounds([[PLANT_ORIGIN.lat, PLANT_ORIGIN.lng], ...points], { padding: [36, 36], maxZoom: 13 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, map]);
+  return null;
+}
+
 export function AdminFleetMap({
   trucks,
   live = [],
   height = 400,
   fill = false,
+  idleCollapsed = false,
 }: {
   trucks: Truck[];
   live?: LivePosition[];
   height?: number;
+  // ONE summary line instead of the full list (admin Home). The list is the
+  // right thing on the Fleet screen, where you went looking for lorries; on
+  // Home it was the tallest block on the page and made the screen feel like it
+  // never ended. Collapsed by default here, one tap to open — nothing is
+  // hidden, it just stops being the first thing you scroll past.
+  idleCollapsed?: boolean;
   // fill: take the parent's full height (flex:1) instead of a fixed px height —
   // used where the map sits in a stretched card beside a taller rail, so it
   // fills the card rather than leaving white space below a fixed-height map.
@@ -114,8 +152,25 @@ export function AdminFleetMap({
   const idle = trucks.filter((tr) => !liveByPlate.has(tr.plate));
 
   const mapCard = (
-    <MapContainer center={MAP_CENTER} zoom={MAP_ZOOM} scrollWheelZoom style={{ height: "100%", width: "100%" }}>
+    <MapContainer
+      center={MAP_CENTER}
+      zoom={MAP_ZOOM}
+      scrollWheelZoom
+      style={{ height: "100%", width: "100%" }}
+      // The default control is replaced below so the LEAFLET PREFIX can go
+      // while the data credit stays. Do NOT set this to remove attribution
+      // outright — see the note on AttributionControl.
+      attributionControl={false}
+    >
       <InvalidateOnLayout />
+      <FitToFleet points={live.map((p) => [p.latitude, p.longitude] as [number, number])} />
+      {/* ⚠ THE "© OpenStreetMap" CREDIT IS NOT OPTIONAL. OSM data is ODbL,
+          which REQUIRES attribution wherever the tiles are shown — dropping it
+          would put the app in breach of the tile terms, and OSM has blocked
+          apps for it. What IS optional is Leaflet's own "Leaflet" prefix (the
+          little flag bottom-right): the library's docs say that one may be
+          removed. `prefix={false}` removes exactly that and nothing else. */}
+      <AttributionControl prefix={false} />
       <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
       {/* Zone code labels only — no catchment circles (see file header) */}
@@ -175,6 +230,9 @@ export function AdminFleetMap({
   // reconcile to the whole fleet (pinned in lib/fleetGroups.test.ts).
   const groups = groupFleet(trucks, (p) => liveByPlate.has(p));
   const grouped = !isWide && groups.length > 1;
+  // Home passes idleCollapsed; the Fleet screen does not, so it keeps the
+  // full list exactly as before.
+  const [idleOpen, setIdleOpen] = React.useState(false);
   const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>({
     customer: true, // the dispatch pool — open by default
     interplant: false, // two dedicated shuttles — folded, counts still visible
@@ -239,7 +297,30 @@ export function AdminFleetMap({
     </div>
   );
 
-  const idlePanel = idle.length > 0 && (
+  // ONE summary line instead of the full list when the host asks for it.
+  const idleSummary = idle.length > 0 && idleCollapsed && !idleOpen && (
+    <button
+      type="button"
+      onClick={() => setIdleOpen(true)}
+      aria-expanded={false}
+      style={{
+        display: "flex", alignItems: "center", gap: 9, width: "100%",
+        background: colors.card, border: `1px solid ${colors.border}`,
+        borderRadius: 12, padding: "11px 13px", cursor: "pointer",
+        font: "inherit", textAlign: "left",
+      }}
+    >
+      <span style={{ width: 26, height: 26, borderRadius: 8, background: colors.blueTint,
+                     display: "grid", placeItems: "center", fontSize: 12,
+                     color: colors.blue, fontWeight: 800, flex: "none" }}>{idle.length}</span>
+      <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: colors.text }}>
+        {t("admin.trucks.statusIdle")} · {t("admin.fleetGroups.notTracked")}
+      </span>
+      <span style={{ fontSize: 12, fontWeight: 700, color: colors.blue }}>{t("admin.fleetGroups.showAll")}</span>
+    </button>
+  );
+
+  const idlePanel = idle.length > 0 && (!idleCollapsed || idleOpen) && (
     <div
       style={{
         display: "flex",
@@ -295,6 +376,7 @@ export function AdminFleetMap({
       >
         {mapCard}
       </div>
+      {idleSummary}
       {idlePanel}
     </div>
   );

@@ -26,17 +26,10 @@ import { AdminSearchButton } from "../components/AdminSearchButton";
 import { exceptionsEnabled, changeRequestsEnabled } from "../../lib/featureFlags";
 import { AdminFleetMap } from "../platform/map";
 import { formatDate } from "../../lib/format";
-import { homeAttention, trackedCount, untrackedTrucks } from "../lib/adminHome";
+import { homeAttention } from "../lib/adminHome";
 import { DashboardWide } from "./DashboardWide";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
-
-// Tile icon colours that clear AA on their own tint. The admin theme's `amber`
-// (#d97706) and `green` (#3DAA35) are the DECORATIVE hues — 3.19:1 and 3.00:1 —
-// which is fine for a dot and not for a glyph the dispatcher has to identify.
-// Same values the mobile theme calls amberText / greenText.
-const ACCENT_AMBER = "#B45309";
-const ACCENT_GREEN = "#2A7F24";
 
 function greetingKey(hour: number): "goodMorning" | "goodAfternoon" | "goodEvening" {
   if (hour < 12) return "goodMorning";
@@ -63,9 +56,6 @@ export function AdminHomeScreen() {
   const k = dashboard.data;
   const liveCount = (live.data ?? []).filter((p) => !p.stale).length;
   const strip = homeAttention(k);
-  // Trucks the map CANNOT show, and why — see lib/adminHome.
-  const untracked = untrackedTrucks(trucks.data ?? [], live.data ?? []);
-  const onMap = trackedCount(trucks.data ?? [], live.data ?? []);
   const refreshing = dashboard.isRefetching || pending.isRefetching || attention.isRefetching;
   const refetchAll = () => {
     dashboard.refetch();
@@ -82,31 +72,34 @@ export function AdminHomeScreen() {
   // Promoted MORE functions as a 4-across tap grid — same destinations, new
   // entry points. Users carries the pending-users badge, subsuming the old
   // approvals row that used to sit below the map.
-  // Frame 1 gives each tile its OWN tint rather than eight identical blue
-  // squares — colour is the thing the eye lands on first in a grid this dense,
-  // and the tints reuse the same semantic families as the rest of the app
-  // (money green, report blue, people violet, approvals amber).
+  // ⚠ THE TILES ARE DELIBERATELY MONOCHROME — do not re-introduce per-tile
+  // tints. They HAD eight different pastel fills (shipped 9 Aug, frame 1);
+  // the owner reviewed both side by side the same day and chose the plain
+  // treatment: eight pastel squares in one grid read as confetti and made the
+  // screen look cheap. A white tile with a hairline and a blue glyph lets the
+  // LABEL do the identifying, which is what a person actually reads here.
+  //
+  // Colour still earns its place on this screen — it is just spent where it
+  // means something: the status figures and the red alert row above.
   const quickTiles: {
     route: string;
     labelKey: string;
     icon: IoniconName;
     count?: number;
-    tint: string;
-    fg: string;
   }[] = [
-    { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline", count: approvalCount, tint: colors.orangeTint, fg: ACCENT_AMBER },
+    { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline", count: approvalCount },
     ...(changeRequestsEnabled()
-      ? [{ route: "AdminChangeRequests", labelKey: "admin.nav.changeRequests", icon: "git-pull-request-outline" as IoniconName, tint: colors.violetTint, fg: colors.violet }]
+      ? [{ route: "AdminChangeRequests", labelKey: "admin.nav.changeRequests", icon: "git-pull-request-outline" as IoniconName }]
       : []),
-    { route: "AdminIncentives", labelKey: "admin.nav.incentives", icon: "cash-outline", tint: colors.greenTint, fg: ACCENT_GREEN },
-    { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline", tint: colors.blueTint, fg: colors.blue },
-    { route: "AdminSustainability", labelKey: "admin.nav.sustainability", icon: "leaf-outline", tint: colors.greenTint, fg: ACCENT_GREEN },
-    { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline", tint: colors.blueTint, fg: colors.blue },
-    { route: "AdminUsers", labelKey: "admin.users.title", icon: "people-outline", count: pendingCount, tint: colors.violetTint, fg: colors.violet },
-    { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline", tint: colors.yellowTint, fg: ACCENT_AMBER },
-    { route: "AdminCalendar", labelKey: "admin.nav.calendar", icon: "calendar-outline", tint: colors.blueTint, fg: colors.blue },
+    { route: "AdminIncentives", labelKey: "admin.nav.incentives", icon: "cash-outline" },
+    { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline" },
+    { route: "AdminSustainability", labelKey: "admin.nav.sustainability", icon: "leaf-outline" },
+    { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline" },
+    { route: "AdminUsers", labelKey: "admin.users.title", icon: "people-outline", count: pendingCount },
+    { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },
+    { route: "AdminCalendar", labelKey: "admin.nav.calendar", icon: "calendar-outline" },
     // Failed-delivery / exception lane (feature-gated — hidden while the flag is off).
-    ...(exceptionsEnabled() ? [{ route: "AdminExceptions", labelKey: "exception.laneTitle", icon: "warning-outline" as IoniconName, tint: colors.orangeTint, fg: ACCENT_AMBER }] : []),
+    ...(exceptionsEnabled() ? [{ route: "AdminExceptions", labelKey: "exception.laneTitle", icon: "warning-outline" as IoniconName }] : []),
   ];
 
   return (
@@ -217,43 +210,6 @@ export function AdminHomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Quick actions — the important admin functions promoted out of MORE
-            as a 4-across tap grid. Same destinations, new entry points. */}
-        <View style={styles.section}>
-          <View style={styles.gridCard}>
-            {quickTiles.map((tile) => (
-              <TouchableOpacity
-                key={tile.route}
-                style={styles.tile}
-                activeOpacity={0.7}
-                onPress={() => navigation.navigate("AdminMore", { screen: tile.route, initial: false })}
-              >
-                <View style={[styles.tileIcon, { backgroundColor: tile.tint }]}>
-                  <Ionicons name={tile.icon} size={22} color={tile.fg} />
-                  {tile.count ? (
-                    <View style={styles.tileBadge}>
-                      <Text style={styles.tileBadgeText}>{tile.count > 99 ? "99+" : tile.count}</Text>
-                    </View>
-                  ) : null}
-                </View>
-                <Text numberOfLines={2} style={styles.tileLabel}>{t(tile.labelKey)}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Needs attention — same panel as the PC dashboard; hidden when the
-            fleet is healthy. "Open trip board" jumps to the Trips tab. */}
-        {attentionHasRows(attention.data) && (
-          <View style={styles.section}>
-            <AttentionPanel report={attention.data} onOpenBoard={() => navigation.navigate("AdminTrips")} />
-          </View>
-        )}
-
-        {/* Sustainability card removed on NARROW (owner, 28 Jul): the
-            quick-action grid tile above is the entry point, and the card only
-            showed dashes here. The card stays on WIDE (DashboardWide). */}
-
         {/* Fleet map — the Phase-3 map, now on the phone home too. */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t("admin.dashboard.fleetMap")}</Text>
@@ -266,51 +222,55 @@ export function AdminHomeScreen() {
               </View>
             </View>
             <View style={{ padding: 10 }}>
-              <AdminFleetMap trucks={trucks.data ?? []} live={live.data ?? []} height={280} />
+              <AdminFleetMap trucks={trucks.data ?? []} live={live.data ?? []} height={190} idleCollapsed />
             </View>
 
-            {/* Frame 1's idle list. ONLY trucks with a live GPS fix can be
-                markers, so a truck that is off, parked or in the workshop was
-                simply absent — indistinguishable from one the map had lost.
-                Listing them, with the reason, closes that hole. */}
-            {untracked.length > 0 ? (
-              <View style={styles.idleWrap}>
-                <Text style={styles.idleHead}>
-                  {t("admin.home.notOnMap", { count: untracked.length })}
-                </Text>
-                {untracked.map((tr) => (
-                  <View key={tr.plate} style={styles.idleRow}>
-                    <View style={styles.idleIcon}>
-                      <Ionicons name="bus" size={14} color={colors.blue} />
-                    </View>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={styles.idlePlate}>{tr.plate}</Text>
-                      <Text style={styles.idleMeta} numberOfLines={1}>
-                        {[tr.type, tr.driver?.name ?? t("admin.home.noDriver")].filter(Boolean).join(" · ")}
-                      </Text>
-                    </View>
-                    <View
-                      style={[
-                        styles.idlePill,
-                        tr.status === "maintenance" && { backgroundColor: colors.orangeTint },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.idlePillText,
-                          tr.status === "maintenance" && { color: ACCENT_AMBER },
-                        ]}
-                      >
-                        {t(`admin.trucks.status${tr.status === "maintenance" ? "Maintenance" : tr.status === "active" ? "Active" : "Idle"}`)}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-                <Text style={styles.idleNote}>{t("admin.home.mapCoverageNote")}</Text>
-              </View>
-            ) : null}
+            {/* ⚠ DO NOT add an idle/"not on the map" list here. AdminFleetMap
+                ALREADY renders one — grouped by service class, with count
+                pills and collapsible headers. A second copy on this screen
+                listed every lorry TWICE (shipped 9 Aug, caught the same day
+                from a device screenshot). The frame's "Idle · 1" strip IS that
+                component's list; the rule it states lives there too. */}
+            <Text style={styles.mapNote}>{t("admin.home.mapCoverageNote")}</Text>
           </View>
         </View>
+        {/* Needs attention — same panel as the PC dashboard; hidden when the
+            fleet is healthy. "Open trip board" jumps to the Trips tab. */}
+        {attentionHasRows(attention.data) && (
+          <View style={styles.section}>
+            <AttentionPanel report={attention.data} onOpenBoard={() => navigation.navigate("AdminTrips")} />
+          </View>
+        )}
+
+        {/* Sustainability card removed on NARROW (owner, 28 Jul): the
+            quick-action grid tile above is the entry point, and the card only
+            showed dashes here. The card stays on WIDE (DashboardWide). */}
+
+        {/* Quick actions — the important admin functions promoted out of MORE
+            as a 4-across tap grid. Same destinations, new entry points. */}
+        <View style={styles.section}>
+          <View style={styles.gridCard}>
+            {quickTiles.map((tile) => (
+              <TouchableOpacity
+                key={tile.route}
+                style={styles.tile}
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate("AdminMore", { screen: tile.route, initial: false })}
+              >
+                <View style={styles.tileIcon}>
+                  <Ionicons name={tile.icon} size={22} color={colors.blue} />
+                  {tile.count ? (
+                    <View style={styles.tileBadge}>
+                      <Text style={styles.tileBadgeText}>{tile.count > 99 ? "99+" : tile.count}</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text numberOfLines={2} style={styles.tileLabel}>{t(tile.labelKey)}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
 
       </View>
     </ScrollView>
@@ -320,8 +280,8 @@ export function AdminHomeScreen() {
 function HeroStat({ value, label, color }: { value: number | null; label: string; color: string }) {
   return (
     <View style={{ flex: 1, alignItems: "center" }}>
-      <Text style={{ fontSize: 24, fontWeight: "900", color }}>{value ?? "—"}</Text>
-      <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textMuted, textAlign: "center", marginTop: 2 }}>
+      <Text style={{ fontSize: 34, fontWeight: "900", lineHeight: 38, color }}>{value ?? "—"}</Text>
+      <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textMuted, textAlign: "center", marginTop: 6 }}>
         {label}
       </Text>
     </View>
@@ -365,8 +325,8 @@ const styles = StyleSheet.create({
   cta: {
     backgroundColor: "#fff",
     borderRadius: radius.lg,
-    padding: 11,
-    gap: 8,
+    padding: 16,
+    gap: 12,
     ...shadow.floating,
   },
   heroHead: { flexDirection: "row", alignItems: "center", gap: 10 },
@@ -379,7 +339,9 @@ const styles = StyleSheet.create({
   countPill: { backgroundColor: colors.red, borderRadius: radius.pill, minWidth: 22, height: 22, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
   countPillText: { color: "#fff", fontSize: font.xs, fontWeight: "800" },
 
-  section: { paddingHorizontal: 16, paddingTop: 16 },
+  // More air between blocks — the sections used to sit 16px apart, which
+  // made three unrelated things read as one column of noise.
+  section: { paddingHorizontal: 16, paddingTop: 24 },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
 
   rowCard: { backgroundColor: colors.card, borderRadius: radius.lg, marginTop: 4, borderWidth: 1, borderColor: colors.border, ...shadow.card },
@@ -422,7 +384,8 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   tile: { width: "25%", alignItems: "center", paddingVertical: 10, paddingHorizontal: 4 },
-  tileIcon: { width: 52, height: 52, borderRadius: 16, backgroundColor: colors.blueTint, alignItems: "center", justifyContent: "center" },
+  // White with a hairline, NOT a tinted fill — see the note on quickTiles.
+  tileIcon: { width: 52, height: 52, borderRadius: 16, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
   tileBadge: {
     position: "absolute",
     top: -5,
@@ -452,6 +415,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   stripText: { flex: 1, color: "#fff", fontSize: font.sm, fontWeight: "700" },
+  // The map component owns the idle LIST; this states the rule beneath it.
+  mapNote: { paddingHorizontal: 14, paddingVertical: 10, fontSize: font.xs, color: colors.textFaint, lineHeight: 16, borderTopWidth: 1, borderTopColor: colors.divider },
 
   // The named failure inside the card that counts it.
   heroAlert: {
@@ -468,14 +433,4 @@ const styles = StyleSheet.create({
   },
   heroAlertText: { flex: 1, fontSize: font.xs, fontWeight: "700", color: colors.text, lineHeight: 16 },
 
-  // Trucks the map cannot show.
-  idleWrap: { borderTopWidth: 1, borderTopColor: colors.divider },
-  idleHead: { paddingHorizontal: 14, paddingVertical: 11, fontSize: font.xs, fontWeight: "800", color: colors.text, backgroundColor: colors.panel },
-  idleRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.divider },
-  idleIcon: { width: 30, height: 30, borderRadius: 9, backgroundColor: colors.blueTint, alignItems: "center", justifyContent: "center" },
-  idlePlate: { fontSize: font.sm, fontWeight: "700", color: colors.text },
-  idleMeta: { fontSize: font.xs, color: colors.textMuted, marginTop: 1 },
-  idlePill: { backgroundColor: colors.divider, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },
-  idlePillText: { fontSize: font.xs, fontWeight: "700", color: colors.textMuted },
-  idleNote: { paddingHorizontal: 14, paddingVertical: 9, fontSize: font.xs, color: colors.textFaint, borderTopWidth: 1, borderTopColor: colors.divider, lineHeight: 16 },
 });
