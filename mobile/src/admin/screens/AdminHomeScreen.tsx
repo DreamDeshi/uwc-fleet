@@ -31,13 +31,6 @@ import { DashboardWide } from "./DashboardWide";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
-// Tile icon colours that clear AA on their own tint. The admin theme's `amber`
-// (#d97706) and `green` (#3DAA35) are the DECORATIVE hues — 3.19:1 and 3.00:1 —
-// which is fine for a dot and not for a glyph the dispatcher has to identify.
-// Same values the mobile theme calls amberText / greenText.
-const ACCENT_AMBER = "#B45309";
-const ACCENT_GREEN = "#2A7F24";
-
 function greetingKey(hour: number): "goodMorning" | "goodAfternoon" | "goodEvening" {
   if (hour < 12) return "goodMorning";
   if (hour < 18) return "goodAfternoon";
@@ -79,31 +72,34 @@ export function AdminHomeScreen() {
   // Promoted MORE functions as a 4-across tap grid — same destinations, new
   // entry points. Users carries the pending-users badge, subsuming the old
   // approvals row that used to sit below the map.
-  // Frame 1 gives each tile its OWN tint rather than eight identical blue
-  // squares — colour is the thing the eye lands on first in a grid this dense,
-  // and the tints reuse the same semantic families as the rest of the app
-  // (money green, report blue, people violet, approvals amber).
+  // ⚠ THE TILES ARE DELIBERATELY MONOCHROME — do not re-introduce per-tile
+  // tints. They HAD eight different pastel fills (shipped 9 Aug, frame 1);
+  // the owner reviewed both side by side the same day and chose the plain
+  // treatment: eight pastel squares in one grid read as confetti and made the
+  // screen look cheap. A white tile with a hairline and a blue glyph lets the
+  // LABEL do the identifying, which is what a person actually reads here.
+  //
+  // Colour still earns its place on this screen — it is just spent where it
+  // means something: the status figures and the red alert row above.
   const quickTiles: {
     route: string;
     labelKey: string;
     icon: IoniconName;
     count?: number;
-    tint: string;
-    fg: string;
   }[] = [
-    { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline", count: approvalCount, tint: colors.orangeTint, fg: ACCENT_AMBER },
+    { route: "AdminIncentiveApprovals", labelKey: "admin.nav.incentiveApprovals", icon: "checkmark-done-outline", count: approvalCount },
     ...(changeRequestsEnabled()
-      ? [{ route: "AdminChangeRequests", labelKey: "admin.nav.changeRequests", icon: "git-pull-request-outline" as IoniconName, tint: colors.violetTint, fg: colors.violet }]
+      ? [{ route: "AdminChangeRequests", labelKey: "admin.nav.changeRequests", icon: "git-pull-request-outline" as IoniconName }]
       : []),
-    { route: "AdminIncentives", labelKey: "admin.nav.incentives", icon: "cash-outline", tint: colors.greenTint, fg: ACCENT_GREEN },
-    { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline", tint: colors.blueTint, fg: colors.blue },
-    { route: "AdminSustainability", labelKey: "admin.nav.sustainability", icon: "leaf-outline", tint: colors.greenTint, fg: ACCENT_GREEN },
-    { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline", tint: colors.blueTint, fg: colors.blue },
-    { route: "AdminUsers", labelKey: "admin.users.title", icon: "people-outline", count: pendingCount, tint: colors.violetTint, fg: colors.violet },
-    { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline", tint: colors.yellowTint, fg: ACCENT_AMBER },
-    { route: "AdminCalendar", labelKey: "admin.nav.calendar", icon: "calendar-outline", tint: colors.blueTint, fg: colors.blue },
+    { route: "AdminIncentives", labelKey: "admin.nav.incentives", icon: "cash-outline" },
+    { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline" },
+    { route: "AdminSustainability", labelKey: "admin.nav.sustainability", icon: "leaf-outline" },
+    { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline" },
+    { route: "AdminUsers", labelKey: "admin.users.title", icon: "people-outline", count: pendingCount },
+    { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },
+    { route: "AdminCalendar", labelKey: "admin.nav.calendar", icon: "calendar-outline" },
     // Failed-delivery / exception lane (feature-gated — hidden while the flag is off).
-    ...(exceptionsEnabled() ? [{ route: "AdminExceptions", labelKey: "exception.laneTitle", icon: "warning-outline" as IoniconName, tint: colors.orangeTint, fg: ACCENT_AMBER }] : []),
+    ...(exceptionsEnabled() ? [{ route: "AdminExceptions", labelKey: "exception.laneTitle", icon: "warning-outline" as IoniconName }] : []),
   ];
 
   return (
@@ -225,8 +221,8 @@ export function AdminHomeScreen() {
                 activeOpacity={0.7}
                 onPress={() => navigation.navigate("AdminMore", { screen: tile.route, initial: false })}
               >
-                <View style={[styles.tileIcon, { backgroundColor: tile.tint }]}>
-                  <Ionicons name={tile.icon} size={22} color={tile.fg} />
+                <View style={styles.tileIcon}>
+                  <Ionicons name={tile.icon} size={22} color={colors.blue} />
                   {tile.count ? (
                     <View style={styles.tileBadge}>
                       <Text style={styles.tileBadgeText}>{tile.count > 99 ? "99+" : tile.count}</Text>
@@ -386,7 +382,8 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   tile: { width: "25%", alignItems: "center", paddingVertical: 10, paddingHorizontal: 4 },
-  tileIcon: { width: 52, height: 52, borderRadius: 16, backgroundColor: colors.blueTint, alignItems: "center", justifyContent: "center" },
+  // White with a hairline, NOT a tinted fill — see the note on quickTiles.
+  tileIcon: { width: 52, height: 52, borderRadius: 16, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
   tileBadge: {
     position: "absolute",
     top: -5,
