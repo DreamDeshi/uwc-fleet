@@ -262,7 +262,12 @@ export function AdminHomeScreen() {
               </View>
             </View>
             <View style={{ padding: 10 }}>
-              <AdminFleetMap trucks={trucks.data ?? []} live={live.data ?? []} height={190} idleCollapsed />
+              {/* ⚠ 280, and do not shrink it again. It was cut to 190 during
+                  the 9 Aug home refinement to buy scroll space; the owner asked
+                  for it back the same day. The map is the one thing on this
+                  screen that is worth its height — a fleet map you have to
+                  squint at is not doing its job. Buy space elsewhere. */}
+              <AdminFleetMap trucks={trucks.data ?? []} live={live.data ?? []} height={280} idleCollapsed />
             </View>
 
             {/* ⚠ DO NOT add an idle/"not on the map" list here. AdminFleetMap
