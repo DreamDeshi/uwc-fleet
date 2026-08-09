@@ -1070,7 +1070,9 @@
       "countActive": "{{n}} aktif",
       "countIdle": "{{n}} melahu",
       "countMaintenance": "{{n}} penyelenggaraan",
-      "countRetired": "{{n}} bersara"
+      "countRetired": "{{n}} bersara",
+      "notTracked": "tiada pada peta",
+      "showAll": "Tunjuk semua"
     },
     "trucks": {
       "fuelMovedLink": "Bahan api & CO₂e → Kelestarian",

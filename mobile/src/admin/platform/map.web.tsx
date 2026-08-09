@@ -94,10 +94,17 @@ export function AdminFleetMap({
   live = [],
   height = 400,
   fill = false,
+  idleCollapsed = false,
 }: {
   trucks: Truck[];
   live?: LivePosition[];
   height?: number;
+  // ONE summary line instead of the full list (admin Home). The list is the
+  // right thing on the Fleet screen, where you went looking for lorries; on
+  // Home it was the tallest block on the page and made the screen feel like it
+  // never ended. Collapsed by default here, one tap to open — nothing is
+  // hidden, it just stops being the first thing you scroll past.
+  idleCollapsed?: boolean;
   // fill: take the parent's full height (flex:1) instead of a fixed px height —
   // used where the map sits in a stretched card beside a taller rail, so it
   // fills the card rather than leaving white space below a fixed-height map.
@@ -175,6 +182,9 @@ export function AdminFleetMap({
   // reconcile to the whole fleet (pinned in lib/fleetGroups.test.ts).
   const groups = groupFleet(trucks, (p) => liveByPlate.has(p));
   const grouped = !isWide && groups.length > 1;
+  // Home passes idleCollapsed; the Fleet screen does not, so it keeps the
+  // full list exactly as before.
+  const [idleOpen, setIdleOpen] = React.useState(false);
   const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>({
     customer: true, // the dispatch pool — open by default
     interplant: false, // two dedicated shuttles — folded, counts still visible
@@ -239,7 +249,30 @@ export function AdminFleetMap({
     </div>
   );
 
-  const idlePanel = idle.length > 0 && (
+  // ONE summary line instead of the full list when the host asks for it.
+  const idleSummary = idle.length > 0 && idleCollapsed && !idleOpen && (
+    <button
+      type="button"
+      onClick={() => setIdleOpen(true)}
+      aria-expanded={false}
+      style={{
+        display: "flex", alignItems: "center", gap: 9, width: "100%",
+        background: colors.card, border: `1px solid ${colors.border}`,
+        borderRadius: 12, padding: "11px 13px", cursor: "pointer",
+        font: "inherit", textAlign: "left",
+      }}
+    >
+      <span style={{ width: 26, height: 26, borderRadius: 8, background: colors.blueTint,
+                     display: "grid", placeItems: "center", fontSize: 12,
+                     color: colors.blue, fontWeight: 800, flex: "none" }}>{idle.length}</span>
+      <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: colors.text }}>
+        {t("admin.trucks.statusIdle")} · {t("admin.fleetGroups.notTracked")}
+      </span>
+      <span style={{ fontSize: 12, fontWeight: 700, color: colors.blue }}>{t("admin.fleetGroups.showAll")}</span>
+    </button>
+  );
+
+  const idlePanel = idle.length > 0 && (!idleCollapsed || idleOpen) && (
     <div
       style={{
         display: "flex",
@@ -295,6 +328,7 @@ export function AdminFleetMap({
       >
         {mapCard}
       </div>
+      {idleSummary}
       {idlePanel}
     </div>
   );

@@ -1070,7 +1070,9 @@
       "countActive": "{{n}} active",
       "countIdle": "{{n}} idle",
       "countMaintenance": "{{n}} maintenance",
-      "countRetired": "{{n}} retired"
+      "countRetired": "{{n}} retired",
+      "notTracked": "not on the map",
+      "showAll": "Show all"
     },
     "trucks": {
       "fuelMovedLink": "Fuel & CO₂e → Sustainability",

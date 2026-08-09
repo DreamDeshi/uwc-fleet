@@ -103,10 +103,17 @@ export function AdminFleetMap({
   live = [],
   height = 400,
   fill = false,
+  idleCollapsed = false,
 }: {
   trucks: Truck[];
   live?: LivePosition[];
   height?: number;
+  // ONE summary line instead of the full list (admin Home). The list is the
+  // right thing on the Fleet screen, where you went looking for lorries; on
+  // Home it was the tallest block on the page and made the screen feel like it
+  // never ended. Collapsed by default here, one tap to open — nothing is
+  // hidden, it just stops being the first thing you scroll past.
+  idleCollapsed?: boolean;
   // fill: take the parent's full height (flex:1) instead of a fixed px height —
   // used where the map sits in a stretched card beside a taller rail.
   fill?: boolean;
@@ -127,6 +134,9 @@ export function AdminFleetMap({
   // below renders exactly as before — the ship-early contract).
   const groups = groupFleet(trucks, (p) => liveByPlate.has(p));
   const grouped = !isWide && groups.length > 1;
+  // Home passes idleCollapsed; the Fleet screen does not, so it keeps the
+  // full list exactly as before.
+  const [idleOpen, setIdleOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     customer: true, // the dispatch pool — open by default
     interplant: false, // two dedicated shuttles — folded, counts still visible
@@ -351,7 +361,28 @@ export function AdminFleetMap({
           rows, so on phones the list renders in full and the PAGE scrolls;
           the wide sidebar keeps its own scroll (nestedScrollEnabled for the
           Android case). */}
-      {idle.length > 0 && (
+      {idle.length > 0 && idleCollapsed && !idleOpen ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: false }}
+          onPress={() => setIdleOpen(true)}
+          style={{
+            flexDirection: "row", alignItems: "center", gap: 9,
+            backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+            borderRadius: 12, paddingHorizontal: 13, paddingVertical: 11,
+          }}
+        >
+          <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: colors.blueTint,
+                         alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ fontSize: 12, color: colors.blue, fontWeight: "800" }}>{idle.length}</Text>
+          </View>
+          <Text style={{ flex: 1, fontSize: 12.5, fontWeight: "700", color: colors.text }}>
+            {t("admin.trucks.statusIdle")} · {t("admin.fleetGroups.notTracked")}
+          </Text>
+          <Text style={{ fontSize: 12, fontWeight: "700", color: colors.blue }}>{t("admin.fleetGroups.showAll")}</Text>
+        </Pressable>
+      ) : null}
+      {idle.length > 0 && (!idleCollapsed || idleOpen) && (
         <View
           style={{
             width: isWide ? 190 : undefined,

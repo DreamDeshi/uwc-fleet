@@ -1070,7 +1070,9 @@
       "countActive": "{{n}} 活跃",
       "countIdle": "{{n}} 空闲",
       "countMaintenance": "{{n}} 维修中",
-      "countRetired": "{{n}} 已退役"
+      "countRetired": "{{n}} 已退役",
+      "notTracked": "不在地图上",
+      "showAll": "显示全部"
     },
     "trucks": {
       "fuelMovedLink": "燃油与 CO₂e → 可持续发展",

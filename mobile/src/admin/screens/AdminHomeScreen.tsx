@@ -210,6 +210,42 @@ export function AdminHomeScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Fleet map — the Phase-3 map, now on the phone home too. */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t("admin.dashboard.fleetMap")}</Text>
+          <View style={styles.mapCard}>
+            <View style={styles.mapHead}>
+              {/* Only active trucks (with a real fix) are markers now; idle /
+                  maintenance moved into the map's Idle side list. */}
+              <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+                <LegendDot color={colors.green} label={t("admin.trucks.statusActive")} />
+              </View>
+            </View>
+            <View style={{ padding: 10 }}>
+              <AdminFleetMap trucks={trucks.data ?? []} live={live.data ?? []} height={190} idleCollapsed />
+            </View>
+
+            {/* ⚠ DO NOT add an idle/"not on the map" list here. AdminFleetMap
+                ALREADY renders one — grouped by service class, with count
+                pills and collapsible headers. A second copy on this screen
+                listed every lorry TWICE (shipped 9 Aug, caught the same day
+                from a device screenshot). The frame's "Idle · 1" strip IS that
+                component's list; the rule it states lives there too. */}
+            <Text style={styles.mapNote}>{t("admin.home.mapCoverageNote")}</Text>
+          </View>
+        </View>
+        {/* Needs attention — same panel as the PC dashboard; hidden when the
+            fleet is healthy. "Open trip board" jumps to the Trips tab. */}
+        {attentionHasRows(attention.data) && (
+          <View style={styles.section}>
+            <AttentionPanel report={attention.data} onOpenBoard={() => navigation.navigate("AdminTrips")} />
+          </View>
+        )}
+
+        {/* Sustainability card removed on NARROW (owner, 28 Jul): the
+            quick-action grid tile above is the entry point, and the card only
+            showed dashes here. The card stays on WIDE (DashboardWide). */}
+
         {/* Quick actions — the important admin functions promoted out of MORE
             as a 4-across tap grid. Same destinations, new entry points. */}
         <View style={styles.section}>
@@ -235,42 +271,6 @@ export function AdminHomeScreen() {
           </View>
         </View>
 
-        {/* Needs attention — same panel as the PC dashboard; hidden when the
-            fleet is healthy. "Open trip board" jumps to the Trips tab. */}
-        {attentionHasRows(attention.data) && (
-          <View style={styles.section}>
-            <AttentionPanel report={attention.data} onOpenBoard={() => navigation.navigate("AdminTrips")} />
-          </View>
-        )}
-
-        {/* Sustainability card removed on NARROW (owner, 28 Jul): the
-            quick-action grid tile above is the entry point, and the card only
-            showed dashes here. The card stays on WIDE (DashboardWide). */}
-
-        {/* Fleet map — the Phase-3 map, now on the phone home too. */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t("admin.dashboard.fleetMap")}</Text>
-          <View style={styles.mapCard}>
-            <View style={styles.mapHead}>
-              {/* Only active trucks (with a real fix) are markers now; idle /
-                  maintenance moved into the map's Idle side list. */}
-              <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
-                <LegendDot color={colors.green} label={t("admin.trucks.statusActive")} />
-              </View>
-            </View>
-            <View style={{ padding: 10 }}>
-              <AdminFleetMap trucks={trucks.data ?? []} live={live.data ?? []} height={280} />
-            </View>
-
-            {/* ⚠ DO NOT add an idle/"not on the map" list here. AdminFleetMap
-                ALREADY renders one — grouped by service class, with count
-                pills and collapsible headers. A second copy on this screen
-                listed every lorry TWICE (shipped 9 Aug, caught the same day
-                from a device screenshot). The frame's "Idle · 1" strip IS that
-                component's list; the rule it states lives there too. */}
-            <Text style={styles.mapNote}>{t("admin.home.mapCoverageNote")}</Text>
-          </View>
-        </View>
 
       </View>
     </ScrollView>
@@ -280,8 +280,8 @@ export function AdminHomeScreen() {
 function HeroStat({ value, label, color }: { value: number | null; label: string; color: string }) {
   return (
     <View style={{ flex: 1, alignItems: "center" }}>
-      <Text style={{ fontSize: 24, fontWeight: "900", color }}>{value ?? "—"}</Text>
-      <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textMuted, textAlign: "center", marginTop: 2 }}>
+      <Text style={{ fontSize: 34, fontWeight: "900", lineHeight: 38, color }}>{value ?? "—"}</Text>
+      <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textMuted, textAlign: "center", marginTop: 6 }}>
         {label}
       </Text>
     </View>
@@ -325,8 +325,8 @@ const styles = StyleSheet.create({
   cta: {
     backgroundColor: "#fff",
     borderRadius: radius.lg,
-    padding: 11,
-    gap: 8,
+    padding: 16,
+    gap: 12,
     ...shadow.floating,
   },
   heroHead: { flexDirection: "row", alignItems: "center", gap: 10 },
@@ -339,7 +339,9 @@ const styles = StyleSheet.create({
   countPill: { backgroundColor: colors.red, borderRadius: radius.pill, minWidth: 22, height: 22, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
   countPillText: { color: "#fff", fontSize: font.xs, fontWeight: "800" },
 
-  section: { paddingHorizontal: 16, paddingTop: 16 },
+  // More air between blocks — the sections used to sit 16px apart, which
+  // made three unrelated things read as one column of noise.
+  section: { paddingHorizontal: 16, paddingTop: 24 },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
 
   rowCard: { backgroundColor: colors.card, borderRadius: radius.lg, marginTop: 4, borderWidth: 1, borderColor: colors.border, ...shadow.card },
