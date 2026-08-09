@@ -13,13 +13,14 @@
 // a PDF, and a page-1 raster preview is worse, because it looks complete while
 // hiding pages. Those go to the system viewer whole.
 //
-// ⚠ DOWNLOAD AND SHARE ARE WEB-ONLY, and that is a shipping constraint, not a
-// design choice. Mr Teh cleared the permanent-copy policy (9 Aug 2026), but a
-// native share sheet needs expo-sharing — a NEW NATIVE DEPENDENCY, so an APK
-// rebuild, so not an OTA. Both buttons are therefore gated on
-// Platform.OS === "web", exactly as the Reports and Sustainability CSV exports
-// are, and platform/podFile.ts stubs the native side until that rebuild.
-// A phone admin does NOT see these buttons yet.
+// Download and Share are live on BOTH platforms as of the runtimeVersion 1.1.0
+// rebuild, which is the binary that first contains expo-sharing. The policy for
+// a permanent copy was cleared by the owner on 9 Aug 2026.
+//
+// ⚠ THESE BUTTONS REQUIRE A 1.1.0 BINARY. platform/podFile.ts imports
+// expo-sharing, which an OTA cannot deliver — a 1.0.0 APK running this code
+// would crash on the import. runtimeVersion is what prevents that: 1.0.0
+// binaries never receive 1.1.0 bundles. Do not lower it back.
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, Modal, Platform, Pressable, Text, View, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -93,8 +94,8 @@ export function PodViewerModal({
   // A POD filename should say WHICH delivery it proves, so a folder of them is
   // still readable a month later.
   const filename = `pod-${ticket}-stop${sequence}.jpg`;
-  const canShare = Platform.OS === "web" && canSharePod();
-  const showActions = Platform.OS === "web" && status === "ok";
+  const canShare = canSharePod();
+  const showActions = status === "ok";
 
   const run = useCallback(
     async (kind: "download" | "share", fn: () => Promise<void>) => {
