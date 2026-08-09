@@ -264,7 +264,6 @@
   },
   "profile": {
     "language": "Language",
-    "preferences": "Preferences",
     "english": "English",
     "malay": "Bahasa Malaysia",
     "chinese": "简体中文",
@@ -700,7 +699,6 @@
       "loadingMore": "Loading…"
     },
     "settings": {
-      "languageHint": "Applies across all screens; saved to your account.",
       "feedbackTitle": "User feedback",
       "feedbackEmpty": "No feedback yet.",
       "feedbackLoadFailed": "Could not load feedback.",
@@ -903,9 +901,6 @@
       "stripDispatchFailed_other": "{{count}} trips need attention — no truck fits them",
       "stripAwaitingManual_one": "{{count}} booking awaiting dispatch",
       "stripAwaitingManual_other": "{{count}} bookings awaiting dispatch",
-      "notOnMap_one": "Not on the map · {{count}}",
-      "notOnMap_other": "Not on the map · {{count}}",
-      "noDriver": "no driver",
       "mapCoverageNote": "Only trucks sending a live GPS fix appear on the map — everything else, online or not, is listed here."
     },
     "dashboard": {

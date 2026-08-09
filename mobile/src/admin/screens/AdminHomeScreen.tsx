@@ -26,7 +26,7 @@ import { AdminSearchButton } from "../components/AdminSearchButton";
 import { exceptionsEnabled, changeRequestsEnabled } from "../../lib/featureFlags";
 import { AdminFleetMap } from "../platform/map";
 import { formatDate } from "../../lib/format";
-import { homeAttention, trackedCount, untrackedTrucks } from "../lib/adminHome";
+import { homeAttention } from "../lib/adminHome";
 import { DashboardWide } from "./DashboardWide";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
@@ -63,9 +63,6 @@ export function AdminHomeScreen() {
   const k = dashboard.data;
   const liveCount = (live.data ?? []).filter((p) => !p.stale).length;
   const strip = homeAttention(k);
-  // Trucks the map CANNOT show, and why — see lib/adminHome.
-  const untracked = untrackedTrucks(trucks.data ?? [], live.data ?? []);
-  const onMap = trackedCount(trucks.data ?? [], live.data ?? []);
   const refreshing = dashboard.isRefetching || pending.isRefetching || attention.isRefetching;
   const refetchAll = () => {
     dashboard.refetch();
@@ -269,46 +266,13 @@ export function AdminHomeScreen() {
               <AdminFleetMap trucks={trucks.data ?? []} live={live.data ?? []} height={280} />
             </View>
 
-            {/* Frame 1's idle list. ONLY trucks with a live GPS fix can be
-                markers, so a truck that is off, parked or in the workshop was
-                simply absent — indistinguishable from one the map had lost.
-                Listing them, with the reason, closes that hole. */}
-            {untracked.length > 0 ? (
-              <View style={styles.idleWrap}>
-                <Text style={styles.idleHead}>
-                  {t("admin.home.notOnMap", { count: untracked.length })}
-                </Text>
-                {untracked.map((tr) => (
-                  <View key={tr.plate} style={styles.idleRow}>
-                    <View style={styles.idleIcon}>
-                      <Ionicons name="bus" size={14} color={colors.blue} />
-                    </View>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={styles.idlePlate}>{tr.plate}</Text>
-                      <Text style={styles.idleMeta} numberOfLines={1}>
-                        {[tr.type, tr.driver?.name ?? t("admin.home.noDriver")].filter(Boolean).join(" · ")}
-                      </Text>
-                    </View>
-                    <View
-                      style={[
-                        styles.idlePill,
-                        tr.status === "maintenance" && { backgroundColor: colors.orangeTint },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.idlePillText,
-                          tr.status === "maintenance" && { color: ACCENT_AMBER },
-                        ]}
-                      >
-                        {t(`admin.trucks.status${tr.status === "maintenance" ? "Maintenance" : tr.status === "active" ? "Active" : "Idle"}`)}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-                <Text style={styles.idleNote}>{t("admin.home.mapCoverageNote")}</Text>
-              </View>
-            ) : null}
+            {/* ⚠ DO NOT add an idle/"not on the map" list here. AdminFleetMap
+                ALREADY renders one — grouped by service class, with count
+                pills and collapsible headers. A second copy on this screen
+                listed every lorry TWICE (shipped 9 Aug, caught the same day
+                from a device screenshot). The frame's "Idle · 1" strip IS that
+                component's list; the rule it states lives there too. */}
+            <Text style={styles.mapNote}>{t("admin.home.mapCoverageNote")}</Text>
           </View>
         </View>
 
@@ -452,6 +416,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   stripText: { flex: 1, color: "#fff", fontSize: font.sm, fontWeight: "700" },
+  // The map component owns the idle LIST; this states the rule beneath it.
+  mapNote: { paddingHorizontal: 14, paddingVertical: 10, fontSize: font.xs, color: colors.textFaint, lineHeight: 16, borderTopWidth: 1, borderTopColor: colors.divider },
 
   // The named failure inside the card that counts it.
   heroAlert: {
@@ -468,14 +434,4 @@ const styles = StyleSheet.create({
   },
   heroAlertText: { flex: 1, fontSize: font.xs, fontWeight: "700", color: colors.text, lineHeight: 16 },
 
-  // Trucks the map cannot show.
-  idleWrap: { borderTopWidth: 1, borderTopColor: colors.divider },
-  idleHead: { paddingHorizontal: 14, paddingVertical: 11, fontSize: font.xs, fontWeight: "800", color: colors.text, backgroundColor: colors.panel },
-  idleRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.divider },
-  idleIcon: { width: 30, height: 30, borderRadius: 9, backgroundColor: colors.blueTint, alignItems: "center", justifyContent: "center" },
-  idlePlate: { fontSize: font.sm, fontWeight: "700", color: colors.text },
-  idleMeta: { fontSize: font.xs, color: colors.textMuted, marginTop: 1 },
-  idlePill: { backgroundColor: colors.divider, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },
-  idlePillText: { fontSize: font.xs, fontWeight: "700", color: colors.textMuted },
-  idleNote: { paddingHorizontal: 14, paddingVertical: 9, fontSize: font.xs, color: colors.textFaint, borderTopWidth: 1, borderTopColor: colors.divider, lineHeight: 16 },
 });

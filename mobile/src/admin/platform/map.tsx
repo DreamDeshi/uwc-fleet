@@ -11,6 +11,7 @@
 import React, { useEffect, useState } from "react";
 import { ImageRequireSource, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import MapView, { Callout, Marker } from "react-native-maps";
+import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { useWide } from "../../hooks/useWide";
 import { MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES } from "../lib/zones";
@@ -133,20 +134,39 @@ export function AdminFleetMap({
 
   const renderIdleRow = (tr: Truck) => {
     const tag = statusTag(tr.status);
+    // ⚠ THE PILL MARKS THE EXCEPTION, NOT THE RULE. Every row in this list is
+    // off the map, and on a quiet fleet that is the whole fleet — so tagging
+    // each one "Idle" printed the same pill seven times while the group header
+    // already said "7 idle". Seven identical pills is noise that hides the one
+    // truck that is actually different, which is the only reason to scan here.
+    const exceptional = tr.status !== "idle";
     return (
       <View
         key={tr.plate}
         style={{
           flexDirection: "row",
           alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
+          gap: 10,
           paddingHorizontal: 12,
           paddingVertical: 7,
           borderBottomWidth: 1,
           borderBottomColor: colors.divider,
         }}
       >
+        {/* A leading glyph so the column reads as vehicles at a glance rather
+            than as a wall of blue text. */}
+        <View
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 8,
+            backgroundColor: exceptional ? tag.bg : colors.blueTint,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name="bus" size={13} color={exceptional ? tag.fg : colors.blue} />
+        </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text numberOfLines={1} style={{ fontWeight: "700", fontSize: 13, color: colors.navy }}>{tr.plate}</Text>
           <Text numberOfLines={1} style={{ fontSize: 11, color: colors.textMuted }}>
@@ -154,9 +174,11 @@ export function AdminFleetMap({
             {tr.driver ? ` · ${tr.driver.name}` : ""}
           </Text>
         </View>
-        <View style={{ backgroundColor: tag.bg, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 }}>
-          <Text style={{ color: tag.fg, fontSize: 10, fontWeight: "700" }}>{t(tag.labelKey)}</Text>
-        </View>
+        {exceptional ? (
+          <View style={{ backgroundColor: tag.bg, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 }}>
+            <Text style={{ color: tag.fg, fontSize: 10, fontWeight: "700" }}>{t(tag.labelKey)}</Text>
+          </View>
+        ) : null}
       </View>
     );
   };

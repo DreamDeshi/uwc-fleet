@@ -65,8 +65,15 @@ function MoreStack() {
     <Stack.Navigator screenOptions={{ header }}>
       {/* Titled "Settings" to MATCH the wide sidebar — this screen was the
           same AdminSettingsScreen under TWO names ("Profile" here, "Settings"
-          on desktop), the core of the profile-vs-settings muddle. */}
-      <Stack.Screen name="MoreHome" component={AdminSettingsScreen} options={{ title: t("admin.titles.settings") }} />
+          on desktop), the core of the profile-vs-settings muddle.
+          headerShown:false because the screen now draws its OWN blue identity
+          header, the same one the driver/requestor Profile draws — the nav
+          header on top of it would stack two blue bars. */}
+      <Stack.Screen
+        name="MoreHome"
+        component={AdminSettingsScreen}
+        options={{ title: t("admin.titles.settings"), headerShown: false }}
+      />
       <Stack.Screen name="AdminIncentiveApprovals" component={IncentiveApprovalsScreen} options={{ title: t("admin.titles.incentiveApprovals") }} />
       <Stack.Screen name="AdminIncentives" component={IncentivesScreen} options={{ title: t("admin.titles.incentives") }} />
       <Stack.Screen name="AdminReports" component={ReportsScreen} options={{ title: t("admin.titles.reports") }} />
