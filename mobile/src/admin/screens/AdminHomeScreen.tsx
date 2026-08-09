@@ -226,7 +226,13 @@ export function AdminHomeScreen() {
                 key={tile.route}
                 style={styles.tile}
                 activeOpacity={0.7}
-                onPress={() => navigation.navigate("AdminMore", { screen: tile.route, initial: false })}
+                // ⚠ fromHome MATTERS. These tiles push into the MORE stack, so
+                // without it "back" unwinds to that stack's root — Settings —
+                // even though Home is where you were. The header reads this
+                // param and returns you to Home instead (see AdminTabs).
+                onPress={() =>
+                  navigation.navigate("AdminMore", { screen: tile.route, initial: false, params: { fromHome: true } })
+                }
               >
                 <View style={styles.tileIcon}>
                   <Ionicons name={tile.icon} size={22} color={colors.blue} />

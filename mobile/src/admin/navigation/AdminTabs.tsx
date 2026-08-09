@@ -55,12 +55,26 @@ const Stack = createNativeStackNavigator();
 // navigate("AdminMore", { screen: ... }) works from any tab.
 function MoreStack() {
   const { t } = useTranslation();
-  const header = (props: NativeStackHeaderProps) => (
-    <AdminMobileHeader
-      title={props.options.title ?? ""}
-      onBack={props.back ? () => props.navigation.goBack() : undefined}
-    />
-  );
+  // ⚠ BACK FROM A HOME TILE RETURNS TO HOME, not to this stack's root.
+  // The home grid pushes into THIS stack, whose root is Settings — so a plain
+  // goBack() landed the admin on Settings from a screen they opened while
+  // standing on Home (owner, 9 Aug 2026). The tiles pass `fromHome`, and that
+  // case switches tabs instead of popping one level.
+  //
+  // popToTop() first: otherwise the pushed screen stays on this stack, and the
+  // next tap on the Settings tab reopens Reports instead of Settings.
+  const header = (props: NativeStackHeaderProps) => {
+    const fromHome = (props.route.params as { fromHome?: boolean } | undefined)?.fromHome === true;
+    const back = fromHome
+      ? () => {
+          props.navigation.popToTop();
+          props.navigation.getParent()?.navigate("AdminHome");
+        }
+      : props.back
+        ? () => props.navigation.goBack()
+        : undefined;
+    return <AdminMobileHeader title={props.options.title ?? ""} onBack={back} />;
+  };
   return (
     <Stack.Navigator screenOptions={{ header }}>
       {/* Titled "Settings" to MATCH the wide sidebar — this screen was the
