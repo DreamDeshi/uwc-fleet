@@ -1503,6 +1503,20 @@
       "oct": "10月",
       "nov": "11月",
       "dec": "12月"
+    },
+    "pod": {
+      "title": "送达凭证",
+      "stop": "第 {{n}} 站",
+      "metaBoth": "上传于 {{uploaded}} · 送达确认 {{delivered}}",
+      "metaUploaded": "上传于 {{uploaded}}",
+      "metaDelivered": "送达确认 {{delivered}}",
+      "refreshing": "正在刷新安全链接…",
+      "failed": "无法加载此照片，安全链接可能已过期。",
+      "download": "下载",
+      "downloading": "正在下载…",
+      "share": "分享",
+      "sharing": "正在分享…",
+      "actionFailed": "操作未完成，安全链接可能已过期，请重新打开照片。"
     }
   },
   "timeline": {

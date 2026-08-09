@@ -1503,6 +1503,20 @@
       "oct": "October",
       "nov": "November",
       "dec": "December"
+    },
+    "pod": {
+      "title": "Proof of Delivery",
+      "stop": "Stop {{n}}",
+      "metaBoth": "Uploaded {{uploaded}} · delivery confirmed {{delivered}}",
+      "metaUploaded": "Uploaded {{uploaded}}",
+      "metaDelivered": "Delivery confirmed {{delivered}}",
+      "refreshing": "Refreshing the secure link…",
+      "failed": "This photo could not be loaded. The secure link may have expired.",
+      "download": "Download",
+      "downloading": "Downloading…",
+      "share": "Share",
+      "sharing": "Sharing…",
+      "actionFailed": "That did not complete. The secure link may have expired — try reopening the photo."
     }
   },
   "timeline": {

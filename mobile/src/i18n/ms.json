@@ -1503,6 +1503,20 @@
       "oct": "Oktober",
       "nov": "November",
       "dec": "Disember"
+    },
+    "pod": {
+      "title": "Bukti Penghantaran",
+      "stop": "Hentian {{n}}",
+      "metaBoth": "Dimuat naik {{uploaded}} · penghantaran disahkan {{delivered}}",
+      "metaUploaded": "Dimuat naik {{uploaded}}",
+      "metaDelivered": "Penghantaran disahkan {{delivered}}",
+      "refreshing": "Memuat semula pautan selamat…",
+      "failed": "Foto ini tidak dapat dimuatkan. Pautan selamat mungkin telah tamat tempoh.",
+      "download": "Muat turun",
+      "downloading": "Memuat turun…",
+      "share": "Kongsi",
+      "sharing": "Berkongsi…",
+      "actionFailed": "Tindakan itu tidak selesai. Pautan selamat mungkin telah tamat tempoh — cuba buka semula foto."
     }
   },
   "timeline": {
