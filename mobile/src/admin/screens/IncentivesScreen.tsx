@@ -6,7 +6,8 @@
 // note (old rate stays live today) so an admin is never misled into thinking
 // a new rate is live immediately.
 import React, { useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { LinearGradient } from "expo-linear-gradient";
 import {
@@ -18,7 +19,7 @@ import {
   useUpdateTruckRates,
 } from "../hooks/queries";
 import { colors, font, gradients, radius } from "../theme";
-import { Button, Card, ChipGrid, ErrorState, Input, Loading, Modal, Pill, SectionTitle, TableCell, TableHeader, TableRow } from "../components/ui";
+import { Avatar, Button, Card, ChipGrid, ErrorState, Input, Loading, Modal, Pill, SectionTitle, TableCell, TableHeader, TableRow } from "../components/ui";
 import { formatDate, formatMoney } from "../lib/format";
 import { apiErrorMessage } from "../services/api";
 import { useLayoutMode } from "../hooks/useLayoutMode";
@@ -157,18 +158,27 @@ function TruckRatesTab() {
         // boxes as the Truck Management cards.
         <View style={{ padding: 12, gap: 10 }}>
           {trucks.data!.map((tr) => (
-            <View key={tr.plate} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 12, gap: 10 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <View key={tr.plate} style={rateCard.card}>
+              {/* Frame 9: the truck's identity sits on a NAVY band with the
+                  yellow glyph and Edit INSIDE it — the same band the Trucks and
+                  Drivers screens already use (frames 2 and 3). Rates hang under
+                  it. This screen had been left as a plain white card, which is
+                  what made it look untouched beside the drawing. */}
+              <View style={rateCard.idBand}>
+                <Avatar size={40} glyph={<Ionicons name="bus" size={18} color={colors.yellow} />} />
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={{ fontSize: font.md, fontWeight: "700", color: colors.text }}>{tr.plate}</Text>
-                  <Text style={{ fontSize: font.sm, color: colors.textMuted }}>
+                  <Text style={rateCard.idPlate}>{tr.plate}</Text>
+                  <Text style={rateCard.idMeta}>
                     {tr.type} · {t("admin.trucks.palletsCount", { count: tr.max_pallets })}
                   </Text>
                 </View>
-                <Button variant="outline" size="sm" onPress={() => setEditing(tr)}>
-                  {t("admin.consignees.edit")}
-                </Button>
+                {/* On the dark band an outline button would disappear, so Edit
+                    wears the translucent-white fill the band pills use. */}
+                <Pressable onPress={() => setEditing(tr)} style={rateCard.bandEdit} accessibilityRole="button">
+                  <Text style={rateCard.bandEditText}>{t("admin.consignees.edit")}</Text>
+                </Pressable>
               </View>
+              <View style={{ padding: 12, gap: 10 }}>
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <RateBox label={t("admin.trucks.rateWeekday")} value={formatMoney(tr.entitled_claim_weekday)} fg={colors.blue} bg={colors.blueTint} />
                 <RateBox label={t("admin.trucks.rateWeekend")} value={formatMoney(tr.entitled_claim_offpeak)} fg={colors.amber} bg={colors.yellowTint} />
@@ -176,6 +186,7 @@ function TruckRatesTab() {
               </View>
               <UpdatedNote entry={auditByPlate.get(tr.plate)} />
               <PendingRatesNote pending={tr.pending_rates} />
+              </View>
             </View>
           ))}
         </View>
@@ -591,3 +602,20 @@ function FormulaTab() {
     </View>
   );
 }
+
+// Frame 9's truck card: navy identity band, rates beneath. Mirrors
+// TrucksScreen's idBand so the two screens read as one family.
+const rateCard = StyleSheet.create({
+  card: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, overflow: "hidden" },
+  idBand: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: colors.navy, paddingHorizontal: 12, paddingVertical: 12 },
+  idPlate: { fontSize: font.lg, fontWeight: "800", letterSpacing: 0.4, color: "#fff" },
+  idMeta: { fontSize: font.xs, color: "#c9d6f0", marginTop: 1 },
+  bandEdit: {
+    flexShrink: 0,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderRadius: radius.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  bandEditText: { color: "#fff", fontSize: font.sm, fontWeight: "700" },
+});
