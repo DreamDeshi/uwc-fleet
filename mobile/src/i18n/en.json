@@ -1033,7 +1033,6 @@
     },
     "sustainability": {
       "loadError": "Could not load the fuel summary.",
-      "heroCaption": "This month",
       "fuelUsed": "Fuel used",
       "estCo2e": "Est. CO₂e",
       "distance": "Distance",
@@ -1048,7 +1047,11 @@
       "exportFills": "Export fill-ups CSV",
       "exportSummary": "Export monthly summary CSV",
       "exportFailed": "Export failed — try again.",
-      "disclosure": "CO₂e and savings are estimates from logged fill-ups and tunable factors — never used in pay or dispatch."
+      "disclosure": "CO₂e and savings are estimates from logged fill-ups and tunable factors — never used in pay or dispatch.",
+      "heroMonth": "{{month}} {{year}}",
+      "heroUsed": "{{litres}} L used",
+      "heroRollup": "{{co2}} kg CO₂e · {{km}} km · {{lp100}} L/100km fleet-wide",
+      "estimatesNote": "Estimates from logged fill-ups and average trip distance."
     },
     "fleetGroups": {
       "customer": "Customer / Supplier",
@@ -1485,6 +1488,20 @@
       "cancelled": "Cancelled",
       "assigned_external": "Assigned to forwarder",
       "rerouted": "Rerouted"
+    },
+    "months": {
+      "jan": "January",
+      "feb": "February",
+      "mar": "March",
+      "apr": "April",
+      "may": "May",
+      "jun": "June",
+      "jul": "July",
+      "aug": "August",
+      "sep": "September",
+      "oct": "October",
+      "nov": "November",
+      "dec": "December"
     }
   },
   "timeline": {

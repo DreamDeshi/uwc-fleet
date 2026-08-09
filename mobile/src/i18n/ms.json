@@ -1033,7 +1033,6 @@
     },
     "sustainability": {
       "loadError": "Tidak dapat memuatkan ringkasan bahan api.",
-      "heroCaption": "Bulan ini",
       "fuelUsed": "Bahan api digunakan",
       "estCo2e": "Anggaran CO₂e",
       "distance": "Jarak",
@@ -1048,7 +1047,11 @@
       "exportFills": "Eksport CSV isian minyak",
       "exportSummary": "Eksport CSV ringkasan bulanan",
       "exportFailed": "Eksport gagal — cuba lagi.",
-      "disclosure": "CO₂e dan penjimatan adalah anggaran daripada isian direkodkan dan faktor boleh laras — tidak pernah digunakan untuk gaji atau penghantaran."
+      "disclosure": "CO₂e dan penjimatan adalah anggaran daripada isian direkodkan dan faktor boleh laras — tidak pernah digunakan untuk gaji atau penghantaran.",
+      "heroMonth": "{{month}} {{year}}",
+      "heroUsed": "{{litres}} L digunakan",
+      "heroRollup": "{{co2}} kg CO₂e · {{km}} km · {{lp100}} L/100km seluruh armada",
+      "estimatesNote": "Anggaran daripada isian bahan api yang direkod dan purata jarak perjalanan."
     },
     "fleetGroups": {
       "customer": "Pelanggan / Pembekal",
@@ -1485,6 +1488,20 @@
       "cancelled": "Dibatalkan",
       "assigned_external": "Ditugaskan kepada penghantar",
       "rerouted": "Laluan diubah"
+    },
+    "months": {
+      "jan": "Januari",
+      "feb": "Februari",
+      "mar": "Mac",
+      "apr": "April",
+      "may": "Mei",
+      "jun": "Jun",
+      "jul": "Julai",
+      "aug": "Ogos",
+      "sep": "September",
+      "oct": "Oktober",
+      "nov": "November",
+      "dec": "Disember"
     }
   },
   "timeline": {

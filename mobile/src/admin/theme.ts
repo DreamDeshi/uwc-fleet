@@ -13,6 +13,11 @@ export const colors = {
   navy: "#1A1F5E", // sidebar / dark surfaces
   navyDeep: "#10143F", // sidebar gradient tail
   green: "#3DAA35",
+  // Dark green SURFACE (frame 11's sustainability hero). Not a text colour and
+  // not interchangeable with `green`: this is a ground that white type sits on
+  // (#fff on #14532D ≈ 10.5:1), where `green` is a 3.00:1 accent that must
+  // never carry small text. See theme.contrast.test.ts.
+  greenDeep: "#14532D",
   red: "#E53935",
   orange: "#F97316",
   amber: "#d97706", // weekend / pending text
