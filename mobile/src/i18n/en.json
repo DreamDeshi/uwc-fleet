@@ -957,7 +957,9 @@
       "mapStale": "Signal lost (last fix stale)",
       "mapNoDriver": "No driver",
       "openTripBoard": "Open trip board →",
-      "viewAll": "View All →"
+      "viewAll": "View All →",
+      "focusPlant": "Focus the map on the UWC plant",
+      "focusPlantShort": "Plant"
     },
     "drivers": {
       "loadError": "Could not load drivers.",

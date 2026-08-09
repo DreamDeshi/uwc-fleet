@@ -3,6 +3,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } 
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
+import { greetingFontSize } from "../../lib/greetingName";
 import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { DriverTabParamList } from "../../navigation/types";
@@ -218,7 +219,11 @@ function HomeHeader({
                 wraps to two lines at 20px instead of the design's single 24px
                 line: beside the plate chip, even "Ahmad Faizal" truncated to
                 "Hi, Ahmad Faizal …", and real names here run far longer. */}
-            <Text style={styles.greeting} numberOfLines={2}>
+            {/* The size steps down as the name grows (lib/greetingName) —
+                the full name is REQUIRED here, so shrinking is the only lever
+                that keeps every character. numberOfLines={2} still catches the
+                extreme tail. */}
+            <Text style={[styles.greeting, { fontSize: greetingFontSize(name, 20) }]} numberOfLines={2}>
               {t("driver.greeting", { name })} 👋
             </Text>
             <Text style={styles.headerSub} numberOfLines={1}>{summary}</Text>

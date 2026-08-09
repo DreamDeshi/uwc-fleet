@@ -531,6 +531,12 @@ Standing owner design rulings (do not revert):
 \- Headers use the WHITE mark-only logo crop (`uwc-mark-white.png` via
 &#x20; `BrandLogo mark`), placed LEFT of the title. No avatar/name blocks in
 &#x20; headers.
+&#x20; EXCEPTION — the three GREETING HOME screens (driver, requestor, admin)
+&#x20; carry NO logo at all (owner, 9 Aug 2026: "i told u the header should look
+&#x20; similar to driver and requestor. they dont have logo anymore"). Driver and
+&#x20; requestor had already dropped theirs; the admin home was the last one
+&#x20; holding a mark and was brought into line. The rule above still governs the
+&#x20; STACK headers (`AdminMobileHeader` and friends) — do not strip those.
 \- The LOGIN screen, ON A PHONE, is a LIGHT screen carrying the full COLOUR logo
 &#x20; (`BrandLogo` default, height 84) centred over two pale decorative discs —
 &#x20; owner ruling 9 Aug 2026, adopting the admin design pack's frame 17.

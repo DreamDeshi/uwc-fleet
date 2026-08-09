@@ -19,7 +19,6 @@ import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
 import { useAttention, useDashboard, useFleetLive, usePendingApprovals, usePendingUsers, useTrucks } from "../hooks/queries";
 import { colors, font, radius, shadow } from "../theme";
-import { BrandLogo } from "../../components/BrandLogo";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { AttentionPanel, attentionHasRows } from "../components/AttentionPanel";
 import { AdminSearchButton } from "../components/AdminSearchButton";
@@ -27,19 +26,10 @@ import { exceptionsEnabled, changeRequestsEnabled } from "../../lib/featureFlags
 import { AdminFleetMap } from "../platform/map";
 import { formatDate } from "../../lib/format";
 import { homeAttention } from "../lib/adminHome";
+import { greetingFontSize, greetingName } from "../../lib/greetingName";
 import { DashboardWide } from "./DashboardWide";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
-
-// Frame 1 greets by FIRST NAME ("Hi, Nurul Huda") and the header has to hold a
-// greeting, a day summary, the role pill and search on a 390px phone. A
-// time-of-day greeting plus a full Malaysian name ("Good morning, Ahmad Faizal
-// Bin Rahman") ellipsises before it reaches the name, which is worse than not
-// personalising it at all — so the greeting is short and the name is the first
-// word. The requestor home keeps its time-of-day greeting: it has a whole line.
-function firstName(name: string | undefined): string {
-  return (name ?? "").trim().split(/\s+/)[0] ?? "";
-}
 
 export function AdminHomeScreen() {
   const { t } = useTranslation();
@@ -112,17 +102,19 @@ export function AdminHomeScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refetchAll} />}
     >
       {/* Greeting header — the requestor/driver home header, admin-flavoured.
-          The mark stays (headers carry the white mark-only crop, standing
-          ruling) even though frame 1 drops it; search stays because losing it
-          would be a regression, not a redesign. */}
+          ⚠ NO LOGO. The driver and requestor homes carry none, frame 1 drops
+          it, and the owner asked for this one to match them (9 Aug 2026). The
+          older "headers carry the white mark-only crop" ruling still governs
+          the STACK headers (AdminMobileHeader) — it is the greeting home that
+          is the exception, on all three apps. Search stays: losing it would be
+          a regression, not a redesign. */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.headerTop}>
-          <BrandLogo white mark height={30} />
           {/* Frame 1: the greeting and the name are ONE line, not two. The
               two-line stack (16px "Good morning" over a 26px name) cost a whole
               row of blue to say something the dispatcher already knows. */}
-          <Text numberOfLines={1} style={styles.greetingLine}>
-            {t("admin.home.greetingLine", { name: firstName(user?.name) })}
+          <Text numberOfLines={1} style={[styles.greetingLine, { fontSize: greetingFontSize(greetingName(user?.name), 20) }]}>
+            {t("admin.home.greetingLine", { name: greetingName(user?.name) })}
           </Text>
           <View style={styles.rolePill}>
             <Ionicons name="shield-checkmark-outline" size={14} color="#fff" />

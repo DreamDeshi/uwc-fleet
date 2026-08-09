@@ -957,7 +957,9 @@
       "mapStale": "Isyarat hilang (kedudukan terakhir lapuk)",
       "mapNoDriver": "Tiada pemandu",
       "openTripBoard": "Buka papan trip →",
-      "viewAll": "Lihat Semua →"
+      "viewAll": "Lihat Semua →",
+      "focusPlant": "Fokus peta pada kilang UWC",
+      "focusPlantShort": "Kilang"
     },
     "drivers": {
       "loadError": "Tidak dapat memuatkan pemandu.",
