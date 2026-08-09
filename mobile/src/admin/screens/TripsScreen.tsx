@@ -342,9 +342,28 @@ export function TripsScreen() {
       {wide ? (
       <View style={{ flex: 1, paddingVertical: 16, paddingHorizontal: 28, gap: 12 }}>
         <Card pad={10} style={{ gap: 10 }}>
+          {/* The bar is grouped by WHAT A CONTROL DOES, one concept per side of
+              each row — it used to be seven controls in one undifferentiated
+              queue, which read as clutter (owner screenshot, 9 Aug):
+                row 1  MODE (a system setting) │ QUERY (search, dates, filters)
+                row 2  SCOPE (status, attention) │ the RESULT COUNT
+              Dispatch Mode is not a filter — it changes what the server does to
+              new bookings — so a hairline separates it from the controls that
+              only change what you are looking at. */}
           <View style={{ flexDirection: "row", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <DispatchToggle />
-            <SearchInput value={q} onChange={setQ} placeholder={t("admin.trips.searchPlaceholder")} />
+            {/* compact: the pills already read "Manual Dispatch" / "Fully
+                Automatic", so the separate "Dispatch Mode" caption was saying
+                it twice and cost ~110px of the row. */}
+            <DispatchToggle compact />
+            <View style={{ width: 1, alignSelf: "stretch", minHeight: 26, backgroundColor: colors.border }} />
+            {/* Search takes the slack so the row ends flush instead of leaving
+                ragged gaps between fixed-width controls. */}
+            <SearchInput
+              value={q}
+              onChange={setQ}
+              placeholder={t("admin.trips.searchPlaceholder")}
+              style={{ flex: 1, minWidth: 220 }}
+            />
             {/* ⚠ The date range stays OUT of the disclosure, unlike driver and
                 zone. It defaults to today (Mr Teh, 16 Jul: the board opens on
                 today's trips), so it is the one filter that is ALWAYS active —
@@ -361,30 +380,27 @@ export function TripsScreen() {
               <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.to")}</Text>
               <DateInputInline value={dateTo} onChange={setDateTo} />
             </View>
+            <MoreFiltersToggle
+              open={filtersOpen}
+              count={secondaryCountWide}
+              onPress={() => setFiltersOpen(!filtersOpen)}
+            />
+            {hasFilters && (
+              <Button variant="ghost" size="sm" onPress={clearFilters}>
+                {t("admin.trips.clearFilters")}
+              </Button>
+            )}
           </View>
 
-          {/* Status chips and the result controls share ONE row: chips left,
-              controls right. They used to be two rows — the controls wrapped
-              off the top row while the chips had their own line beneath — so
-              both sat with a band of dead space beside them and the header ate
-              a row the board could have used. `flex-end` keeps the two aligned
-              on their baseline when the chips wrap on a narrow window. */}
+          {/* SCOPE on the left — the status chips and "Needs attention" both
+              narrow WHICH trips show, so they belong together. The result count
+              is not a control; it is the answer, so it sits alone on the right.
+              `flex-end` keeps the two aligned on their baseline when the chips
+              wrap on a narrow window. */}
           <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
             <View style={{ flexShrink: 1, minWidth: 0 }}>{statusSegments}</View>
-            <View style={{ marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              {attentionChip}
-              {resultsLabel}
-              <MoreFiltersToggle
-                open={filtersOpen}
-                count={secondaryCountWide}
-                onPress={() => setFiltersOpen(!filtersOpen)}
-              />
-              {hasFilters && (
-                <Button variant="ghost" size="sm" onPress={clearFilters}>
-                  {t("admin.trips.clearFilters")}
-                </Button>
-              )}
-            </View>
+            {attentionChip}
+            <View style={{ marginLeft: "auto" }}>{resultsLabel}</View>
           </View>
           {filtersOpen ? (
             <View style={{ flexDirection: "row", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
