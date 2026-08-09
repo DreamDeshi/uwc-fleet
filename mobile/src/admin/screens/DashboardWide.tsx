@@ -191,14 +191,16 @@ export function DashboardWide() {
           so no data or feature is lost. */}
 
       {/* Map + right rail */}
-      {/* ⚠ alignItems is FLEX-START, not stretch. The right rail (alerts +
-          recent trips) is far taller than this card, and `stretch` grew the
-          CARD to the rail's height while the map inside kept its own fixed
-          height — so shrinking the map did not shrink the card, it just left
-          ~500px of empty white inside it (shipped 9 Aug, owner screenshot).
-          The card must size to its content. */}
-      <View style={{ flexDirection: "row", gap: 16, alignItems: "flex-start" }}>
-        <Card pad={0} style={{ flex: 1, overflow: "hidden" }}>
+      {/* ⚠ `stretch` + `fill` BELONG TOGETHER — changing one without the other
+          is what broke this screen on 9 Aug. The card stretches to the taller
+          right rail, and the map FILLS the card, so the card is always exactly
+          full. Giving the map a fixed height while the card still stretched
+          left ~500px of white inside it and clipped the idle list mid-row.
+          If the map is ever to be smaller, the CARD has to stop stretching in
+          the same edit — but the owner asked for the full-size map back
+          (9 Aug), so the answer here is simply: leave both alone. */}
+      <View style={{ flexDirection: "row", gap: 16, alignItems: "stretch" }}>
+        <Card pad={0} style={{ flex: 1, overflow: "hidden", minHeight: 460 }}>
           <View
             style={{
               paddingVertical: 16,
@@ -222,15 +224,8 @@ export function DashboardWide() {
               <LegendDot color={colors.green} label={t("admin.trucks.statusActive")} />
             </View>
           </View>
-          {/* Fixed height, NOT `fill` — the card sits in a flex row beside the
-              340px rail, so `fill` grew the map to whatever the rail happened
-              to be, which on a tall dashboard was most of the screen.
-              520 is the settled figure: `fill` was too big (owner, 9 Aug), 320
-              was then too small AND left the idle list clipped mid-row. It also
-              has to clear the idle side list — that list scrolls inside this
-              height, so a short map turns a 9-truck fleet into a peephole. */}
-          <View style={{ padding: 12 }}>
-            <AdminFleetMap trucks={truckList} live={live.data ?? []} height={520} />
+          <View style={{ flex: 1, padding: 12 }}>
+            <AdminFleetMap trucks={truckList} live={live.data ?? []} fill />
           </View>
         </Card>
 
