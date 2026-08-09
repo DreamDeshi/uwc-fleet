@@ -29,6 +29,11 @@ export function HolidaysPanel({ prefillDate }: { prefillDate?: string } = {}) {
   const narrow = useLayoutMode() === "narrow";
   const holidays = useHolidays();
   const [deleting, setDeleting] = useState<PublicHoliday | null>(null);
+  // Frame 15 puts the LIST first on the phone and folds the form behind a
+  // "+ Add Holiday" button. The form is four controls that are used rarely and
+  // sat permanently above the thing you actually came to read. Wide keeps the
+  // inline form — it has the width, and the frame is the phone.
+  const [addOpen, setAddOpen] = useState(false);
 
   if (holidays.isLoading) return <Loading />;
   if (holidays.isError) return <ErrorState message={t("admin.incentives.holidaysLoadError")} onRetry={() => holidays.refetch()} />;
@@ -47,7 +52,7 @@ export function HolidaysPanel({ prefillDate }: { prefillDate?: string } = {}) {
           <Text style={{ fontSize: font.sm, color: colors.amber, fontWeight: "500" }}>{t("admin.incentives.holidayBanner")}</Text>
         </View>
       )}
-      <AddHolidayForm prefillDate={prefillDate} />
+      {!narrow && <AddHolidayForm prefillDate={prefillDate} />}
       <Card pad={0}>
         <View style={{ padding: narrow ? 14 : 18, borderBottomWidth: 1, borderBottomColor: colors.border }}>
           <SectionTitle title={t("admin.incentives.holidayCalTitle")} subtitle={t("admin.incentives.holidayCalSub", { count: rows.length })} />
@@ -105,12 +110,22 @@ export function HolidaysPanel({ prefillDate }: { prefillDate?: string } = {}) {
           </View>
         )}
       </Card>
+      {narrow && (
+        <Button variant="primary" full onPress={() => setAddOpen(true)}>
+          {t("admin.incentives.addHolidayTitle")}
+        </Button>
+      )}
+      {narrow && addOpen && (
+        <Modal open onClose={() => setAddOpen(false)} title={t("admin.incentives.addHolidayTitle")} width={420}>
+          <AddHolidayForm prefillDate={prefillDate} bare onDone={() => setAddOpen(false)} />
+        </Modal>
+      )}
       {deleting && <DeleteHolidayConfirm holiday={deleting} onClose={() => setDeleting(null)} />}
     </View>
   );
 }
 
-function AddHolidayForm({ prefillDate }: { prefillDate?: string }) {
+function AddHolidayForm({ prefillDate, bare = false, onDone }: { prefillDate?: string; bare?: boolean; onDone?: () => void }) {
   const { t } = useTranslation();
   const mode = useLayoutMode();
   const [date, setDate] = useState("");
@@ -134,14 +149,14 @@ function AddHolidayForm({ prefillDate }: { prefillDate?: string }) {
       await add.mutateAsync({ date, name: name.trim() });
       setDate("");
       setName("");
+      onDone?.();
     } catch (e) {
       setError(apiErrorMessage(e, t("admin.incentives.holidayAddFailed")));
     }
   }
 
-  return (
-    <Card>
-      <SectionTitle title={t("admin.incentives.addHolidayTitle")} />
+  const body = (
+    <>
       {error && (
         <View style={{ backgroundColor: colors.redTint, borderRadius: radius.md, paddingVertical: 9, paddingHorizontal: 12, marginBottom: 12 }}>
           <Text style={{ color: colors.red, fontSize: font.sm }}>{error}</Text>
@@ -160,6 +175,15 @@ function AddHolidayForm({ prefillDate }: { prefillDate?: string }) {
           </Button>
         </View>
       </View>
+    </>
+  );
+  // `bare` drops the Card and title: inside the modal they would double the
+  // chrome the modal already draws.
+  if (bare) return body;
+  return (
+    <Card>
+      <SectionTitle title={t("admin.incentives.addHolidayTitle")} />
+      {body}
     </Card>
   );
 }
