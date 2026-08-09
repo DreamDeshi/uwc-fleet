@@ -957,7 +957,9 @@
       "mapStale": "信号丢失（最后定位已过期）",
       "mapNoDriver": "无司机",
       "openTripBoard": "打开行程看板 →",
-      "viewAll": "查看全部 →"
+      "viewAll": "查看全部 →",
+      "focusPlant": "将地图对准 UWC 工厂",
+      "focusPlantShort": "工厂"
     },
     "drivers": {
       "loadError": "无法加载司机。",

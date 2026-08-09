@@ -3,6 +3,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } 
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
+import { greetingFontSize } from "../../lib/greetingName";
 import { useNavigation, type CompositeNavigationProp } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -183,7 +184,10 @@ export function RequestorDashboardScreen() {
         <View style={styles.headerTop}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.greetingTime}>{greeting} 👋</Text>
-            <Text style={styles.hi} numberOfLines={2}>{user?.name ?? ""}</Text>
+            {/* Size steps down as the name grows — see lib/greetingName. */}
+            <Text style={[styles.hi, { fontSize: greetingFontSize(user?.name ?? "", 24) }]} numberOfLines={2}>
+              {user?.name ?? ""}
+            </Text>
             <Text style={styles.headerMeta} numberOfLines={1}>
               {[
                 formatDate(new Date()),

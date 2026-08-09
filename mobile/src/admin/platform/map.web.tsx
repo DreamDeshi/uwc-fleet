@@ -10,11 +10,11 @@
 // zone_code only, no coordinates. Only the code label remains.
 import React, { useEffect } from "react";
 import { AttributionControl, MapContainer, TileLayer, Marker, Tooltip, useMap } from "react-leaflet";
-import L from "leaflet";
+import L, { type Map as LeafletMap } from "leaflet";
 import { InvalidateOnLayout } from "../../components/leafletCommon";
 import { useTranslation } from "react-i18next";
 import { useWide } from "../../hooks/useWide";
-import { MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES } from "../lib/zones";
+import { FOCUS_ZOOM, MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES } from "../lib/zones";
 import { formatTime } from "../lib/format";
 import { groupFleet, type FleetGroup } from "../lib/fleetGroups";
 import { colors } from "../theme";
@@ -143,6 +143,14 @@ export function AdminFleetMap({
 }) {
   const { t } = useTranslation();
   const isWide = useWide();
+  // The Leaflet instance, captured off MapContainer's ref. The plant button
+  // sits OUTSIDE MapContainer (it is an overlay, not a Leaflet control), so it
+  // cannot use useMap() — it needs the instance itself.
+  const [map, setMap] = React.useState<LeafletMap | null>(null);
+  const focus = React.useCallback(
+    (lat: number, lng: number) => map?.setView([lat, lng], FOCUS_ZOOM, { animate: true }),
+    [map]
+  );
   const liveByPlate = new Map(live.map((p) => [p.plate, p]));
   // A truck gets a map marker ONLY when it has a real fix — i.e. it is on an
   // in-progress trip that has pinged (live OR stale/last-known). Everything else
@@ -153,6 +161,7 @@ export function AdminFleetMap({
 
   const mapCard = (
     <MapContainer
+      ref={setMap}
       center={MAP_CENTER}
       zoom={MAP_ZOOM}
       scrollWheelZoom
@@ -197,6 +206,10 @@ export function AdminFleetMap({
             position={[fix.latitude, fix.longitude]}
             icon={truckIcon(tr.plate, truckColor[tr.status] ?? colors.blue, isLive)}
             zIndexOffset={500}
+            // Tap a truck to go to it. On a fleet frame wide enough to hold an
+            // outlier, the trucks in the corridor are a cluster of dots — the
+            // tooltip tells you WHICH, this gets you THERE.
+            eventHandlers={{ click: () => focus(fix.latitude, fix.longitude) }}
           >
             <Tooltip direction="top" offset={[0, -30]}>
               <div style={{ fontSize: 13 }}>
@@ -370,11 +383,34 @@ export function AdminFleetMap({
       <div
         style={
           isWide
-            ? { flex: 1, minHeight: 0, borderRadius: 12, overflow: "hidden" }
-            : { height, width: "100%", borderRadius: 12, overflow: "hidden" }
+            ? { flex: 1, minHeight: 0, borderRadius: 12, overflow: "hidden", position: "relative" }
+            : { height, width: "100%", borderRadius: 12, overflow: "hidden", position: "relative" }
         }
       >
         {mapCard}
+        {/* Jump to the plant. Deliberately SMALL and out of the way (owner:
+            "a really small button") — the map's job is the fleet; this is a
+            way back to the depot when you have panned off, not a headline
+            control. Sits opposite Leaflet's own zoom buttons so it never
+            covers them, and above the attribution, which must stay legible. */}
+        <button
+          type="button"
+          onClick={() => focus(PLANT_ORIGIN.lat, PLANT_ORIGIN.lng)}
+          title={t("admin.dashboard.focusPlant")}
+          aria-label={t("admin.dashboard.focusPlant")}
+          style={{
+            position: "absolute", top: 10, right: 10, zIndex: 500,
+            display: "flex", alignItems: "center", gap: 6,
+            background: colors.card, border: `1px solid ${colors.border}`,
+            borderRadius: 8, padding: "5px 8px", cursor: "pointer",
+            font: "inherit", fontSize: 11, fontWeight: 700, color: colors.navy,
+            boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+          }}
+        >
+          <span style={{ width: 9, height: 9, background: colors.yellow,
+                         border: `2px solid ${colors.navy}`, borderRadius: 2, display: "inline-block" }} />
+          {t("admin.dashboard.focusPlantShort")}
+        </button>
       </div>
       {idleSummary}
       {idlePanel}

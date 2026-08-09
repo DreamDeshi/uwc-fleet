@@ -14,7 +14,7 @@ import MapView, { Callout, Marker } from "react-native-maps";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { useWide } from "../../hooks/useWide";
-import { MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES } from "../lib/zones";
+import { FOCUS_ZOOM, MAP_CENTER, MAP_ZOOM, PLANT_ORIGIN, ZONES } from "../lib/zones";
 import { formatTime } from "../lib/format";
 import { groupFleet, type FleetGroup } from "../lib/fleetGroups";
 import { colors, font } from "../theme";
@@ -58,6 +58,19 @@ const REGION = {
   longitudeDelta: 2.0,
 };
 void MAP_ZOOM; // parity note: web uses the zoom directly
+
+// react-native-maps frames by DELTA, Leaflet by zoom level, so the shared
+// FOCUS_ZOOM has to be converted rather than passed through: the world is 360°
+// across at zoom 0 and halves each level, so delta = 360 / 2**zoom. Deriving it
+// keeps the two builds pointed at the same tightness from ONE constant instead
+// of a magic number here that silently drifts from the web's.
+const FOCUS_DELTA = 360 / 2 ** FOCUS_ZOOM;
+const focusRegion = (latitude: number, longitude: number) => ({
+  latitude,
+  longitude,
+  latitudeDelta: FOCUS_DELTA,
+  longitudeDelta: FOCUS_DELTA,
+});
 
 // STATIC markers are pre-rendered PNGs (e2e/tools/gen-map-marker-assets.mjs
 // renders the exact web divIcon CSS → pixel parity by construction). WHY:
@@ -141,6 +154,8 @@ export function AdminFleetMap({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitKey]);
+  const focus = (latitude: number, longitude: number) =>
+    mapRef.current?.animateToRegion(focusRegion(latitude, longitude), 350);
   const liveByPlate = new Map(live.map((p) => [p.plate, p]));
   // A truck gets a map marker ONLY when it has a real fix (live or stale). Every
   // other truck has no live position and must never be drawn at a fake
@@ -323,6 +338,9 @@ export function AdminFleetMap({
                 anchor={{ x: 0.5, y: 1 }}
                 tracksViewChanges={tracksViewChanges}
                 zIndex={2}
+                // Tap a truck to go to it — parity with the web build. The
+                // callout still opens; this only moves the camera under it.
+                onPress={() => focus(fix.latitude, fix.longitude)}
               >
                 {/* INTERIM truck marker (owner decision, 27 Jul 2026): a plain
                     colored dot small enough to fit the Fabric bug's constant
@@ -369,6 +387,34 @@ export function AdminFleetMap({
             );
           })}
         </MapView>
+        {/* Jump to the plant — small and out of the way, parity with the web
+            build's overlay button. Absolute over the MapView so it does not
+            take height from the map itself. */}
+        <Pressable
+          onPress={() => focus(PLANT_ORIGIN.lat, PLANT_ORIGIN.lng)}
+          accessibilityRole="button"
+          accessibilityLabel={t("admin.dashboard.focusPlant")}
+          hitSlop={8}
+          style={{
+            position: "absolute",
+            top: 10,
+            right: 10,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: 8,
+            paddingVertical: 5,
+            paddingHorizontal: 8,
+          }}
+        >
+          <View style={{ width: 9, height: 9, backgroundColor: colors.yellow, borderWidth: 2, borderColor: colors.navy, borderRadius: 2 }} />
+          <Text style={{ fontSize: 11, fontWeight: "700", color: colors.navy }}>
+            {t("admin.dashboard.focusPlantShort")}
+          </Text>
+        </Pressable>
       </View>
 
       {/* Idle trucks: no live position → NOT on the map. Compact side list

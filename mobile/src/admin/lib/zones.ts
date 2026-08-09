@@ -60,8 +60,20 @@ export const ZONE_BY_CODE: Record<string, ZoneInfo> = Object.fromEntries(
 // Fitting to the fleet removes that dilemma rather than picking a side: an
 // ordinary day opens tight on the northern corridor; the day a truck runs to
 // Ipoh, the frame opens to include it.
-export const MAP_CENTER: [number, number] = [5.35, 100.48];
-export const MAP_ZOOM = 10;
+// Zoom 10 still opened wider than the owner wanted (9 Aug, second pass), so the
+// idle frame is 11 and centred a little nearer the plant: at 11 Penang island,
+// Butterworth, Bukit Mertajam and Batu Kawan all sit on screen, which is the
+// working area. Anything further out is only reachable by a truck actually
+// going there — and when one does, FitToFleet opens the frame to include it.
+export const MAP_CENTER: [number, number] = [5.33, 100.42];
+export const MAP_ZOOM = 11;
+
+/**
+ * Zoom used when the map is pointed at ONE thing on purpose — the plant button
+ * or a tapped truck. Close enough to read the streets around it without losing
+ * the surrounding town.
+ */
+export const FOCUS_ZOOM = 15;
 
 /** The zone a fix-less truck is drawn in: its first RECOGNISED priority zone. */
 export function primaryZone(zones: string[]): string {
