@@ -13,19 +13,21 @@
 // a PDF, and a page-1 raster preview is worse, because it looks complete while
 // hiding pages. Those go to the system viewer whole.
 //
-// ⚠ NO DOWNLOAD OR SHARE. The frame draws both; they are deliberately absent.
-// A POD is an authenticated, short-lived, access-controlled asset, and a
-// permanent copy in the device gallery leaves that control behind — a policy
-// decision the owner is putting to the client, not a UI one. Omitting them also
-// keeps this OTA-shippable: a native share sheet would need expo-sharing, a new
-// native dependency and therefore an APK rebuild.
+// ⚠ DOWNLOAD AND SHARE ARE WEB-ONLY, and that is a shipping constraint, not a
+// design choice. Mr Teh cleared the permanent-copy policy (9 Aug 2026), but a
+// native share sheet needs expo-sharing — a NEW NATIVE DEPENDENCY, so an APK
+// rebuild, so not an OTA. Both buttons are therefore gated on
+// Platform.OS === "web", exactly as the Reports and Sustainability CSV exports
+// are, and platform/podFile.ts stubs the native side until that rebuild.
+// A phone admin does NOT see these buttons yet.
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Image, Modal, Pressable, Text, View, StyleSheet } from "react-native";
+import { ActivityIndicator, Image, Modal, Platform, Pressable, Text, View, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { colors, font, radius } from "../theme";
 import { formatDateTime, formatTime } from "../lib/format";
 import { podInitialState, podViewerReducer, type PodState } from "../lib/podViewer";
+import { canSharePod, downloadPod, sharePod } from "../platform/podFile";
 
 export function PodViewerModal({
   visible,
@@ -85,6 +87,31 @@ export function PodViewerModal({
   const status = state.status;
   const handleError = useCallback(() => apply({ type: "error", url: photoUrl }), [apply, photoUrl]);
   const retry = useCallback(() => apply({ type: "retry" }), [apply]);
+
+  const [busy, setBusy] = useState<null | "download" | "share">(null);
+  const [actionError, setActionError] = useState(false);
+  // A POD filename should say WHICH delivery it proves, so a folder of them is
+  // still readable a month later.
+  const filename = `pod-${ticket}-stop${sequence}.jpg`;
+  const canShare = Platform.OS === "web" && canSharePod();
+  const showActions = Platform.OS === "web" && status === "ok";
+
+  const run = useCallback(
+    async (kind: "download" | "share", fn: () => Promise<void>) => {
+      setActionError(false);
+      setBusy(kind);
+      try {
+        await fn();
+      } catch {
+        // The commonest cause is the signature lapsing between opening the
+        // modal and pressing the button, so say so rather than failing mutely.
+        setActionError(true);
+      } finally {
+        setBusy(null);
+      }
+    },
+    []
+  );
 
   const meta =
     uploadedAt && deliveredAt
@@ -153,6 +180,33 @@ export function PodViewerModal({
         </View>
 
         {meta ? <Text style={styles.meta}>{meta}</Text> : null}
+        {actionError ? <Text style={styles.actionError}>{t("admin.pod.actionFailed")}</Text> : null}
+        {showActions ? (
+          <View style={styles.actions}>
+            {canShare ? (
+              <Pressable
+                onPress={() => run("share", () => sharePod(photoUrl, filename))}
+                disabled={busy !== null}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.action, styles.actionGhost, pressed && styles.actionGhostPressed, busy !== null && styles.actionDisabled]}
+              >
+                <Text style={styles.actionGhostText}>
+                  {busy === "share" ? t("admin.pod.sharing") : t("admin.pod.share")}
+                </Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={() => run("download", () => downloadPod(photoUrl, filename))}
+              disabled={busy !== null}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.action, styles.actionPrimary, pressed && styles.actionPrimaryPressed, busy !== null && styles.actionDisabled]}
+            >
+              <Text style={styles.actionPrimaryText}>
+                {busy === "download" ? t("admin.pod.downloading") : t("admin.pod.download")}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
     </Modal>
   );
@@ -186,4 +240,15 @@ const styles = StyleSheet.create({
   retryPressed: { backgroundColor: "rgba(255,255,255,0.26)" },
   retryText: { color: "#fff", fontSize: font.sm, fontWeight: "700" },
   meta: { color: "rgba(255,255,255,0.6)", fontSize: font.xs, marginTop: 14 },
+  actionError: { color: "#FFB4AB", fontSize: font.xs, marginTop: 8 },
+  actions: { flexDirection: "row", gap: 12, marginTop: 14 },
+  action: { flex: 1, borderRadius: radius.md, paddingVertical: 13, alignItems: "center", justifyContent: "center" },
+  actionDisabled: { opacity: 0.6 },
+  actionGhost: { backgroundColor: "rgba(255,255,255,0.12)" },
+  actionGhostPressed: { backgroundColor: "rgba(255,255,255,0.24)" },
+  actionGhostText: { color: "#fff", fontSize: font.md, fontWeight: "700" },
+  // Corporate yellow, as the frame draws the primary action.
+  actionPrimary: { backgroundColor: colors.yellow },
+  actionPrimaryPressed: { backgroundColor: "#E6B800" },
+  actionPrimaryText: { color: colors.navy, fontSize: font.md, fontWeight: "800" },
 });
