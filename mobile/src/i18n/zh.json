@@ -959,7 +959,8 @@
       "openTripBoard": "打开行程看板 →",
       "viewAll": "查看全部 →",
       "focusPlant": "将地图对准 UWC 工厂",
-      "focusPlantShort": "工厂"
+      "focusPlantShort": "工厂",
+      "driversCount": "{{count}} 位司机"
     },
     "drivers": {
       "loadError": "无法加载司机。",
@@ -1033,7 +1034,6 @@
     },
     "sustainability": {
       "loadError": "无法加载燃油汇总。",
-      "heroCaption": "本月",
       "fuelUsed": "已用燃油",
       "estCo2e": "估算 CO₂e",
       "distance": "里程",
@@ -1048,7 +1048,11 @@
       "exportFills": "导出加油记录 CSV",
       "exportSummary": "导出月度汇总 CSV",
       "exportFailed": "导出失败 — 请重试。",
-      "disclosure": "CO₂e 与节省量为基于已记录加油和可调参数的估算 — 绝不用于工资或调度。"
+      "disclosure": "CO₂e 与节省量为基于已记录加油和可调参数的估算 — 绝不用于工资或调度。",
+      "heroMonth": "{{year}}年{{month}}",
+      "heroUsed": "已用 {{litres}} 升",
+      "heroRollup": "{{co2}} 公斤 CO₂e · {{km}} 公里 · 全车队 {{lp100}} L/100km",
+      "estimatesNote": "根据已记录的加油量和平均行程距离估算。"
     },
     "fleetGroups": {
       "customer": "客户 / 供应商",
@@ -1485,6 +1489,20 @@
       "cancelled": "已取消",
       "assigned_external": "已分配给承运商",
       "rerouted": "已改道"
+    },
+    "months": {
+      "jan": "1月",
+      "feb": "2月",
+      "mar": "3月",
+      "apr": "4月",
+      "may": "5月",
+      "jun": "6月",
+      "jul": "7月",
+      "aug": "8月",
+      "sep": "9月",
+      "oct": "10月",
+      "nov": "11月",
+      "dec": "12月"
     }
   },
   "timeline": {

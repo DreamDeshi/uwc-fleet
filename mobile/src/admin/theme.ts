@@ -13,6 +13,11 @@ export const colors = {
   navy: "#1A1F5E", // sidebar / dark surfaces
   navyDeep: "#10143F", // sidebar gradient tail
   green: "#3DAA35",
+  // Dark green SURFACE (frame 11's sustainability hero). Not a text colour and
+  // not interchangeable with `green`: this is a ground that white type sits on
+  // (#fff on #14532D ≈ 10.5:1), where `green` is a 3.00:1 accent that must
+  // never carry small text. See theme.contrast.test.ts.
+  greenDeep: "#14532D",
   red: "#E53935",
   orange: "#F97316",
   amber: "#d97706", // weekend / pending text
@@ -37,6 +42,15 @@ export const colors = {
   redTint: "#FFEBEE",
   violetTint: "#EDE9FE",
   tealTint: "#E0F5F2",
+  // Neutral pill family — the "deactivated / retired / not applicable" state,
+  // which is deliberately colourless. These were loose hexes repeated across
+  // screens; a state that means "no state" still needs ONE definition.
+  greyTint: "#F3F4F6",
+  greyBorder: "#E5E7EB",
+  greyStrong: "#4B5563",
+  // Pill borders one step darker than the matching tint, so a tinted pill
+  // reads as an object rather than a wash.
+  blueBorder: "#BBD2F5",
 } as const;
 
 export const radius = { sm: 8, md: 12, lg: 16, xl: 20, pill: 999 };

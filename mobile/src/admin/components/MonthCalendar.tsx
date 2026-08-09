@@ -127,16 +127,28 @@ export function MonthCalendar({
                     setSelected(next);
                     if (next) onPickDate?.(next);
                   }}
+                  // Frame 15 draws the phone grid CLEAN: no cell rules, no
+                  // tinted holiday cells, and nothing at all in the adjacent
+                  // month's slots — the day number plus a dot carries it. The
+                  // WIDE grid keeps its rules and tints: it prints the holiday
+                  // NAME inside the cell, and that needs the cell to be a box.
                   style={{
                     flex: 1,
                     height: cellH,
                     padding: 4,
-                    borderRightWidth: 1,
-                    borderBottomWidth: 1,
+                    borderRightWidth: narrow ? 0 : 1,
+                    borderBottomWidth: narrow ? 0 : 1,
                     borderColor: colors.divider,
-                    backgroundColor: isSel ? colors.blueTint : holiday ? colors.yellowTint : c.inMonth ? colors.card : colors.panel,
+                    backgroundColor: isSel
+                      ? colors.blueTint
+                      : holiday && !narrow
+                        ? colors.yellowTint
+                        : c.inMonth || narrow
+                          ? colors.card
+                          : colors.panel,
                   }}
                 >
+                  {narrow && !c.inMonth ? null : (
                   <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                     <View
                       style={{
@@ -159,11 +171,12 @@ export function MonthCalendar({
                       </View>
                     )}
                   </View>
+                  )}
                   {holiday && !narrow ? (
                     <Text numberOfLines={2} style={{ fontSize: 10, fontWeight: "700", color: colors.amber, marginTop: 2, lineHeight: 12 }}>
                       {holiday}
                     </Text>
-                  ) : holiday && narrow ? (
+                  ) : holiday && narrow && c.inMonth ? (
                     <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.amber, marginTop: 3, marginLeft: 2 }} />
                   ) : null}
                 </Pressable>
