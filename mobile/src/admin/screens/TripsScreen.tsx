@@ -803,7 +803,7 @@ function TripDetail({ trip, onDone, onSchedule }: { trip: Trip; onDone: () => vo
           <Text style={{ fontSize: font.xs, fontWeight: "700", letterSpacing: 0.6, textTransform: "uppercase", color: colors.textMuted }}>
             {trip.route_type.name}
           </Text>
-          <Text style={{ fontSize: 22, fontWeight: "800", color: colors.text }}>{trip.ticket_number}</Text>
+          <Text style={{ fontFamily: MONO, fontSize: 22, fontWeight: "700", color: colors.text }}>{trip.ticket_number}</Text>
         </View>
         <View style={{ flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {trip.incentive_earned && (
