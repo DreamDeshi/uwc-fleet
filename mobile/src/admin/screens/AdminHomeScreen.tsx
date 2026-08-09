@@ -31,10 +31,14 @@ import { DashboardWide } from "./DashboardWide";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
-function greetingKey(hour: number): "goodMorning" | "goodAfternoon" | "goodEvening" {
-  if (hour < 12) return "goodMorning";
-  if (hour < 18) return "goodAfternoon";
-  return "goodEvening";
+// Frame 1 greets by FIRST NAME ("Hi, Nurul Huda") and the header has to hold a
+// greeting, a day summary, the role pill and search on a 390px phone. A
+// time-of-day greeting plus a full Malaysian name ("Good morning, Ahmad Faizal
+// Bin Rahman") ellipsises before it reaches the name, which is worse than not
+// personalising it at all — so the greeting is short and the name is the first
+// word. The requestor home keeps its time-of-day greeting: it has a whole line.
+function firstName(name: string | undefined): string {
+  return (name ?? "").trim().split(/\s+/)[0] ?? "";
 }
 
 export function AdminHomeScreen() {
@@ -50,7 +54,6 @@ export function AdminHomeScreen() {
   const trucks = useTrucks();
   const live = useFleetLive();
 
-  const greeting = t(`admin.home.${greetingKey(new Date().getHours())}`);
   const pendingCount = pending.data?.length ?? 0;
   const approvalCount = pendingApprovals.data?.length ?? 0;
   const k = dashboard.data;
@@ -114,28 +117,35 @@ export function AdminHomeScreen() {
           would be a regression, not a redesign. */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.headerTop}>
-          <BrandLogo white mark height={30} style={{ marginRight: 12 }} />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.greetingTime}>{greeting} 👋</Text>
-            <Text numberOfLines={1} style={styles.hi}>{user?.name ?? ""}</Text>
-            {/* Frame 1's "Fri 9 Aug · 6 trips, 8 trucks active" — the day in one
-                line, replacing the role row (the shield pill below says Admin,
-                and the role never changes while you read it). */}
-            <View style={styles.roleRow}>
-              <Ionicons name="shield-checkmark-outline" size={12} color="rgba(255,255,255,0.65)" />
-              <Text style={styles.role} numberOfLines={1}>
-                {k
-                  ? t("admin.home.headerSummary", {
-                      date: formatDate(new Date()),
-                      trips: k.trips_today,
-                      trucks: k.active_trucks,
-                    })
-                  : t("admin.roleLabel")}
-              </Text>
-            </View>
+          <BrandLogo white mark height={30} />
+          {/* Frame 1: the greeting and the name are ONE line, not two. The
+              two-line stack (16px "Good morning" over a 26px name) cost a whole
+              row of blue to say something the dispatcher already knows. */}
+          <Text numberOfLines={1} style={styles.greetingLine}>
+            {t("admin.home.greetingLine", { name: firstName(user?.name) })}
+          </Text>
+          <View style={styles.rolePill}>
+            <Ionicons name="shield-checkmark-outline" size={14} color="#fff" />
+            <Text style={styles.rolePillText}>{t("admin.home.rolePill")}</Text>
           </View>
           <AdminSearchButton />
         </View>
+
+        {/* "Fri 9 Aug · 6 trips, 8 trucks active" gets its OWN full-width line.
+            Sharing the greeting's column left it ~180px once the pill and
+            search took their width, which truncated it to "…0 tr…" — the trucks
+            figure, the half of the line that changes, was the half being cut.
+            The shield lives in the pill now: the role never changes while you
+            read it, so it does not belong beside the numbers that do. */}
+        <Text numberOfLines={1} style={styles.headerSummary}>
+          {k
+            ? t("admin.home.headerSummary", {
+                date: formatDate(new Date()),
+                trips: k.trips_today,
+                trucks: k.active_trucks,
+              })
+            : t("admin.roleLabel")}
+        </Text>
 
         {/* ONE line, the most blocked thing — see lib/adminHome. A dispatcher's
             first question on opening the app is "is anything stuck?"; the
@@ -210,6 +220,36 @@ export function AdminHomeScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Quick actions — the important admin functions promoted out of MORE
+            as a 4-across tap grid. Same destinations, new entry points.
+            ⚠ ORDER: the tiles sit ABOVE the map (owner, 9 Aug). They were
+            briefly below it, when the map was promoted during the home
+            refinement the same day; the owner reversed that. The tiles are the
+            screen's navigation — the map is a status glance — so the thing you
+            TAP comes before the thing you LOOK AT. Do not swap them back. */}
+        <View style={styles.section}>
+          <View style={styles.gridCard}>
+            {quickTiles.map((tile) => (
+              <TouchableOpacity
+                key={tile.route}
+                style={styles.tile}
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate("AdminMore", { screen: tile.route, initial: false })}
+              >
+                <View style={styles.tileIcon}>
+                  <Ionicons name={tile.icon} size={22} color={colors.blue} />
+                  {tile.count ? (
+                    <View style={styles.tileBadge}>
+                      <Text style={styles.tileBadgeText}>{tile.count > 99 ? "99+" : tile.count}</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text numberOfLines={2} style={styles.tileLabel}>{t(tile.labelKey)}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
         {/* Fleet map — the Phase-3 map, now on the phone home too. */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t("admin.dashboard.fleetMap")}</Text>
@@ -246,31 +286,6 @@ export function AdminHomeScreen() {
             quick-action grid tile above is the entry point, and the card only
             showed dashes here. The card stays on WIDE (DashboardWide). */}
 
-        {/* Quick actions — the important admin functions promoted out of MORE
-            as a 4-across tap grid. Same destinations, new entry points. */}
-        <View style={styles.section}>
-          <View style={styles.gridCard}>
-            {quickTiles.map((tile) => (
-              <TouchableOpacity
-                key={tile.route}
-                style={styles.tile}
-                activeOpacity={0.7}
-                onPress={() => navigation.navigate("AdminMore", { screen: tile.route, initial: false })}
-              >
-                <View style={styles.tileIcon}>
-                  <Ionicons name={tile.icon} size={22} color={colors.blue} />
-                  {tile.count ? (
-                    <View style={styles.tileBadge}>
-                      <Text style={styles.tileBadgeText}>{tile.count > 99 ? "99+" : tile.count}</Text>
-                    </View>
-                  ) : null}
-                </View>
-                <Text numberOfLines={2} style={styles.tileLabel}>{t(tile.labelKey)}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
 
       </View>
     </ScrollView>
@@ -300,12 +315,22 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
   header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 44 },
-  headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  // Same greeting scale as the requestor/driver homes (owner-approved balance).
-  greetingTime: { color: "rgba(255,255,255,0.85)", fontSize: 16, fontWeight: "700" },
-  hi: { color: "#fff", fontSize: 26, fontWeight: "800", marginTop: 3 },
-  roleRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 5 },
-  role: { color: "rgba(255,255,255,0.7)", fontSize: font.md },
+  headerTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  // Frame 1's header type: one 20px line for the greeting, one 13px line for
+  // the day. (The driver/requestor homes keep their two-line stack — this is
+  // the admin frame, and the admin header carries a summary they do not.)
+  greetingLine: { flex: 1, minWidth: 0, color: "#fff", fontSize: 20, fontWeight: "800", lineHeight: 25 },
+  headerSummary: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: "600", marginTop: 8 },
+  rolePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    paddingVertical: 6,
+    paddingHorizontal: 11,
+    borderRadius: radius.pill,
+  },
+  rolePillText: { color: "#fff", fontSize: 12, fontWeight: "700" },
   avatar: {
     width: 44,
     height: 44,
