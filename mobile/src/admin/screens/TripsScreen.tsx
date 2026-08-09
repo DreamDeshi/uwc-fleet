@@ -359,6 +359,16 @@ export function TripsScreen() {
               <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.to")}</Text>
               <DateInputInline value={dateTo} onChange={setDateTo} />
             </View>
+          </View>
+
+          {/* Status chips and the result controls share ONE row: chips left,
+              controls right. They used to be two rows — the controls wrapped
+              off the top row while the chips had their own line beneath — so
+              both sat with a band of dead space beside them and the header ate
+              a row the board could have used. `flex-end` keeps the two aligned
+              on their baseline when the chips wrap on a narrow window. */}
+          <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+            <View style={{ flexShrink: 1, minWidth: 0 }}>{statusSegments}</View>
             <View style={{ marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               {attentionChip}
               {resultsLabel}
@@ -374,7 +384,6 @@ export function TripsScreen() {
               )}
             </View>
           </View>
-          {statusSegments}
           {filtersOpen ? (
             <View style={{ flexDirection: "row", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <FilterSelect

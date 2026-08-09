@@ -33,7 +33,6 @@ import {
   TripStatusBadge,
 } from "../components/ui";
 import { DispatchToggle } from "../components/DispatchToggle";
-import { SustainabilityCard } from "../components/SustainabilityCard";
 import { exceptionsEnabled } from "../../lib/featureFlags";
 import { LoadCapacityBar } from "../components/LoadCapacityBar";
 import { AttentionPanel } from "../components/AttentionPanel";
@@ -185,9 +184,11 @@ export function DashboardWide() {
         </View>
       </View>
 
-      {/* Sustainability strip — fleet fuel/CO₂e/distance (SDG visibility).
-          Same rollup as the Sustainability screen; taps through to it. */}
-      <SustainabilityCard onPress={() => navigation.navigate("AdminSustainability")} />
+      {/* Sustainability strip REMOVED from the desktop dashboard (owner,
+          9 Aug 2026). It had already been removed from the phone home on
+          28 Jul; this finishes the job. The SCREEN itself is untouched and
+          still reachable from the sidebar — only its dashboard rollup is gone,
+          so no data or feature is lost. */}
 
       {/* Map + right rail */}
       <View style={{ flexDirection: "row", gap: 16, alignItems: "stretch" }}>

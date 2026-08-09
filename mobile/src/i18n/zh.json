@@ -964,15 +964,7 @@
       "mapStale": "信号丢失（最后定位已过期）",
       "mapNoDriver": "无司机",
       "openTripBoard": "打开行程看板 →",
-      "viewAll": "查看全部 →",
-      "sustainTitle": "可持续发展",
-      "sustainSub": "本月车队燃油与碳排放",
-      "sustainFuel": "已用燃油",
-      "sustainCo2": "估算 CO₂e",
-      "sustainDistance": "里程",
-      "sustainSavings_one": "≈ 节省燃油 {{litres}} L — 本月 {{count}} 趟行程使用较小货车",
-      "sustainSavings_other": "≈ 节省燃油 {{litres}} L — 本月 {{count}} 趟行程使用较小货车",
-      "sustainHint": "燃油数据来自已记录的加油 · 节省量为估算值"
+      "viewAll": "查看全部 →"
     },
     "drivers": {
       "loadError": "无法加载司机。",
