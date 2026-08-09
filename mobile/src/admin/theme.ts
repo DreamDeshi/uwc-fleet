@@ -42,6 +42,15 @@ export const colors = {
   redTint: "#FFEBEE",
   violetTint: "#EDE9FE",
   tealTint: "#E0F5F2",
+  // Neutral pill family — the "deactivated / retired / not applicable" state,
+  // which is deliberately colourless. These were loose hexes repeated across
+  // screens; a state that means "no state" still needs ONE definition.
+  greyTint: "#F3F4F6",
+  greyBorder: "#E5E7EB",
+  greyStrong: "#4B5563",
+  // Pill borders one step darker than the matching tint, so a tinted pill
+  // reads as an object rather than a wash.
+  blueBorder: "#BBD2F5",
 } as const;
 
 export const radius = { sm: 8, md: 12, lg: 16, xl: 20, pill: 999 };

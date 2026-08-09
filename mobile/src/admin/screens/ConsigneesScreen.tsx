@@ -138,7 +138,7 @@ export function ConsigneesScreen() {
                   flexDirection: "row",
                   alignItems: "center",
                   gap: 12,
-                  paddingVertical: 13,
+                  paddingVertical: 15,
                   paddingHorizontal: 16,
                   borderBottomWidth: i === rows.length - 1 ? 0 : 1,
                   borderBottomColor: colors.divider,
@@ -151,7 +151,7 @@ export function ConsigneesScreen() {
                       {c.company_name}
                     </Text>
                     {c.is_active === false && (
-                      <Pill bg="#F3F4F6" fg="#4B5563" border="#E5E7EB" dot="#9CA3AF">
+                      <Pill bg={colors.greyTint} fg={colors.greyStrong} border={colors.greyBorder} dot={colors.textFaint}>
                         {t("admin.consignees.deactivated")}
                       </Pill>
                     )}
@@ -160,7 +160,7 @@ export function ConsigneesScreen() {
                     {[c.area, c.state].filter(Boolean).join(" · ") || "—"}
                   </Text>
                 </View>
-                <Pill bg={colors.blueTint} fg={colors.blue} border="#BBD2F5">
+                <Pill bg={colors.blueTint} fg={colors.blue} border={colors.blueBorder}>
                   {c.zone_code}
                 </Pill>
                 <Button size="sm" variant="outline" onPress={() => setEditing(c)}>
