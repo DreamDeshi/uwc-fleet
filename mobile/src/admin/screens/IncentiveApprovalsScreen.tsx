@@ -19,6 +19,7 @@ import { Linking, Pressable, RefreshControl, ScrollView, Text, View } from "reac
 import { useTranslation } from "react-i18next";
 import { useApproveIncentive, usePendingApprovals } from "../hooks/queries";
 import { colors, font, radius } from "../theme";
+import { PodViewerModal } from "../components/PodViewerModal";
 
 import { Button, Card, EmptyState, ErrorState, Input, Loading, Modal, Pill } from "../components/ui";
 import { formatMoney, formatDateTime, formatTime } from "../lib/format";
@@ -232,7 +233,7 @@ function ApprovalCard({ trip }: { trip: Trip }) {
       {/* Stops + POD photo links (the evidence the admin approves against) */}
       <View style={{ gap: 6 }}>
         {stops.map((s) => (
-          <StopRow key={s.id} stop={s} />
+          <StopRow key={s.id} stop={s} ticket={trip.ticket_number} />
         ))}
       </View>
 
@@ -359,8 +360,13 @@ function K2ApprovalGate({
   );
 }
 
-function StopRow({ stop }: { stop: TripStop }) {
+function StopRow({ stop, ticket }: { stop: TripStop; ticket: string }) {
   const { t } = useTranslation();
+  const [podOpen, setPodOpen] = useState(false);
+  // Re-signing is just a refetch of the query that produced this URL — the
+  // server mints a fresh signature on every read (see api/lib/podPhotos), so
+  // no new endpoint is needed for expiry recovery.
+  const pending = usePendingApprovals();
   // ⚠ ORDER AND LABELS ARE LOAD-BEARING ON THIS SCREEN. The admin can override
   // the paid amount here, and the rate tier keys on the DELIVERY CONFIRM (3 Jul
   // 2026; refined by R1 Q4). The POD upload necessarily PRECEDES the delivered
@@ -418,8 +424,10 @@ function StopRow({ stop }: { stop: TripStop }) {
       </View>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         {stop.pod_photo ? (
-          <Pressable onPress={() => Linking.openURL(stop.pod_photo!)}>
-            <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.blue }}>📷 POD ↗</Text>
+          // Opens IN-APP now (frame 16). K2 below deliberately still leaves the
+          // app: it may be a multi-page PDF — see the warning on that row.
+          <Pressable onPress={() => setPodOpen(true)}>
+            <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.blue }}>📷 POD</Text>
           </Pressable>
         ) : stop.status !== "delivered" ? (
           // Cut short by a partial abort — not paid, not missing evidence. Muted
@@ -464,6 +472,19 @@ function StopRow({ stop }: { stop: TripStop }) {
           </Pill>
         ) : null}
       </View>
+      {stop.pod_photo ? (
+        <PodViewerModal
+          visible={podOpen}
+          onClose={() => setPodOpen(false)}
+          photoUrl={stop.pod_photo}
+          ticket={ticket}
+          sequence={stop.sequence}
+          consignee={stop.consignee.company_name}
+          uploadedAt={stop.pod_uploaded_at}
+          deliveredAt={stop.delivered_at}
+          onStale={() => pending.refetch()}
+        />
+      ) : null}
     </View>
   );
 }

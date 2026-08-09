@@ -41,6 +41,7 @@ import {
 } from "../components/ui";
 import { DispatchToggle } from "../components/DispatchToggle";
 import { StatusTimeline } from "../components/StatusTimeline";
+import { PodViewerModal } from "../components/PodViewerModal";
 import { DateField } from "../platform/datePicker";
 import { apiErrorMessage, apiErrorCode, apiErrorConflicts } from "../services/api";
 import { formatDateTime, formatMoney, formatTime, mytDateKey } from "../lib/format";
@@ -811,6 +812,9 @@ function TripDetail({ trip, onDone, onSchedule }: { trip: Trip; onDone: () => vo
   const detail = useTrip(trip.id);
   const timeline = detail.data?.timeline ?? [];
   const wide = mode === "wide";
+  // The stop whose POD is open, if any. Re-signing on expiry is a refetch of
+  // the same detail query — the server signs freshly on every read.
+  const [podStop, setPodStop] = useState<Trip["stops"][number] | null>(null);
   return (
     <Card>
       {/* Header */}
@@ -868,9 +872,11 @@ function TripDetail({ trip, onDone, onSchedule }: { trip: Trip; onDone: () => vo
                 <Text style={{ color: "#fff", fontSize: font.xs, fontWeight: "700" }}>{s.sequence}</Text>
               </View>
               <Text numberOfLines={2} style={{ flex: 1, fontSize: font.md, color: colors.text }}>{s.consignee.company_name}</Text>
+              {/* In-app (frame 16). The trip DOCUMENT link below still opens
+                  externally on purpose — it can be a PDF. */}
               {s.pod_photo && (
-                <Pressable onPress={() => Linking.openURL(s.pod_photo!)}>
-                  <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.blue }}>📷 POD ↗</Text>
+                <Pressable onPress={() => setPodStop(s)}>
+                  <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.blue }}>📷 POD</Text>
                 </Pressable>
               )}
               <Text style={{ fontSize: font.xs, color: colors.textMuted }}>{s.consignee.zone_code}</Text>
@@ -906,6 +912,19 @@ function TripDetail({ trip, onDone, onSchedule }: { trip: Trip; onDone: () => vo
           )}
         </View>
       )}
+      {podStop?.pod_photo ? (
+        <PodViewerModal
+          visible
+          onClose={() => setPodStop(null)}
+          photoUrl={podStop.pod_photo}
+          ticket={trip.ticket_number}
+          sequence={podStop.sequence}
+          consignee={podStop.consignee.company_name}
+          uploadedAt={podStop.pod_uploaded_at}
+          deliveredAt={podStop.delivered_at}
+          onStale={() => detail.refetch()}
+        />
+      ) : null}
     </Card>
   );
 }
