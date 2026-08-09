@@ -959,7 +959,8 @@
       "openTripBoard": "打开行程看板 →",
       "viewAll": "查看全部 →",
       "focusPlant": "将地图对准 UWC 工厂",
-      "focusPlantShort": "工厂"
+      "focusPlantShort": "工厂",
+      "driversCount": "{{count}} 位司机"
     },
     "drivers": {
       "loadError": "无法加载司机。",

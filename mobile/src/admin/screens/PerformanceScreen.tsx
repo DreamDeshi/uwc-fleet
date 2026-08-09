@@ -200,13 +200,16 @@ function Podium({ drivers }: { drivers: DriverPerformance[] }) {
 }
 
 // ── Shared bits ──────────────────────────────────────────────────────────
-function Lens({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
+function Lens({ title, hint, children, right }: { title: string; hint: string; children: React.ReactNode; right?: React.ReactNode }) {
   const narrow = useLayoutMode() === "narrow";
   return (
     <Card>
-      <View style={{ marginBottom: 14 }}>
-        <Text style={{ fontSize: font.xs, fontWeight: "800", letterSpacing: 1.2, color: colors.blue, textTransform: "uppercase" }}>{title}</Text>
-        {!narrow && <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 3 }}>{hint}</Text>}
+      <View style={{ marginBottom: 14, flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ fontSize: font.xs, fontWeight: "800", letterSpacing: 1.2, color: colors.blue, textTransform: "uppercase" }}>{title}</Text>
+          {!narrow && <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 3 }}>{hint}</Text>}
+        </View>
+        {right}
       </View>
       {children}
     </Card>
@@ -274,37 +277,66 @@ function Component({ value, max, detail, label }: { value: number; max: number; 
 function Leaderboard({ ranked }: { ranked: DriverPerformance[] }) {
   const { t } = useTranslation();
   return (
-    <Lens title={t("admin.performance.leaderboard")} hint={t("admin.performance.leaderboardHint")}>
-      <View style={{ gap: 10 }}>
+    <Lens
+      title={t("admin.performance.leaderboard")}
+      hint={t("admin.performance.leaderboardHint")}
+      right={<Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.dashboard.driversCount", { count: ranked.length })}</Text>}
+    >
+      {/* Frame 14: ONE card of hairline-divided rows, not a stack of separately
+          bordered cards. Each row drawing its own border made the list read as
+          nine objects instead of one ranking. */}
+      <View>
         {ranked.map((d, i) => (
-          <LeaderboardCard key={d.id} d={d} rank={i + 1} />
+          <LeaderboardCard key={d.id} d={d} rank={i + 1} last={i === ranked.length - 1} />
         ))}
       </View>
+      {/* The frame carries this as a footnote under the list; Lens hides its
+          hint on narrow, where the row itself has no room for it. */}
+      <Text style={{ fontSize: font.xs, color: colors.textFaint, marginTop: 12 }}>
+        {t("admin.performance.leaderboardHint")}
+      </Text>
     </Lens>
   );
 }
 
-function LeaderboardCard({ d, rank }: { d: DriverPerformance; rank: number }) {
+function LeaderboardCard({ d, rank, last }: { d: DriverPerformance; rank: number; last: boolean }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const scored = d.total_completed > 0;
   const medalTop = rank <= 3 && scored;
+  const sc = scoreColor(d.total_score);
   return (
     <Pressable
       onPress={() => setExpanded((e) => !e)}
-      style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 12, backgroundColor: colors.card }}
+      style={({ pressed }) => ({
+        paddingVertical: 12,
+        borderBottomWidth: last ? 0 : 1,
+        borderBottomColor: colors.divider,
+        backgroundColor: pressed ? colors.panel : "transparent",
+      })}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
         <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: medalTop ? MEDAL[rank as 1 | 2 | 3].bg : colors.panel, alignItems: "center", justifyContent: "center" }}>
           <Text style={{ fontSize: font.sm, fontWeight: "800", color: medalTop ? MEDAL[rank as 1 | 2 | 3].accent : colors.textFaint }}>{rank}</Text>
         </View>
+        <Avatar name={d.name} size={32} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <DriverCell d={d} />
         </View>
-        <View style={{ alignItems: "flex-end", gap: 4 }}>
-          <ScoreBadge score={d.total_score} completed={d.total_completed} />
-          {scored ? <Pill {...scoreColor(d.total_score)}>{t(tierKeyFor(d.total_score))}</Pill> : null}
-        </View>
+        {/* ONE pill carrying score AND tier — the frame's own note says why:
+            it keeps every row the same height. A stacked badge-over-pill made
+            scored rows taller than unscored ones, so the list stepped. */}
+        {scored ? (
+          <View style={{ backgroundColor: sc.bg, borderRadius: radius.pill, paddingVertical: 4, paddingHorizontal: 10 }}>
+            <Text style={{ color: sc.fg, fontSize: font.sm, fontWeight: "800" }}>
+              {d.total_score.toFixed(1)} · {t(tierKeyFor(d.total_score))}
+            </Text>
+          </View>
+        ) : (
+          <View style={{ backgroundColor: colors.greyTint, borderRadius: radius.pill, paddingVertical: 4, paddingHorizontal: 10 }}>
+            <Text style={{ color: colors.greyStrong, fontSize: font.xs, fontWeight: "700" }}>{t("admin.performance.noData")}</Text>
+          </View>
+        )}
         <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} />
       </View>
       {expanded && (

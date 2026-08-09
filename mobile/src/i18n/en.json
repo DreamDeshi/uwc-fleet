@@ -959,7 +959,8 @@
       "openTripBoard": "Open trip board →",
       "viewAll": "View All →",
       "focusPlant": "Focus the map on the UWC plant",
-      "focusPlantShort": "Plant"
+      "focusPlantShort": "Plant",
+      "driversCount": "{{count}} drivers"
     },
     "drivers": {
       "loadError": "Could not load drivers.",

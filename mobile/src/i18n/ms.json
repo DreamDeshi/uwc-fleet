@@ -959,7 +959,8 @@
       "openTripBoard": "Buka papan trip →",
       "viewAll": "Lihat Semua →",
       "focusPlant": "Fokus peta pada kilang UWC",
-      "focusPlantShort": "Kilang"
+      "focusPlantShort": "Kilang",
+      "driversCount": "{{count}} pemandu"
     },
     "drivers": {
       "loadError": "Tidak dapat memuatkan pemandu.",
