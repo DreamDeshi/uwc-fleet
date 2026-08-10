@@ -117,6 +117,7 @@ export function AdminFleetMap({
   height = 400,
   fill = false,
   idleCollapsed = false,
+  idleOverlay = false,
 }: {
   trucks: Truck[];
   live?: LivePosition[];
@@ -127,6 +128,11 @@ export function AdminFleetMap({
   // never ended. Collapsed by default here, one tap to open — nothing is
   // hidden, it just stops being the first thing you scroll past.
   idleCollapsed?: boolean;
+  // Put the idle roster ON the map (bottom-left) instead of in a column beside
+  // it, so the map gets the card's full width. WIDE ONLY — on a phone the map
+  // is 280px tall and a panel over it would swamp the thing it annotates, so
+  // narrow keeps the stacked list. Parity with map.web.tsx.
+  idleOverlay?: boolean;
   // fill: take the parent's full height (flex:1) instead of a fixed px height —
   // used where the map sits in a stretched card beside a taller rail.
   fill?: boolean;
@@ -169,9 +175,13 @@ export function AdminFleetMap({
   // below renders exactly as before — the ship-early contract).
   const groups = groupFleet(trucks, (p) => liveByPlate.has(p));
   const grouped = !isWide && groups.length > 1;
-  // Home passes idleCollapsed; the Fleet screen does not, so it keeps the
-  // full list exactly as before.
+  // Home passes idleCollapsed, the desktop dashboard passes idleOverlay. Both
+  // drive the SAME `idleOpen` state — one is a line above the map, the other a
+  // chip on it, and neither hides a truck that the other would show.
   const [idleOpen, setIdleOpen] = useState(false);
+  // Narrow falls back to the stacked list: an overlay on a 280px-tall phone map
+  // would cover the thing it annotates.
+  const overlayMode = idleOverlay && isWide;
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     customer: true, // the dispatch pool — open by default
     interplant: false, // two dedicated shuttles — folded, counts still visible
@@ -415,6 +425,54 @@ export function AdminFleetMap({
             {t("admin.dashboard.focusPlantShort")}
           </Text>
         </Pressable>
+        {/* The idle roster, ON the map — parity with map.web.tsx; see the
+            reasoning there. Collapsed it is a chip in the plant button's
+            language, open the SAME element grows downward into a scrollable
+            panel. TOP-LEFT under the zoom control, not bottom-left: the card
+            stretches to the right rail and its bottom falls below the fold, so
+            a bottom-anchored chip needed a scroll to reach. */}
+        {overlayMode && idle.length > 0 && (
+          <View
+            style={{
+              position: "absolute",
+              left: 10,
+              top: 84,
+              // Closed it hugs its text like the plant button it echoes.
+              width: idleOpen ? 208 : undefined,
+              // Fixed, not a percentage — the card is taller than the viewport,
+              // so a percentage cap put the panel's last row below the fold.
+              maxHeight: 360,
+              backgroundColor: colors.card,
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: 10,
+              overflow: "hidden",
+            }}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: idleOpen }}
+              accessibilityLabel={`${t("admin.fleetGroups.countIdle", { n: idle.length })} · ${t("admin.fleetGroups.notTracked")}`}
+              onPress={() => setIdleOpen((v) => !v)}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 7,
+                paddingHorizontal: 9,
+                paddingVertical: 7,
+                borderBottomWidth: idleOpen ? 1 : 0,
+                borderBottomColor: colors.border,
+              }}
+            >
+              <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: colors.blue }} />
+              <Text style={{ flex: idleOpen ? 1 : undefined, fontSize: 11, fontWeight: "700", color: colors.navy }}>
+                {t("admin.fleetGroups.countIdle", { n: idle.length })}
+              </Text>
+              <Text style={{ fontSize: 10, color: colors.textFaint }}>{idleOpen ? "▴" : "▾"}</Text>
+            </Pressable>
+            {idleOpen && <ScrollView nestedScrollEnabled>{idle.map(renderIdleRow)}</ScrollView>}
+          </View>
+        )}
       </View>
 
       {/* Idle trucks: no live position → NOT on the map. Compact side list
@@ -427,7 +485,7 @@ export function AdminFleetMap({
           rows, so on phones the list renders in full and the PAGE scrolls;
           the wide sidebar keeps its own scroll (nestedScrollEnabled for the
           Android case). */}
-      {idle.length > 0 && idleCollapsed && !idleOpen ? (
+      {!overlayMode && idle.length > 0 && idleCollapsed && !idleOpen ? (
         <Pressable
           accessibilityRole="button"
           accessibilityState={{ expanded: false }}
@@ -448,7 +506,7 @@ export function AdminFleetMap({
           <Text style={{ fontSize: 12, fontWeight: "700", color: colors.blue }}>{t("admin.fleetGroups.showAll")}</Text>
         </Pressable>
       ) : null}
-      {idle.length > 0 && (!idleCollapsed || idleOpen) && (
+      {!overlayMode && idle.length > 0 && (!idleCollapsed || idleOpen) && (
         <View
           style={{
             width: isWide ? 190 : undefined,

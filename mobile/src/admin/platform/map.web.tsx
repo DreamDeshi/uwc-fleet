@@ -126,6 +126,7 @@ export function AdminFleetMap({
   height = 400,
   fill = false,
   idleCollapsed = false,
+  idleOverlay = false,
 }: {
   trucks: Truck[];
   live?: LivePosition[];
@@ -136,6 +137,13 @@ export function AdminFleetMap({
   // never ended. Collapsed by default here, one tap to open — nothing is
   // hidden, it just stops being the first thing you scroll past.
   idleCollapsed?: boolean;
+  // Put the idle roster ON the map (bottom-left) instead of in a column beside
+  // it, so the map gets the card's full width. WIDE ONLY — on a phone the map
+  // is 280px tall and a panel over it would swamp the thing it annotates, so
+  // narrow keeps the stacked list. Used by the desktop dashboard, where the
+  // right rail's "Live Fleet Load" already lists every plate and driver, which
+  // made the side list a second roster of the same fleet.
+  idleOverlay?: boolean;
   // fill: take the parent's full height (flex:1) instead of a fixed px height —
   // used where the map sits in a stretched card beside a taller rail, so it
   // fills the card rather than leaving white space below a fixed-height map.
@@ -243,9 +251,13 @@ export function AdminFleetMap({
   // reconcile to the whole fleet (pinned in lib/fleetGroups.test.ts).
   const groups = groupFleet(trucks, (p) => liveByPlate.has(p));
   const grouped = !isWide && groups.length > 1;
-  // Home passes idleCollapsed; the Fleet screen does not, so it keeps the
-  // full list exactly as before.
+  // Home passes idleCollapsed, the desktop dashboard passes idleOverlay. Both
+  // drive the SAME `idleOpen` state — one is a line above the map, the other a
+  // chip on it, and neither hides a truck that the other would show.
   const [idleOpen, setIdleOpen] = React.useState(false);
+  // Narrow falls back to the stacked list: an overlay on a 280px-tall phone map
+  // would cover the thing it annotates.
+  const overlayMode = idleOverlay && isWide;
   const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>({
     customer: true, // the dispatch pool — open by default
     interplant: false, // two dedicated shuttles — folded, counts still visible
@@ -311,7 +323,7 @@ export function AdminFleetMap({
   );
 
   // ONE summary line instead of the full list when the host asks for it.
-  const idleSummary = idle.length > 0 && idleCollapsed && !idleOpen && (
+  const idleSummary = !overlayMode && idle.length > 0 && idleCollapsed && !idleOpen && (
     <button
       type="button"
       onClick={() => setIdleOpen(true)}
@@ -333,7 +345,7 @@ export function AdminFleetMap({
     </button>
   );
 
-  const idlePanel = idle.length > 0 && (!idleCollapsed || idleOpen) && (
+  const idlePanel = !overlayMode && idle.length > 0 && (!idleCollapsed || idleOpen) && (
     <div
       style={{
         display: "flex",
@@ -411,6 +423,65 @@ export function AdminFleetMap({
                          border: `2px solid ${colors.navy}`, borderRadius: 2, display: "inline-block" }} />
           {t("admin.dashboard.focusPlantShort")}
         </button>
+        {/* The idle roster, ON the map. Collapsed it is a chip in the same
+            language as the plant button; open, the SAME element grows upward
+            into a scrollable panel — one element, two states, so the chip can
+            never drift from the panel it opens.
+
+            TOP-LEFT, tucked UNDER Leaflet's zoom buttons, and it has to be:
+            this card stretches to the right rail (~835px on a 1440×900 laptop),
+            so its BOTTOM is below the fold. A chip anchored bottom-left
+            measured y=1215 in a 900px viewport — you had to scroll to find the
+            roster at all, which defeats the point of moving it here. The plant
+            button owns the top right and the OSM attribution the bottom right,
+            so under the zoom is the one spot that is both free and on-screen.
+            It opens DOWNWARD, over the water west of the coast road.
+
+            It sits OUTSIDE MapContainer, like the plant button. That is what
+            keeps a wheel event over the list from reaching Leaflet's own
+            container, so scrolling the roster never zooms the map underneath. */}
+        {overlayMode && idle.length > 0 && (
+          <div
+            style={{
+              // top 84 clears Leaflet's zoom control (10px margin + two 30px
+              // buttons + borders) with a little air under it.
+              position: "absolute", left: 10, top: 84, zIndex: 500,
+              // maxHeight is a FIXED 360, not a percentage of the map. The card
+              // stretches to the right rail and is TALLER THAN THE VIEWPORT
+              // (835px on a 1440×900 laptop), so "62%" of it = 518px and the
+              // open panel ran 40px past the fold — measured bottom 940 in a
+              // 900px viewport, clipping the last truck off a list whose whole
+              // job is to show every truck. 360 keeps the panel on-screen and
+              // lets the roster scroll inside itself as the fleet grows.
+              // Closed it hugs its text like the plant button it echoes; only
+              // the open panel needs the fixed 208 to hold plate + type + tag.
+              width: idleOpen ? 208 : undefined, maxHeight: 360,
+              display: "flex", flexDirection: "column",
+              background: colors.card, border: `1px solid ${colors.border}`,
+              borderRadius: 10, overflow: "hidden",
+              boxShadow: "0 1px 6px rgba(0,0,0,0.20)",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setIdleOpen((v) => !v)}
+              aria-expanded={idleOpen}
+              title={`${t("admin.fleetGroups.countIdle", { n: idle.length })} · ${t("admin.fleetGroups.notTracked")}`}
+              style={{
+                display: "flex", alignItems: "center", gap: 7, flexShrink: 0,
+                background: "transparent", border: "none",
+                borderBottom: idleOpen ? `1px solid ${colors.border}` : "none",
+                padding: "7px 9px", cursor: "pointer", font: "inherit",
+                fontSize: 11, fontWeight: 700, color: colors.navy, textAlign: "left",
+              }}
+            >
+              <span style={{ width: 9, height: 9, borderRadius: "50%", background: colors.blue, flex: "none" }} />
+              <span style={{ flex: idleOpen ? 1 : "none" }}>{t("admin.fleetGroups.countIdle", { n: idle.length })}</span>
+              <span style={{ fontSize: 10, color: colors.textFaint }}>{idleOpen ? "▴" : "▾"}</span>
+            </button>
+            {idleOpen && <div style={{ overflowY: "auto" }}>{idle.map(idleRow)}</div>}
+          </div>
+        )}
       </div>
       {idleSummary}
       {idlePanel}
