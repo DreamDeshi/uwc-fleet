@@ -37,7 +37,12 @@
     "signIn": "Log Masuk",
     "createAccount": "Cipta Akaun",
     "forgotPassword": "Lupa kata laluan? Hubungi pejabat — admin boleh menetapkannya semula untuk anda.",
-    "footer": "UWC Berhad © 2026"
+    "footer": "UWC Berhad © 2026",
+    "demoPrompt": "Terokai demo",
+    "demoHint": "Pilih peranan untuk log masuk. Tiada kata laluan diperlukan — ini sistem demonstrasi dengan data contoh.",
+    "demoRole_admin": "Teruskan sebagai Pentadbir",
+    "demoRole_requestor": "Teruskan sebagai Pemohon",
+    "demoRole_driver": "Teruskan sebagai Pemandu"
   },
   "register": {
     "title": "Cipta Akaun",

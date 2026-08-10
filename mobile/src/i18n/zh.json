@@ -37,7 +37,12 @@
     "signIn": "登录",
     "createAccount": "创建账户",
     "forgotPassword": "忘记密码？请联系办公室——管理员可为您重置。",
-    "footer": "UWC Berhad © 2026"
+    "footer": "UWC Berhad © 2026",
+    "demoPrompt": "体验演示",
+    "demoHint": "选择一个角色登录。无需密码——这是使用示例数据的演示系统。",
+    "demoRole_admin": "以管理员身份继续",
+    "demoRole_requestor": "以申请人身份继续",
+    "demoRole_driver": "以司机身份继续"
   },
   "register": {
     "title": "创建账户",

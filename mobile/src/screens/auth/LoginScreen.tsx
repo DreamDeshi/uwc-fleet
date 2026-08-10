@@ -21,6 +21,7 @@ import { colors, layout, radius, shadow } from "../../theme";
 import { useWide } from "../../hooks/useWide";
 import { BrandLogo } from "../../components/BrandLogo";
 import { Button } from "../../components/Button";
+import { demoPassword, demoRoles, type DemoRole } from "../../lib/featureFlags";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
 
@@ -57,6 +58,55 @@ export function LoginScreen({ navigation }: Props) {
       setLoading(false);
     }
   };
+
+  // ── Demo instance: pick a role, no credentials ──────────────────────────
+  // Empty on every build that does not supply the demo env (i.e. production),
+  // so `demoOn` is false and the ordinary form below renders untouched.
+  const roles = demoRoles();
+  const demoOn = roles.length > 0;
+
+  const onDemoRole = async (r: DemoRole) => {
+    setError(null);
+    setLoading(true);
+    try {
+      await login(r.phone, demoPassword());
+    } catch (err) {
+      setError(apiErrorMessage(err, t("common.errorGeneric")));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const demoIcon: Record<DemoRole["role"], keyof typeof Ionicons.glyphMap> = {
+    admin: "shield-checkmark-outline",
+    requestor: "cube-outline",
+    driver: "car-outline",
+  };
+
+  const demoPicker = (
+    <>
+      <Text style={styles.label}>{t("login.demoPrompt")}</Text>
+      <Text style={styles.demoHint}>{t("login.demoHint")}</Text>
+      {roles.map((r, i) => (
+        <Button
+          key={r.role}
+          title={t(`login.demoRole_${r.role}`)}
+          onPress={() => onDemoRole(r)}
+          loading={loading}
+          size="xl"
+          variant={i === 0 ? undefined : "outline"}
+          style={{ marginTop: i === 0 ? 18 : 12 }}
+          icon={<Ionicons name={demoIcon[r.role]} size={20} color={i === 0 ? colors.white : colors.blue} />}
+        />
+      ))}
+      {error ? (
+        <View style={[styles.errorBox, { marginTop: 16 }]}>
+          <Ionicons name="alert-circle" size={18} color={colors.red} />
+          <Text style={styles.error}>{error}</Text>
+        </View>
+      ) : null}
+    </>
+  );
 
   // The form body — identical on phone and desktop.
   const fields = (
@@ -148,7 +198,7 @@ export function LoginScreen({ navigation }: Props) {
 
         <View style={styles.formSide}>
           <View style={styles.desktopCard}>
-            {fields}
+            {demoOn ? demoPicker : fields}
             <Text style={styles.footerDesktop}>{t("login.footer")}</Text>
           </View>
         </View>
@@ -181,7 +231,7 @@ export function LoginScreen({ navigation }: Props) {
         <Text style={styles.phoneWelcome}>{t("login.welcome")}</Text>
         <Text style={styles.phoneSubtitle}>{t("login.subtitle")}</Text>
 
-        <View style={styles.phoneFields}>{fields}</View>
+        <View style={styles.phoneFields}>{demoOn ? demoPicker : fields}</View>
 
         {/* The tagline reads as a footer rule here rather than a header line —
             two short yellow strokes either side, per the frame. */}
@@ -302,6 +352,12 @@ const styles = StyleSheet.create({
   error: { flex: 1, color: colors.red, fontSize: 14, fontWeight: "600" },
   // Muted and small: it is a fallback instruction, not a call to action, and it
   // must not compete with Sign in / Create account.
+  demoHint: {
+    marginTop: 6,
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
   forgotHint: {
     marginTop: 18,
     textAlign: "center",
