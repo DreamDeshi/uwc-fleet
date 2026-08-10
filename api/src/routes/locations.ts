@@ -108,19 +108,29 @@ router.post(
     // capturing NEW fixes for these trips.
     const inactive = inactiveTripIds(trips);
 
-    for (const id of tripIds) {
-      if (!ownByDriver.has(id)) {
-        throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
-      }
-      if (!ownByDriver.get(id)) {
-        throw new ApiError(403, "FORBIDDEN", "You are not assigned to this trip.");
-      }
-    }
+    // A trip that is unknown or not this driver's is SKIPPED, not thrown on.
+    //
+    // ⚠ This used to 404/403 the WHOLE request if any single trip_id failed.
+    // The phone's queue is one global buffer across every trip it has recorded
+    // and (before the per-trip flush landed) was POSTed as one batch, so a
+    // single dead trip_id — a deleted trip, or one reassigned to another driver
+    // — rejected every other trip's points too. The client's catch then re-sent
+    // the identical payload forever. On 10 Aug 2026 that pinned a live-trial
+    // driver at "Offline · 500 queued" (the buffer's cap) on full signal,
+    // discarding a reading every 30s to make room for one it also could not
+    // send. Skipping lets the good points through and lets the phone clear the
+    // bad ones, including on app builds that predate the client-side fix.
+    //
+    // The authorization rule is UNCHANGED: a point is stored only if its trip
+    // belongs to this driver. Rejections are reported rather than silently
+    // swallowed, so a genuinely misbehaving client is still visible.
+    const rejected = tripIds.filter((id) => !ownByDriver.get(id));
+    const accepted = points.filter((p) => ownByDriver.get(p.trip_id));
 
     // One insert for the whole batch — a reconnect flush of a big offline
     // backlog is still a single query.
     await prisma.locationLog.createMany({
-      data: points.map((p) => ({
+      data: accepted.map((p) => ({
         trip_id: p.trip_id,
         driver_id: driverId,
         latitude: p.latitude,
@@ -132,7 +142,13 @@ router.post(
       })),
     });
 
-    res.status(201).json({ accepted: points.length, inactive_trip_ids: inactive });
+    res.status(201).json({
+      accepted: accepted.length,
+      inactive_trip_ids: inactive,
+      // Points this driver may not log. Reported so a rejection is observable
+      // rather than silent — the phone can stop resending them either way.
+      rejected_trip_ids: rejected,
+    });
   } catch (err) {
     next(err);
   }
