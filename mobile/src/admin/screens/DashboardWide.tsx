@@ -218,14 +218,20 @@ export function DashboardWide() {
               <Text style={{ fontSize: 15, fontWeight: "700", color: colors.text }}>{t("admin.dashboard.fleetMap")}</Text>
             </View>
             {/* Only active trucks (with a real fix) are markers now; idle /
-                maintenance moved into the map's Idle side list, so their dots
-                would point at markers that no longer exist. */}
+                maintenance live in the map's own idle chip (bottom-left), so
+                their dots would point at markers that no longer exist. */}
             <View style={{ flexDirection: "row", gap: 12 }}>
               <LegendDot color={colors.green} label={t("admin.trucks.statusActive")} />
             </View>
           </View>
           <View style={{ flex: 1, padding: 12 }}>
-            <AdminFleetMap trucks={truckList} live={live.data ?? []} fill />
+            {/* idleOverlay: the roster rides ON the map instead of taking a
+                190px column beside it. The right rail's "Live Fleet Load"
+                below already lists every plate and its driver, so the side
+                list was a second roster of the same nine trucks — and on a
+                day when the whole fleet is idle it took half the card while
+                the map it was squeezing had no markers left to show. */}
+            <AdminFleetMap trucks={truckList} live={live.data ?? []} fill idleOverlay />
           </View>
         </Card>
 
