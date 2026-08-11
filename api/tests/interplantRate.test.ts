@@ -37,6 +37,19 @@ const PLX = {
   interplant_claim_offpeak: 8,
 };
 
+// PPE 2406 — the OTHER designated interplant lorry, and the only fixture whose
+// own interplant pair DIFFERS from INTERPLANT_FALLBACK_RATE (RM5/7 vs RM6/8).
+// That difference is the whole point of this fixture: PLX 2406's own pair IS
+// the fallback, so a test using only PLX cannot tell "reads the truck's pair"
+// apart from "always uses the fallback". See the test that pins it below.
+const PPE = {
+  entitled_claim_weekday: 5,
+  entitled_claim_offpeak: 7,
+  daily_deduction_points: 0,
+  interplant_claim_weekday: 5,
+  interplant_claim_offpeak: 7,
+};
+
 // PND 1888 — a customer lorry with no interplant row of its own.
 const PND = {
   entitled_claim_weekday: 11,
@@ -103,6 +116,51 @@ describe("truckRateSnapshot — which of the truck's two rate pairs is frozen", 
     });
     // The thing that must never happen again: paying a plant run at RM11/13.
     expect(truckRateSnapshot(PND, { interplant: true }).entitled_claim_weekday).not.toBe(11);
+  });
+
+  it("a lorry WITH its own interplant row is paid THAT row, not the fallback", () => {
+    // PPE 2406 is the discriminating case, and it is the ordinary case: one of
+    // the two designated interplant lorries, priced RM5/7 by the workbook.
+    //
+    // ⚠ WHY THIS TEST EXISTS. Every other test here expects 6/8 — PLX 2406's
+    // own pair IS the fallback, and a backup lorry resolves TO the fallback. So
+    // the suite passed 1254/1254 with `truck.interplant_claim_weekday ??` deleted
+    // and the fallback returned unconditionally (measured 11 Aug 2026). It could
+    // not see the difference between reading the truck's row and ignoring it.
+    // This is the assertion that goes red for that, and RM1 per point — paid on
+    // the wrong side, uncorrectable after approval (BL9) — is what it protects.
+    expect(truckRateSnapshot(PPE, { interplant: true })).toEqual({
+      entitled_claim_weekday: 5,
+      entitled_claim_offpeak: 7,
+      daily_deduction_points: 0,
+    });
+
+    // Said the other way round, so a future edit to the fallback cannot quietly
+    // make this test tautological: PPE's pair must NOT be the fallback's.
+    expect(truckRateSnapshot(PPE, { interplant: true }).entitled_claim_weekday).not.toBe(
+      INTERPLANT_FALLBACK_RATE.weekday
+    );
+    expect(truckRateSnapshot(PPE, { interplant: true }).entitled_claim_offpeak).not.toBe(
+      INTERPLANT_FALLBACK_RATE.offpeak
+    );
+  });
+
+  it("pins the two interplant lorries to the DB values the backfill writes", () => {
+    // The spec is the source; 20260811160000_interplant_rate_values writes these
+    // exact pairs onto existing databases, where the columns landed null. If the
+    // spec moves and the migration does not, this fails.
+    const spec = loadSpecTrucks();
+    const plx = spec.find((t) => t.plate === "PLX 2406")!;
+    const ppe = spec.find((t) => t.plate === "PPE 2406")!;
+
+    expect(truckRateSnapshot(PLX, { interplant: true })).toMatchObject({
+      entitled_claim_weekday: plx.interplant_weekday_rate,
+      entitled_claim_offpeak: plx.interplant_offpeak_rate,
+    });
+    expect(truckRateSnapshot(PPE, { interplant: true })).toMatchObject({
+      entitled_claim_weekday: ppe.interplant_weekday_rate,
+      entitled_claim_offpeak: ppe.interplant_offpeak_rate,
+    });
   });
 
   it("passes the interplant pair through the next-day cutoff merge untouched", () => {
