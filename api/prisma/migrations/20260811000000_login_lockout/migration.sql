@@ -1,0 +1,35 @@
+-- SC3 (second half): per-account login lockout.
+--
+-- The 10/min per-IP limiter shipped in `5972dff` and closed the "100 guesses a
+-- minute" half of SC3. It does nothing about the attack it was never shaped for:
+-- ONE known phone, a few guesses a minute, from anywhere, for as long as the
+-- attacker cares to wait. Phone IS the login id here and the office knows every
+-- one of them, so the account set is public by construction. These two columns
+-- are the state that makes a lockout possible.
+--
+-- PURELY ADDITIVE: two columns on User. No drops, no backfill, no change to any
+-- existing row's meaning. An existing user is simply a user with zero recorded
+-- failures and no lock, which is exactly what the defaults say.
+--
+-- ⚠ HAND-WRITTEN, and checked against the rule in AGENTS.md: `prisma migrate
+-- diff` in this repo keeps trying to emit
+--
+--     ALTER TABLE "ExceptionEvidence" DROP CONSTRAINT
+--       "ExceptionEvidence_action_same_exception_fkey";
+--
+-- because that composite FK is raw SQL and INVISIBLE to Prisma. It is not
+-- present below, and must never be.
+--
+-- ⚠ ON THE `NOT NULL DEFAULT` — AGENTS.md lists exactly this pattern under
+-- "destructive by LOCKING rather than by dropping", because the destructive-SQL
+-- guard cannot see it. Addressed, not ignored, on two independent grounds:
+--   1. PostgreSQL 11+ stores a non-volatile column default in the catalogue and
+--      does NOT rewrite the table. `0` is a constant, so this is a metadata-only
+--      change and takes no long-held rewrite lock.
+--   2. Even on a pre-11 server that DID rewrite, "User" holds 11 rows in
+--      production. There is no table here big enough to stall on.
+-- `locked_until` is nullable with no default and carries neither risk.
+
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN "failed_login_attempts" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "User" ADD COLUMN "locked_until" TIMESTAMP(3);

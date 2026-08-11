@@ -10,8 +10,8 @@ import { api, prisma, resetDb, loginAs, auth } from "./helpers/harness";
 
 // Mixed case + a digit and at least PASSWORD_MIN_LENGTH characters: the floor
 // every password-setting path shares (lib/passwordPolicy). That floor was 12
-// from 3 Aug 2026 and is 11 from 4 Aug; this fixture sits above it either way,
-// so it does not need to move when the floor does.
+// from 3 Aug 2026, 11 from 4 Aug and 8 from 11 Aug; this fixture sits above all
+// three, so it does not need to move when the floor does.
 const SELF = { phone: "+60188880001", password: "SelfTester123" };
 
 async function ensureSelfUser() {

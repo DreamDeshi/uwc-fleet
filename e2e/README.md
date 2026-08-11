@@ -113,9 +113,9 @@ Postgres (see the repo-root [`TESTING.md`](../TESTING.md)):
 ```bash
 npm run test:db:up      # start + migrate + seed the Docker test DB (repo root)
 
-# API → Docker test DB. The two env vars matter — see the notes below.
+# API → Docker test DB. The env vars matter — see the notes below.
 CORS_ORIGIN="http://localhost:8081" RATE_LIMIT_MAX=0 SENSITIVE_RATE_LIMIT_MAX=0 \
-  npm run test:db:api
+  LOGIN_LOCKOUT_MAX_ATTEMPTS=0 npm run test:db:api
 
 cd mobile && npx expo start --web    # mobile web on :8081  (apiUrl note below)
 
@@ -140,13 +140,18 @@ if skipped):
    `RATE_LIMIT_MAX=0` in the API's environment for the run — local testing
    only, never in production (unset keeps the prod default). Also set
    `SENSITIVE_RATE_LIMIT_MAX=0`: `/login` now carries the strict 10/min limiter,
-   which a login-per-spec run trips even faster. Both unset in prod → real limits.
+   which a login-per-spec run trips even faster. And `LOGIN_LOCKOUT_MAX_ATTEMPTS=0`
+   for the per-ACCOUNT lockout — a third, independent switch that neither of the
+   other two turns off. It counts failed sign-ins per phone rather than per
+   caller, so a spec that drives a wrong password locks that fixture account and
+   every later spec logging in as it dies on a `423` that reads nothing like the
+   real cause. All three unset in prod → real limits.
 3. **Mobile API URL** — `mobile/app.json` → `extra.apiUrl` points at the prod
    API and is **baked into the web bundle**. Temporarily set it to
    `http://localhost:3000` while running the suite, and revert it afterwards
    (don't commit the change).
 
-On PowerShell set the variables first (`$env:CORS_ORIGIN = "…"; $env:RATE_LIMIT_MAX = "0"; $env:SENSITIVE_RATE_LIMIT_MAX = "0"`)
+On PowerShell set the variables first (`$env:CORS_ORIGIN = "…"; $env:RATE_LIMIT_MAX = "0"; $env:SENSITIVE_RATE_LIMIT_MAX = "0"; $env:LOGIN_LOCKOUT_MAX_ATTEMPTS = "0"`)
 and remove them afterwards.
 
 ## How isolation works

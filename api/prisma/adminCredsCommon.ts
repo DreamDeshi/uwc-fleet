@@ -59,8 +59,12 @@ export function resolveTarget(script: string, prodOptInEnv: string): Target {
 
 /**
  * Minimal strength floor: mixed case + a digit, at least PASSWORD_MIN_LENGTH
- * characters (11 since 4 Aug 2026), and not a known default. Throws (exits) with
+ * characters (8 since 11 Aug 2026), and not a known default. Throws (exits) with
  * a specific message so a weak secret can never be written.
+ *
+ * ⚠ The floor is a FLOOR, not a target. The rotation CLIs generate 16-character
+ * CSPRNG secrets and are not affected by where the floor sits — do not "simplify"
+ * them down to it.
  *
  * ⚠ THE RULE ITSELF NOW LIVES IN src/lib/passwordPolicy.ts, shared with the
  * admin reset endpoint. It used to be defined here only, while the API accepted

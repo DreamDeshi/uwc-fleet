@@ -186,6 +186,12 @@ jobs:
       # limiter would 429 the run. Both limiters off, per the documented switch.
       RATE_LIMIT_MAX: "0"
       SENSITIVE_RATE_LIMIT_MAX: "0"
+      # And the per-account lockout, which is a THIRD knob — none of these three
+      # disables the others. The suite logs in as the same few seeded accounts
+      # hundreds of times and deliberately drives failed-auth paths, so a live
+      # lockout would lock the fixture accounts partway through a run and fail
+      # every later spec with a 423 that looked nothing like its real cause.
+      LOGIN_LOCKOUT_MAX_ATTEMPTS: "0"
       CORS_ORIGIN: http://localhost:8081
 
       # The API reads these at TOKEN-SIGNING time, not at startup — which is why

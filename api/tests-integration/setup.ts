@@ -57,3 +57,11 @@ process.env.SENSITIVE_RATE_LIMIT_MAX ||= "0";
 // tests) would otherwise trip the 100/min cap. No integration test asserts the
 // general limiter; e2e disables it identically. Prod sets neither.
 process.env.RATE_LIMIT_MAX ||= "0";
+// And the PER-ACCOUNT lockout — a third knob, and neither of the two above
+// disables it. The suite logs in as the same handful of seeded accounts on
+// nearly every test and deliberately exercises wrong-password paths
+// (selfService, adminUserManagement), so a live lockout would lock a fixture
+// account partway through and fail every later test in the file with a 423.
+// `loginLockout.test.ts` and the lockout integration test set their own value
+// per test instead — the config is read at CALL time precisely so they can.
+process.env.LOGIN_LOCKOUT_MAX_ATTEMPTS ||= "0";

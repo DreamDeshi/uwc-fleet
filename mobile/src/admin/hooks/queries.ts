@@ -479,6 +479,17 @@ export function useResetUserPassword() {
   });
 }
 
+// SC3: end a login lockout early. Invalidates ["users"] so the Locked pill
+// disappears without a manual refresh — the admin is usually on the phone to
+// the locked-out person and needs to see it took.
+export function useUnlockUser() {
+  const invalidate = useInvalidate([["users"]]);
+  return useMutation({
+    mutationFn: async (v: { id: string }) => (await api.post(`/users/${v.id}/unlock`)).data,
+    onSuccess: invalidate,
+  });
+}
+
 export interface AdminUpdateUserInput {
   id: string;
   name?: string;

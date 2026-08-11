@@ -7,11 +7,12 @@ import { isStrongPassword, PASSWORD_MIN_LENGTH } from "./passwordPolicy";
  * or accepts one it will refuse with a 400 the admin cannot act on.
  */
 describe("password floor (client mirror)", () => {
-  it("is 11 characters, matching the server constant", () => {
+  it("is 8 characters, matching the server constant", () => {
     // ⚠ If this changes, change PASSWORD_MIN_LENGTH on the server in the SAME
     // commit. Lowered 12 → 11 on 4 Aug 2026 by owner decision so the prod
-    // accounts could go back to the seeded password.
-    expect(PASSWORD_MIN_LENGTH).toBe(11);
+    // accounts could go back to the seeded password, then 11 → 8 on 11 Aug 2026
+    // at the client's request.
+    expect(PASSWORD_MIN_LENGTH).toBe(8);
   });
 
   it("accepts a password of the shape the rotation generated", () => {
@@ -40,7 +41,15 @@ describe("password floor (client mirror)", () => {
   });
 
   it("accepts exactly at the boundary, rejects one short", () => {
-    expect(isStrongPassword("Abcdefghij1")).toBe(true); // 11
-    expect(isStrongPassword("Abcdefghi1")).toBe(false); // 10
+    expect(isStrongPassword("Abcdefg1")).toBe(true); // 8
+    expect(isStrongPassword("Abcdef1")).toBe(false); // 7
+  });
+
+  // At a floor of 8 the weak list finally decides something: every entry is 8-9
+  // characters, so a floor of 11 or 12 rejected all of them on LENGTH and the
+  // list was inert. `Admin123` clears the length and all three character
+  // classes, so nothing but the list stands between it and an accepted password.
+  it("refuses a known default that clears every other rule", () => {
+    expect(isStrongPassword("Admin123")).toBe(false);
   });
 });

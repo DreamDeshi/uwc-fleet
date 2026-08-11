@@ -21,7 +21,7 @@
     "hidePassword": "Hide password",
     "noData": "Nothing here yet.",
     "fileTooLarge": "That file is too large. Please send one under 10 MB.",
-    "passwordTooWeak": "Password must be at least 11 characters and include a lowercase letter, an uppercase letter and a digit.",
+    "passwordTooWeak": "Password must be at least {{count}} characters and include a lowercase letter, an uppercase letter and a digit.",
     "errorOffline": "No internet connection. Move somewhere with signal and try again — call the office if it is urgent.",
     "errorTimeout": "The server took too long to respond. Try again — call the office if it keeps happening.",
     "clear": "Clear"
@@ -812,7 +812,13 @@
       "deactivateBody": "Deactivate {{name}}? They will be logged out and cannot sign in until reactivated.",
       "resetPassword": "Reset Password",
       "passwordResetDone": "Password reset. Share the new password securely.",
-      "tempPasswordHint": "New temporary password"
+      "tempPasswordHint": "New temporary password",
+      "locked": "Locked",
+      "sectionSignIn": "Sign-in Lock",
+      "lockedBody": "Too many failed sign-ins. The lock clears by itself shortly, or you can remove it now.",
+      "notLocked": "This account is not locked.",
+      "unlock": "Unlock Now",
+      "unlockDone": "Sign-in lock removed."
     },
     "consignees": {
       "loadError": "Could not load consignees.",
