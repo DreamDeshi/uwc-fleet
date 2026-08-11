@@ -57,16 +57,34 @@ describe("per-driver key scoping (DG-D4)", () => {
     expect(await currentScopedKey("podOutbox")).toBeNull();
   });
 
-  it("logout removes one driver's data and leaves the other's untouched", async () => {
-    store.map.set(scopedKeyFor("driver-A", "podOutbox"), '["A-photo"]');
+  it("logout clears one driver's non-evidence data and never touches the other's", async () => {
     store.map.set(scopedKeyFor("driver-A", "locationQueue"), '["A-point"]');
+    store.map.set(scopedKeyFor("driver-A", "gpsConsent"), "accepted");
+    store.map.set(scopedKeyFor("driver-A", "bgTrip"), "trip-1");
     store.map.set(scopedKeyFor("driver-B", "podOutbox"), '["B-photo"]');
 
     await clearUserScope("driver-A");
 
-    expect(store.map.has(scopedKeyFor("driver-A", "podOutbox"))).toBe(false);
     expect(store.map.has(scopedKeyFor("driver-A", "locationQueue"))).toBe(false);
+    expect(store.map.has(scopedKeyFor("driver-A", "gpsConsent"))).toBe(false);
+    expect(store.map.has(scopedKeyFor("driver-A", "bgTrip"))).toBe(false);
     expect(store.map.get(scopedKeyFor("driver-B", "podOutbox"))).toBe('["B-photo"]');
+  });
+
+  it("logout KEEPS the driver's unsent PODs — the dialog promised they would be", async () => {
+    // Owner ruling 12 Aug 2026. Namespacing already stops B reading them, so
+    // deleting bought no isolation and only destroyed delivery evidence — while
+    // the confirm says "they will be kept on this phone for you".
+    store.map.set(scopedKeyFor("driver-A", "podOutbox"), '["A-unsent-photo"]');
+    store.map.set(scopedKeyFor("driver-A", "podOutbox.corrupt.1000"), "raw-bytes");
+    store.map.set(scopedKeyFor("driver-A", "locationQueue"), '["A-point"]');
+
+    await clearUserScope("driver-A");
+
+    expect(store.map.get(scopedKeyFor("driver-A", "podOutbox"))).toBe('["A-unsent-photo"]');
+    expect(store.map.get(scopedKeyFor("driver-A", "podOutbox.corrupt.1000"))).toBe("raw-bytes");
+    // ...and the non-evidence key beside it is still gone.
+    expect(store.map.has(scopedKeyFor("driver-A", "locationQueue"))).toBe(false);
   });
 
   it("the headless background task resolves the user without setActiveUser", async () => {
@@ -188,6 +206,51 @@ describe("the quarantine ceiling (DG-O10 — nothing else ever clears it)", () =
     store.map.set(`uwc.orphaned.podOutbox.${now - 1000}`, '["keep"]');
     expect(await pruneQuarantine(now)).toEqual([]);
     expect(store.map.get(`uwc.orphaned.podOutbox.${now - 1000}`)).toBe('["keep"]');
+  });
+
+  it("ages out a SURVIVING outbox by item, so an ex-driver's photos do not sit forever", async () => {
+    // The outbox key carries no timestamp — its ITEMS do — so the ceiling is
+    // applied to contents. This is the condition attached to letting the outbox
+    // survive logout at all.
+    const now = 100 * DAY;
+    store.map.set(
+      scopedKeyFor("driver-A", "podOutbox"),
+      JSON.stringify([
+        { stopId: "old", queuedAt: new Date(now - 40 * DAY).toISOString() },
+        { stopId: "recent", queuedAt: new Date(now - 2 * DAY).toISOString() },
+      ])
+    );
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const removed = await pruneQuarantine(now);
+
+    const left = JSON.parse(store.map.get(scopedKeyFor("driver-A", "podOutbox"))!);
+    expect(left.map((i: { stopId: string }) => i.stopId)).toEqual(["recent"]);
+    expect(removed.join(" ")).toContain("podOutbox");
+    vi.restoreAllMocks();
+  });
+
+  it("removes the outbox key entirely once every item has aged out", async () => {
+    const now = 100 * DAY;
+    store.map.set(
+      scopedKeyFor("driver-A", "podOutbox"),
+      JSON.stringify([{ stopId: "old", queuedAt: new Date(now - 90 * DAY).toISOString() }])
+    );
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await pruneQuarantine(now);
+
+    expect(store.map.has(scopedKeyFor("driver-A", "podOutbox"))).toBe(false);
+    vi.restoreAllMocks();
+  });
+
+  it("keeps an UNDATED outbox item rather than guessing it is old", async () => {
+    const now = 100 * DAY;
+    store.map.set(scopedKeyFor("driver-A", "podOutbox"), JSON.stringify([{ stopId: "nodate" }]));
+
+    await pruneQuarantine(now);
+
+    expect(store.map.has(scopedKeyFor("driver-A", "podOutbox"))).toBe(true);
   });
 
   it("never touches a live per-user key", async () => {

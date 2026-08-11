@@ -13,7 +13,7 @@
     "ios": "expo start --ios",
     "typecheck": "tsc --noEmit",
     "test": "vitest run src",
-    "build:web": "expo export --platform web",
+    "build:web": "expo export --platform web && node scripts/stamp-build.mjs",
     "serve": "node serve.mjs"
   },
   "dependencies": {

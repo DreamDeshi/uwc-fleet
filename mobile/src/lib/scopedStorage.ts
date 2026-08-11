@@ -220,11 +220,34 @@ export async function userScopedKeys(userId: string): Promise<string[]> {
 }
 
 /**
- * Drop everything belonging to one user. Called on logout, AFTER the caller has
- * dealt with anything unsent — this function does not ask, it removes.
+ * EVIDENCE — the only per-user data that SURVIVES its owner's logout.
+ *
+ * Owner ruling 12 Aug 2026, reversing the original "clear them all on logout":
+ * once keys are namespaced, clearing A's outbox buys NO isolation, because B
+ * cannot read A's namespace either way. It only destroys delivery evidence —
+ * and the logout dialog tells the driver the opposite ("they will be kept on
+ * this phone for you"), so the code was contradicting its own copy.
+ *
+ * A queued POD therefore survives, namespaced, and flushes on A's next sign-in.
+ * Everything else IS cleared: the GPS queue, the consent answer and the
+ * background-trip pointer are not evidence and have no reason to outlive a
+ * handover.
+ *
+ * Not kept forever — `pruneQuarantine` applies the same 30-day / 20-entry
+ * ceiling, so an ex-driver's photos do not sit on a shared handset indefinitely.
+ */
+function isEvidenceKey(key: string): boolean {
+  return /\.podOutbox(\.corrupt\.\d+)?$/.test(key);
+}
+
+/**
+ * Drop this user's data on logout — EXCEPT unsent delivery evidence.
+ *
+ * Runs AFTER the flush and the confirm, so whatever is left is exactly what the
+ * driver was told would be kept.
  */
 export async function clearUserScope(userId: string): Promise<void> {
-  const keys = await userScopedKeys(userId);
+  const keys = (await userScopedKeys(userId)).filter((k) => !isEvidenceKey(k));
   if (keys.length === 0) return;
   try {
     await AsyncStorage.multiRemove(keys);
@@ -275,21 +298,62 @@ export async function pruneQuarantine(now: number = Date.now()): Promise<string[
     doomed.push(...[...tooOld, ...overflow].map((d) => d.key));
   }
 
-  if (doomed.length === 0) return [];
-
+  // A SURVIVING OUTBOX gets the same ceiling. Its key carries no timestamp —
+  // the items do (`queuedAt`) — so it is pruned by CONTENT rather than by key,
+  // and the key is removed once it holds nothing. Without this, an ex-driver's
+  // photos would sit on a shared handset forever, which is the thing letting
+  // the outbox survive logout would otherwise create.
+  const report: string[] = [];
+  let outboxKeys: string[] = [];
   try {
-    await AsyncStorage.multiRemove(doomed);
+    outboxKeys = (await AsyncStorage.getAllKeys()).filter((k) => /\.podOutbox$/.test(k));
   } catch {
-    return [];
+    outboxKeys = [];
+  }
+  for (const key of outboxKeys) {
+    try {
+      const raw = await AsyncStorage.getItem(key);
+      if (!raw) continue;
+      const items = JSON.parse(raw) as Array<{ queuedAt?: string }>;
+      if (!Array.isArray(items)) continue;
+
+      const fresh = items
+        .filter((i) => {
+          const t = Date.parse(String(i?.queuedAt ?? ""));
+          return Number.isFinite(t) ? t >= cutoff : true; // undated → keep, never guess
+        })
+        .slice(-MAX_ORPHAN_ENTRIES); // newest wins, same as the outbox's own cap
+
+      if (fresh.length === items.length) continue;
+      // Reported, NOT added to `doomed`: the key itself is rewritten in place
+      // (or removed when empty), so handing it to multiRemove below would delete
+      // an outbox that still holds live evidence.
+      report.push(`${key} (${items.length - fresh.length} of ${items.length} items)`);
+      if (fresh.length === 0) await AsyncStorage.removeItem(key);
+      else await AsyncStorage.setItem(key, JSON.stringify(fresh));
+    } catch {
+      /* unreadable/corrupt — leave it; podOutbox quarantines that path itself */
+    }
   }
 
+  if (doomed.length > 0) {
+    try {
+      await AsyncStorage.multiRemove(doomed);
+      report.push(...doomed);
+    } catch {
+      /* leave them; the next launch tries again */
+    }
+  }
+
+  if (report.length === 0) return [];
+
   console.warn(
-    `[scopedStorage] quarantine ceiling removed ${doomed.length} quarantined entr` +
-      `${doomed.length === 1 ? "y" : "ies"} ` +
+    `[scopedStorage] retention ceiling removed ${report.length} entr` +
+      `${report.length === 1 ? "y" : "ies"} ` +
       `(older than ${MAX_ORPHAN_AGE_DAYS}d, or beyond ${MAX_ORPHAN_ENTRIES} kept): ` +
-      doomed.join(", ")
+      report.join(", ")
   );
-  return doomed;
+  return report;
 }
 
 /**
