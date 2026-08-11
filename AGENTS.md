@@ -54,6 +54,16 @@ over an older summary.
 
 
 
+Before writing or trusting ANY test, read "A BEHAVIOUR TEST IS NOT ENOUGH —
+
+ASSERT THAT THE GUARD IS REACHED" below. A green suite proving a guard that
+
+nothing calls has shipped here THREE TIMES IN ONE DAY under three different
+
+names: a vacuous scan, a tautological pin, and an unreached branch.
+
+
+
 \## Requirement authority
 
 
@@ -437,6 +447,78 @@ matter what the app did. Ask of any test or guard: WOULD THIS GO RED IF THE
 THING IT PROTECTS WERE REVERTED? If you cannot say yes from having watched it,
 
 you do not know.
+
+
+
+\#### A BEHAVIOUR TEST IS NOT ENOUGH — ASSERT THAT THE GUARD IS REACHED
+
+
+
+A correct function on an unreachable path passes everything. This happened
+
+THREE TIMES ON 11 AUG 2026 alone, each time with a fully green suite:
+
+
+
+\- the interplant FALLBACK pin — the suite could not tell "reads the truck's own
+
+&#x20; rate" from "always uses the fallback", because every fixture expected the
+
+&#x20; same number by three separate routes. 1254/1254 green with the truck's own
+
+&#x20; rate ignored entirely.
+
+\- the stale-spec GATE — a targeted run of a money pin passed 22/22 against
+
+&#x20; generated data that `gen:spec` had never rewritten, because the sync test
+
+&#x20; lived in a file that run did not include.
+
+\- the quarantine BRANCH in `scopedStorage` — unit-tested and correct, but every
+
+&#x20; call site ran AFTER a user was set, so it was dead code. The next driver to
+
+&#x20; sign in would have adopted the previous driver's queued PODs.
+
+
+
+In all three the unit tests called the function DIRECTLY, and nothing asserted
+
+that anything else did.
+
+
+
+So, for any guard, fallback or safety branch:
+
+
+
+1\. Test the behaviour, as always.
+
+2\. ALSO assert the guard is REACHED — that a real call site invokes it, on the
+
+&#x20; path where it matters.
+
+3\. Prove that assertion by REMOVING THE CALL SITE, not by breaking the logic.
+
+
+
+Step 3 is the whole point. **Breaking the logic proves the test can SEE the
+
+function. Removing the call proves the function is IN THE PROGRAM.** Only the
+
+second catches dead code, and dead code is what all three of these were.
+
+
+
+This is one failure wearing different names — a VACUOUS SCAN (a source scan
+
+whose pattern matches nothing, so it passes on an empty set), a TAUTOLOGICAL PIN
+
+(an expected value that arrives by more than one route, so it holds either way),
+
+and an UNREACHED BRANCH (correct code nothing calls). Recognise it by the
+
+symptom: the suite is green and you cannot name the line that would turn it red.
 
 
 
