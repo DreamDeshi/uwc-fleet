@@ -191,3 +191,54 @@ describe("R5 A2 — deduction and halving compose in one order", () => {
     expect(res.pointsThisTrip - res.deductionApplied - res.roundTripShortfall).toBe(2 * 1);
   });
 });
+
+/**
+ * ⚠ THE MIDNIGHT STRADDLE — A COMPLETED ROUND TRIP THAT PAYS NOTHING.
+ *
+ * This is a REAL, REACHABLE hole, pinned here rather than fixed. Halving the DAY
+ * means a round trip split by the day boundary earns floor(1/2) on each side:
+ * zero, twice, for work the client's rule was written to reward. There is no
+ * carry-forward — an unpaired leg is lost when its day closes.
+ *
+ * Reachable two ways, neither exotic:
+ *   1. the Return leg is BOOKED for the next morning. Send Monday evening,
+ *      return Tuesday — ordinary, and nothing forbids it: each leg sits inside
+ *      its own day's operating window, so no rule is broken.
+ *   2. ONE booking whose two stops straddle midnight, which the engine already
+ *      splits into two delivery-day groups of one point each.
+ *
+ * Batu Kawan plant runs are short, so (1) is the likely route in and it needs
+ * only a requestor booking the return for the next morning.
+ *
+ * NOT FIXED, deliberately: every repair pairs legs across a day boundary, and
+ * pairing is exactly what counting at day level removed ("18points for that
+ * day"). Picking a pairing rule now would invent an answer to a question
+ * Mr. Teh was never asked. Logged as an open item; these tests exist so the
+ * next reader finds it here instead of in a driver's complaint.
+ */
+describe("⚠ R5 A2 — a round trip split by midnight pays NOTHING (known, unresolved)", () => {
+  it("pays zero on BOTH sides of the boundary for one completed round trip", () => {
+    // Monday's ledger and Tuesday's ledger each start empty: priorPointsToday is
+    // bounded by the MYT day, so neither leg can ever see the other.
+    const monday = interplant({ drops: legs(1), priorPointsToday: 0 });
+    const tuesday = interplant({ drops: legs(1), priorPointsToday: 0 });
+
+    expect(monday.incentiveThisTrip).toBe(0);
+    expect(tuesday.incentiveThisTrip).toBe(0);
+    // The same two legs delivered before midnight would have paid one round trip.
+    expect(interplant({ drops: legs(1), priorPointsToday: 1 }).incentiveThisTrip).toBe(6);
+  });
+
+  it("scores both points and pays for neither — the work is recorded, the pay is not", () => {
+    const monday = interplant({ drops: legs(1), priorPointsToday: 0 });
+    expect(monday.pointsThisTrip).toBe(1); // the leg happened and is on the record
+    expect(monday.roundTripShortfall).toBe(1); // and all of it was withheld
+  });
+
+  it("loses the odd leg permanently — nothing carries into the next day", () => {
+    // Monday: 3 legs -> 1 round trip paid, 1 leg orphaned.
+    expect(interplant({ drops: legs(3), priorPointsToday: 0 }).incentiveThisTrip).toBe(6);
+    // Tuesday starts from zero. Monday's orphan does not join Tuesday's first leg.
+    expect(interplant({ drops: legs(1), priorPointsToday: 0 }).incentiveThisTrip).toBe(0);
+  });
+});

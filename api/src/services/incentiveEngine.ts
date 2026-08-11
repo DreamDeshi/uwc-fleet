@@ -458,6 +458,28 @@ export function calculateDeliveryIncentive(params: {
   // pays RM0 and the pay lands on the second. That is the rule, not a bug — but
   // it is the first place in this system where a completed trip legitimately
   // earns nothing, so it is on the first-payroll watch list.
+  //
+  // ⚠ THE MIDNIGHT STRADDLE — KNOWN, REACHABLE, AND UNRESOLVED.
+  // Halving the DAY means a round trip split by the day boundary pays NOTHING:
+  // floor(1/2) on Monday plus floor(1/2) on Tuesday is 0 + 0, for a genuine
+  // completed round trip — the exact case the rule exists to reward. The loss is
+  // total, not partial, and there is no carry-forward: an unpaired leg is lost
+  // when its day closes.
+  //
+  // Two ways in, neither exotic:
+  //   1. the Return is BOOKED for the next morning (send Monday evening, return
+  //      Tuesday) — an ordinary industrial pattern that nothing forbids, since
+  //      each leg sits inside its own day's operating window;
+  //   2. one booking whose two stops straddle midnight — the "rare midnight
+  //      straddler" this file already handles, which splits into two day groups
+  //      of one point each.
+  //
+  // NOT FIXED HERE, deliberately. Every repair pairs legs across a day boundary,
+  // and pairing is precisely what his day-level counting removed ("18points for
+  // that day"). Choosing a pairing rule now would be inventing the answer to a
+  // question he was never asked. Pinned instead by the MIDNIGHT STRADDLE block
+  // in tests/interplantRoundTrip.test.ts, so the next reader meets it in a test
+  // rather than in a driver's complaint, and logged as an open item.
   const payable = (points: number) => (params.roundTripHalving ? Math.floor(points / 2) : points);
   const beforePoints = payable(beforeDeducted);
   const withPoints = payable(withDeducted);
