@@ -11,6 +11,7 @@ import {
 import { effectiveTruckRates, effectiveZonePoints } from "./pendingRates";
 import { collectFinalizeBreakdown, proposeTripIncentiveOnce, type FinalizedGroup } from "./tripCompletion";
 import { priorDeliveredDropsWhere } from "./dayLedger";
+import { isInterplantRouteType } from "../lib/uwcSpec";
 import { SETTLED_UNDELIVERED_WHERE, stopPayInstant } from "./undeliveredPay";
 
 
@@ -114,13 +115,27 @@ export async function proposeDeliveredStopsIncentive(
     truck: effectiveTruckRates(trip.truck, new Date()),
   });
 
+  // WHICH DAY LEDGER THIS TRIP READS. Interplant work and customer/supplier
+  // work score against separate per-day pools (owner ruling 11 Aug 2026 — the
+  // full reasoning, and the two silent failures a shared pool caused, are on
+  // `pool` in dayLedger.ts). Resolved from the SAME predicate that picks the
+  // rate pair at assignment, so a trip cannot be paid the interplant rate and
+  // scored on the customer ledger.
+  const routeTypes = await tx.routeType.findMany({ select: { id: true, name: true } });
+  const interplantRouteTypeIds = routeTypes
+    .filter((rt) => isInterplantRouteType(rt.name))
+    .map((rt) => rt.id);
+  const pool: "interplant" | "customer" = interplantRouteTypeIds.includes(trip.route_type_id)
+    ? "interplant"
+    : "customer";
+
   let incentiveThisTrip = 0;
   const finalizedGroups: FinalizedGroup[] = [];
   for (const group of dayGroups) {
     // Per-day ledger: drops this driver already DELIVERED earlier today on
     // OTHER in_progress/completed trips (see dayLedger.ts).
     const priorStopsToday = await tx.tripStop.findMany({
-      where: priorDeliveredDropsWhere({ driverId, excludeTripId: trip.id, dayStart: group.dayStart, anchor: group.anchor }),
+      where: priorDeliveredDropsWhere({ driverId, excludeTripId: trip.id, dayStart: group.dayStart, anchor: group.anchor, interplantRouteTypeIds, pool }),
       select: {
         zone_code: true, zone_points: true, arrived_at: true, delivered_at: true, status: true,
         consignee: { select: { zone_code: true } },

@@ -31,6 +31,8 @@ function atSpec(t: SpecTruck): DbTruckRates {
     entitled_claim_offpeak: t.offpeak_rate,
     daily_deduction_points: t.daily_deduction,
     max_pallets: t.max_pallets,
+    interplant_claim_weekday: t.interplant_weekday_rate ?? null,
+    interplant_claim_offpeak: t.interplant_offpeak_rate ?? null,
   };
 }
 
@@ -71,6 +73,8 @@ describe("planRateReset", () => {
         entitled_claim_offpeak: 14, // drift
         daily_deduction_points: 3, // drift
         max_pallets: 18, // drift
+        interplant_claim_weekday: null,
+        interplant_claim_offpeak: null,
       },
     ];
     const plan = planRateReset([PLX], db);
@@ -81,6 +85,10 @@ describe("planRateReset", () => {
       entitled_claim_offpeak: 13,
       daily_deduction_points: 2,
       max_pallets: 16,
+      // This fixture's spec truck has no INTER PLANT row, so the reset target
+      // is null — "no interplant rate of its own", not a rate of zero.
+      interplant_claim_weekday: null,
+      interplant_claim_offpeak: null,
     });
     expect(u.changes.map((c) => c.field).sort()).toEqual([
       "daily_deduction_points",

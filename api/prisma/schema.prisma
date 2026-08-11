@@ -208,6 +208,21 @@ model Truck {
   entitled_claim_weekday   Decimal   @db.Decimal(10, 2)
   entitled_claim_offpeak   Decimal   @db.Decimal(10, 2)
   daily_deduction_points   Int
+  // The INTERPLANT rate pair (workbook INTERNAL LORRY RATE, INTER PLANT block,
+  // 28 Jul 2026 revision): PLX 2406 RM6/8, PPE 2406 RM5/7. A rate belongs to
+  // the WORK, not the lorry — PLX 2406 is in BOTH workbook tables (RM11/13 for
+  // customer/supplier, RM6/8 for interplant), so the columns above could not
+  // express it and interplant trips on PLX 2406 paid the customer rate.
+  //
+  // NULLABLE and deliberately so: null = "this truck has no interplant row of
+  // its own". It is NOT a missing value to be backfilled — 7 of 9 trucks have
+  // no such row. A backup lorry cross-assigned to interplant work falls back to
+  // INTERPLANT_FALLBACK_RATE (PLX 2406's pair, owner ruling 11 Aug 2026).
+  //
+  // No pending_interplant_* twins yet: interplant rates have no admin editor,
+  // so there is nothing to stage. Add them WITH the editor, not before.
+  interplant_claim_weekday Decimal?  @db.Decimal(10, 2)
+  interplant_claim_offpeak Decimal?  @db.Decimal(10, 2)
   // Next-day rate cutoff (client rule, Mr. Teh 3 Jul 2026): a rate edit is
   // staged in these pending_* columns and takes effect from
   // pending_rates_effective (MYT "YYYY-MM-DD", same key format as

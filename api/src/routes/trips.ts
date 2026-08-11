@@ -28,6 +28,7 @@ import {
   approveTripIncentiveOnce,
   type FinalizedGroup,
 } from "../services/tripCompletion";
+import { isInterplantRouteType } from "../lib/uwcSpec";
 import {
   truckRateSnapshot,
   finalizationRateParams,
@@ -1314,12 +1315,24 @@ async function assignTripInTx(
             // pays at these values even if an admin edits the rates mid-flight.
             // The rates frozen are those EFFECTIVE right now — a staged rate
             // edit is invisible until its next-MYT-day cutoff (client rule).
+            // WHICH rate pair the snapshot freezes depends on the WORK, so the
+            // route type has to be read here. Read from the DB inside the tx
+            // rather than taken from opts.trip on purpose: a caller that forgot
+            // to pass it would fall through to the customer/supplier pair and
+            // silently overpay an interplant trip — the precise defect this
+            // change exists to fix. It cannot be forgotten if it is not passed.
+            const assignRouteType = await tx.trip.findUnique({
+              where: { id },
+              select: { route_type: { select: { name: true } } },
+            });
             await claimPendingTripOrThrow(tx, id, {
               driver_id,
               truck_plate,
               auto_dispatch_failed: false,
               auto_dispatch_note: null,
-              ...truckRateSnapshot(effectiveTruckRates(truck, new Date())),
+              ...truckRateSnapshot(effectiveTruckRates(truck, new Date()), {
+                interplant: isInterplantRouteType(assignRouteType?.route_type?.name),
+              }),
             });
             await snapshotStopZonePoints(tx, id);
 

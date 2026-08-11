@@ -34,6 +34,10 @@ interface UwcSpec {
     offpeak_rate: number;
     daily_deduction: number;
     priority_zones: string[];
+    // The INTER PLANT block's rate pair; absent for the 7 trucks with no such
+    // row. See the interplant note in docs/uwc-spec.json.
+    interplant_weekday_rate?: number;
+    interplant_offpeak_rate?: number;
   }[];
   zones: { code: string; coverage_area: string }[];
   destination_points: { zone_code: string | null; location_name: string; points: number }[];
@@ -236,6 +240,12 @@ async function seedTrucks() {
       entitled_claim_weekday: t.weekday_rate,
       entitled_claim_offpeak: t.offpeak_rate,
       daily_deduction_points: t.daily_deduction,
+      // The second rate pair, for trucks the workbook's INTER PLANT block
+      // prices (PLX 2406 RM6/8, PPE 2406 RM5/7). `?? null` on purpose: null
+      // means "no interplant row of its own", which is a real state 7 of the 9
+      // trucks are in — never 0, which would pay a plant run nothing.
+      interplant_claim_weekday: t.interplant_weekday_rate ?? null,
+      interplant_claim_offpeak: t.interplant_offpeak_rate ?? null,
       ...(expiry
         ? {
             insurance_expiry: new Date(expiry.insurance),

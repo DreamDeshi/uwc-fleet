@@ -37,6 +37,21 @@ export interface LiveRateFields {
   daily_deduction_points: number;
 }
 
+/**
+ * The truck's rates as the assignment snapshot sees them: the cutoff-merged
+ * customer/supplier pair above, PLUS the interplant pair carried through
+ * UNCHANGED.
+ *
+ * Unchanged is correct, not an oversight: the next-day cutoff exists to protect
+ * a rate EDIT from landing on a running trip, and interplant rates have no
+ * admin editor and therefore no pending_* twin to stage. When one is built, the
+ * interplant pair gains its twins and joins the merge below.
+ */
+export interface EffectiveRateFields extends LiveRateFields {
+  interplant_claim_weekday?: DecimalLike | null;
+  interplant_claim_offpeak?: DecimalLike | null;
+}
+
 /** The MYT day AFTER the instant `now` — the earliest day a rate edit may take effect. MYT has no DST, so +24h is exact. */
 export function nextMytDayKey(now: Date): string {
   return mytDateKey(new Date(now.getTime() + 24 * 60 * 60 * 1000));
@@ -61,21 +76,28 @@ export function pendingMatured(
  * snapshots must read — an edit made today is invisible to today's
  * assignments and binding from tomorrow 00:00 MYT, sweep or no sweep.
  */
-export function effectiveTruckRates<T extends LiveRateFields & Partial<PendingRateFields>>(
-  truck: T,
-  at: Date
-): LiveRateFields {
+export function effectiveTruckRates<
+  T extends LiveRateFields & Partial<PendingRateFields> & Partial<EffectiveRateFields>
+>(truck: T, at: Date): EffectiveRateFields {
   const staged = {
     pending_claim_weekday: truck.pending_claim_weekday ?? null,
     pending_claim_offpeak: truck.pending_claim_offpeak ?? null,
     pending_deduction_points: truck.pending_deduction_points ?? null,
     pending_rates_effective: truck.pending_rates_effective ?? null,
   };
+  // Carried through both branches untouched — no pending twin to merge (see
+  // EffectiveRateFields). Kept on the result so the assignment snapshot can
+  // choose between the two pairs without re-reading the Truck row.
+  const interplant = {
+    interplant_claim_weekday: truck.interplant_claim_weekday ?? null,
+    interplant_claim_offpeak: truck.interplant_claim_offpeak ?? null,
+  };
   if (!pendingMatured(staged, at)) {
     return {
       entitled_claim_weekday: truck.entitled_claim_weekday,
       entitled_claim_offpeak: truck.entitled_claim_offpeak,
       daily_deduction_points: truck.daily_deduction_points,
+      ...interplant,
     };
   }
   // A pending edit stores every rate field it changes; a null pending field
@@ -84,6 +106,7 @@ export function effectiveTruckRates<T extends LiveRateFields & Partial<PendingRa
     entitled_claim_weekday: staged.pending_claim_weekday ?? truck.entitled_claim_weekday,
     entitled_claim_offpeak: staged.pending_claim_offpeak ?? truck.entitled_claim_offpeak,
     daily_deduction_points: staged.pending_deduction_points ?? truck.daily_deduction_points,
+    ...interplant,
   };
 }
 

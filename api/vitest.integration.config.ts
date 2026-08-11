@@ -15,6 +15,9 @@ export default defineConfig({
   test: {
     include: ["tests-integration/**/*.test.ts"],
     setupFiles: ["tests-integration/setup.ts"],
+    // Stale generated truck data would seed the WRONG rates into the test DB,
+    // so this tier is gated too. See vitest.globalSetup.mjs.
+    globalSetup: ["./vitest.globalSetup.mjs"],
     fileParallelism: false,
     testTimeout: 30_000,
     hookTimeout: 30_000,

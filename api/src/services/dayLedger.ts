@@ -93,6 +93,9 @@ export interface PriorDeliveredDropsWhere {
     driver_id: string;
     status: { in: ("in_progress" | "pending_approval" | "completed")[] };
     id: { not: string };
+    // THE POOL SPLIT — see the long note on `pool` below. Interplant work and
+    // customer/supplier work keep SEPARATE day ledgers.
+    route_type_id: { in: string[] } | { notIn: string[] };
   };
 }
 
@@ -107,6 +110,48 @@ export function priorDeliveredDropsWhere(params: {
   excludeTripId: string;
   dayStart: Date;
   anchor: Date;
+  /**
+   * RouteType ids that are INTERPLANT work (the seeded Inter-Plant Delivery and
+   * Inter-Plant Return). Resolved by the caller through isInterplantRouteType
+   * so the id set and the rate branch in truckRateSnapshot are decided by ONE
+   * predicate — an interplant trip cannot be paid the interplant rate but
+   * scored on the customer ledger, or the reverse.
+   */
+  interplantRouteTypeIds: string[];
+  /**
+   * Which ledger the trip being finalized reads. THE TWO POOLS ARE SEPARATE.
+   *
+   * ── Why (owner ruling, 11 Aug 2026) ──────────────────────────────────────
+   * The workbook gives interplant its own table, its own zone, its own scoring
+   * and NO deduction column. Nothing folds it into the customer ledger, and
+   * Mr. Teh has never described a mixed day.
+   *
+   * ── What a SHARED pool actually did (this is not hypothetical) ───────────
+   * Two failures, both silent:
+   *
+   *  1. THE DEDUCTION. calculateDeliveryIncentive telescopes the deduction over
+   *     the day total — max(prior+group−ded,0) − max(prior−ded,0) — which spends
+   *     it exactly once per day ONLY IF every trip that day carries the same
+   *     deduction. Interplant snapshots 0 (Mr. Teh: "Interplant no need
+   *     deduction"), so a shared pool let a morning interplant leg pre-load
+   *     `prior` and swallow the customer side's deduction whole: one P2
+   *     interplant point then an Ipoh run paid max(1+6−2,0) − max(1−2,0) = 5
+   *     points = RM55, where the rule says 4 points = RM44. OVERPAY, and BL9
+   *     means it can never be corrected after approval.
+   *
+   *  2. THE ZONE SLOT. Interplant delivers to Batu Kawan, which lives in zone
+   *     P2 — relabelled "Juru & Perai & batu kawan" in the 28 Jul revision. A
+   *     shared pool let a morning interplant leg consume P2's first-drop slot,
+   *     so an afternoon CUSTOMER delivery to Juru scored as a repeat.
+   *
+   * ── The cost of the ruling, stated plainly ───────────────────────────────
+   * Separate pools mean a driver CAN earn a full first drop on BOTH sides in
+   * one day. That is the generous direction, and like everything else on this
+   * path it is not correctable once approved. It is on the first-payroll watch
+   * list beside the deduction item: pull a driver with interplant AND customer
+   * work on the same day and read both halves.
+   */
+  pool: "interplant" | "customer";
 }): PriorDeliveredDropsWhere {
   const window = { gte: params.dayStart, lt: params.anchor };
   return {
@@ -143,6 +188,14 @@ export function priorDeliveredDropsWhere(params: {
       driver_id: params.driverId,
       status: { in: [...LEDGER_TRIP_STATUSES] },
       id: { not: params.excludeTripId },
+      // An interplant finalize sees only interplant trips; a customer finalize
+      // sees everything that is NOT interplant. With no interplant route types
+      // seeded, `notIn: []` matches every trip — i.e. exactly the single-pool
+      // behaviour that was correct before interplant pay existed.
+      route_type_id:
+        params.pool === "interplant"
+          ? { in: params.interplantRouteTypeIds }
+          : { notIn: params.interplantRouteTypeIds },
     },
   };
 }
