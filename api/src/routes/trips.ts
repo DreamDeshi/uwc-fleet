@@ -28,6 +28,7 @@ import {
   approveTripIncentiveOnce,
   type FinalizedGroup,
 } from "../services/tripCompletion";
+import { otDemotionReason, resolveLastTripOt } from "../services/lastTripOt";
 import { isInterplantRouteType } from "../lib/uwcSpec";
 import {
   truckRateSnapshot,
@@ -3299,10 +3300,25 @@ router.patch(
       assertIncentiveApprovable(trip, final_amount, reason);
 
       const proposedAmount = Number(trip.incentive_earned ?? 0);
+
+      // R5 A4 — only the LAST trip of the day earns the after-6pm rate, and
+      // whether this was the last trip is unknowable when it finalizes (trips
+      // are serial, so trip 1 always finalizes before trip 2 exists). Approval
+      // is the last moment before BL9 makes the number permanent, so the check
+      // lives here. services/lastTripOt.ts carries the full reasoning.
+      //
+      // An ADMIN'S OWN final_amount always wins: they are looking at the trip
+      // and overriding deliberately, which is the lever Mr. Teh asked for
+      // ("admin also can edit the final rate prior approval"). This only
+      // re-prices the PROPOSAL.
+      const demotion = final_amount === undefined ? await resolveLastTripOt(prisma, id) : null;
+      const effectiveAmount = demotion ? demotion.amount : final_amount;
+      const effectiveReason = demotion ? otDemotionReason(demotion) : reason;
+
       const approved = await approveTripIncentiveOnce(prisma, id, {
         proposedAmount,
-        finalAmount: final_amount,
-        reason,
+        finalAmount: effectiveAmount,
+        reason: effectiveReason,
         adminId: req.user!.id,
         approvedAt: new Date(),
       });
@@ -3310,13 +3326,19 @@ router.patch(
         throw new ApiError(409, "TRIP_STATE_CHANGED", "This trip is no longer awaiting approval.");
       }
 
-      const finalAmount = final_amount === undefined ? proposedAmount : Math.round(final_amount * 100) / 100;
+      // The EFFECTIVE amount, so an A4 demotion is audited exactly like an admin
+      // edit — same trail, same before→after, and the reason names the rule.
+      // Reading `final_amount` here instead would log the demotion as an
+      // unedited approval and lose the only record of why the driver was paid
+      // less than the proposal.
+      const finalAmount =
+        effectiveAmount === undefined ? proposedAmount : Math.round(effectiveAmount * 100) / 100;
       const edited = Math.round(finalAmount * 100) !== Math.round(proposedAmount * 100);
       await prisma.auditLog.create({
         data: {
           user_id: req.user!.id,
           action: edited
-            ? `trip.incentive_approved (edited RM${proposedAmount}→RM${finalAmount}: ${reason})`
+            ? `trip.incentive_approved (edited RM${proposedAmount}→RM${finalAmount}: ${effectiveReason})`
             : "trip.incentive_approved",
           table_name: "Trip",
           record_id: id,
