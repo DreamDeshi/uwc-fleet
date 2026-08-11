@@ -26,6 +26,8 @@ import {
   currentScopedKey,
   clearUserScope,
   migrateLegacyGlobalKeys,
+  pruneQuarantine,
+  MAX_ORPHAN_ENTRIES,
   scopedKeyFor,
   __resetActiveUserCache,
 } from "./scopedStorage";
@@ -101,10 +103,10 @@ describe("one-time migration of the pre-DG-D4 global keys", () => {
     store.map.set("uwc.podOutbox", '["orphan-photo"]');
     store.map.set("uwc.exceptionOutbox", '["orphan-report"]');
 
-    const report = await migrateLegacyGlobalKeys();
+    const report = await migrateLegacyGlobalKeys(5000);
 
-    expect(store.map.get("uwc.orphaned.podOutbox")).toBe('["orphan-photo"]');
-    expect(store.map.get("uwc.orphaned.exceptionOutbox")).toBe('["orphan-report"]');
+    expect(store.map.get("uwc.orphaned.podOutbox.5000")).toBe('["orphan-photo"]');
+    expect(store.map.get("uwc.orphaned.exceptionOutbox.5000")).toBe('["orphan-report"]');
     expect(report.quarantined).toContain("uwc.podOutbox");
     expect(report.adopted).toHaveLength(0);
 
@@ -112,16 +114,17 @@ describe("one-time migration of the pre-DG-D4 global keys", () => {
     expect([...store.map.values()]).toContain('["orphan-photo"]');
   });
 
-  it("never lets a second run overwrite an existing quarantine", async () => {
-    store.map.set("uwc.orphaned.podOutbox", '["first-orphan"]');
+  it("keeps BOTH orphans when a second one arrives — neither is clobbered", async () => {
+    // Regression: the first version skipped the write when the destination was
+    // taken but still removed the legacy key, DELETING the second orphan.
+    store.map.set("uwc.orphaned.podOutbox.1000", '["first-orphan"]');
     store.map.set("uwc.podOutbox", '["second-orphan"]');
 
-    await migrateLegacyGlobalKeys();
+    await migrateLegacyGlobalKeys(2000);
 
-    // The earlier orphan is the older evidence; it is not clobbered, and the
-    // newer value is not silently dropped either — it is simply not migrated
-    // over the top, and the legacy key is cleared only after the copy exists.
-    expect(store.map.get("uwc.orphaned.podOutbox")).toBe('["first-orphan"]');
+    const values = [...store.map.values()];
+    expect(values).toContain('["first-orphan"]');
+    expect(values).toContain('["second-orphan"]');
   });
 
   it("is a no-op on a device with nothing left to migrate", async () => {
@@ -139,6 +142,64 @@ describe("one-time migration of the pre-DG-D4 global keys", () => {
 
     // Write failed → the original MUST still be there for the next launch.
     expect(store.map.get("uwc.podOutbox")).toBe('["photo"]');
+  });
+});
+
+describe("the quarantine ceiling (DG-O10 — nothing else ever clears it)", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it("drops entries past the age cap and NAMES them", async () => {
+    const now = 100 * DAY;
+    store.map.set(`uwc.orphaned.podOutbox.${now - 31 * DAY}`, '["stale-photo"]');
+    store.map.set(`uwc.orphaned.podOutbox.${now - 2 * DAY}`, '["recent-photo"]');
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const dropped = await pruneQuarantine(now);
+
+    expect(dropped).toEqual([`uwc.orphaned.podOutbox.${now - 31 * DAY}`]);
+    expect([...store.map.values()]).toContain('["recent-photo"]');
+    expect([...store.map.values()]).not.toContain('["stale-photo"]');
+    // Silent expiry is indistinguishable from a quarantine that never held
+    // anything — the whole point of quarantining was to be able to say so.
+    expect(warn).toHaveBeenCalledOnce();
+    expect(String(warn.mock.calls[0][0])).toContain("uwc.orphaned.podOutbox");
+    warn.mockRestore();
+  });
+
+  it("caps the count, dropping oldest first", async () => {
+    const now = 100 * DAY;
+    for (let i = 0; i < MAX_ORPHAN_ENTRIES + 3; i++) {
+      store.map.set(`uwc.orphaned.podOutbox.${now - i * 1000}`, `["item-${i}"]`);
+    }
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const dropped = await pruneQuarantine(now);
+
+    expect(dropped).toHaveLength(3);
+    expect(store.map.size).toBe(MAX_ORPHAN_ENTRIES);
+    // Oldest go first: the three highest `i` values are the oldest stamps.
+    expect([...store.map.values()]).toContain('["item-0"]');
+    expect([...store.map.values()]).not.toContain(`["item-${MAX_ORPHAN_ENTRIES + 2}"]`);
+    vi.restoreAllMocks();
+  });
+
+  it("leaves a quarantine inside both limits completely alone", async () => {
+    const now = 100 * DAY;
+    store.map.set(`uwc.orphaned.podOutbox.${now - 1000}`, '["keep"]');
+    expect(await pruneQuarantine(now)).toEqual([]);
+    expect(store.map.get(`uwc.orphaned.podOutbox.${now - 1000}`)).toBe('["keep"]');
+  });
+
+  it("never touches a live per-user key", async () => {
+    const now = 100 * DAY;
+    store.map.set(scopedKeyFor("driver-A", "podOutbox"), '["live"]');
+    store.map.set(`uwc.orphaned.podOutbox.${now - 90 * DAY}`, '["ancient"]');
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await pruneQuarantine(now);
+
+    expect(store.map.get(scopedKeyFor("driver-A", "podOutbox"))).toBe('["live"]');
+    vi.restoreAllMocks();
   });
 });
 

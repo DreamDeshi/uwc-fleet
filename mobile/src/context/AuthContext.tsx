@@ -15,6 +15,10 @@ import {
 import { registerForPushNotificationsAsync } from "../lib/notifications";
 import { bootstrapActionForError } from "../lib/sessionGate";
 import { saveCachedMe, loadCachedMe, clearCachedMe } from "../lib/sessionCache";
+import { clearUserScope, getActiveUserId, setActiveUser } from "../lib/scopedStorage";
+import { confirmLogoutWithUnsent } from "../lib/confirmLogout";
+import { flushPodOutbox, getPodOutbox } from "../lib/podOutbox";
+import { realApi as realPodOutboxApi } from "../hooks/usePodOutbox";
 import { Me, AppLanguage, SUPPORTED_LANGUAGES } from "../types";
 import i18n from "../i18n";
 
@@ -44,6 +48,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchMe = async () => {
     const res = await api.get<Me>("/users/me");
+    // Point storage at this driver BEFORE anything reads a queue. An unset
+    // pointer makes every scoped read a miss, which a driver would see as an
+    // emptied outbox.
+    //
+    // ⚠ migrateLegacyGlobalKeys() is deliberately NOT called yet. It MOVES data
+    // out of `uwc.podOutbox` & co, and those modules still READ the global keys
+    // until the wiring commit lands — running it now would hide a driver's
+    // queued PODs behind a key nothing reads. It is switched on in the same
+    // commit that scopes the readers, so the move and the read change together.
+    await setActiveUser(res.data.id);
     setUser(res.data);
     // Cache the confirmed identity so a later offline cold start can still route
     // into the app (see the bootstrap effect + lib/sessionCache).
@@ -87,6 +101,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // the session — real auth expiry is untouched.
         if (bootstrapActionForError(err) === "keep") {
           const cached = await loadCachedMe();
+          // The DEGRADED path routes on the cached identity, so it must point
+          // storage too — otherwise an offline cold start reads nobody's queue
+          // and the driver's outbox looks empty at exactly the moment it is
+          // most likely to be full.
+          if (cached) await setActiveUser(cached.id);
           if (mounted) {
             if (cached) {
               setUser(cached);
@@ -177,16 +196,73 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await registerRequest(payload);
   };
 
-  const logout = async () => {
-    // Unregister this device first (while we still hold a valid token) so the
-    // user stops receiving pushes after logging out.
+  /**
+   * LOGOUT IS AN ORDERED SEQUENCE, AND THE ORDER IS THE FEATURE.
+   *
+   * Drivers share handsets, so this runs several times a day and is the moment
+   * unsent delivery evidence is most likely to be lost. Each step must complete
+   * before the next begins — none of this may become concurrent, and the
+   * ordering must not be left implied by where the awaits happen to sit.
+   *
+   *   1. unregister push      — needs a live token
+   *   2. FLUSH the POD outbox — needs a live token
+   *   3. CONFIRM with the driver if anything is still unsent
+   *   4. clear tokens
+   *   5. clear this user's scoped keys
+   *
+   * ⚠ STEP 4 MUST NOT MOVE ABOVE STEP 2. Clearing tokens first makes every
+   * logout flush 401 BY CONSTRUCTION — a non-network error, which is exactly
+   * the case that spends the POD retry budget (DG-D5). The budget guard would
+   * then be the only thing standing between a handover and deleted evidence,
+   * and a guard should never be load-bearing alone.
+   *
+   * ⚠ STEP 5 MUST NOT MOVE ABOVE STEP 3. The confirm exists to let the driver
+   * decide; deleting first and asking after is the outcome it prevents.
+   *
+   * Logout is NEVER refused. A driver at a dead-signal loading bay who must
+   * hand the phone over now is the situation this whole path exists for — the
+   * flush is best-effort, the confirm is informed consent, and the handover
+   * always wins.
+   */
+  const logout = async (): Promise<void> => {
+    const userId = user?.id ?? (await getActiveUserId());
+
+    // 1. Unregister this device while the token is still valid, so the driver
+    //    stops receiving pushes for a session they have left.
     try {
       await savePushToken(null);
     } catch {
       /* ignore — proceed with logout regardless */
     }
+
+    // 2. Best-effort flush of anything unsent, still holding a valid token.
+    //    consumeFailureBudget:false — a failed handover must not push a POD
+    //    closer to permanent deletion (DG-D5).
+    let unsent = 0;
+    try {
+      await flushPodOutbox(realPodOutboxApi, { consumeFailureBudget: false });
+      unsent = (await getPodOutbox()).length;
+    } catch {
+      unsent = await getPodOutbox()
+        .then((items) => items.length)
+        .catch(() => 0);
+    }
+
+    // 3. Anything left is unsent delivery evidence. Name the count and require
+    //    an explicit tap — but never block the handover.
+    if (unsent > 0) {
+      const proceed = await confirmLogoutWithUnsent(unsent);
+      if (!proceed) return;
+    }
+
+    // 4. Only now does the session end.
     await clearTokens();
     await clearCachedMe();
+
+    // 5. And only then is this driver's data removed from a shared handset.
+    if (userId) await clearUserScope(userId);
+    await setActiveUser(null);
+
     setUser(null);
     setDegraded(false);
     setStatus("guest");

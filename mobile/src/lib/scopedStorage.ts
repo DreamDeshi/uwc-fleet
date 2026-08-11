@@ -30,8 +30,36 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 /** Unscoped pointer to whoever is logged in. Cleared on logout. */
 const ACTIVE_USER_KEY = "uwc.activeUserId";
 
-/** Prefix for data whose owner could not be established. Never auto-deleted. */
+/** Prefix for data whose owner could not be established. */
 const ORPHAN_PREFIX = "uwc.orphaned";
+
+/**
+ * THE QUARANTINE CEILING.
+ *
+ * Nothing else in this system clears `uwc.orphaned.*` — DG-O10 records that
+ * there is no retention policy anywhere — and an orphaned POD outbox holds
+ * base64 photos (~700KB each on the web build) sitting on a SHARED handset.
+ * "Never delete" without a ceiling is how a privacy liability and a storage
+ * blowout get built on purpose.
+ *
+ * So: keep evidence long enough to be useful in a dispute, then let it go, and
+ * SAY WHAT WENT. Age is the primary limit because relevance decays with time;
+ * the count cap is the backstop for a device that somehow accumulates many.
+ */
+export const MAX_ORPHAN_AGE_DAYS = 30;
+export const MAX_ORPHAN_ENTRIES = 20;
+
+/** `uwc.orphaned.<suffix>.<epochMs>` — timestamped so entries never collide. */
+function orphanKey(suffix: string, now: number): string {
+  return `${ORPHAN_PREFIX}.${suffix}.${now}`;
+}
+
+/** Epoch stamp from an orphan key, or null if it is not one. */
+function orphanStamp(key: string): number | null {
+  if (!key.startsWith(`${ORPHAN_PREFIX}.`)) return null;
+  const stamp = Number(key.slice(key.lastIndexOf(".") + 1));
+  return Number.isFinite(stamp) ? stamp : null;
+}
 
 /**
  * The keys that were global before this change. Order is irrelevant; the list
@@ -137,6 +165,51 @@ export interface MigrationReport {
   adopted: string[];
   /** Legacy keys moved to `uwc.orphaned.*` because the owner was unknown. */
   quarantined: string[];
+  /** Quarantined keys removed by the ceiling. Never silent — see pruneQuarantine. */
+  expired: string[];
+}
+
+/**
+ * Enforce the quarantine ceiling: drop anything past MAX_ORPHAN_AGE_DAYS, then
+ * the oldest beyond MAX_ORPHAN_ENTRIES.
+ *
+ * Returns what it removed, and warns. A quarantine that empties itself silently
+ * is indistinguishable from one that never held anything, which is precisely the
+ * situation "quarantine rather than delete" was meant to avoid.
+ */
+export async function pruneQuarantine(now: number = Date.now()): Promise<string[]> {
+  let keys: string[];
+  try {
+    keys = (await AsyncStorage.getAllKeys()).filter((k) => orphanStamp(k) !== null);
+  } catch {
+    return [];
+  }
+
+  const cutoff = now - MAX_ORPHAN_AGE_DAYS * 24 * 60 * 60 * 1000;
+  const dated = keys
+    .map((key) => ({ key, stamp: orphanStamp(key)! }))
+    .sort((a, b) => a.stamp - b.stamp); // oldest first
+
+  const tooOld = dated.filter((d) => d.stamp < cutoff);
+  const survivors = dated.filter((d) => d.stamp >= cutoff);
+  const overflow = survivors.slice(0, Math.max(0, survivors.length - MAX_ORPHAN_ENTRIES));
+
+  const doomed = [...tooOld, ...overflow].map((d) => d.key);
+  if (doomed.length === 0) return [];
+
+  try {
+    await AsyncStorage.multiRemove(doomed);
+  } catch {
+    return [];
+  }
+
+  console.warn(
+    `[scopedStorage] quarantine ceiling removed ${doomed.length} orphaned entr` +
+      `${doomed.length === 1 ? "y" : "ies"} ` +
+      `(older than ${MAX_ORPHAN_AGE_DAYS}d, or beyond ${MAX_ORPHAN_ENTRIES} kept): ` +
+      doomed.join(", ")
+  );
+  return doomed;
 }
 
 /**
@@ -158,8 +231,10 @@ export interface MigrationReport {
  * unparseable bytes under `uwc.podOutbox.corrupt` rather than overwriting them.
  * Same rule, wider scope.
  */
-export async function migrateLegacyGlobalKeys(): Promise<MigrationReport> {
-  const report: MigrationReport = { adopted: [], quarantined: [] };
+export async function migrateLegacyGlobalKeys(
+  now: number = Date.now()
+): Promise<MigrationReport> {
+  const report: MigrationReport = { adopted: [], quarantined: [], expired: [] };
   const uid = await getActiveUserId();
 
   for (const legacyKey of LEGACY_GLOBAL_KEYS) {
@@ -174,7 +249,12 @@ export async function migrateLegacyGlobalKeys(): Promise<MigrationReport> {
     if (value === null) continue;
 
     const suffix = suffixOf(legacyKey);
-    const destination = uid ? scopedKeyFor(uid, suffix) : `${ORPHAN_PREFIX}.${suffix}`;
+    // A user's namespace holds ONE live value per suffix (it is live data).
+    // Quarantine is timestamped instead: two orphans must never collide, and an
+    // earlier version of this function skipped the write when the destination
+    // was taken and STILL removed the legacy key — deleting the second orphan
+    // outright, which is the one thing this path promises never to do.
+    const destination = uid ? scopedKeyFor(uid, suffix) : orphanKey(suffix, now);
 
     try {
       // Write the copy BEFORE removing the original. A crash between the two
@@ -182,6 +262,10 @@ export async function migrateLegacyGlobalKeys(): Promise<MigrationReport> {
       const existing = await AsyncStorage.getItem(destination);
       if (existing === null) {
         await AsyncStorage.setItem(destination, value);
+      } else if (!uid) {
+        // Same-millisecond collision on the orphan key. Rather than drop the
+        // value, leave the legacy key untouched for the next launch.
+        continue;
       }
       await AsyncStorage.removeItem(legacyKey);
       (uid ? report.adopted : report.quarantined).push(legacyKey);
@@ -190,5 +274,6 @@ export async function migrateLegacyGlobalKeys(): Promise<MigrationReport> {
     }
   }
 
+  report.expired = await pruneQuarantine(now);
   return report;
 }

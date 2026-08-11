@@ -3,6 +3,7 @@ import {
   flushOutboxItems,
   mergeOutboxItem,
   reconcileOutboxAfterFlush,
+  type FlushOptions,
   type FlushResult,
   type ItemOutcome,
   type OutboxPatch,
@@ -163,7 +164,10 @@ export async function noteDirectPodUpload(stopId: string): Promise<void> {
 let flushing = false;
 
 /** Read → replay → fold results back into whatever is stored now. */
-export async function flushPodOutbox(api: PodOutboxApi): Promise<FlushResult> {
+export async function flushPodOutbox(
+  api: PodOutboxApi,
+  opts: FlushOptions = {}
+): Promise<FlushResult> {
   if (flushing) return { outcomes: [], synced: 0, dropped: 0 };
   flushing = true;
   try {
@@ -182,7 +186,7 @@ export async function flushPodOutbox(api: PodOutboxApi): Promise<FlushResult> {
       if (!current.ok) return;
       await writeOutbox(reconcileOutboxAfterFlush(current.items, outcomes));
     };
-    return await flushOutboxItems(snapshot, { ...api, persist: checkpoint });
+    return await flushOutboxItems(snapshot, { ...api, persist: checkpoint }, opts);
   } finally {
     flushing = false;
   }

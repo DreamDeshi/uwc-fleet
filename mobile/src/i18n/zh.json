@@ -114,7 +114,10 @@
     "ladderPickup": "取货 · {{n}} 个托盘",
     "ladderLoaded": "已装载 {{n}} 个托盘",
     "ladderDelivered": "{{time}} 已送达",
-    "ladderNow": "当前"
+    "ladderNow": "当前",
+    "unsentPodTitle": "送货照片尚未上传",
+    "unsentPodMessage": "仍有 {{count}} 张送货照片尚未上传。系统会为您保留在这部手机上，但在上传之前其他人无法查看。仍要登出吗？",
+    "unsentPodLogOutAnyway": "仍要登出"
   },
   "trip": {
     "pickup": "提货",

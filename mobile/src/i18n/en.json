@@ -114,7 +114,10 @@
     "ladderPickup": "Pick up · {{n}} pallets",
     "ladderLoaded": "Loaded {{n}} pallets",
     "ladderDelivered": "Delivered {{time}}",
-    "ladderNow": "NOW"
+    "ladderNow": "NOW",
+    "unsentPodTitle": "Delivery photos not uploaded",
+    "unsentPodMessage": "{{count}} delivery photo(s) have not uploaded yet. They will be kept on this phone for you, but nobody else can see them until they upload. Log out anyway?",
+    "unsentPodLogOutAnyway": "Log out anyway"
   },
   "trip": {
     "pickup": "Pickup",
