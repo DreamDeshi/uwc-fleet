@@ -31,7 +31,12 @@ try {
   const sha = git("git rev-parse HEAD");
   // A dirty tree means the bundle does NOT correspond to any commit, which is
   // worth knowing: it is the state in which "I rebuilt it" is least reliable.
-  const dirty = git("git status --porcelain -- . ../mobile") !== "";
+  //
+  // TRACKED changes only (-uno). Untracked build output — dist/ itself, and any
+  // scratch export directory sitting beside it — is not a difference between the
+  // bundle and the commit, and counting it made every stamp read "dirty",
+  // which would have made the freshness gate cry wolf until someone disabled it.
+  const dirty = git("git status --porcelain -uno -- .") !== "";
   stamp = dirty ? `${sha} dirty` : sha;
 } catch (err) {
   console.error(`stamp-build: could not read git HEAD — ${err.message.split("\n")[0]}`);
