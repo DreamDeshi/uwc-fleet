@@ -14,7 +14,7 @@ import { defineConfig, devices } from "@playwright/test";
  * API), so point it at a local stack:
  *
  *   npm run test:db:up
- *   SENSITIVE_RATE_LIMIT_MAX=0 RATE_LIMIT_MAX=0 npm run test:db:api
+ *   SENSITIVE_RATE_LIMIT_MAX=0 RATE_LIMIT_MAX=0 LOGIN_LOCKOUT_MAX_ATTEMPTS=0 npm run test:db:api
  *   cd mobile && npx expo start --web --port 8081 --clear
  *   cd e2e && E2E_API_URL=http://localhost:3000 E2E_MOBILE_URL=http://localhost:8081 \
  *     npx playwright test --config playwright.audit.config.ts

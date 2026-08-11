@@ -16,6 +16,7 @@ import {
   type DriverTripStats,
 } from "../lib/performanceScore";
 import { estimateTripDistanceKm } from "../lib/geo";
+import { CLEARED_LOCKOUT_STATE } from "../lib/loginLockout";
 import { currentMytMonthBounds, inMytMonth } from "../lib/myt";
 import { payAttributionInstant, payableIncentive } from "../services/tripCompletion";
 import { EARNING_STOP_SELECT } from "../services/undeliveredPay";
@@ -189,6 +190,11 @@ router.get("/", async (req, res, next) => {
         status: true,
         department_id: true,
         created_at: true,
+        // SC3: the admin needs to SEE a lock to act on one. Without this the
+        // unlock endpoint exists but nothing in the app can tell you which
+        // account needs it — the user would ring the office and the admin would
+        // have no way to confirm the story.
+        locked_until: true,
       },
       orderBy: { created_at: "desc" },
     });
@@ -264,6 +270,54 @@ router.patch("/:id/approve", validateBody(approveSchema), async (req, res, next)
     });
 
     res.json({ id: updated.id, status: updated.status });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /users/:id/unlock — admin ends a login lockout (SC3) early.
+//
+// A lock expires on its own (lib/loginLockout), so this is the "right now" path,
+// not the only way out: a driver who is locked out at the plant gate cannot wait
+// 15 minutes, and there is no self-service password reset in this system — no
+// SMTP, an admin resets passwords by hand. Without this endpoint the only cure
+// for a lock an admin wanted to end would be an admin password RESET, which
+// revokes the user's sessions and changes a credential nobody asked to change.
+//
+// IDEMPOTENT by design: unlocking an account that is not locked succeeds and
+// changes nothing. The lock may well expire between the admin reading the screen
+// and tapping the button, and a 409 there would be a confusing answer to a
+// request that already got what it wanted.
+router.post("/:id/unlock", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) {
+      throw new ApiError(404, "USER_NOT_FOUND", "User not found.");
+    }
+
+    const wasLocked = user.locked_until !== null || user.failed_login_attempts > 0;
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data: CLEARED_LOCKOUT_STATE,
+    });
+
+    // Only audited when it actually did something — an idempotent no-op is not
+    // an event, and logging one would make a bored admin look like an incident.
+    if (wasLocked) {
+      await prisma.auditLog.create({
+        data: {
+          user_id: req.user!.id, // the admin who unlocked
+          action: "user.login_unlocked",
+          table_name: "User",
+          record_id: id,
+        },
+      });
+    }
+
+    res.json({ id: updated.id, locked_until: updated.locked_until });
   } catch (err) {
     next(err);
   }

@@ -18,11 +18,24 @@
 /**
  * Minimum length.
  *
+ * ⚠ CLIENT REQUEST, 11 Aug 2026: lowered 11 → 8 — Mr. Teh asked for an 8
+ * character minimum, saying 11 is too much. Deliberate, not drift.
+ *
  * ⚠ OWNER DECISION, 4 Aug 2026: lowered 12 → 11 so the eight prod accounts could
- * go back to the memorable seeded password. This is deliberate, not drift — do
- * NOT "restore" it to 12 without asking the owner first.
+ * go back to the memorable seeded password.
+ *
+ * Do NOT "restore" either number without asking. LOWERING the floor cannot
+ * invalidate a stored password (it is only ever checked when a password is SET —
+ * login does a bare bcrypt compare), so this needed no migration and no
+ * rotation. RAISING it is the direction that locks people out of their own
+ * password, which is what happened on 4 Aug.
+ *
+ * The character-class rules below are what still carry the weight at 8: the
+ * shortest passwords this admits must be mixed case with a digit, and the known
+ * defaults that are 8-9 characters (`12345678`, `admin123`, `qwerty123`) stay
+ * refused — two of them by the classes alone.
  */
-export const PASSWORD_MIN_LENGTH = 11;
+export const PASSWORD_MIN_LENGTH = 8;
 
 /**
  * Passwords a rotation must never re-introduce.

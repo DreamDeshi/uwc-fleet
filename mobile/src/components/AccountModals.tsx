@@ -13,7 +13,7 @@ import { PasswordField, PressableField, TextField } from "./Field";
 import { OptionsModal } from "./OptionsModal";
 import { useDepartments, useUpdateProfile, useChangePassword } from "../hooks/queries";
 import { apiErrorMessage } from "../services/api";
-import { isStrongPassword } from "../lib/passwordPolicy";
+import { isStrongPassword, PASSWORD_MIN_LENGTH } from "../lib/passwordPolicy";
 
 function ErrorLine({ message }: { message: string | null }) {
   if (!message) return null;
@@ -147,7 +147,7 @@ export function ChangePasswordModal({ visible, onClose }: { visible: boolean; on
     // driver reaches on their own, so it is where a rotated password would
     // otherwise have been downgraded first.
     if (!isStrongPassword(next)) {
-      setError(t("common.passwordTooWeak"));
+      setError(t("common.passwordTooWeak", { count: PASSWORD_MIN_LENGTH }));
       return;
     }
     if (next !== confirm) {

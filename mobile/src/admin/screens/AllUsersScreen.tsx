@@ -12,6 +12,7 @@ import {
   useSetUserStatus,
   useResetUserPassword,
   useAdminUpdateUser,
+  useUnlockUser,
 } from "../hooks/queries";
 import { colors, font, radius } from "../theme";
 import {
@@ -36,7 +37,7 @@ import {
 import { apiErrorMessage } from "../services/api";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import type { AdminUser, Role, UserStatus } from "../types";
-import { isStrongPassword } from "../../lib/passwordPolicy";
+import { isStrongPassword, PASSWORD_MIN_LENGTH } from "../../lib/passwordPolicy";
 
 type RoleFilter = "any" | Role;
 
@@ -51,6 +52,14 @@ function roleLabel(t: (k: string) => string, role: string): string {
   if (role === "driver") return t("register.roleDriver");
   if (role === "requestor") return t("register.roleRequestor");
   return role;
+}
+
+// SC3 login lockout. ⚠ PRESENCE OF THE TIMESTAMP IS NOT THE TEST — a lock
+// expires on its own, and the server treats a past `locked_until` as unlocked.
+// Testing for non-null would leave a stale "Locked" badge on an account that can
+// already sign in, and send an admin chasing a problem that fixed itself.
+function isLockedNow(user: AdminUser): boolean {
+  return user.locked_until !== null && new Date(user.locked_until).getTime() > Date.now();
 }
 
 function statusMeta(status: string): { key: string; color: string } {
@@ -134,7 +143,12 @@ export function AllUsersScreen() {
                     <Pill bg={`${rc}1a`} fg={rc} dot={rc}>{roleLabel(t, u.role)}</Pill>
                   </TableCell>
                   <TableCell flex={1.4}>
-                    <Pill bg={`${sm.color}1a`} fg={sm.color} dot={sm.color}>{t(sm.key)}</Pill>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <Pill bg={`${sm.color}1a`} fg={sm.color} dot={sm.color}>{t(sm.key)}</Pill>
+                      {isLockedNow(u) ? (
+                        <Pill bg={`${colors.red}1a`} fg={colors.red} dot={colors.red}>{t("admin.users.locked")}</Pill>
+                      ) : null}
+                    </View>
                   </TableCell>
                   <TableCell flex={1.8}>{u.phone}</TableCell>
                   <TableCell flex={1}>
@@ -162,6 +176,9 @@ export function AllUsersScreen() {
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <Pill bg={`${rc}1a`} fg={rc} dot={rc}>{roleLabel(t, u.role)}</Pill>
                   <Pill bg={`${sm.color}1a`} fg={sm.color} dot={sm.color}>{t(sm.key)}</Pill>
+                  {isLockedNow(u) ? (
+                    <Pill bg={`${colors.red}1a`} fg={colors.red} dot={colors.red}>{t("admin.users.locked")}</Pill>
+                  ) : null}
                 </View>
                 <Button variant="outline" size="sm" full onPress={() => setManaged(u)}>{t("admin.users.manage")}</Button>
               </Card>
@@ -182,6 +199,7 @@ function ManageUserModal({ user, onClose }: { user: AdminUser; onClose: () => vo
   const changeRole = useChangeUserRole();
   const setStatus = useSetUserStatus();
   const resetPassword = useResetUserPassword();
+  const unlockUser = useUnlockUser();
 
   // Identity fields, seeded from the row.
   const [name, setName] = useState(user.name);
@@ -251,7 +269,7 @@ function ManageUserModal({ user, onClose }: { user: AdminUser; onClose: () => vo
     // until 2 Aug 2026, which let an admin reset an account below the strength
     // the prod rotation was held to — quietly undoing it one user at a time.
     if (!isStrongPassword(newPassword)) {
-      setError(t("common.passwordTooWeak"));
+      setError(t("common.passwordTooWeak", { count: PASSWORD_MIN_LENGTH }));
       return;
     }
     resetPassword.mutate(
@@ -263,6 +281,14 @@ function ManageUserModal({ user, onClose }: { user: AdminUser; onClose: () => vo
         },
         onError: fail,
       }
+    );
+  };
+
+  const doUnlock = () => {
+    clear();
+    unlockUser.mutate(
+      { id: user.id },
+      { onSuccess: () => setNotice(t("admin.users.unlockDone")), onError: fail }
     );
   };
 
@@ -313,6 +339,26 @@ function ManageUserModal({ user, onClose }: { user: AdminUser; onClose: () => vo
         <Button variant="success" onPress={() => applyStatus("active")} disabled={setStatus.isPending} style={{ alignSelf: "flex-start" }}>
           {t("admin.users.activate")}
         </Button>
+      )}
+
+      {/* Sign-in lock (SC3). Always shown, not just when locked: an admin
+          fielding "I can't get in" needs to be able to CHECK, and a section that
+          only appears when locked answers the question by being absent — which
+          reads as a missing feature, not as "not locked". */}
+      <Text style={styles.section}>{t("admin.users.sectionSignIn")}</Text>
+      {isLockedNow(user) ? (
+        <>
+          <Text style={{ fontSize: font.sm, color: colors.textMuted, marginBottom: 10 }}>
+            {t("admin.users.lockedBody")}
+          </Text>
+          <Button variant="accent" onPress={doUnlock} disabled={unlockUser.isPending} style={{ alignSelf: "flex-start" }}>
+            {t("admin.users.unlock")}
+          </Button>
+        </>
+      ) : (
+        <Text style={{ fontSize: font.sm, color: colors.textMuted }}>
+          {t("admin.users.notLocked")}
+        </Text>
       )}
 
       {/* Password reset */}

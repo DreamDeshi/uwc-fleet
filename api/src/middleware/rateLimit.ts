@@ -1,18 +1,17 @@
 import rateLimit from "express-rate-limit";
 import type { Request, RequestHandler } from "express";
 import { verifyAccessToken } from "../lib/jwt";
+import { resolveSecurityLimit } from "../lib/envLimit";
 
 /**
  * Parse an env override into a non-negative integer limit, else the fallback.
- * Same rule as the global RATE_LIMIT_MAX (app.ts): blank/invalid values keep the
- * safe default, so a typo can never WEAKEN a limiter; `0` explicitly disables.
- * Exported for unit tests.
+ * Blank/invalid values keep the safe default, so a typo can never WEAKEN a
+ * limiter; `0` explicitly disables. Exported for unit tests.
+ *
+ * The rule itself now lives in lib/envLimit so the login lockout parses its own
+ * knob identically — see that module for why it is shared rather than copied.
  */
-export function resolveRateLimit(raw: string | undefined, fallback: number): number {
-  const trimmed = raw?.trim();
-  const parsed = trimmed ? Number(trimmed) : NaN;
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
-}
+export const resolveRateLimit = resolveSecurityLimit;
 
 /**
  * The bucket a request is counted against: the USER when we can prove who they

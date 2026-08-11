@@ -21,7 +21,7 @@
     "hidePassword": "隐藏密码",
     "noData": "这里还没有内容。",
     "fileTooLarge": "文件过大。请发送小于 10 MB 的文件。",
-    "passwordTooWeak": "密码必须至少 11 个字符，并包含小写字母、大写字母和数字。",
+    "passwordTooWeak": "密码必须至少 {{count}} 个字符，并包含小写字母、大写字母和数字。",
     "errorOffline": "没有网络连接。请移动到有信号的地方再试——如果紧急，请致电办公室。",
     "errorTimeout": "服务器响应超时。请重试——如果持续出现，请致电办公室。",
     "clear": "清除"
@@ -812,7 +812,13 @@
       "deactivateBody": "停用 {{name}}？该用户将被登出，且在重新激活前无法登录。",
       "resetPassword": "重置密码",
       "passwordResetDone": "密码已重置。请安全地分享新密码。",
-      "tempPasswordHint": "新临时密码"
+      "tempPasswordHint": "新临时密码",
+      "locked": "已锁定",
+      "sectionSignIn": "登录锁定",
+      "lockedBody": "登录失败次数过多。锁定将在稍后自动解除，您也可以立即解除。",
+      "notLocked": "此账户未被锁定。",
+      "unlock": "立即解锁",
+      "unlockDone": "已解除登录锁定。"
     },
     "consignees": {
       "loadError": "无法加载收货方。",

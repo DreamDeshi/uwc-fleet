@@ -27,20 +27,29 @@ import * as mobilePolicy from "../../mobile/src/lib/passwordPolicy";
  *
  * ⚠ On 4 Aug 2026 the owner lowered the floor to 11 and dropped `password123`
  * from the weak list so the prod accounts could return to the seeded password.
- * The mirror guarantee is unchanged; only the verdicts moved. Do not raise
- * either value back without asking.
+ * On 11 Aug 2026 the client asked for 8. The mirror guarantee is unchanged; only
+ * the verdicts moved. Do not raise either value back without asking.
+ *
+ * ⚠ THE FLOOR MOVING TO 8 PUT THE WEAK LIST BACK TO WORK. Every entry in
+ * WEAK_PASSWORDS is 8-9 characters, so while the floor was 11 or 12 the LENGTH
+ * rule rejected all of them first and the list itself decided nothing. At 8 it
+ * is load-bearing again — `Admin123` below is the case that proves it, since it
+ * clears the length and all three character classes and is refused by the list
+ * alone.
  */
 
 const CASES: { pw: string; why: string }[] = [
   // — Accepted —
   { pw: "jY6Xo9nrW4dR4gYD", why: "the shape the 2 Aug prod rotation generated" },
-  { pw: "Abcdefghij1", why: "exactly at the 11-char boundary" },
+  { pw: "Abcdefg1", why: "exactly at the 8-char boundary" },
+  { pw: "Abcdefghij1", why: "the old 11-char boundary — still fine, just no longer the edge" },
   { pw: "Tr0ubadour&3xtra", why: "symbols are allowed, not required" },
   { pw: "MixedCase12345678", why: "comfortably long" },
   { pw: "Password123", why: "the seeded default — LEGAL since 4 Aug 2026" },
+  { pw: "Abcdefghi1", why: "10 chars — was below the floor until 11 Aug 2026, now accepted" },
 
   // — Length —
-  { pw: "Abcdefghi1", why: "one character short of the floor" },
+  { pw: "Abcdef1", why: "7 — one character short of the floor" },
   { pw: "Ab1", why: "far too short" },
   { pw: "", why: "empty" },
 
@@ -50,10 +59,12 @@ const CASES: { pw: string; why: string }[] = [
   { pw: "NoDigitsInHereAtAll", why: "no digit" },
   { pw: "1234567890123456", why: "digits only" },
 
-  // — Known defaults still on the weak list —
+  // — Known defaults still on the weak list. At a floor of 8 these are no longer
+  //   rejected on length, so the list is doing real work for the first time. —
   { pw: "changeme", why: "known default" },
   { pw: "qwerty123", why: "known default" },
   { pw: "12345678", why: "known default" },
+  { pw: "Admin123", why: "known default, clears length AND all three classes — only the weak list refuses it" },
 
   // — The seeded default's other spellings. These are refused by the CHARACTER
   //   CLASS rules, not by the weak list, which no longer contains it. They are
@@ -76,8 +87,8 @@ describe("password policy: api ↔ mobile mirror", () => {
     expect(mobilePolicy.PASSWORD_MIN_LENGTH).toBe(apiPolicy.PASSWORD_MIN_LENGTH);
     // Pinned to the literal too: if someone lowers BOTH sides in one commit the
     // comparison above still passes, and the rotation floor would drop silently.
-    // 11 since 4 Aug 2026 (owner decision) — see api/src/lib/passwordPolicy.ts.
-    expect(apiPolicy.PASSWORD_MIN_LENGTH).toBe(11);
+    // 8 since 11 Aug 2026 (client request) — see api/src/lib/passwordPolicy.ts.
+    expect(apiPolicy.PASSWORD_MIN_LENGTH).toBe(8);
   });
 
   it("agrees on every case in the matrix", () => {

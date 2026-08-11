@@ -58,7 +58,8 @@ export function RegisterScreen({ navigation }: Props) {
   const onSubmit = async () => {
     setError(null);
     // Mirrors the server floor (lib/passwordPolicy) — see the module header.
-    if (!isStrongPassword(password)) return setError(t("common.passwordTooWeak"));
+    if (!isStrongPassword(password))
+      return setError(t("common.passwordTooWeak", { count: PASSWORD_MIN_LENGTH }));
     if (password !== confirm) return setError(t("register.passwordMismatch"));
     setLoading(true);
     try {

@@ -35,6 +35,13 @@ export interface AdminUser {
   status: UserStatus;
   department_id: string | null;
   created_at: string;
+  /**
+   * SC3 login lockout. ISO timestamp while the account is locked out of
+   * signing in, null otherwise. ⚠ A PAST timestamp means the lock has already
+   * expired — the server treats it as unlocked, so the UI must compare against
+   * now rather than testing for presence.
+   */
+  locked_until: string | null;
 }
 
 export interface Department {

@@ -143,6 +143,12 @@ model User {
   phone                String      @unique // login ID
   password_hash        String
   refresh_token_hash   String? // current rotated refresh token, hashed
+  // SC3 per-account lockout. The per-IP limiter on /login slows credential
+  // stuffing but does nothing to a patient attacker working ONE known phone at
+  // a few guesses a minute. Counter resets on any successful password check;
+  // `locked_until` is set when the counter trips and cleared by an admin unlock.
+  failed_login_attempts Int        @default(0)
+  locked_until         DateTime?
   name                 String
   employee_number      String?
   role                 Role

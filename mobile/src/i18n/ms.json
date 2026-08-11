@@ -21,7 +21,7 @@
     "hidePassword": "Sembunyikan kata laluan",
     "noData": "Belum ada apa-apa di sini.",
     "fileTooLarge": "Fail itu terlalu besar. Sila hantar fail bawah 10 MB.",
-    "passwordTooWeak": "Kata laluan mesti sekurang-kurangnya 11 aksara dan mengandungi huruf kecil, huruf besar dan satu digit.",
+    "passwordTooWeak": "Kata laluan mesti sekurang-kurangnya {{count}} aksara dan mengandungi huruf kecil, huruf besar dan satu digit.",
     "errorOffline": "Tiada sambungan internet. Pergi ke kawasan bertalian dan cuba lagi — hubungi pejabat jika mendesak.",
     "errorTimeout": "Pelayan mengambil masa terlalu lama untuk membalas. Cuba lagi — hubungi pejabat jika ia berterusan.",
     "clear": "Kosongkan"
@@ -812,7 +812,13 @@
       "deactivateBody": "Nyahaktifkan {{name}}? Mereka akan dilog keluar dan tidak boleh log masuk sehingga diaktifkan semula.",
       "resetPassword": "Set Semula Kata Laluan",
       "passwordResetDone": "Kata laluan ditetapkan semula. Kongsi kata laluan baharu dengan selamat.",
-      "tempPasswordHint": "Kata laluan sementara baharu"
+      "tempPasswordHint": "Kata laluan sementara baharu",
+      "locked": "Dikunci",
+      "sectionSignIn": "Kunci Log Masuk",
+      "lockedBody": "Terlalu banyak percubaan log masuk yang gagal. Kunci akan terbuka sendiri sebentar lagi, atau anda boleh membukanya sekarang.",
+      "notLocked": "Akaun ini tidak dikunci.",
+      "unlock": "Buka Sekarang",
+      "unlockDone": "Kunci log masuk telah dibuang."
     },
     "consignees": {
       "loadError": "Tidak dapat memuatkan penerima barang.",

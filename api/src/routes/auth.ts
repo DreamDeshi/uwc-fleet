@@ -10,6 +10,16 @@ import { requireRole } from "../middleware/roleGuard";
 import { sensitiveRateLimiter } from "../middleware/rateLimit";
 import { isStrongPassword, passwordProblemMessage } from "../lib/passwordPolicy";
 import {
+  CLEARED_LOCKOUT_STATE,
+  afterFailedAttempt,
+  isLocked,
+  isLockoutEnabled,
+  lockRemainingMs,
+  lockoutConfig,
+  lockoutMessage,
+  needsClearing,
+} from "../lib/loginLockout";
+import {
   signAccessToken,
   signRefreshToken,
   verifyRefreshToken,
@@ -93,6 +103,11 @@ const loginSchema = z.object({
 // the global 100/min budget is shared with all traffic and far too loose to slow
 // credential stuffing against known phones. `SENSITIVE_RATE_LIMIT_MAX=0` disables
 // it (the test/e2e suites drive one API from one IP); prod sets nothing → 10/min.
+//
+// It ALSO carries the SC3 per-account lockout (lib/loginLockout), which covers
+// what the per-IP limiter cannot: a patient attacker on one known phone, slow
+// enough never to trip a per-minute cap. `LOGIN_LOCKOUT_MAX_ATTEMPTS=0` disables
+// that half, and the disabled path touches neither column.
 router.post("/login", sensitiveRateLimiter, validateBody(loginSchema), async (req, res, next) => {
   try {
     const { password } = req.body;
@@ -103,9 +118,54 @@ router.post("/login", sensitiveRateLimiter, validateBody(loginSchema), async (re
       throw new ApiError(401, "INVALID_CREDENTIALS", "Phone number or password is incorrect.");
     }
 
+    const lockout = lockoutConfig();
+    const lockoutOn = isLockoutEnabled(lockout);
+    const now = new Date();
+
+    // ⚠ CHECKED BEFORE THE PASSWORD COMPARE, on purpose. A locked account is
+    // refused even when the guess is CORRECT — a lockout that yielded to the
+    // right password would stop nothing, since the right password is exactly
+    // what the attacker is hunting for. It also means a locked account costs an
+    // attacker a bcrypt compare of our choosing (none) rather than one of theirs.
+    if (lockoutOn && isLocked(user, now)) {
+      throw new ApiError(423, "ACCOUNT_LOCKED", lockoutMessage(lockRemainingMs(user, now)));
+    }
+
     const passwordMatches = await bcrypt.compare(password, user.password_hash);
     if (!passwordMatches) {
+      if (lockoutOn) {
+        const nextState = afterFailedAttempt(user, now, lockout);
+        await prisma.user.update({ where: { id: user.id }, data: nextState });
+        if (nextState.locked_until) {
+          // The one lockout event worth a row: an admin looking for "is someone
+          // grinding an account?" has nothing else to read. Individual failures
+          // are deliberately NOT logged — at 10 per lock they would bury the
+          // signal in the noise, and an attacker could inflate the table freely.
+          // `user_id` is the SUBJECT here; a lockout has no human actor.
+          await prisma.auditLog.create({
+            data: {
+              user_id: user.id,
+              action: "user.login_locked",
+              table_name: "User",
+              record_id: user.id,
+            },
+          });
+          throw new ApiError(
+            423,
+            "ACCOUNT_LOCKED",
+            lockoutMessage(lockRemainingMs(nextState, now))
+          );
+        }
+      }
       throw new ApiError(401, "INVALID_CREDENTIALS", "Phone number or password is incorrect.");
+    }
+
+    // The right password proves this is not the attack the counter is for, so it
+    // clears — including for an account that is pending or disabled, which is
+    // why this sits ABOVE the status checks rather than beside the token issue.
+    // Conditional so the ordinary login keeps doing exactly one write.
+    if (lockoutOn && needsClearing(user)) {
+      await prisma.user.update({ where: { id: user.id }, data: CLEARED_LOCKOUT_STATE });
     }
 
     if (user.status === "pending_approval") {

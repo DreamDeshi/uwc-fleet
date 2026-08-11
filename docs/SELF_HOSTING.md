@@ -141,7 +141,9 @@ Uploads throw a clear error if these are missing; the rest of the app works.
 | `JWT_ACCESS_EXPIRY` | `30m` | Access token lifetime. Note: role is carried in the token, so a demoted admin keeps access until it expires. |
 | `JWT_REFRESH_EXPIRY` | `7d` | Refresh token lifetime. |
 | `RATE_LIMIT_MAX` | `300` | Requests/minute **per user** (per IP when unauthenticated). `0` disables — testing only. Invalid values keep the default so a typo cannot weaken it. |
-| `SENSITIVE_RATE_LIMIT_MAX` | `10` | Requests/minute for auth endpoints (login etc.). |
+| `SENSITIVE_RATE_LIMIT_MAX` | `10` | Requests/minute for auth endpoints (login etc.). **`RATE_LIMIT_MAX=0` does not disable this one.** |
+| `LOGIN_LOCKOUT_MAX_ATTEMPTS` | `10` | Failed sign-ins before a single **account** is locked. The two limiters above throttle a *caller*; this protects one phone against a slow, patient guesser, which a per-minute cap never sees. `0` disables — **neither limiter variable disables it.** |
+| `LOGIN_LOCKOUT_MINUTES` | `15` | How long a lock lasts. It then expires by itself; an admin can also end one early from the Users screen. |
 | `FEATURE_EXCEPTIONS` | off | Driver "cannot deliver" exception workflow. Built and merged but **dark** — do not enable without the owner's sign-off. |
 | `FEATURE_CHANGE_REQUESTS` | off | Requestor booking amendments. Same — built, dark, owner-gated. |
 | `DOC_EXPIRY_REMIND_DAYS` | see code | How far ahead truck document expiry reminders fire. |
