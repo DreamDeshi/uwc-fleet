@@ -74,7 +74,7 @@ describe("R5 A4 — an earlier trip loses the after-6pm rate", () => {
   });
 
   it("names the rule and BOTH rates, so the audit row explains itself", () => {
-    const reason = otDemotionReason({ amount: 44, points: 4, weekdayRate: 11, offPeakRate: 13 });
+    const reason = otDemotionReason({ amount: 44, points: 4, weekdayRate: 11, offPeakRate: 13, source: "stored" });
     expect(reason).toContain("A4");
     expect(reason).toContain("RM11");
     expect(reason).toContain("RM13");
