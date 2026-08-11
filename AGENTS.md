@@ -54,6 +54,16 @@ over an older summary.
 
 
 
+Before writing or trusting ANY test, read "A BEHAVIOUR TEST IS NOT ENOUGH —
+
+ASSERT THAT THE GUARD IS REACHED" below. A green suite proving a guard that
+
+nothing calls has shipped here THREE TIMES IN ONE DAY under three different
+
+names: a vacuous scan, a tautological pin, and an unreached branch.
+
+
+
 \## Requirement authority
 
 
@@ -440,6 +450,78 @@ you do not know.
 
 
 
+\#### A BEHAVIOUR TEST IS NOT ENOUGH — ASSERT THAT THE GUARD IS REACHED
+
+
+
+A correct function on an unreachable path passes everything. This happened
+
+THREE TIMES ON 11 AUG 2026 alone, each time with a fully green suite:
+
+
+
+\- the interplant FALLBACK pin — the suite could not tell "reads the truck's own
+
+&#x20; rate" from "always uses the fallback", because every fixture expected the
+
+&#x20; same number by three separate routes. 1254/1254 green with the truck's own
+
+&#x20; rate ignored entirely.
+
+\- the stale-spec GATE — a targeted run of a money pin passed 22/22 against
+
+&#x20; generated data that `gen:spec` had never rewritten, because the sync test
+
+&#x20; lived in a file that run did not include.
+
+\- the quarantine BRANCH in `scopedStorage` — unit-tested and correct, but every
+
+&#x20; call site ran AFTER a user was set, so it was dead code. The next driver to
+
+&#x20; sign in would have adopted the previous driver's queued PODs.
+
+
+
+In all three the unit tests called the function DIRECTLY, and nothing asserted
+
+that anything else did.
+
+
+
+So, for any guard, fallback or safety branch:
+
+
+
+1\. Test the behaviour, as always.
+
+2\. ALSO assert the guard is REACHED — that a real call site invokes it, on the
+
+&#x20; path where it matters.
+
+3\. Prove that assertion by REMOVING THE CALL SITE, not by breaking the logic.
+
+
+
+Step 3 is the whole point. **Breaking the logic proves the test can SEE the
+
+function. Removing the call proves the function is IN THE PROGRAM.** Only the
+
+second catches dead code, and dead code is what all three of these were.
+
+
+
+This is one failure wearing different names — a VACUOUS SCAN (a source scan
+
+whose pattern matches nothing, so it passes on an empty set), a TAUTOLOGICAL PIN
+
+(an expected value that arrives by more than one route, so it holds either way),
+
+and an UNREACHED BRANCH (correct code nothing calls). Recognise it by the
+
+symptom: the suite is green and you cannot name the line that would turn it red.
+
+
+
 When a task touches frozen work, explain the missing decision and stop.
 
 
@@ -481,6 +563,64 @@ Rules:
 \- Review the staged diff before every commit.
 
 \- Do not commit automatically when the user asks only for a review.
+
+
+
+\#### Two Git commands that lose or smuggle work SILENTLY
+
+
+
+Both fail without an error, and both were caught only because someone happened
+
+to look. Neither is detectable by reading the diff you intended to make.
+
+
+
+\- **ALWAYS NAME THE BASE: `git checkout -b <new> main`.** A bare
+
+&#x20; `git checkout -b <new>` branches off wherever HEAD happens to be. On 4 Aug
+
+&#x20; 2026 that put an auth-policy commit — lowering `PASSWORD\_MIN\_LENGTH` and
+
+&#x20; removing `password123` from the weak list — inside **PR #108**, which was
+
+&#x20; titled and merged as UI clipping fixes. CI was green and the end state was
+
+&#x20; wanted, so nothing broke; it was a TRANSPARENCY failure, which is the kind
+
+&#x20; that is easy to shrug off and should not be. Before pushing, check what is
+
+&#x20; actually on the branch: `git log --oneline origin/main..HEAD`. If it lists a
+
+&#x20; commit the PR description does not mention, split it or rewrite the
+
+&#x20; description.
+
+
+
+\- **NEVER MOVE AN UNCOMMITTED EDIT WITH `git checkout <branch> -- <file>`.**
+
+&#x20; That command silently DISCARDS your uncommitted changes to that file and
+
+&#x20; replaces it with that branch's version — which is usually OLDER. On 12 Aug
+
+&#x20; 2026, moving a docs edit onto its own branch this way destroyed the edit AND
+
+&#x20; restored an AGENTS.md predating PR #144, which would have reinstated the
+
+&#x20; stale "fleet update ON HOLD" entry that #144 had just removed — reintroducing
+
+&#x20; a retired hold as a side effect of tidying a branch. It was caught only by
+
+&#x20; grepping for the stale phrase before committing, which is a check that works
+
+&#x20; only when someone thinks to run it.
+
+&#x20; Use `git stash` (then `git stash pop` on the target branch) or
+
+&#x20; `git diff > /tmp/x.patch` + `git apply`. Both PRESERVE the edit; the checkout
+
+&#x20; form has no undo, because the content was never in Git.
 
 
 
