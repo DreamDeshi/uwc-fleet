@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 
 import { api, auth, prisma, resetDb, loginAs, ADMIN, DRIVER, REQUESTOR } from "./helpers/harness";
 import {
@@ -10,6 +10,7 @@ import {
   arriveAndDeliver,
   num,
 } from "./helpers/flow";
+import { mytDateKey } from "../src/services/incentiveEngine";
 
 /**
  * R5 A4 AT THE APPROVAL BOUNDARY — only the last trip of the day earns the
@@ -50,6 +51,8 @@ const OFF_PEAK = 13;
 const WEEKDAY = 11;
 
 let requestor = "", admin = "", driver = "", driverId = "", rt = "";
+/** Set when a spec marks today a holiday to force the off-peak tier. */
+let holidayKey: string | null = null;
 
 /** Deliver a single-stop trip in `zone`, leaving it in pending_approval. */
 async function deliverTrip(zone: string): Promise<string> {
@@ -82,6 +85,12 @@ describe("R5 A4 — the after-6pm rate survives approval only on the day's last 
     [requestor, admin, driver] = await Promise.all([loginAs(REQUESTOR), loginAs(ADMIN), loginAs(DRIVER)]);
     driverId = await userIdByPhone(DRIVER.phone);
     rt = await firstRouteTypeId(requestor);
+  });
+
+  afterAll(async () => {
+    // PublicHoliday is reference data and survives resetDb — leaving today
+    // marked would silently re-tier every money spec that runs after this file.
+    if (holidayKey) await prisma.publicHoliday.deleteMany({ where: { date: holidayKey } });
   });
 
   beforeEach(async () => {
@@ -170,4 +179,53 @@ describe("R5 A4 — the after-6pm rate survives approval only on the day's last 
     expect(log?.action).toContain("RM44");
     expect(log?.action).toContain("A4");
   });
+  /**
+   * THE DEDUCTION CASE, ON A REAL ENGINE-PRODUCED OFF-PEAK PROPOSAL.
+   *
+   * The specs above write the off-peak columns in. This one does not touch them:
+   * today is marked a PUBLIC HOLIDAY, which is one of the two things isOffPeak
+   * reads, so the trip genuinely finalizes off-peak at RM13 with the day's
+   * deduction applied. It is the case that would hide a broken rule the longest —
+   * the demotion candidate is also the deduction carrier, and if the deduction
+   * made the trip unreadable the rule would silently never fire and every test
+   * would stay green, because the fallback is "do nothing".
+   *
+   *   6 scored (Ipoh A2) - 2 deduction = 4 paid.  4 x RM13 = RM52 proposed.
+   *   Demoted: 4 x RM11 = RM44.
+   */
+  it("fires on a trip that carries the day's deduction, at a REAL off-peak rate", async () => {
+    const today = mytDateKey(new Date());
+    await prisma.publicHoliday.upsert({
+      where: { date: today },
+      update: {},
+      create: { date: today, name: "TEST — forces the off-peak tier" },
+    });
+    holidayKey = today;
+
+    const earlier = await deliverTrip("A2");
+    const proposal = await prisma.trip.findUniqueOrThrow({
+      where: { id: earlier },
+      select: {
+        off_peak: true,
+        rate_used: true,
+        incentive_earned: true,
+        deduction_applied: true,
+        stops: { select: { points_awarded: true } },
+      },
+    });
+    // The engine, not the test, produced all of this.
+    expect(proposal.off_peak).toBe(true);
+    expect(num(proposal.rate_used)).toBe(OFF_PEAK);
+    expect(proposal.deduction_applied).toBe(2);
+    expect(proposal.stops[0].points_awarded).toBe(6);
+    expect(num(proposal.incentive_earned)).toBe(4 * OFF_PEAK); // RM52
+
+    await deliverTrip("K1"); // the driver went out again
+
+    expect((await approveIncentive(earlier)).status).toBe(200);
+    const row = await finalOf(earlier);
+    expect(num(row.incentive_final)).toBe(4 * WEEKDAY); // RM44
+    expect(row.incentive_override_reason).toContain("4 pt");
+  });
 });
+
