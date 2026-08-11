@@ -187,6 +187,99 @@ describe("POD outbox storage edge — the normal paths still work", () => {
 });
 
 /**
+ * THE ERASE GUARD — "I read nothing" must never become "there is nothing".
+ *
+ * Three defects in one day shared that shape, so the refusal now lives BELOW
+ * every writer instead of inside each one. These drive it through the public
+ * API, using the one thing that can legitimately make a writer's view of the
+ * queue stale: something else queueing between its read and its write.
+ */
+describe("POD outbox storage edge — an empty write must be accounted for", () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+  /** Read #1 is the caller's; read #2 is the guard's, after the world moved. */
+  const readsThen = (first: unknown, second: unknown) => {
+    let n = 0;
+    mockStorage.getItem.mockImplementation((key: string) => {
+      if (!String(key).endsWith(".podOutbox")) return Promise.resolve(null);
+      n += 1;
+      return Promise.resolve(JSON.stringify(n === 1 ? first : second));
+    });
+  };
+
+  const ONLY = [EXISTING[0]];
+  const RACED = [EXISTING[0], { tripId: "t1", stopId: "s9", confirmDelivered: true, queuedAt: "2026-07-30T09:00:00.000Z" }];
+
+  it("refuses to empty the queue over an item the writer never saw", async () => {
+    readsThen(ONLY, RACED);
+
+    await removePodItem("s1");
+
+    // s9 was queued after removePodItem read. Writing [] would have destroyed
+    // a delivery the driver was told was saved.
+    expect(writesTo(KEY)).toHaveLength(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("refusing to empty"));
+    expect(warn.mock.calls.at(-1)?.[0]).toContain("s9");
+  });
+
+  it("refuses when the guard cannot see what it would be destroying", async () => {
+    let n = 0;
+    mockStorage.getItem.mockImplementation((key: string) => {
+      if (!String(key).endsWith(".podOutbox")) return Promise.resolve(null);
+      n += 1;
+      return n === 1
+        ? Promise.resolve(JSON.stringify(ONLY))
+        : Promise.reject(new Error("SQLITE_CORRUPT: database disk image is malformed"));
+    });
+
+    await removePodItem("s1");
+
+    expect(writesTo(KEY)).toHaveLength(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("storage unreadable"));
+  });
+
+  it("still performs the erase the writer CAN account for", async () => {
+    // The guard must not become a reason the queue never empties: the same
+    // race test above, minus the race.
+    readsThen(ONLY, ONLY);
+
+    await removePodItem("s1");
+
+    expect(JSON.parse(writesTo(KEY)[0][1] as string)).toEqual([]);
+  });
+
+  it("noteDirectPodUpload's erase is guarded on the same terms", async () => {
+    readsThen([{ ...EXISTING[0], confirmDelivered: false }], RACED);
+    await noteDirectPodUpload("s1");
+    expect(writesTo(KEY)).toHaveLength(0);
+  });
+
+  /**
+   * ⚠ REACHABILITY, not behaviour. The tests above prove the guard WORKS; this
+   * proves it is IN THE PROGRAM — that no path reaches the outbox key without
+   * passing through the one writer that runs it. A second writer would leave
+   * every test above green while re-opening the exact hole they cover.
+   */
+  it("writeOutbox is the only thing that writes the live outbox key", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const src = fs.readFileSync(path.join(__dirname, "podOutbox.ts"), "utf-8");
+
+    // One writer, and it is the guarded one.
+    expect(src.match(/scopedSetItem\(OUTBOX_SUFFIX/g) ?? []).toHaveLength(1);
+    // Any other scopedSetItem in this file must be the corrupt-quarantine key,
+    // which by definition is not the live queue.
+    const otherWrites = (src.match(/scopedSetItem\(\s*(?!OUTBOX_SUFFIX)([^)]*)/g) ?? []).filter(
+      (m) => !m.includes("CORRUPT_SUFFIX_PREFIX")
+    );
+    expect(otherWrites).toEqual([]);
+    // And nothing bypasses the scoped layer altogether (comments may NAME
+    // AsyncStorage; only an import of it would let code reach past the guard).
+    expect(src).not.toMatch(/from\s+["']@react-native-async-storage/);
+  });
+});
+
+/**
  * ⚠ THE WIRING, not the filesystem behaviour (podPhotoStore.test.ts covers
  * that). Without these, the queue could go on storing the raw camera URI — the
  * cache path Android reclaims — and every test here would still pass, because

@@ -114,6 +114,12 @@ try {
 
   // SEEDED, not captured — the camera cannot run headless, so the queued POD is
   // written through the storage layer's key shape rather than the capture UI.
+  //
+  // ⚠ tripId "t-A" DOES NOT EXIST on the server. That is deliberate and it is
+  // why 3b has two phases: once the item reaches the API it is answered with
+  // TRIP_NOT_FOUND and dropped as stale, which is correct behaviour and looks
+  // identical, in localStorage, to the queue being erased. Do not read an empty
+  // array here as either verdict without looking at the wire.
   await page.evaluate((id) => {
     localStorage.setItem(
       `uwc.u.${id}.podOutbox`,
@@ -143,15 +149,48 @@ try {
   await login(page, B);
   k = await keys(page);
   show("after B signs in:", k);
-  const leaked = Object.keys(k).filter((n) => aId && n.includes(aId));
-  console.log(`  >> A's keys readable under B's session: ${leaked.length ? leaked.join(", ") : "NONE"}`);
+  const bId = k["uwc.activeUserId"];
+  // ⚠ WORD THIS PRECISELY. localStorage has no per-user partition, so A's key is
+  // physically PRESENT while B is signed in — that is the direct cost of keeping
+  // evidence rather than deleting it. What the app enforces is that B cannot
+  // RESOLVE it: every read goes through currentScopedKey, which keys on
+  // uwc.activeUserId. Isolation by key resolution, not by absence. The earlier
+  // label said "readable under B's session", which claims far more than the run
+  // shows and would read as a leak.
+  const present = Object.keys(k).filter((n) => aId && n.includes(aId));
+  console.log(`  >> A's keys still ON THE DEVICE: ${present.length ? present.join(", ") : "NONE"}`);
+  console.log(`  >> B's session points at: ${bId} (${bId === aId ? "⚠ SAME AS A" : "distinct"})`);
+  console.log(`  >> what B's app resolves as its outbox: ${k[`uwc.u.${bId}.podOutbox`] ?? "(nothing queued)"}`);
 
-  console.log("\n=== SCENARIO 3b — A signs back in (REAL UI) ===");
+  // ⚠ TWO PHASES, and the first run conflated them. A's queued POD leaving the
+  // queue on A's return is only good news if the SERVER took it. Phase i blocks
+  // the trip endpoints so nothing can be legitimately resolved — anything that
+  // empties the queue there is data loss. Phase ii lets it through and reports
+  // what the server actually said, rather than inferring it from an empty array.
+  console.log("\n=== SCENARIO 3b(i) — A signs back in, trip endpoints UNREACHABLE (REAL UI) ===");
   await logout(page);
+  const block = (route) => route.abort();
+  await page.route("**/api/v1/trips/**", block);
   await login(page, A);
+  await page.waitForTimeout(2000);
   k = await keys(page);
-  show("after A returns:", k);
-  console.log(`  >> A's queued POD still there? ${`uwc.u.${aId}.podOutbox` in k ? "YES" : "NO"}`);
+  show("after A returns (nothing can be resolved):", k);
+  const kept3b = k[`uwc.u.${aId}.podOutbox`];
+  console.log(`  >> A's queued POD still there? ${kept3b && kept3b !== "[]" ? "YES" : "NO — LOST"}`);
+
+  console.log("\n=== SCENARIO 3b(ii) — the same session reaches the server ===");
+  const seen = [];
+  const watch = (res) => {
+    if (/\/trips\//.test(res.url())) seen.push(`${res.request().method()} ${res.url().split("/api/v1")[1]} -> ${res.status()}`);
+  };
+  page.on("response", watch);
+  await page.unroute("**/api/v1/trips/**", block);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(7000);
+  k = await keys(page);
+  console.log(`  >> what the server was asked: ${seen.length ? seen.join(" | ") : "(nothing)"}`);
+  console.log(`  >> A's outbox now: ${k[`uwc.u.${aId}.podOutbox`] ?? "(key gone)"}`);
+  page.off("response", watch);
 
   console.log("\n=== SCENARIO 4 — legacy global data, NO session (REAL app boot) ===");
   await logout(page);
