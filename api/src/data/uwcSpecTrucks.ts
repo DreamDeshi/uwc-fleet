@@ -2,8 +2,12 @@
 //
 // docs/uwc-spec.json is the single source of truth, but it lives at the repo
 // root (outside the API build scope), so it is NOT present in the deployed
-// container. These values are compiled into dist/ instead. tests/specSync.test.ts
-// fails if this file drifts from docs/uwc-spec.json — regenerate after editing it.
+// container. These values are compiled into dist/ instead.
+//
+// Two things stop this file drifting from docs/uwc-spec.json: tests/specSync.test.ts
+// names WHICH truck drifted, and vitest.globalSetup.mjs fails the whole run —
+// including a single-file run — so a pin that reads these values can never pass
+// against a stale copy. Regenerate after editing the spec.
 import type { SpecTruck } from "../lib/uwcSpec";
 
 export const SPEC_TRUCKS: SpecTruck[] = [
