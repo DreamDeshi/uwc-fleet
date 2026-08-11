@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { scopedGetItem, scopedSetItem } from "./scopedStorage";
 import {
   flushOutboxItems,
   mergeOutboxItem,
@@ -19,7 +19,7 @@ import { persistPodPhoto, sweepPodPhotos } from "./podPhotoStore";
 
 export * from "./podOutboxCore";
 
-const OUTBOX_KEY = "uwc.podOutbox";
+const OUTBOX_SUFFIX = "podOutbox";
 
 type Listener = () => void;
 const listeners = new Set<Listener>();
@@ -54,12 +54,12 @@ type ReadOutcome =
   | { ok: true; items: PodOutboxItem[] }
   | { ok: false; error: unknown };
 
-const CORRUPT_KEY_PREFIX = "uwc.podOutbox.corrupt";
+const CORRUPT_SUFFIX_PREFIX = "podOutbox.corrupt";
 
 /** Keep unparseable bytes instead of destroying them. Best effort by design. */
 async function quarantineCorrupt(raw: string): Promise<void> {
   try {
-    await AsyncStorage.setItem(`${CORRUPT_KEY_PREFIX}.${Date.now()}`, raw);
+    await scopedSetItem(`${CORRUPT_SUFFIX_PREFIX}.${Date.now()}`, raw);
   } catch {
     // Storage is already misbehaving; failing to quarantine must not also block
     // the driver from queueing the delivery in front of them.
@@ -69,7 +69,7 @@ async function quarantineCorrupt(raw: string): Promise<void> {
 async function readOutboxOutcome(): Promise<ReadOutcome> {
   let raw: string | null;
   try {
-    raw = await AsyncStorage.getItem(OUTBOX_KEY);
+    raw = await scopedGetItem(OUTBOX_SUFFIX);
   } catch (error) {
     return { ok: false, error };
   }
@@ -93,7 +93,7 @@ async function readOutbox(): Promise<PodOutboxItem[]> {
 // back to the normal error path rather than telling the driver "saved" when
 // nothing was.
 async function writeOutbox(items: PodOutboxItem[]): Promise<void> {
-  await AsyncStorage.setItem(OUTBOX_KEY, JSON.stringify(items));
+  await scopedSetItem(OUTBOX_SUFFIX, JSON.stringify(items));
   // Collect stored photos nothing references any more — items just synced,
   // dropped, retaken, or superseded by a direct upload. Doing it here, against
   // the list actually written, covers every one of those paths without a delete

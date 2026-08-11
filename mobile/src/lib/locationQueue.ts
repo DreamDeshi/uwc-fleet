@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { scopedGetItem, scopedSetItem } from "./scopedStorage";
 
 // A durable, offline-first buffer for GPS readings (Brief §7: "AsyncStorage
 // queue for location posts ... flush on reconnect"). Points are appended every
@@ -13,7 +13,7 @@ export interface QueuedPoint {
   recorded_at: string; // ISO — captured at GPS-read time, preserved through the queue
 }
 
-const QUEUE_KEY = "uwc.locationQueue";
+const QUEUE_SUFFIX = "locationQueue";
 
 // The server accepts at most 500 points per POST, so we cap the buffer there
 // too. If the driver is offline for hours we keep the most RECENT 500 readings
@@ -22,7 +22,7 @@ const MAX_QUEUE = 500;
 
 async function readQueue(): Promise<QueuedPoint[]> {
   try {
-    const raw = await AsyncStorage.getItem(QUEUE_KEY);
+    const raw = await scopedGetItem(QUEUE_SUFFIX);
     return raw ? (JSON.parse(raw) as QueuedPoint[]) : [];
   } catch {
     return []; // corrupt JSON — start clean rather than crash the tracker
@@ -30,7 +30,7 @@ async function readQueue(): Promise<QueuedPoint[]> {
 }
 
 async function writeQueue(points: QueuedPoint[]): Promise<void> {
-  await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(points));
+  await scopedSetItem(QUEUE_SUFFIX, JSON.stringify(points));
 }
 
 export async function enqueueLocation(point: QueuedPoint): Promise<void> {

@@ -54,11 +54,78 @@ function orphanKey(suffix: string, now: number): string {
   return `${ORPHAN_PREFIX}.${suffix}.${now}`;
 }
 
-/** Epoch stamp from an orphan key, or null if it is not one. */
-function orphanStamp(key: string): number | null {
-  if (!key.startsWith(`${ORPHAN_PREFIX}.`)) return null;
+/**
+ * The TWO quarantine families, both of which hold delivery photos and neither
+ * of which anything else ever clears.
+ *
+ *   uwc.orphaned.<suffix>.<epoch>            data whose owner was unknown
+ *   uwc.u.<uid>.podOutbox.corrupt.<epoch>    unparseable POD outbox bytes
+ *
+ * The second was previously exempted from scoping "because it is a quarantine
+ * prefix" — a judgement about its SHAPE. What it actually holds is a driver's
+ * raw POD queue, so it is scoped like everything else and capped like the
+ * other quarantine.
+ *
+ * Capped SEPARATELY so a flood of one cannot evict the other's evidence.
+ */
+const QUARANTINE_FAMILIES = [
+  { name: "orphaned", match: (k: string) => k.startsWith(`${ORPHAN_PREFIX}.`) },
+  { name: "podOutbox.corrupt", match: (k: string) => k.includes(".podOutbox.corrupt.") },
+] as const;
+
+/** Trailing `.<epochMs>` on a quarantine key, or null if this is not one. */
+function quarantineStamp(key: string): number | null {
+  if (!QUARANTINE_FAMILIES.some((f) => f.match(key))) return null;
   const stamp = Number(key.slice(key.lastIndexOf(".") + 1));
   return Number.isFinite(stamp) ? stamp : null;
+}
+
+// ── The ONLY AsyncStorage surface the app may use ────────────────────────
+//
+// Every other module goes through these, which is what makes the call-site
+// guard in scopedStorage.test.ts enforceable: it does not have to understand
+// how a key was BUILT (a literal, a concatenation, a template — the previous
+// literal-scanning guard was blind to the last two), only which files reach
+// storage at all.
+
+/**
+ * Read a per-user value. Null when nobody is signed in — never a global read.
+ *
+ * ⚠ A STORAGE FAILURE PROPAGATES. It must not be collapsed into null: podOutbox
+ * distinguishes "storage threw, so we do not know what is stored and nobody may
+ * write" from "nothing is stored". Swallowing the error here would let the next
+ * enqueue write a one-item array over a day of queued deliveries — the exact
+ * defect the comment in readOutboxOutcome was written about.
+ */
+export async function scopedGetItem(suffix: string): Promise<string | null> {
+  const key = await currentScopedKey(suffix);
+  if (!key) return null;
+  return await AsyncStorage.getItem(key);
+}
+
+/**
+ * Write a per-user value. Errors PROPAGATE so a caller never reports "saved"
+ * when nothing was.
+ *
+ * ⚠ Throws when nobody is signed in, rather than no-op'ing. A silent no-op is
+ * the same lie in a different costume: the driver is told the delivery was
+ * queued and nothing was written.
+ */
+export async function scopedSetItem(suffix: string, value: string): Promise<void> {
+  const key = await currentScopedKey(suffix);
+  if (!key) throw new Error(`scopedStorage: refusing to write "${suffix}" with no active user`);
+  await AsyncStorage.setItem(key, value);
+}
+
+/** Remove a per-user value. No-op when nobody is signed in. */
+export async function scopedRemoveItem(suffix: string): Promise<void> {
+  const key = await currentScopedKey(suffix);
+  if (!key) return;
+  try {
+    await AsyncStorage.removeItem(key);
+  } catch {
+    /* best effort */
+  }
 }
 
 /**
@@ -76,6 +143,12 @@ export const LEGACY_GLOBAL_KEYS = [
   "uwc.gpsConsent",
   "uwc.exceptionOutbox",
   "uwc.bgTrip",
+  // Not `uwc.*`, and scoped for the same reason. Saved booking templates
+  // leaking between requestors on a shared office machine is the same defect as
+  // a POD leaking between drivers, just cheaper — and a scan that only looked
+  // for the `uwc.` prefix could never have seen either of these.
+  "admin.tripFilterPresets.v1",
+  "requestor.bookingTemplates.v1",
 ] as const;
 
 /** Suffix used inside a user's namespace, derived from the legacy key name. */
@@ -180,21 +253,28 @@ export interface MigrationReport {
 export async function pruneQuarantine(now: number = Date.now()): Promise<string[]> {
   let keys: string[];
   try {
-    keys = (await AsyncStorage.getAllKeys()).filter((k) => orphanStamp(k) !== null);
+    keys = (await AsyncStorage.getAllKeys()).filter((k) => quarantineStamp(k) !== null);
   } catch {
     return [];
   }
 
   const cutoff = now - MAX_ORPHAN_AGE_DAYS * 24 * 60 * 60 * 1000;
-  const dated = keys
-    .map((key) => ({ key, stamp: orphanStamp(key)! }))
-    .sort((a, b) => a.stamp - b.stamp); // oldest first
+  const doomed: string[] = [];
 
-  const tooOld = dated.filter((d) => d.stamp < cutoff);
-  const survivors = dated.filter((d) => d.stamp >= cutoff);
-  const overflow = survivors.slice(0, Math.max(0, survivors.length - MAX_ORPHAN_ENTRIES));
+  // Each family is capped on its own, so a burst of corrupt-outbox writes
+  // cannot evict orphaned evidence, or the other way round.
+  for (const family of QUARANTINE_FAMILIES) {
+    const dated = keys
+      .filter((k) => family.match(k))
+      .map((key) => ({ key, stamp: quarantineStamp(key)! }))
+      .sort((a, b) => a.stamp - b.stamp); // oldest first
 
-  const doomed = [...tooOld, ...overflow].map((d) => d.key);
+    const tooOld = dated.filter((d) => d.stamp < cutoff);
+    const survivors = dated.filter((d) => d.stamp >= cutoff);
+    const overflow = survivors.slice(0, Math.max(0, survivors.length - MAX_ORPHAN_ENTRIES));
+    doomed.push(...[...tooOld, ...overflow].map((d) => d.key));
+  }
+
   if (doomed.length === 0) return [];
 
   try {
@@ -204,7 +284,7 @@ export async function pruneQuarantine(now: number = Date.now()): Promise<string[
   }
 
   console.warn(
-    `[scopedStorage] quarantine ceiling removed ${doomed.length} orphaned entr` +
+    `[scopedStorage] quarantine ceiling removed ${doomed.length} quarantined entr` +
       `${doomed.length === 1 ? "y" : "ies"} ` +
       `(older than ${MAX_ORPHAN_AGE_DAYS}d, or beyond ${MAX_ORPHAN_ENTRIES} kept): ` +
       doomed.join(", ")

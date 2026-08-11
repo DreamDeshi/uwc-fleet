@@ -18,6 +18,7 @@ const photoStore = vi.hoisted(() => ({
 vi.mock("./podPhotoStore", () => photoStore);
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { setActiveUser } from "./scopedStorage";
 import {
   getPodOutbox,
   enqueuePodItem,
@@ -41,7 +42,10 @@ import {
  * nothing writes on the second.
  */
 
-const KEY = "uwc.podOutbox";
+// Storage is per-driver now (DG-D4): the module writes under the signed-in
+// driver's namespace, so the test drives it as that driver.
+const TEST_USER = "driver-test";
+const KEY = `uwc.u.${TEST_USER}.podOutbox`;
 const mockStorage = AsyncStorage as unknown as {
   getItem: ReturnType<typeof vi.fn>;
   setItem: ReturnType<typeof vi.fn>;
@@ -56,9 +60,10 @@ const EXISTING = [
 
 const writesTo = (key: string) => mockStorage.setItem.mock.calls.filter((c) => c[0] === key);
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
   mockStorage.setItem.mockResolvedValue(undefined);
+  await setActiveUser(TEST_USER);
 });
 
 describe("POD outbox storage edge — a read failure must never destroy the queue", () => {
@@ -116,7 +121,7 @@ describe("POD outbox storage edge — corrupt bytes are quarantined, not destroy
     await expect(getPodOutbox()).resolves.toEqual([]);
 
     const quarantined = mockStorage.setItem.mock.calls.filter((c) =>
-      String(c[0]).startsWith("uwc.podOutbox.corrupt")
+      String(c[0]).startsWith(`uwc.u.${TEST_USER}.podOutbox.corrupt`)
     );
     expect(quarantined).toHaveLength(1);
     expect(quarantined[0][1]).toBe(corrupt); // recoverable, byte for byte
@@ -128,14 +133,14 @@ describe("POD outbox storage edge — corrupt bytes are quarantined, not destroy
     mockStorage.getItem.mockResolvedValue('{"stopId":"s1"}');
     await expect(getPodOutbox()).resolves.toEqual([]);
     expect(
-      mockStorage.setItem.mock.calls.filter((c) => String(c[0]).startsWith("uwc.podOutbox.corrupt"))
+      mockStorage.setItem.mock.calls.filter((c) => String(c[0]).startsWith(`uwc.u.${TEST_USER}.podOutbox.corrupt`))
     ).toHaveLength(1);
   });
 
   it("a failed quarantine still lets the driver queue the delivery in front of them", async () => {
     mockStorage.getItem.mockResolvedValue("not json at all");
     mockStorage.setItem.mockImplementation((key: string) =>
-      String(key).startsWith("uwc.podOutbox.corrupt")
+      String(key).startsWith(`uwc.u.${TEST_USER}.podOutbox.corrupt`)
         ? Promise.reject(new Error("quota exceeded"))
         : Promise.resolve(undefined)
     );

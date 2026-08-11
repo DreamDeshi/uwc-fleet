@@ -203,44 +203,90 @@ describe("the quarantine ceiling (DG-O10 — nothing else ever clears it)", () =
   });
 });
 
-describe("the legacy key list stays honest", () => {
-  it("names every global uwc.* key still present in mobile/src", () => {
-    // Without this, a new global key added later silently escapes scoping and
-    // reintroduces the shared-handset defect with nothing going red.
+describe("only the storage layer may touch AsyncStorage", () => {
+  /**
+   * THE INVERTED GUARD.
+   *
+   * The previous version scanned for `"uwc.*"` string LITERALS. Measured: it
+   * passed with both `PREFIX + ".concatenatedKey"` and `` `${PREFIX}.templated` ``
+   * added to a source file, and it could never see `admin.tripFilterPresets.v1`
+   * or `requestor.bookingTemplates.v1` at all, because neither carries the
+   * prefix it looked for. A guard that only recognises one spelling of the
+   * mistake is not a guard.
+   *
+   * So this does not look at keys. It looks at who reaches STORAGE. Nothing
+   * about how a key is assembled can get past it, because assembly is not what
+   * it inspects.
+   *
+   * ⚠ THE ALLOWLIST IS THE FAILURE MECHANISM. `uwc.podOutbox.corrupt` was
+   * exempted in the old guard on the basis of its SHAPE ("a quarantine prefix")
+   * while it held raw POD bytes — a plausible sentence attached to a real leak.
+   * Every entry below therefore states WHAT IT HOLDS and why that cannot be
+   * per-user. Keep it as close to empty as the app allows.
+   */
+  const ALLOWED_DIRECT_STORAGE: Record<string, string> = {
+    "lib/scopedStorage.ts":
+      "IS the storage layer — every per-user key is resolved and written here.",
+    "services/api.ts":
+      "Holds the session tokens. They must be readable BEFORE the user id is " +
+      "known (bootstrap reads them to discover who is signed in), so they cannot " +
+      "live under a per-user key. Cleared on logout, step 4.",
+    "lib/sessionCache.ts":
+      "Holds the signed-in user's OWN profile (id, name, role, assigned truck) " +
+      "and nothing else — no consignee or trip data. It is what RESOLVES the " +
+      "user id for an offline cold start, so it cannot be keyed by it. Cleared " +
+      "on logout, step 4.",
+  };
+
+  it("no module outside the storage layer imports AsyncStorage", () => {
     const srcDir = path.resolve(__dirname, "..");
-    const found = new Set<string>();
+    const offenders: string[] = [];
 
     const walk = (dir: string) => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) walk(full);
-        else if (/\.(ts|tsx)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
-          const text = fs.readFileSync(full, "utf-8");
-          for (const m of text.matchAll(/"(uwc\.[a-zA-Z0-9.]+)"/g)) found.add(m[1]);
+        if (entry.isDirectory()) {
+          walk(full);
+          continue;
         }
+        if (!/\.(ts|tsx)$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) continue;
+
+        const text = fs.readFileSync(full, "utf-8");
+        const touchesStorage =
+          text.includes("@react-native-async-storage/async-storage") ||
+          /AsyncStorage\s*\.\s*(get|set|remove|multi|getAll)/.test(text);
+        if (!touchesStorage) continue;
+
+        const rel = path.relative(srcDir, full).split(path.sep).join("/");
+        if (!(rel in ALLOWED_DIRECT_STORAGE)) offenders.push(rel);
       }
     };
     walk(srcDir);
 
-    // Keys that are legitimately global, each for a stated reason.
-    const ALLOWED_GLOBAL = new Set([
-      "uwc.activeUserId", // the pointer that RESOLVES the namespace
-      "uwc.orphaned", // quarantine prefix
-      "uwc.accessToken", // cleared on logout; moves to the secure store next
-      "uwc.refreshToken",
-      "uwc.cachedMe",
-      "uwc.backgroundLocation", // an OS task NAME, not a storage key
-      "uwc.podOutbox.corrupt", // quarantine prefix inside podOutbox
+    expect(offenders).toEqual([]);
+  });
+
+  it("every allowlist entry states what it holds, not what it looks like", () => {
+    // A one-word exemption is how the next `podOutbox.corrupt` gets waved
+    // through. Force the entry to carry a real sentence.
+    for (const [file, reason] of Object.entries(ALLOWED_DIRECT_STORAGE)) {
+      expect(reason.length, `${file} needs a real reason`).toBeGreaterThan(60);
+      expect(reason, `${file} must say what it HOLDS`).toMatch(/hold|IS the storage layer/i);
+    }
+  });
+
+  it("keeps the legacy migration list covering every key that was global", () => {
+    // The migration is what moves a driver's existing data into their
+    // namespace. A key scoped in code but missing here would silently strand
+    // whatever the driver had queued before the upgrade.
+    expect([...LEGACY_GLOBAL_KEYS]).toEqual([
+      "uwc.podOutbox",
+      "uwc.locationQueue",
+      "uwc.gpsConsent",
+      "uwc.exceptionOutbox",
+      "uwc.bgTrip",
+      "admin.tripFilterPresets.v1",
+      "requestor.bookingTemplates.v1",
     ]);
-
-    const unaccounted = [...found].filter(
-      (k) =>
-        !ALLOWED_GLOBAL.has(k) &&
-        !k.startsWith("uwc.u.") &&
-        !k.startsWith("uwc.orphaned") &&
-        !(LEGACY_GLOBAL_KEYS as readonly string[]).includes(k)
-    );
-
-    expect(unaccounted).toEqual([]);
   });
 });

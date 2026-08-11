@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { scopedGetItem, scopedSetItem } from "./scopedStorage";
 import {
   flushOutboxItems,
   mergeOutboxItem,
@@ -16,7 +16,7 @@ import {
 
 export * from "./exceptionOutboxCore";
 
-const OUTBOX_KEY = "uwc.exceptionOutbox";
+const OUTBOX_SUFFIX = "exceptionOutbox";
 
 type Listener = () => void;
 const listeners = new Set<Listener>();
@@ -30,14 +30,14 @@ function notify() {
 
 async function readOutbox(): Promise<ExceptionOutboxItem[]> {
   try {
-    const raw = await AsyncStorage.getItem(OUTBOX_KEY);
+    const raw = await scopedGetItem(OUTBOX_SUFFIX);
     return raw ? (JSON.parse(raw) as ExceptionOutboxItem[]) : [];
   } catch {
     return [];
   }
 }
 async function writeOutbox(items: ExceptionOutboxItem[]): Promise<void> {
-  await AsyncStorage.setItem(OUTBOX_KEY, JSON.stringify(items));
+  await scopedSetItem(OUTBOX_SUFFIX, JSON.stringify(items));
   notify();
 }
 

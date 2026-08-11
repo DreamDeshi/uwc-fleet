@@ -15,7 +15,12 @@ import {
 import { registerForPushNotificationsAsync } from "../lib/notifications";
 import { bootstrapActionForError } from "../lib/sessionGate";
 import { saveCachedMe, loadCachedMe, clearCachedMe } from "../lib/sessionCache";
-import { clearUserScope, getActiveUserId, setActiveUser } from "../lib/scopedStorage";
+import {
+  clearUserScope,
+  getActiveUserId,
+  migrateLegacyGlobalKeys,
+  setActiveUser,
+} from "../lib/scopedStorage";
 import { confirmLogoutWithUnsent } from "../lib/confirmLogout";
 import { flushPodOutbox, getPodOutbox } from "../lib/podOutbox";
 import { realApi as realPodOutboxApi } from "../hooks/usePodOutbox";
@@ -48,16 +53,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchMe = async () => {
     const res = await api.get<Me>("/users/me");
-    // Point storage at this driver BEFORE anything reads a queue. An unset
+    // Point storage at this driver BEFORE anything reads a queue — an unset
     // pointer makes every scoped read a miss, which a driver would see as an
-    // emptied outbox.
-    //
-    // ⚠ migrateLegacyGlobalKeys() is deliberately NOT called yet. It MOVES data
-    // out of `uwc.podOutbox` & co, and those modules still READ the global keys
-    // until the wiring commit lands — running it now would hide a driver's
-    // queued PODs behind a key nothing reads. It is switched on in the same
-    // commit that scopes the readers, so the move and the read change together.
+    // emptied outbox — then adopt anything left under the old global keys into
+    // this namespace. Both must complete before `setUser` lets a screen mount
+    // and read.
     await setActiveUser(res.data.id);
+    await migrateLegacyGlobalKeys();
     setUser(res.data);
     // Cache the confirmed identity so a later offline cold start can still route
     // into the app (see the bootstrap effect + lib/sessionCache).
@@ -105,7 +107,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // storage too — otherwise an offline cold start reads nobody's queue
           // and the driver's outbox looks empty at exactly the moment it is
           // most likely to be full.
-          if (cached) await setActiveUser(cached.id);
+          if (cached) {
+            await setActiveUser(cached.id);
+            await migrateLegacyGlobalKeys();
+          }
           if (mounted) {
             if (cached) {
               setUser(cached);
