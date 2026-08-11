@@ -554,6 +554,8 @@ router.post("/reset-rates", async (req, res, next) => {
         pending_claim_offpeak: true,
         pending_deduction_points: true,
         pending_rates_effective: true,
+        interplant_claim_weekday: true,
+        interplant_claim_offpeak: true,
       },
     });
 
@@ -578,6 +580,13 @@ router.post("/reset-rates", async (req, res, next) => {
           entitled_claim_offpeak: Number(eff.entitled_claim_offpeak),
           daily_deduction_points: eff.daily_deduction_points,
           max_pallets: t.max_pallets,
+          // No cutoff merge to apply — the interplant pair has no pending twin,
+          // so the live column IS the effective value. `?? null` keeps "this
+          // truck has no interplant row" distinct from a rate of zero.
+          interplant_claim_weekday:
+            t.interplant_claim_weekday == null ? null : Number(t.interplant_claim_weekday),
+          interplant_claim_offpeak:
+            t.interplant_claim_offpeak == null ? null : Number(t.interplant_claim_offpeak),
         };
       })
     );
@@ -591,12 +600,40 @@ router.post("/reset-rates", async (req, res, next) => {
         : "(none — all trucks already at spec)";
     await prisma.$transaction([
       ...plan.updated.map((u) => {
-        const ratesChanged = u.changes.some((c) => c.field !== "max_pallets");
+        // Only the three CUTOFF-GOVERNED rate fields stage as pending. This was
+        // `c.field !== "max_pallets"` — a subtraction, which silently swept the
+        // interplant pair into the pending block the moment those fields
+        // existed, staging a customer-rate change for a truck whose customer
+        // rates never drifted. Named explicitly so the next field added has to
+        // declare which side it is on.
+        const ratesChanged = u.changes.some(
+          (c) =>
+            c.field === "entitled_claim_weekday" ||
+            c.field === "entitled_claim_offpeak" ||
+            c.field === "daily_deduction_points"
+        );
         const palletsChanged = u.changes.some((c) => c.field === "max_pallets");
+        // The interplant pair applies IMMEDIATELY, like max_pallets. The
+        // next-day cutoff protects a running trip from a rate EDIT; a trip
+        // already assigned carries its own snapshotted rates and cannot be
+        // touched by this write at all, and there is no interplant rate editor
+        // for the cutoff to defend against. Deferring it would only leave the
+        // interplant columns null — and interplant trips on the customer rate —
+        // for another day.
+        const interplantChanged = u.changes.some(
+          (c) =>
+            c.field === "interplant_claim_weekday" || c.field === "interplant_claim_offpeak"
+        );
         return prisma.truck.update({
           where: { plate: u.plate },
           data: {
             ...(palletsChanged ? { max_pallets: u.data.max_pallets } : {}),
+            ...(interplantChanged
+              ? {
+                  interplant_claim_weekday: u.data.interplant_claim_weekday,
+                  interplant_claim_offpeak: u.data.interplant_claim_offpeak,
+                }
+              : {}),
             // Stage the FULL spec rate target (not just changed fields) so the
             // pending block reads as one consistent "back to spec" change.
             ...(ratesChanged

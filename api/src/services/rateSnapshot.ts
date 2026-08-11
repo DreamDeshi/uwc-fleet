@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { ApiError } from "../lib/apiError";
+import { INTERPLANT_FALLBACK_RATE } from "../lib/uwcSpec";
 import { effectiveZonePoints } from "./pendingRates";
 
 /**
@@ -22,15 +23,51 @@ type DecimalLike = number | { toString(): string };
  * Field names deliberately mirror Truck's so the trip row reads as "the rates
  * this trip was assigned under".
  */
-export function truckRateSnapshot(truck: {
-  entitled_claim_weekday: DecimalLike;
-  entitled_claim_offpeak: DecimalLike;
-  daily_deduction_points: number;
-}): {
+export function truckRateSnapshot(
+  truck: {
+    entitled_claim_weekday: DecimalLike;
+    entitled_claim_offpeak: DecimalLike;
+    daily_deduction_points: number;
+    interplant_claim_weekday?: DecimalLike | null;
+    interplant_claim_offpeak?: DecimalLike | null;
+  },
+  opts: {
+    /**
+     * True when the trip being assigned is INTERPLANT work (its RouteType is
+     * Inter-Plant Delivery / Return). Defaults false — every existing caller
+     * and every customer/supplier assignment is unaffected.
+     */
+    interplant?: boolean;
+  } = {}
+): {
   entitled_claim_weekday: DecimalLike;
   entitled_claim_offpeak: DecimalLike;
   daily_deduction_points: number;
 } {
+  // ── Which of the truck's TWO rate pairs this trip locks in ───────────────
+  //
+  // The rate follows the WORK, not the lorry (workbook INTERNAL LORRY RATE:
+  // PLX 2406 is priced in the customer/supplier tables AND in the INTER PLANT
+  // block). So the same truck assigned to interplant work freezes a different
+  // pair than the same truck assigned to a customer run — and both are
+  // snapshotted into the SAME trip columns, which is what lets finalization
+  // stay completely unaware of the distinction.
+  if (opts.interplant) {
+    return {
+      // A lorry with no interplant row of its own — any backup cross-assigned
+      // to a plant run — takes PLX 2406's pair (owner ruling 11 Aug 2026 on
+      // R5 A3 "CHANGE TO INTERPLANT PAY"). Never its own customer rate: that
+      // is the defect this branch exists to fix.
+      entitled_claim_weekday: truck.interplant_claim_weekday ?? INTERPLANT_FALLBACK_RATE.weekday,
+      entitled_claim_offpeak: truck.interplant_claim_offpeak ?? INTERPLANT_FALLBACK_RATE.offpeak,
+      // Interplant takes NO daily deduction — Mr. Teh, R3 A4 (29 Jul 2026):
+      // "Interplant no need deduction". The workbook agrees by omission: its
+      // INTER PLANT block has no "Daily Deduction POINT" column at all, unlike
+      // both customer/supplier tables. Snapshotting 0 here means the deduction
+      // fold in the incentive engine is untouched — it subtracts nothing.
+      daily_deduction_points: 0,
+    };
+  }
   // Deliberately a plain copy: we want the truck's values as they stand RIGHT
   // NOW, frozen onto the trip row at the moment of assignment.
   return {

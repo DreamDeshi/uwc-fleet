@@ -1,0 +1,38 @@
+-- The interplant rate pair on Truck.
+--
+-- The workbook's INTERNAL LORRY RATE sheet has always carried TWO rate tables:
+-- the customer/supplier tables (rows 5-23) and an INTER PLANT block (rows
+-- 25-31, added in the 28 Jul 2026 revision). PLX 2406 appears in BOTH — RM11
+-- weekday / RM13 off-peak as a customer lorry, RM6 / RM8 for interplant work.
+-- Truck could hold only ONE pair, so interplant trips on PLX 2406 have been
+-- paying the customer rate. These two columns are the missing pair.
+--
+-- PURELY ADDITIVE: two nullable columns on Truck. No drops, no backfill, no
+-- change to any existing row's meaning, and NOTHING is paid differently until
+-- the values are populated (reset-to-spec) AND a trip is assigned interplant
+-- work. Existing trips carry their own snapshotted rates and are untouched.
+--
+-- ⚠ NULLABLE ON PURPOSE — null is a VALUE here, not a gap. 7 of the 9 spec
+-- trucks have no interplant row at all, and a NOT NULL DEFAULT would assert
+-- that every lorry has an interplant rate of its own, which the workbook does
+-- not say. A backup lorry cross-assigned to interplant work resolves through
+-- INTERPLANT_FALLBACK_RATE in code (PLX 2406's pair, owner ruling 11 Aug 2026),
+-- where the reason for the choice is written down next to it.
+--
+-- ⚠ HAND-WRITTEN, per AGENTS.md: `prisma migrate diff` in this repo keeps
+-- trying to emit
+--
+--     ALTER TABLE "ExceptionEvidence" DROP CONSTRAINT
+--       "ExceptionEvidence_action_same_exception_fkey";
+--
+-- because that composite FK is raw SQL and INVISIBLE to Prisma. It is not
+-- present below, and must never be.
+--
+-- ⚠ On LOCKING (the class of destruction the SQL guard cannot see): adding a
+-- NULLABLE column with NO default is a catalogue-only change in PostgreSQL —
+-- no table rewrite, no long-held lock. "Truck" holds 9 rows in production in
+-- any case. Neither statement can stall.
+
+-- AlterTable
+ALTER TABLE "Truck" ADD COLUMN "interplant_claim_weekday" DECIMAL(10,2);
+ALTER TABLE "Truck" ADD COLUMN "interplant_claim_offpeak" DECIMAL(10,2);

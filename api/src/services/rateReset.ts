@@ -18,6 +18,11 @@ export interface DbTruckRates {
   entitled_claim_offpeak: number;
   daily_deduction_points: number;
   max_pallets: number;
+  // null = no interplant row of its own (7 of the 9 spec trucks). Nullable all
+  // the way through, so "absent" survives the round trip instead of becoming 0
+  // — a 0 here would pay a plant run nothing at all.
+  interplant_claim_weekday: number | null;
+  interplant_claim_offpeak: number | null;
 }
 
 // The spec values a truck will be set to (DB column names).
@@ -26,12 +31,14 @@ export interface ResetTargetValues {
   entitled_claim_offpeak: number;
   daily_deduction_points: number;
   max_pallets: number;
+  interplant_claim_weekday: number | null;
+  interplant_claim_offpeak: number | null;
 }
 
 export interface FieldChange {
   field: keyof ResetTargetValues;
-  from: number;
-  to: number;
+  from: number | null;
+  to: number | null;
 }
 
 export interface ResetUpdate {
@@ -53,6 +60,10 @@ function specTargets(t: SpecTruck): ResetTargetValues {
     entitled_claim_offpeak: t.offpeak_rate,
     daily_deduction_points: t.daily_deduction,
     max_pallets: t.max_pallets,
+    // `?? null` not `?? 0`: a truck with no interplant row must reset TO null,
+    // so a cross-assigned backup resolves through INTERPLANT_FALLBACK_RATE.
+    interplant_claim_weekday: t.interplant_weekday_rate ?? null,
+    interplant_claim_offpeak: t.interplant_offpeak_rate ?? null,
   };
 }
 
@@ -74,6 +85,8 @@ export function planRateReset(specTrucks: SpecTruck[], dbTrucks: DbTruckRates[])
       entitled_claim_offpeak: db.entitled_claim_offpeak,
       daily_deduction_points: db.daily_deduction_points,
       max_pallets: db.max_pallets,
+      interplant_claim_weekday: db.interplant_claim_weekday,
+      interplant_claim_offpeak: db.interplant_claim_offpeak,
     };
 
     const changes: FieldChange[] = (Object.keys(target) as (keyof ResetTargetValues)[])

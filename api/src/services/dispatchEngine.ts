@@ -33,7 +33,7 @@ import { mytDayBoundsForKey } from "../lib/myt";
 import { roadworthyWhere } from "./truckEligibility";
 import { recordTripEvent } from "../lib/tripHistory";
 import { CONFLICT_STATUSES, ASSIGNMENT_CONFLICT_BUFFER_MS } from "./schedulingConflict";
-import { isInterplantPlate } from "../lib/uwcSpec";
+import { isInterplantPlate, isInterplantRouteType } from "../lib/uwcSpec";
 import {
   estimateOperatingWindow,
   formatMinutesToHm,
@@ -304,6 +304,10 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
     include: {
       cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } },
       stops: { orderBy: { sequence: "asc" }, select: { consignee: { select: { zone_code: true } } } },
+      // Selects WHICH of the truck's two rate pairs the assignment snapshot
+      // freezes (see truckRateSnapshot) — interplant work is paid from the
+      // workbook's INTER PLANT block, not the lorry's customer/supplier row.
+      route_type: { select: { name: true } },
     },
   });
   if (!trip) return { assigned: false, reason: "Trip not found." };
@@ -522,7 +526,11 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
           pending_alert_sent: true, // it's handled now; don't ping admins about it
           auto_dispatch_failed: false, // self-clearing: a later sweep placed it
           auto_dispatch_note: null, // cleared with the flag it annotates
-          ...(selTruck ? truckRateSnapshot(effectiveTruckRates(selTruck, new Date())) : {}),
+          ...(selTruck
+            ? truckRateSnapshot(effectiveTruckRates(selTruck, new Date()), {
+                interplant: isInterplantRouteType(trip.route_type?.name),
+              })
+            : {}),
         });
         if (!won) {
           return { sel: null as TruckSelection | null, raced: true, window: null as OperatingWindowEstimate | null };

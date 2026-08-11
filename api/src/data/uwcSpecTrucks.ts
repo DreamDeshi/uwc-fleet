@@ -15,7 +15,9 @@ export const SPEC_TRUCKS: SpecTruck[] = [
     "offpeak_rate": 13,
     "daily_deduction": 2,
     "priority_zones": [],
-    "service_class": "interplant"
+    "service_class": "interplant",
+    "interplant_weekday_rate": 6,
+    "interplant_offpeak_rate": 8
   },
   {
     "plate": "PND 1888",
@@ -99,7 +101,9 @@ export const SPEC_TRUCKS: SpecTruck[] = [
     "offpeak_rate": 7,
     "daily_deduction": 0,
     "priority_zones": [],
-    "service_class": "interplant"
+    "service_class": "interplant",
+    "interplant_weekday_rate": 5,
+    "interplant_offpeak_rate": 7
   },
   {
     "plate": "PRH 5292",

@@ -111,6 +111,11 @@ function finalizeTrip(allStops: StopRow[], tripId: string, driverId: string, zon
       excludeTripId: tripId,
       dayStart: group.dayStart,
       anchor: group.anchor,
+      // These fixtures are all customer/supplier work and predate interplant
+      // pay. An empty id set with pool "customer" is `notIn: []` — every trip
+      // matches, i.e. the single-pool behaviour these cases were written for.
+      interplantRouteTypeIds: [],
+      pool: "customer",
     })
   );
   const zonesDeliveredEarlierToday = prior.map((d) => d.zoneCode);
@@ -133,6 +138,8 @@ describe("priorDeliveredDropsWhere — the ledger's semantics, pinned", () => {
     excludeTripId: "tB",
     dayStart,
     anchor,
+    interplantRouteTypeIds: [],
+    pool: "customer",
   });
 
   it("counts drops from in_progress, pending_approval AND completed trips (not completed-only)", () => {
