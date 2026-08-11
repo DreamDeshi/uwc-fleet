@@ -173,7 +173,11 @@ export interface ItemOutcome {
  * duplicate). A step's "already recorded" reply counts as that step
  * committing — a lost-response earlier attempt, not an error.
  */
-async function flushOneItem(input: PodOutboxItem, api: PodOutboxApi): Promise<ItemOutcome> {
+async function flushOneItem(
+  input: PodOutboxItem,
+  api: PodOutboxApi,
+  consumeFailureBudget: boolean
+): Promise<ItemOutcome> {
   const item: PodOutboxItem = { ...input };
 
   // Run one step; swallow its step-scoped already-recorded codes as success.
@@ -213,9 +217,36 @@ async function flushOneItem(input: PodOutboxItem, api: PodOutboxApi): Promise<It
     if ((OUTBOX_STALE_CODES as readonly string[]).includes(code ?? "")) {
       return { item, outcome: "dropped" };
     }
+    // DG-D5: an OPPORTUNISTIC flush must not spend the retry budget.
+    //
+    // MAX_API_FAILURES exists to stop a poisoned item retrying forever, and the
+    // fifth failure DELETES it. That budget belongs to flushes the driver
+    // caused — a trip screen, a reconnect. The logout flush is neither: drivers
+    // share handsets and log out several times a day, so charging each failed
+    // handover to the budget would burn all five in a couple of days and delete
+    // the POD. The confirm dialog would have said "log out anyway?" immediately
+    // before destroying the very thing it warned about.
+    //
+    // Not counting is preferred over incrementing-then-restoring: there is no
+    // window in which the higher count is persisted, so a crash mid-logout
+    // cannot leave the item closer to deletion than it started.
+    if (!consumeFailureBudget) return { item, outcome: "kept" };
+
     item.apiFailures += 1;
     return { item, outcome: item.apiFailures >= MAX_API_FAILURES ? "dropped" : "kept" };
   }
+}
+
+export interface FlushOptions {
+  /**
+   * Whether a non-network API failure counts against MAX_API_FAILURES.
+   *
+   * Defaults to TRUE — every existing caller is a driver-initiated or
+   * reconnect-driven flush and keeps its behaviour unchanged. The logout flush
+   * passes false (DG-D5). A genuinely STALE item is still dropped either way:
+   * those codes mean the server already has it, which is not a failure at all.
+   */
+  consumeFailureBudget?: boolean;
 }
 
 export interface FlushResult {
@@ -227,11 +258,13 @@ export interface FlushResult {
 /** Replay every item sequentially (stop order matters for multi-stop trips). */
 export async function flushOutboxItems(
   items: PodOutboxItem[],
-  api: PodOutboxApi
+  api: PodOutboxApi,
+  opts: FlushOptions = {}
 ): Promise<FlushResult> {
+  const consumeFailureBudget = opts.consumeFailureBudget !== false;
   const outcomes: ItemOutcome[] = [];
   for (const item of items) {
-    outcomes.push(await flushOneItem(item, api));
+    outcomes.push(await flushOneItem(item, api, consumeFailureBudget));
     await api.persist?.(outcomes);
   }
   return {

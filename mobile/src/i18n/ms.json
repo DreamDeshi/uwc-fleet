@@ -114,7 +114,10 @@
     "ladderPickup": "Ambil · {{n}} palet",
     "ladderLoaded": "Dimuat {{n}} palet",
     "ladderDelivered": "Dihantar {{time}}",
-    "ladderNow": "SEKARANG"
+    "ladderNow": "SEKARANG",
+    "unsentPodTitle": "Gambar penghantaran belum dimuat naik",
+    "unsentPodMessage": "{{count}} gambar penghantaran masih belum dimuat naik. Ia akan disimpan dalam telefon ini untuk anda, tetapi orang lain tidak dapat melihatnya sehingga ia dimuat naik. Log keluar juga?",
+    "unsentPodLogOutAnyway": "Log keluar juga"
   },
   "trip": {
     "pickup": "Ambil",

@@ -5,7 +5,7 @@ import React, { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { scopedGetItem, scopedSetItem } from "../../lib/scopedStorage";
 import { colors, font, radius } from "../theme";
 import { Button, Input, Modal } from "./ui";
 
@@ -18,11 +18,11 @@ export interface TripFilterPreset {
   dateTo: string;
 }
 
-const KEY = "admin.tripFilterPresets.v1";
+const SUFFIX = "admin.tripFilterPresets.v1";
 
 async function load(): Promise<TripFilterPreset[]> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await scopedGetItem(SUFFIX);
     return raw ? (JSON.parse(raw) as TripFilterPreset[]) : [];
   } catch {
     return [];
@@ -30,7 +30,7 @@ async function load(): Promise<TripFilterPreset[]> {
 }
 async function persist(list: TripFilterPreset[]): Promise<void> {
   try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(list));
+    await scopedSetItem(SUFFIX, JSON.stringify(list));
   } catch {
     /* device storage best-effort */
   }

@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { scopedGetItem, scopedSetItem, scopedRemoveItem } from "./scopedStorage";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { enqueueLocation } from "./locationQueue";
@@ -19,7 +19,7 @@ export const BACKGROUND_LOCATION_TASK = "uwc.backgroundLocation";
 // The trip the task is currently capturing for. Persisted so the HEADLESS task
 // (which has no React state) knows which trip a fix belongs to, and so a leaked
 // task with no trip can detect it should stop.
-const BG_TRIP_KEY = "uwc.bgTrip";
+const BG_TRIP_SUFFIX = "bgTrip";
 
 // Background location is native-only. On web the task APIs don't exist, so every
 // entry point below no-ops and the driver falls back to the foreground path.
@@ -33,7 +33,7 @@ interface LocationTaskPayload {
 if (SUPPORTED) {
   TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
     if (error) return;
-    const tripId = await AsyncStorage.getItem(BG_TRIP_KEY);
+    const tripId = await scopedGetItem(BG_TRIP_SUFFIX);
     if (!tripId) {
       // No trip should be tracked but the task still fired — self-heal so we
       // can never keep draining GPS for a trip that ended.
@@ -74,7 +74,7 @@ async function hasStarted(): Promise<boolean> {
 // "Allow all the time" background permission.
 export async function startBackgroundTracking(tripId: string): Promise<void> {
   if (!SUPPORTED) return;
-  const running = (await hasStarted()) ? await AsyncStorage.getItem(BG_TRIP_KEY) : null;
+  const running = (await hasStarted()) ? await scopedGetItem(BG_TRIP_SUFFIX) : null;
   const action = backgroundTrackingAction(tripId, running);
   if (action === "noop") return;
   if (action === "restart") {
@@ -84,7 +84,7 @@ export async function startBackgroundTracking(tripId: string): Promise<void> {
       /* not running — fine */
     }
   }
-  await AsyncStorage.setItem(BG_TRIP_KEY, tripId);
+  await scopedSetItem(BG_TRIP_SUFFIX, tripId);
   await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
     accuracy: Location.Accuracy.Balanced,
     timeInterval: 30_000, // ~a fix every 30s, matching the old foreground cadence
@@ -106,7 +106,7 @@ export async function startBackgroundTracking(tripId: string): Promise<void> {
 // Stop tracking and clear the tracked trip. Idempotent and safe to call when
 // nothing is running (trip-end, un-consent, or the task's own self-heal).
 export async function stopBackgroundTracking(): Promise<void> {
-  await AsyncStorage.removeItem(BG_TRIP_KEY);
+  await scopedRemoveItem(BG_TRIP_SUFFIX);
   if (!SUPPORTED) return;
   if (await hasStarted()) {
     try {

@@ -21,7 +21,7 @@ import {
 // The outbox replays against the SAME endpoints the online flow uses — no
 // server change: POD upload (overwrites the stop's publicId), the idempotent
 // K2 flag PATCH, and the write-once delivered confirm.
-const realApi: PodOutboxApi = {
+export const realApi: PodOutboxApi = {
   async markArrived(item: PodOutboxItem) {
     await api.patch(`/trips/${item.tripId}/status`, statusRequestBody("arrived", item.stopId));
   },

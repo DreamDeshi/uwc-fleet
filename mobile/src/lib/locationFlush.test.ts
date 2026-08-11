@@ -19,9 +19,11 @@ const apiMock = vi.hoisted(() => ({
 vi.mock("../services/api", () => apiMock);
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { setActiveUser } from "./scopedStorage";
 import { flushQueuedLocations } from "./locationFlush";
 
-const QUEUE_KEY = "uwc.locationQueue";
+const TEST_USER = "driver-test";
+const QUEUE_KEY = `uwc.u.${TEST_USER}.locationQueue`;
 
 const point = (trip_id: string, n: number) => ({
   trip_id,
@@ -36,7 +38,8 @@ const setQueue = (points: ReturnType<typeof point>[]) => {
   stored = [...points];
 };
 
-beforeEach(() => {
+beforeEach(async () => {
+  await setActiveUser(TEST_USER);
   vi.clearAllMocks();
   stored = [];
   (AsyncStorage.getItem as ReturnType<typeof vi.fn>).mockImplementation(async (k: string) =>

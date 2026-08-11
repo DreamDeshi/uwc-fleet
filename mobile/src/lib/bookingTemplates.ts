@@ -12,7 +12,7 @@
 //
 // Pure helpers (build/upsert/remove/pallet mapping) are unit-tested in
 // bookingTemplates.test.ts; only load/persist touch AsyncStorage.
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { scopedGetItem, scopedSetItem } from "./scopedStorage";
 import type { PalletSize } from "./pallets";
 import type { Consignee } from "../types";
 
@@ -39,11 +39,11 @@ export interface BookingTemplate {
   remarks: string;
 }
 
-const KEY = "requestor.bookingTemplates.v1";
+const SUFFIX = "requestor.bookingTemplates.v1";
 
 export async function loadTemplates(): Promise<BookingTemplate[]> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await scopedGetItem(SUFFIX);
     return raw ? (JSON.parse(raw) as BookingTemplate[]) : [];
   } catch {
     return [];
@@ -52,7 +52,7 @@ export async function loadTemplates(): Promise<BookingTemplate[]> {
 
 export async function persistTemplates(list: BookingTemplate[]): Promise<void> {
   try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(list));
+    await scopedSetItem(SUFFIX, JSON.stringify(list));
   } catch {
     /* device storage best-effort — a failed write just loses the new template */
   }
