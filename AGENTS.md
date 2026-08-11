@@ -168,13 +168,47 @@ Unless a latest written client answer explicitly resolves it, keep these frozen:
 
 &#x20; retired R2 doc).
 
-\- The 28 Jul 2026 fleet / interplant workbook changes (new trucks, driver
+\- Interplant SCORING — R5 A2's "a round trip is TWO bookings", i.e. 1 point per
 
-&#x20; reassignments, A1/A2 primary move, interplant rates) — build ON HOLD until
+&#x20; completed round trip (legs ÷ 2). NOT built. Interplant is bookable in
 
-&#x20; Mr. Teh answers the R3 §A questions (per the owner, 28 Jul).
+&#x20; production today, so a completed round trip currently scores per LEG.
+
+&#x20; (The 28 Jul fleet / interplant workbook changes are NOT frozen — see below.)
 
 \- Prisma schema changes and database migrations.
+
+
+
+\#### NOT frozen: the 28 Jul 2026 fleet / interplant workbook changes
+
+
+
+This list carried that hold until 11 Aug 2026, long after it had lifted, and it
+
+sent a review hunting for a fleet migration that had already run. It is recorded
+
+here so it is not re-added:
+
+
+
+\- The hold lifted when Mr. Teh answered the R3 §A questions (29 Jul 2026).
+
+\- The fleet data SHIPPED the same day — PR #37, `f616f85`, prod migration
+
+&#x20; applied. Production's nine plates and rates match `docs/uwc-spec.json`
+
+&#x20; exactly, PSA 5292 and the PPE 2406 5t-17.5ft reclassification included.
+
+\- The interplant RATES shipped 11 Aug 2026 (PR #142) and the values were
+
+&#x20; written to production (PR #143): PLX 2406 = 6/8, PPE 2406 = 5/7, the other
+
+&#x20; seven NULL by design so a cross-assigned backup takes the fallback.
+
+
+
+What remains unbuilt is interplant SCORING only, listed above.
 
 
 
