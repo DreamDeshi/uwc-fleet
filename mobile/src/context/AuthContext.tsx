@@ -87,6 +87,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       const hasTokens = await loadStoredTokens();
       if (!hasTokens) {
+        // NO SESSION AT ALL — so nothing on this device can be attributed to
+        // anyone, and this is the ONLY moment the quarantine branch is
+        // reachable. Without this call, pre-DG-D4 global data would sit under
+        // its old key until the NEXT driver signed in, and then be adopted into
+        // THEIR namespace — the cross-driver leak this whole change exists to
+        // remove, reintroduced by the wiring rather than by the logic.
+        //
+        // It runs only on the no-tokens path on purpose: when tokens DO exist
+        // we are about to learn who the owner is, and quarantining first would
+        // strand a driver's own queue in `uwc.orphaned.*` instead of adopting it.
+        await migrateLegacyGlobalKeys();
         if (mounted) setStatus("guest");
         return;
       }

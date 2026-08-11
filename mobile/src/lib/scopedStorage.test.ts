@@ -275,6 +275,29 @@ describe("only the storage layer may touch AsyncStorage", () => {
     }
   });
 
+  it("runs the migration on the NO-SESSION bootstrap path, or quarantine is dead code", () => {
+    // The unit tests above prove migrateLegacyGlobalKeys() quarantines when no
+    // user is set. Nothing proved anything ever CALLS it that way.
+    //
+    // It was wired only into fetchMe and the degraded restore, both of which run
+    // AFTER setActiveUser(<someone>) — so `uid` was never null in the app, the
+    // quarantine branch was unreachable, and pre-DG-D4 global data would have
+    // sat under its old key until the NEXT driver signed in and ADOPTED it.
+    // That is the cross-driver leak this change exists to remove, reintroduced
+    // by the wiring rather than the logic, with every test green.
+    const authContext = fs.readFileSync(
+      path.resolve(__dirname, "../context/AuthContext.tsx"),
+      "utf-8"
+    );
+    const start = authContext.indexOf("if (!hasTokens)");
+    expect(start, "the no-tokens bootstrap branch moved or was renamed").toBeGreaterThan(-1);
+    const branch = authContext.slice(start, authContext.indexOf("return;", start));
+
+    expect(branch, "the no-session path must run the migration").toContain(
+      "migrateLegacyGlobalKeys"
+    );
+  });
+
   it("keeps the legacy migration list covering every key that was global", () => {
     // The migration is what moves a driver's existing data into their
     // namespace. A key scoped in code but missing here would silently strand
