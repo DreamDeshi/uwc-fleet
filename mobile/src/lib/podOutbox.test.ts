@@ -4,6 +4,7 @@ import {
   mergeOutboxItem,
   reconcileOutboxAfterFlush,
   MAX_API_FAILURES,
+  OUTBOX_STALE_CODES,
   type ItemOutcome,
   type PodOutboxApi,
   type PodOutboxItem,
@@ -177,6 +178,46 @@ describe("flushOutboxItems — replay when connectivity returns", () => {
       current = res.outcomes[0].item;
       expect(res.outcomes[0].outcome).toBe(attempt < MAX_API_FAILURES ? "kept" : "dropped");
     }
+  });
+
+  // ── DG-D5: the logout flush must not spend the retry budget ──────────────
+  //
+  // Drivers share handsets and log out several times a day. If each failed
+  // logout flush counted, a couple of days of handovers on a bad connection
+  // would exhaust all five and DELETE the POD — the exact outcome the
+  // flush-then-confirm decision exists to prevent, immediately after a dialog
+  // that said "log out anyway?".
+  it("survives MAX_API_FAILURES logout flushes without losing the item or the budget", async () => {
+    let current = item({ photo: null });
+
+    for (let attempt = 1; attempt <= MAX_API_FAILURES; attempt++) {
+      const api = fakeApi({ confirmFails: apiErr("INTERNAL") });
+      const res = await flushOutboxItems([current], api, { consumeFailureBudget: false });
+      current = res.outcomes[0].item;
+
+      expect(res.outcomes[0].outcome).toBe("kept");
+      expect(res.dropped).toBe(0);
+      // The counter never moves, so the NEXT driver-initiated flush still has
+      // the whole budget — logout neither deletes the item nor erodes it.
+      expect(current.apiFailures).toBe(0);
+    }
+
+    // One more, this time a real driver-initiated flush: the budget is intact,
+    // so this is failure #1 of 5 and the item is still kept.
+    const after = await flushOutboxItems([current], fakeApi({ confirmFails: apiErr("INTERNAL") }));
+    expect(after.outcomes[0].outcome).toBe("kept");
+    expect(after.outcomes[0].item.apiFailures).toBe(1);
+  });
+
+  it("still drops a STALE item on a logout flush — that is not a failure", async () => {
+    // Not spending the budget must not become "logout can never resolve
+    // anything". A stale code means the server already has this work; keeping
+    // it would replay a delivery that is already recorded.
+    const api = fakeApi({ confirmFails: apiErr(OUTBOX_STALE_CODES[0]) });
+    const res = await flushOutboxItems([item({ photo: null })], api, {
+      consumeFailureBudget: false,
+    });
+    expect(res.outcomes[0].outcome).toBe("dropped");
   });
 });
 
