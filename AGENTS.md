@@ -566,6 +566,64 @@ Rules:
 
 
 
+\#### Two Git commands that lose or smuggle work SILENTLY
+
+
+
+Both fail without an error, and both were caught only because someone happened
+
+to look. Neither is detectable by reading the diff you intended to make.
+
+
+
+\- **ALWAYS NAME THE BASE: `git checkout -b <new> main`.** A bare
+
+&#x20; `git checkout -b <new>` branches off wherever HEAD happens to be. On 4 Aug
+
+&#x20; 2026 that put an auth-policy commit — lowering `PASSWORD\_MIN\_LENGTH` and
+
+&#x20; removing `password123` from the weak list — inside **PR #108**, which was
+
+&#x20; titled and merged as UI clipping fixes. CI was green and the end state was
+
+&#x20; wanted, so nothing broke; it was a TRANSPARENCY failure, which is the kind
+
+&#x20; that is easy to shrug off and should not be. Before pushing, check what is
+
+&#x20; actually on the branch: `git log --oneline origin/main..HEAD`. If it lists a
+
+&#x20; commit the PR description does not mention, split it or rewrite the
+
+&#x20; description.
+
+
+
+\- **NEVER MOVE AN UNCOMMITTED EDIT WITH `git checkout <branch> -- <file>`.**
+
+&#x20; That command silently DISCARDS your uncommitted changes to that file and
+
+&#x20; replaces it with that branch's version — which is usually OLDER. On 12 Aug
+
+&#x20; 2026, moving a docs edit onto its own branch this way destroyed the edit AND
+
+&#x20; restored an AGENTS.md predating PR #144, which would have reinstated the
+
+&#x20; stale "fleet update ON HOLD" entry that #144 had just removed — reintroducing
+
+&#x20; a retired hold as a side effect of tidying a branch. It was caught only by
+
+&#x20; grepping for the stale phrase before committing, which is a check that works
+
+&#x20; only when someone thinks to run it.
+
+&#x20; Use `git stash` (then `git stash pop` on the target branch) or
+
+&#x20; `git diff > /tmp/x.patch` + `git apply`. Both PRESERVE the edit; the checkout
+
+&#x20; form has no undo, because the content was never in Git.
+
+
+
 \## Money and dispatch safety
 
 
