@@ -5,6 +5,7 @@ import {
   autoAssignNote,
   autoDispatchFailureNote,
   autoDispatchBlockReason,
+  inAutoDispatchPool,
   type TruckCandidate,
 } from "../src/services/dispatchEngine";
 import { estimateOperatingWindow } from "../src/services/operatingWindow";
@@ -269,6 +270,86 @@ describe("autoDispatchFailureNote — the persisted failure reason", () => {
     expect(autoDispatchFailureNote(null)).toBe(
       "No available truck has capacity for this order."
     );
+  });
+
+  it("an INTERPLANT booking that found nothing says so, and names the manual remedy", () => {
+    // Not "no capacity": seven customer lorries may be sitting idle. The pool
+    // was empty, and the remedy is an admin cross-assigning one by hand.
+    const note = autoDispatchFailureNote(null, { interplantBooking: true });
+    expect(note).toBe(
+      "No interplant lorry (PLX 2406 / PPE 2406) is free for this booking — held for manual assignment; cross-assign a backup lorry by hand."
+    );
+    expect(note).not.toContain("capacity");
+    // It must name BOTH: that nothing further happens automatically, and what
+    // the human is expected to do about it (N-fb15).
+    expect(note).toContain("held for manual assignment");
+  });
+
+  it("the window breach still wins over the interplant wording", () => {
+    // A window breach is truck-independent — it is not fixed by finding another
+    // lorry, interplant or otherwise, so it must keep its own note.
+    const est = estimateOperatingWindow({
+      pickupDateTime: new Date("2026-07-05T21:00:00Z"), // 05:00 MYT
+      stopCount: 1,
+      stopPoints: [1],
+      windowStart: "07:00",
+      windowEnd: "18:00",
+    });
+    expect(autoDispatchFailureNote(est, { interplantBooking: true })).toBe(
+      "Pickup is outside the operating window (07:00–18:00)."
+    );
+  });
+});
+
+/**
+ * IP1 — THE SERVICE-CLASS GATE IS SCOPED TO THE WORK, NOT TO THE PLATE.
+ *
+ * Mr. Teh's 28 Jul email removed PLX 2406 and PPE 2406 from "auto dispatch to
+ * customer / supplier delivery" (pts 1–2). The engine removed them from auto
+ * dispatch FULL STOP, so the two lorries bought for plant runs could never be
+ * auto-assigned to one — and an auto-dispatched plant run went to a customer
+ * lorry instead, drawing the interplant FALLBACK rate (RM6/8) rather than the
+ * lorry's own row.
+ *
+ * ⚠ These cases are the pure half. They cannot prove the engine PASSES the
+ * route type — every one of them would pass with the call site still reading
+ * `!isInterplantPlate(t.plate)`. That is what
+ * tests-integration/interplantDispatch.test.ts is for; see its header for the
+ * measured red/green.
+ */
+describe("inAutoDispatchPool — which lorries auto may offer for THIS booking", () => {
+  const CUSTOMER_PLATES = ["PND 1888", "PSA 5292", "PRJ 5292", "PQL 5292", "PPE 1804", "PRH 5292"];
+  const INTERPLANT = ["PLX 2406", "PPE 2406"];
+
+  it("customer/supplier work never sees the two interplant lorries (email pt 1–2)", () => {
+    for (const name of ["Customer Delivery", "Supplier Return", "Customer Return"]) {
+      for (const plate of INTERPLANT) expect(inAutoDispatchPool(plate, name)).toBe(false);
+      for (const plate of CUSTOMER_PLATES) expect(inAutoDispatchPool(plate, name)).toBe(true);
+    }
+  });
+
+  it("interplant work sees ONLY the two interplant lorries", () => {
+    for (const name of ["Inter-Plant Delivery", "Inter-Plant Return"]) {
+      for (const plate of INTERPLANT) expect(inAutoDispatchPool(plate, name)).toBe(true);
+      for (const plate of CUSTOMER_PLATES) expect(inAutoDispatchPool(plate, name)).toBe(false);
+    }
+  });
+
+  it("matches the rate predicate's spellings, so the pool and the pay can't disagree", () => {
+    // isInterplantRouteType normalises punctuation and case; if the two ever
+    // diverged, a booking could be paid interplant and dispatched customer.
+    expect(inAutoDispatchPool("PLX 2406", "inter plant delivery")).toBe(true);
+    expect(inAutoDispatchPool("PLX 2406", "INTERPLANT RETURN")).toBe(true);
+  });
+
+  it("a booking with NO route type takes the customer pool — the safe direction", () => {
+    // A booking that cannot prove it is plant work must not unlock the plant
+    // lorries. Same direction the rate predicate fails in (null → false), and
+    // the behaviour that shipped before this change.
+    for (const missing of [null, undefined, "", "Plant Transfer"]) {
+      expect(inAutoDispatchPool("PLX 2406", missing)).toBe(false);
+      expect(inAutoDispatchPool("PND 1888", missing)).toBe(true);
+    }
   });
 });
 

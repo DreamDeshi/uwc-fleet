@@ -33,7 +33,7 @@ import { mytDayBoundsForKey } from "../lib/myt";
 import { roadworthyWhere } from "./truckEligibility";
 import { recordTripEvent } from "../lib/tripHistory";
 import { CONFLICT_STATUSES, ASSIGNMENT_CONFLICT_BUFFER_MS } from "./schedulingConflict";
-import { isInterplantPlate, isInterplantRouteType } from "../lib/uwcSpec";
+import { INTERPLANT_PLATES, isInterplantPlate, isInterplantRouteType } from "../lib/uwcSpec";
 import {
   estimateOperatingWindow,
   formatMinutesToHm,
@@ -60,6 +60,42 @@ export interface TruckSelection {
   plate: string;
   driverId: string;
   reason: string;
+}
+
+/**
+ * IS THIS PLATE IN THE AUTO POOL **FOR THIS BOOKING**? — the service-class gate.
+ *
+ * The exclusion Mr. Teh asked for is scoped to CUSTOMER/SUPPLIER work, and the
+ * scope is in his own sentence (email, 28 Jul 2026, pt 1):
+ *
+ *   "PLX 2406 will be focus on interplant delivery only, within batu Kawan area,
+ *    remove it from auto dispatch to customer / supplier delivery"
+ *
+ * — with pt 2 saying the same of PPE 2406. Read without the route type, that
+ * became "never auto-dispatch these two", which is the OPPOSITE of pt 1 for the
+ * work they were bought for: an auto-dispatched plant run went to one of the
+ * seven customer lorries, which then (correctly, per R5 A3) drew the interplant
+ * FALLBACK rate — RM1 per point more than PPE 2406's own row — while a customer
+ * lorry left the customer pool for a run the client had just moved off it.
+ *
+ * So the pool is chosen by the WORK, exactly as the rate pair already is
+ * (truckRateSnapshot / isInterplantRouteType):
+ *   - interplant booking  → ONLY the interplant plates;
+ *   - anything else       → everything EXCEPT the interplant plates.
+ *
+ * ⚠ A booking with NO route type (or an unrecognised one) takes the CUSTOMER
+ * pool. `isInterplantRouteType` is false for null, so the interplant lorries
+ * stay closed to a booking that cannot prove it is plant work — the same
+ * direction the rate predicate fails in, and the pre-existing behaviour.
+ *
+ * ⚠ AUTO ONLY. Manual admin assignment is deliberately NOT gated, either way:
+ * "As a backup, All lorry still can swap between interplant and customer /
+ * supplier delivery … authorize by admin" (pt 6). That is why an interplant
+ * booking with no interplant lorry free is left for an admin rather than
+ * quietly handed to a customer lorry — the swap is his authority, not ours.
+ */
+export function inAutoDispatchPool(plate: string, routeTypeName: string | null | undefined): boolean {
+  return isInterplantRouteType(routeTypeName) ? isInterplantPlate(plate) : !isInterplantPlate(plate);
 }
 
 // ── A1/A2 (Taiping/Ipoh) driver-priority rule — 28 Jul 2026 revision + R3 ──
@@ -211,12 +247,23 @@ export function autoAssignNote(
  * instead of a bare "failed". Pure; unit-tested in tests/dispatch.test.ts.
  */
 export function autoDispatchFailureNote(
-  windowExceeded: OperatingWindowEstimate | null
+  windowExceeded: OperatingWindowEstimate | null,
+  opts?: { interplantBooking?: boolean }
 ): string {
   if (windowExceeded) {
     return windowExceeded.reason === "pickup_outside_window"
       ? `Pickup is outside the operating window (${formatMinutesToHm(windowExceeded.windowStartMin)}–${formatMinutesToHm(windowExceeded.windowEndMin)}).`
       : `Estimated completion ${windowExceeded.completionLabel} exceeds the ${formatMinutesToHm(windowExceeded.windowEndMin)} operating window.`;
+  }
+  // An interplant booking that found nothing did NOT run out of fleet — it ran
+  // out of its own two lorries, with seven customer trucks possibly sitting
+  // idle. Saying "no available truck has capacity" would send the dispatcher
+  // hunting for space that is not the problem, and hide the actual remedy:
+  // cross-assigning a backup lorry BY HAND, which is the admin's authority
+  // (email pt 6) and deliberately not auto's.
+  if (opts?.interplantBooking) {
+    const plates = [...INTERPLANT_PLATES].sort().join(" / ");
+    return `No interplant lorry (${plates}) is free for this booking — held for manual assignment; cross-assign a backup lorry by hand.`;
   }
   return "No available truck has capacity for this order.";
 }
@@ -418,13 +465,12 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
 
         const candidates: TruckCandidate[] = trucks
           .filter((t) => t.driver) // safety: a truck with no assigned driver (e.g. "4 Wheel") can't be dispatched
-          // Service-class gate (28 Jul 2026 revision): interplant trucks
-          // (PLX 2406, PPE 2406) never enter the customer/supplier AUTO pool.
-          // Manual admin assignment is deliberately NOT gated — "all lorries
-          // may swap between interplant and customer/supplier work …
-          // ADMIN-authorized" (email pt 6). Interplant AUTO dispatch does not
-          // exist yet; when it does, it draws from exactly these plates.
-          .filter((t) => !isInterplantPlate(t.plate))
+          // Service-class gate (28 Jul 2026 revision), scoped to the WORK: an
+          // interplant booking draws from exactly PLX 2406 / PPE 2406, and
+          // every other booking from exactly the other seven. See
+          // inAutoDispatchPool for the client's wording and why a missing route
+          // type takes the customer pool.
+          .filter((t) => inAutoDispatchPool(t.plate, trip.route_type?.name))
           .map((t) => ({
             plate: t.plate,
             driverId: t.driver!.id,
@@ -599,10 +645,46 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
     // failure. The note is persisted next to the flag (same guard, same
     // self-clearing lifecycle) so the board can show the dispatcher WHY —
     // repeated sweep retries simply overwrite it, never accumulate.
-    const reason = autoDispatchFailureNote(windowExceeded);
+    const interplantBooking = isInterplantRouteType(trip.route_type?.name);
+    const reason = autoDispatchFailureNote(windowExceeded, { interplantBooking });
+    // ── PIN TO MANUAL when the INTERPLANT pool came up empty (N-fb15) ────────
+    //
+    // Feedback item 15 (16 Jul 2026, "no more auto after unassign") is the rule
+    // that once a booking has been handed to a human, the machine must not place
+    // it behind them. It was written for admin unassign; this is the same shape
+    // arriving by a different door — the note above TELLS the dispatcher to
+    // cross-assign a backup lorry by hand, and without the pin the 1-minute
+    // sweep would keep retrying and could auto-place the booking on PLX the
+    // moment it frees, mid-decision, after the office was told to handle it.
+    //
+    // ⚠ Narrow ON PURPOSE — only the empty-interplant-pool case:
+    //   - a CUSTOMER booking that found no capacity must keep being retried
+    //     (a truck frees up and the sweep places it — that is the sweep's job);
+    //   - a WINDOW breach keeps its existing behaviour for every booking, since
+    //     changing it here would alter customer dispatch inside an interplant
+    //     fix.
+    // So this pins exactly the case whose note promises a manual remedy, and
+    // nothing else.
+    //
+    // ⚠ CONSEQUENCES, both real, both accepted:
+    //   1. an interplant booking that failed at 09:00 will NOT be auto-assigned
+    //      at 11:00 when a lorry frees. A human places it. That is what "held
+    //      for manual assignment" means, and the note now says so.
+    //   2. `staleSweepWhere` excludes paused trips, so this booking also loses
+    //      the sweep's one-shot "pending order" push. It keeps the channel that
+    //      actually works: `auto_dispatch_failed` still stands, so it sits on
+    //      the needs-attention board and inside that chip's live count. No
+    //      second copy of the alert rule is introduced to compensate.
+    // The pin is cleared by any manual (re-)assignment (claimPendingTrip), so
+    // the booking can never be stuck once the office acts on it.
+    const pinToManual = interplantBooking && !windowExceeded;
     await prisma.trip.updateMany({
       where: { id: tripId, status: "pending" },
-      data: { auto_dispatch_failed: true, auto_dispatch_note: reason },
+      data: {
+        auto_dispatch_failed: true,
+        auto_dispatch_note: reason,
+        ...(pinToManual ? { auto_dispatch_paused: true } : {}),
+      },
     });
     return { assigned: false, reason };
   }
