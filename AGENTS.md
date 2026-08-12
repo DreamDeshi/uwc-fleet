@@ -522,6 +522,40 @@ symptom: the suite is green and you cannot name the line that would turn it red.
 
 
 
+A fourth name for the same thing, added 12 Aug 2026 — a HAZARD TEST THAT
+
+AVOIDS THE HAZARD. B7's booking cut-off must not answer for a pickup that is
+
+already in the past, because the route has its own `PICKUP_IN_PAST` and two
+
+differently-worded rejections for one mistake is a defect. That risk was
+
+understood, and a test was written for it — using YESTERDAY as the past pickup.
+
+The bug lived in TODAY: a pickup two hours ago was still "today", so the
+
+cut-off answered first. The test passed, the comment above it described the
+
+hazard correctly, and the hazard was live. It was caught by an unrelated
+
+existing spec (`tripEdit.test.ts`) that had already pinned the right answer.
+
+
+
+A test that names a hazard and then picks the input where the hazard cannot
+
+occur passes for exactly the same reason a guard on an unreachable path does —
+
+it never reaches the thing it claims to protect. So when writing one, say out
+
+loud WHICH INPUT triggers the hazard, and check that the input you actually
+
+used is that one. If the case cannot fail while the bug exists, it is not a
+
+test of the bug; it is a note about it.
+
+
+
 \#### A PROD PROBE ASSERTS IDENTITY FIRST — AN EMPTY ANSWER IS NOT A FINDING
 
 

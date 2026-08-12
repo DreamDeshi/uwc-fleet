@@ -8,6 +8,7 @@ import {
   dialIndexToHour,
   hourDialIndex,
   isDayBookable,
+  slotNeedsCutoffOverride,
   isMonthReachable,
   maxBookableDate,
   meridiemOf,
@@ -16,11 +17,18 @@ import {
   sameDay,
   slotToDate,
 } from "./pickupCalendar";
-import { PICKUP_MAX_DAY_OFFSET } from "./bookingEdit";
+import {
+  AFTERNOON_CUTOFF_MIN,
+  MORNING_CUTOFF_MIN,
+  PICKUP_MAX_DAY_OFFSET,
+  SESSION_SPLIT_MIN,
+} from "./bookingEdit";
 
 // A Wednesday, 15 July 2026, 10:30 local.
 const NOW = new Date(2026, 6, 15, 10, 30, 0, 0);
 const at = (h: number, m = 0) => new Date(2026, 6, 15, h, m, 0, 0);
+/** NOW's own calendar date — B7 gates today and nothing else. */
+const TODAY = new Date(2026, 6, 15, 0, 0, 0, 0);
 
 describe("bookableHours — the fleet window minus what has already gone", () => {
   it("a future date offers the whole window and nothing outside it", () => {
@@ -31,12 +39,24 @@ describe("bookableHours — the fleet window minus what has already gone", () =>
   });
 
   it("today drops the hours already past, and keeps the current one", () => {
-    const hours = bookableHours(dateForOffset(NOW, 0), NOW);
-    expect(hours).not.toContain(9); // gone
-    expect(hours).toContain(10); // the current hour still has 10:35 onward
+    // ⚠ FIXTURE MOVED (12 Aug 2026, B7). This case is about rule (2), THE PAST,
+    // and used to read it at 10:30 against the morning. B7's rule (3) now shuts
+    // today's whole morning at 08:30, so a morning fixture would be measuring
+    // the cut-off rather than the past-trim. Restated in the AFTERNOON, where
+    // rule (2) is still the only thing acting — the assertion is unchanged in
+    // substance: the hour containing NOW survives, earlier ones do not.
+    // Read as a RETURN, which B7 exempts — that isolates rule (2) from rule
+    // (3) exactly, instead of measuring the two together.
+    const afternoon = at(15, 30);
+    const hours = bookableHours(dateForOffset(afternoon, 0), afternoon, { isReturn: true });
+    expect(hours).not.toContain(14); // gone
+    expect(hours).toContain(15); // the current hour still has 15:35 onward
     expect(hours).toContain(23);
-    // The small hours belong to THIS calendar date and are long past at 10:30.
+    // The small hours belong to THIS calendar date and are long past.
     for (const past of [0, 1, 2]) expect(hours).not.toContain(past);
+    // …and for a DELIVERY at the same instant, nothing today survives at all:
+    // both cut-offs have passed, which is exactly what B7 asks for.
+    expect(bookableHours(dateForOffset(afternoon, 0), afternoon)).toEqual([]);
   });
 });
 
@@ -48,7 +68,15 @@ describe("bookableMinutes", () => {
   });
 
   it("trims the CURRENT hour to what is still ahead", () => {
-    expect(bookableMinutes(dateForOffset(NOW, 0), 10, NOW)).toEqual([35, 40, 45, 50, 55]);
+    // Fixture moved into the afternoon for the same reason as above: at 10:30
+    // hour 10 is now closed by B7, so this would no longer be reading the
+    // past-trim it exists to read.
+    const afternoon = at(15, 30);
+    const ret = { isReturn: true };
+    expect(bookableMinutes(dateForOffset(afternoon, 0), 15, afternoon, ret)).toEqual([35, 40, 45, 50, 55]);
+    // The past still applies to a return — B7 exempts the CUT-OFF, not the
+    // clock — which is what keeps the two rules distinguishable.
+    expect(bookableMinutes(dateForOffset(afternoon, 0), 14, afternoon, ret)).toEqual([]);
   });
 
   it("is empty for a past hour, a closed hour, and a past date", () => {
@@ -82,7 +110,16 @@ describe("isDayBookable", () => {
 describe("nextBookableSlot — the form's default pickup", () => {
   it("keeps an hour of lead rather than offering a pickup minutes away", () => {
     // 10:30 + 60min lead = 11:30. Not 10:35, which nobody could meet.
-    expect(nextBookableSlot(NOW)).toEqual({ dayOffset: 0, hour: 11, minute: 30 });
+    // Stated as a RETURN so the LEAD is the only rule acting: for a delivery at
+    // 10:30 the morning is shut by B7, which is a different question, pinned
+    // in its own case below.
+    expect(nextBookableSlot(NOW, 60, { isReturn: true })).toEqual({ dayOffset: 0, hour: 11, minute: 30 });
+  });
+
+  it("B7 — a DELIVERY at 10:30 defaults into the AFTERNOON, the first open slot", () => {
+    // The new behaviour, pinned explicitly rather than left as a side effect of
+    // the case above: today's morning is closed, the afternoon is not.
+    expect(nextBookableSlot(NOW)).toEqual({ dayOffset: 0, hour: 12, minute: 0 });
   });
 
   it("crosses the closed 03:00–06:00 gap to the 07:00 open", () => {
@@ -102,7 +139,7 @@ describe("nextBookableSlot — the form's default pickup", () => {
   });
 
   it("honours a shorter lead when asked", () => {
-    expect(nextBookableSlot(NOW, 0)).toEqual({ dayOffset: 0, hour: 10, minute: 35 });
+    expect(nextBookableSlot(NOW, 0, { isReturn: true })).toEqual({ dayOffset: 0, hour: 10, minute: 35 });
   });
 });
 
@@ -123,7 +160,10 @@ describe("clampSlotToDay — moving the DATE must not strand the time", () => {
   });
 
   it("keeps the hour and only nudges the minute when the hour survives", () => {
-    expect(clampSlotToDay({ dayOffset: 0, hour: 10, minute: 0 }, NOW)).toEqual({
+    // As a RETURN, so the minute-nudge is the only rule acting — for a
+    // delivery at 10:30 hour 10 is closed by B7 and the slot moves further,
+    // which the B7 block below pins separately.
+    expect(clampSlotToDay({ dayOffset: 0, hour: 10, minute: 0 }, NOW, { isReturn: true })).toEqual({
       dayOffset: 0,
       hour: 10,
       minute: 35,
@@ -211,5 +251,129 @@ describe("sameDay", () => {
   it("compares the calendar date, not the instant", () => {
     expect(sameDay(at(1), at(23))).toBe(true);
     expect(sameDay(at(23), dateForOffset(NOW, 1))).toBe(false);
+  });
+});
+
+/**
+ * B7 — THE CALENDAR MUST NOT OFFER WHAT THE SERVER WILL REFUSE.
+ *
+ * The server rejects a booking made after 08:30 for a morning pickup, or after
+ * 13:30 for an afternoon one (api/src/lib/bookingCutoff.ts). Shipping that
+ * without this half would mean a requestor picking a time the app showed them
+ * and getting an error — on the main booking path, on the build the client is
+ * looking at. Both halves ship together or neither does (owner, 12 Aug 2026).
+ *
+ * NOW in this file is 10:30, which is past the morning cut-off and before the
+ * afternoon one — so today's morning is shut and today's afternoon is open, and
+ * every case below can be stated without moving the clock.
+ */
+describe("B7 — today's sessions close", () => {
+  it("offers NO morning hour today once 08:30 has passed", () => {
+    // 11:00 is still ahead of NOW (10:30) and inside the window, so only the
+    // cut-off can be removing it. Without rule (3) this ring is full.
+    expect(bookableMinutes(TODAY, 11, NOW)).toEqual([]);
+    expect(bookableHours(TODAY, NOW).some((h) => h < 12)).toBe(false);
+  });
+
+  it("still offers the AFTERNOON today at 10:30 — the sessions are independent", () => {
+    expect(bookableMinutes(TODAY, 15, NOW).length).toBeGreaterThan(0);
+    expect(bookableHours(TODAY, NOW)).toContain(15);
+  });
+
+  it("shuts the afternoon too once 13:30 has passed, and today leaves the calendar", () => {
+    const afterBoth = at(14, 0);
+    expect(bookableMinutes(TODAY, 15, afterBoth)).toEqual([]);
+    expect(bookableHours(TODAY, afterBoth)).toEqual([]);
+    // The whole point: the day is no longer selectable, rather than selectable
+    // and then rejected.
+    expect(isDayBookable(TODAY, afterBoth)).toBe(false);
+  });
+
+  it("leaves TOMORROW untouched at any hour — only today is gated", () => {
+    const tomorrow = dateForOffset(NOW, 1);
+    for (const clock of [at(9, 0), at(14, 0), at(23, 30)]) {
+      expect(bookableMinutes(tomorrow, 9, clock).length).toBeGreaterThan(0);
+      expect(isDayBookable(tomorrow, clock)).toBe(true);
+    }
+  });
+
+  it("EXEMPTS a return booking — his own sentence, 'anytime before 12am'", () => {
+    const afterBoth = at(14, 0);
+    const ret = { isReturn: true };
+    expect(bookableMinutes(TODAY, 15, afterBoth, ret).length).toBeGreaterThan(0);
+    expect(isDayBookable(TODAY, afterBoth, ret)).toBe(true);
+    // …and the past rule still applies to a return: 09:00 has gone.
+    expect(bookableMinutes(TODAY, 9, afterBoth, ret)).toEqual([]);
+  });
+
+  it("the DEFAULT slot never lands on a closed session", () => {
+    // nextBookableSlot is what the form pre-fills. If it ignored the cut-off it
+    // would pre-fill a slot the dial then renders as disabled — and the
+    // requestor would submit it untouched.
+    const afterBoth = at(14, 0);
+    const slot = nextBookableSlot(afterBoth, 60);
+    expect(slot.dayOffset).toBeGreaterThan(0); // pushed off today entirely
+    // A return, same instant, may still be booked today.
+    expect(nextBookableSlot(afterBoth, 60, { isReturn: true }).dayOffset).toBe(0);
+  });
+
+  it("clamping moves a now-illegal slot forward instead of leaving it to fail", () => {
+    // The requestor had this afternoon selected as a RETURN, then switched the
+    // booking to a delivery at 14:00.
+    const afterBoth = at(14, 0);
+    const held = { dayOffset: 0, hour: 15, minute: 0 };
+    expect(clampSlotToDay(held, afterBoth, { isReturn: true })).toEqual(held);
+    expect(clampSlotToDay(held, afterBoth).dayOffset).toBeGreaterThan(0);
+  });
+
+  it("MIRROR PIN — these values live twice, and must not drift", () => {
+    // The authority is api/src/lib/bookingCutoff.ts. There is no shared module
+    // across the two packages, so the mirror is pinned by naming both sides
+    // here: a change on the server has to walk past this test.
+    expect(MORNING_CUTOFF_MIN).toBe(8 * 60 + 30);
+    expect(AFTERNOON_CUTOFF_MIN).toBe(13 * 60 + 30);
+    expect(SESSION_SPLIT_MIN).toBe(12 * 60);
+  });
+});
+
+/**
+ * THE ADMIN OVERRIDE, CLIENT SIDE (owner ruling, 12 Aug 2026).
+ *
+ * The rule binds the REQUESTOR. The office can step outside it — so the picker
+ * must OFFER an admin the closed slot, and the form must then collect the
+ * reason the server will demand. Hiding it would remove roughly ten hours of
+ * same-day capacity a day, on a system whose own Sheet1 carries urgent
+ * same-day work.
+ *
+ * ⚠ OFFERED IS NOT EXEMPT. `isAdmin` opens the picker; the server still refuses
+ * without a stated reason, and that reason is audited.
+ */
+describe("B7 — an admin is offered the closed slot, and told a reason is needed", () => {
+  const afterBoth = at(14, 0);
+
+  it("offers today's afternoon to an ADMIN when a requestor is refused it", () => {
+    expect(bookableMinutes(TODAY, 15, afterBoth)).toEqual([]);
+    expect(bookableMinutes(TODAY, 15, afterBoth, { isAdmin: true }).length).toBeGreaterThan(0);
+    expect(isDayBookable(TODAY, afterBoth, { isAdmin: true })).toBe(true);
+  });
+
+  it("still hides what the CLOCK has taken, admin or not — the past is not overridable", () => {
+    // B7 is a policy an admin may step outside. A pickup at 09:00 when it is
+    // 14:00 is not a policy, it is gone.
+    expect(bookableMinutes(TODAY, 9, afterBoth, { isAdmin: true })).toEqual([]);
+  });
+
+  it("flags exactly the slots that need a reason, and no others", () => {
+    // This predicate is what the form asks, so the reason box and the server's
+    // demand cannot disagree.
+    expect(slotNeedsCutoffOverride({ dayOffset: 0, hour: 15, minute: 0 }, afterBoth)).toBe(true);
+    // A return: exempt outright, no reason needed.
+    expect(
+      slotNeedsCutoffOverride({ dayOffset: 0, hour: 15, minute: 0 }, afterBoth, { isReturn: true })
+    ).toBe(false);
+    // Tomorrow: never gated.
+    expect(slotNeedsCutoffOverride({ dayOffset: 1, hour: 15, minute: 0 }, afterBoth)).toBe(false);
+    // Before the cut-off: nothing to override.
+    expect(slotNeedsCutoffOverride({ dayOffset: 0, hour: 15, minute: 0 }, at(13, 29))).toBe(false);
   });
 });

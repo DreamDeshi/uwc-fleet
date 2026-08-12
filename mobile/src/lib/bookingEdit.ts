@@ -19,6 +19,34 @@ export const PICKUP_WINDOW_START_HOUR = 7;
 export const PICKUP_WINDOW_END_HOUR = 2;
 
 /**
+ * B7 — THE BOOKING CUT-OFFS, MIRRORED FROM `api/src/lib/bookingCutoff.ts`.
+ *
+ * Mr. Teh (11 Aug 2026): "cut of time for morning delivery 830am, afternoon
+ * 130pm…if booking after cut off time, they have to choose next working day,
+ * for return cargo from supplier / customer, they can choose pickup anytime
+ * before 12am".
+ *
+ * The SERVER is the authority and rejects a late booking outright. These exist
+ * so the calendar never OFFERS a slot the server will refuse — a requestor
+ * picking a time the app showed them and getting an error is not an edge case,
+ * it is the main booking path on the build the client is looking at.
+ *
+ * ⚠ A MIRROR, and mirrors drift. `lib/pickupCalendar.test.ts` names the server
+ * file and these three values together, so a change on one side has to walk
+ * past a test that points at the other. Same discipline as the window above.
+ *
+ * ⚠ DEVICE CLOCK vs MYT. Everything in the picker is device-local, as the
+ * window already is; the server decides in MYT. The two agree in Malaysia,
+ * where every user of this app is, and the server remains the authority for
+ * anyone who is not — they would see a slot refused rather than a slot silently
+ * accepted, which is the safe direction of that disagreement.
+ */
+export const MORNING_CUTOFF_MIN = 8 * 60 + 30; // 08:30 — his
+export const AFTERNOON_CUTOFF_MIN = 13 * 60 + 30; // 13:30 — his
+/** Noon. OURS, not his — see the server constant, which is env-tunable. */
+export const SESSION_SPLIT_MIN = 12 * 60;
+
+/**
  * How far ahead the calendar lets a requestor book: a full year, per the
  * requestor design ("Bookable through … · full year ahead").
  *
