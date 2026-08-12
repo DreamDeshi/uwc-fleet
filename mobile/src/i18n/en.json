@@ -1629,6 +1629,13 @@
       "external": "External",
       "documentation": "Documentation"
     },
+    "requestorReason": {
+      "customer_site": "Problem at the customer / site",
+      "truck": "Problem with the lorry",
+      "cargo": "Problem with the cargo",
+      "external": "External problem (weather, flood or security)",
+      "documentation": "Document problem"
+    },
     "state": {
       "reported": "Reported",
       "more_evidence": "More evidence needed",

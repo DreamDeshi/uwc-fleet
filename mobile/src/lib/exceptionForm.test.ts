@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, it, expect } from "vitest";
 import {
   EXCEPTION_CATEGORIES,
@@ -5,6 +8,7 @@ import {
   canDriverAddEvidence,
   isOpenState,
   exceptionStateLabelKey,
+  requestorReasonLabelKey,
   toRequestorView,
 } from "./exceptionForm";
 import type { PickedPhoto } from "./photo";
@@ -82,5 +86,88 @@ describe("requestor redaction (defense-in-depth)", () => {
   it("returns null for no exception", () => {
     expect(toRequestorView(null)).toBeNull();
     expect(toRequestorView(undefined)).toBeNull();
+  });
+});
+
+/**
+ * C9 — the requestor is shown the REASON, never the pay decision (Mr. Teh,
+ * 11 Aug 2026, "OPTION B").
+ *
+ * ⚠ WHAT DISCRIMINATES. The banner used to render `exception.category.*`, the
+ * DRIVER'S PICKER labels. A test that only checked "a label exists" would have
+ * passed against those, so the cases below assert the requestor copy is present
+ * in all three locales AND is NOT the picker string — the whole point of the
+ * change is that the two differ.
+ *
+ * The banner cannot be rendered here (mobile has no RN renderer in the test
+ * setup — every spec in src/**\/*.test.ts is pure logic), so the last case reads
+ * the component source and fails if it stops calling this key builder. Proven
+ * by putting `t(\`exception.category.${view.category}\`)` back: that case goes
+ * red, and nothing else in the mobile suite notices.
+ */
+describe("C9 — requestor-facing reason labels", () => {
+  const LOCALES = ["en", "ms", "zh"] as const;
+  const bundles = Object.fromEntries(
+    LOCALES.map((l) => [l, require(`../i18n/${l}.json`) as Record<string, any>])
+  ) as Record<(typeof LOCALES)[number], Record<string, any>>;
+
+  it("gives every confirmed category a key, and unknown input NO key", () => {
+    for (const { key } of EXCEPTION_CATEGORIES) {
+      expect(requestorReasonLabelKey(key)).toBe(`exception.requestorReason.${key}`);
+    }
+    // A raw i18n key must never reach a customer's screen.
+    for (const junk of ["", "unknown", "reason", "customer site"]) {
+      expect(requestorReasonLabelKey(junk)).toBeNull();
+    }
+  });
+
+  it("every key resolves in en, ms AND zh — a requestor who reads Malay sees Malay", () => {
+    const missing: string[] = [];
+    for (const { key } of EXCEPTION_CATEGORIES) {
+      for (const locale of LOCALES) {
+        const value = bundles[locale].exception?.requestorReason?.[key];
+        if (typeof value !== "string" || value.trim() === "") missing.push(`${locale}: ${key}`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it("reads as a REASON, not as the driver's filing category", () => {
+    // The defect C9 fixes: "Customer / Site" is a taxonomy bucket. If a locale
+    // ever copies the picker label into the requestor slot, that is the bug
+    // coming back, not a translation choice.
+    const same: string[] = [];
+    for (const { key } of EXCEPTION_CATEGORIES) {
+      for (const locale of LOCALES) {
+        const reason = bundles[locale].exception.requestorReason[key] as string;
+        const picker = bundles[locale].exception.category[key] as string;
+        if (reason === picker) same.push(`${locale}: ${key}`);
+      }
+    }
+    expect(same).toEqual([]);
+  });
+
+  it("says nothing about pay, in any locale", () => {
+    // C9's other half. The redacted payload carries no money field, so this is
+    // belt and braces on the COPY: no label may imply a pay outcome.
+    const MONEY = /\bRM\b|pay|paid|incentive|claim|bayar|gaji|insentif|工资|付款|报酬|奖励/i;
+    for (const { key } of EXCEPTION_CATEGORIES) {
+      for (const locale of LOCALES) {
+        expect(bundles[locale].exception.requestorReason[key]).not.toMatch(MONEY);
+      }
+    }
+  });
+
+  it("the banner ACTUALLY uses it — the call site, not just the helper", () => {
+    const src = readFileSync(
+      join(__dirname, "..", "components", "RequestorExceptionBanner.tsx"),
+      "utf8"
+    );
+    // Guard against the vacuous version of this test: if the file moved, an
+    // empty read would satisfy every `not.toContain` below.
+    expect(src.length).toBeGreaterThan(200);
+    expect(src).toContain("requestorReasonLabelKey");
+    // …and no longer renders the driver's picker label to a requestor.
+    expect(src).not.toContain("exception.category.");
   });
 });

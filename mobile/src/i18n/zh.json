@@ -1629,6 +1629,13 @@
       "external": "外部因素",
       "documentation": "文件"
     },
+    "requestorReason": {
+      "customer_site": "客户 / 现场出现问题",
+      "truck": "罗里出现问题",
+      "cargo": "货物出现问题",
+      "external": "外部因素问题（天气、水灾或治安）",
+      "documentation": "文件问题"
+    },
     "state": {
       "reported": "已报告",
       "more_evidence": "需要补充证据",
