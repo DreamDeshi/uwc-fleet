@@ -1,8 +1,12 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, it, expect } from "vitest";
 
 import {
   AFTERNOON_CUTOFF_MIN,
   MORNING_CUTOFF_MIN,
+  SESSION_SPLIT_MIN,
   bookingCutoffVerdict,
   cutoffMessage,
   isWorkingDay,
@@ -54,6 +58,22 @@ describe("mytMinutes / sessionOf — the day's shape", () => {
   it("splits morning from afternoon at noon MYT", () => {
     expect(sessionOf(at(11, 59))).toBe("morning");
     expect(sessionOf(at(12, 0))).toBe("afternoon");
+  });
+
+  it("the split is OURS and carries an override; the cut-offs are HIS and do not", () => {
+    // Owner ruling 12 Aug 2026: an invented constant is env-tunable and named
+    // as ours (OPEN_ITEMS N11). "830am" and "130pm" are quoted client
+    // requirements, so moving one must take a commit and a reader, not a
+    // variable — this asserts the asymmetry rather than trusting a comment.
+    expect(SESSION_SPLIT_MIN).toBe(12 * 60); // the default, absent an override
+    expect(MORNING_CUTOFF_MIN).toBe(8 * 60 + 30);
+    expect(AFTERNOON_CUTOFF_MIN).toBe(13 * 60 + 30);
+    const src = readFileSync(join(__dirname, "..", "src", "lib", "bookingCutoff.ts"), "utf8");
+    expect(src.length).toBeGreaterThan(500); // not a vacuous read
+    expect(src).toContain('minutesFromEnv("BOOKING_SESSION_SPLIT_MIN"');
+    // His two are literals — no env name may appear against either.
+    expect(src).not.toContain("MORNING_CUTOFF_MIN = minutesFromEnv");
+    expect(src).not.toContain("AFTERNOON_CUTOFF_MIN = minutesFromEnv");
   });
 });
 

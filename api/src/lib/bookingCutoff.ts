@@ -1,4 +1,5 @@
 import { mytDateKey } from "../services/incentiveEngine";
+import { minutesFromEnv } from "./envNumbers";
 import { mytDayStart } from "./myt";
 
 /**
@@ -39,17 +40,38 @@ import { mytDayStart } from "./myt";
  * Booking for a FUTURE day is never restricted — the cut-offs are about today's
  * dispatch, and a requestor booking Thursday on Tuesday costs dispatch nothing.
  *
- * ⚠ MORNING vs AFTERNOON is split at 12:00 MYT. He gave two sessions and two
- * cut-offs but never named the boundary; noon is the ordinary meaning of the
- * two words and it is the only value that makes both cut-offs sit inside the
- * session they gate (08:30 inside the morning, 13:30 inside the afternoon).
- * Recorded as a choice rather than a discovery.
+ * ⚠ MORNING vs AFTERNOON is split at 12:00 MYT, and that split is OURS. He gave
+ * two sessions and two cut-offs but never named the boundary; noon is the
+ * ordinary meaning of the two words and the only value that makes both cut-offs
+ * sit inside the session they gate. Recorded as a choice rather than a
+ * discovery, and env-tunable for exactly that reason — see SESSION_SPLIT_MIN.
  */
 
-/** Cut-offs and the session split, in minutes after MYT midnight. */
+/**
+ * HIS NUMBERS — hardcoded on purpose. "830am" and "130pm" are quoted client
+ * requirements, not tunables; an operator quietly moving a cut-off would be
+ * changing what the client asked for, and it should take a commit and a reader.
+ */
 export const MORNING_CUTOFF_MIN = 8 * 60 + 30; // 08:30
 export const AFTERNOON_CUTOFF_MIN = 13 * 60 + 30; // 13:30
-export const SESSION_SPLIT_MIN = 12 * 60; // noon — see the note above
+
+/**
+ * OUR NUMBER — an INVENTED CONSTANT, and therefore env-tunable (owner ruling,
+ * 12 Aug 2026; the same treatment as the other invented constants tracked in
+ * OPEN_ITEMS N11 — the scheduling-conflict buffer, the operating-window
+ * estimates, the exception-alert threshold).
+ *
+ * Mr. Teh gave two SESSIONS and two cut-offs but never said where morning ends.
+ * Noon is the ordinary meaning of the two words, and the only value that puts
+ * each cut-off inside the session it gates — but it is ours, not his, so it
+ * carries an override rather than pretending to be a requirement. If the office
+ * turns out to treat 11:00 or 14:00 as the divide, that is a variable, not a
+ * release.
+ *
+ * Override with BOOKING_SESSION_SPLIT_MIN (minutes after MYT midnight;
+ * 720 = 12:00).
+ */
+export const SESSION_SPLIT_MIN = minutesFromEnv("BOOKING_SESSION_SPLIT_MIN", 12 * 60);
 
 /**
  * Minutes after MYT midnight for an instant — measured FROM `mytDayStart`, the
