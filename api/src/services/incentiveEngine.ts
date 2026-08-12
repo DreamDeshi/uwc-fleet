@@ -329,6 +329,15 @@ export interface DeliveryIncentiveResult {
    */
   deductionApplied: number;
   /**
+   * Points this group did NOT get paid because the day's interplant legs do not
+   * yet make up whole round trips (R5 A2). 0 on every customer/supplier trip and
+   * on any interplant group that completes a pair. Kept SEPARATE from
+   * `deductionApplied` because interplant takes no deduction at all — folding
+   * the halving into that field would print a deduction the client says does not
+   * exist, on the one kind of work that has none.
+   */
+  roundTripShortfall: number;
+  /**
    * MARGINAL incentive (RM) this trip's group contributes — the value persisted
    * in incentive_earned. Computed as the floored day-total WITH this group minus
    * the floored day-total BEFORE it, so summing across a day telescopes to
@@ -390,6 +399,12 @@ export function calculateDeliveryIncentive(params: {
     entitled_claim_weekday: number;
     entitled_claim_offpeak: number;
   };
+  /**
+   * INTERPLANT ONLY — pay the day's points in whole ROUND TRIPS (R5 A2, 11 Aug
+   * 2026). See the halving note in the function doc. Defaults false, so every
+   * customer/supplier trip is bit-for-bit unchanged.
+   */
+  roundTripHalving?: boolean;
 }): DeliveryIncentiveResult {
   // Peak vs off-peak is decided ONCE per delivery-day group, from the group's
   // first delivery-confirm time in MYT (client rule 3 Jul 2026 — was pickup
@@ -408,13 +423,68 @@ export function calculateDeliveryIncentive(params: {
   // floored day-total BEFORE it, so the deduction is spent exactly once across
   // the driver-day and a low-point first drop carries the excess forward.
   const deduction = params.truck.daily_deduction_points;
-  const beforePoints = Math.max(params.priorPointsToday - deduction, 0);
-  const withPoints = Math.max(params.priorPointsToday + groupPoints - deduction, 0);
-  const marginalPoints = withPoints - beforePoints;
+  const beforeDeducted = Math.max(params.priorPointsToday - deduction, 0);
+  const withDeducted = Math.max(params.priorPointsToday + groupPoints - deduction, 0);
   // How much of the deduction THIS group absorbed (0 when the day's earlier
   // drops already covered it; the full deduction when this group holds enough
   // of the day's first points). Sums to min(dayTotal, deduction) over the day.
-  const deductionApplied = groupPoints - marginalPoints;
+  // Measured BEFORE the halving below, so the two never contaminate each other.
+  const deductionApplied = groupPoints - (withDeducted - beforeDeducted);
+
+  // ── R5 A2 — INTERPLANT IS PAID IN WHOLE ROUND TRIPS ──────────────────────
+  //
+  // Mr. Teh, 11 Aug 2026, answering "an interplant round trip — one booking or
+  // two?" with Option B (two bookings) and then pricing it himself:
+  //
+  //   "if particular intercompany delivery 18points for that day, then he will
+  //    get pay only for 9 points (18 divide by 2), if the interplant point is
+  //    17point for whole days, then he will only entitle for 8 points"
+  //
+  // Not a new rule — it is the round-trip rule stated arithmetically. The
+  // workbook has said since 29 Jul "SEND AND RETRUN WITH CARGO ONLY CAN
+  // CONSIDER 1 TRIP COUNT", and each leg is its own booking scoring 1 point, so
+  // legs ÷ 2 = round trips. 17 → 8, not 8.5 and not 9: FLOOR, because the odd
+  // leg is an INCOMPLETE round trip and earns nothing yet.
+  //
+  // ⚠ HALVE THE DAY, NOT THE TRIP. He counts "for that day", which is what
+  // removes the Delivery-to-Return matching problem entirely — no pairing
+  // heuristic, no guessing which Return belongs to which Delivery. Applying it
+  // per trip instead would pay 0 for every single-leg booking forever, which is
+  // every interplant booking he has described.
+  //
+  // It therefore telescopes exactly like the deduction, over the same running
+  // day total: floor(with/2) − floor(before/2) summed across a driver-day is
+  // floor(dayTotal/2). The consequence, stated plainly: the day's FIRST leg
+  // pays RM0 and the pay lands on the second. That is the rule, not a bug — but
+  // it is the first place in this system where a completed trip legitimately
+  // earns nothing, so it is on the first-payroll watch list.
+  //
+  // ⚠ THE MIDNIGHT STRADDLE — KNOWN, REACHABLE, AND UNRESOLVED.
+  // Halving the DAY means a round trip split by the day boundary pays NOTHING:
+  // floor(1/2) on Monday plus floor(1/2) on Tuesday is 0 + 0, for a genuine
+  // completed round trip — the exact case the rule exists to reward. The loss is
+  // total, not partial, and there is no carry-forward: an unpaired leg is lost
+  // when its day closes.
+  //
+  // Two ways in, neither exotic:
+  //   1. the Return is BOOKED for the next morning (send Monday evening, return
+  //      Tuesday) — an ordinary industrial pattern that nothing forbids, since
+  //      each leg sits inside its own day's operating window;
+  //   2. one booking whose two stops straddle midnight — the "rare midnight
+  //      straddler" this file already handles, which splits into two day groups
+  //      of one point each.
+  //
+  // NOT FIXED HERE, deliberately. Every repair pairs legs across a day boundary,
+  // and pairing is precisely what his day-level counting removed ("18points for
+  // that day"). Choosing a pairing rule now would be inventing the answer to a
+  // question he was never asked. Pinned instead by the MIDNIGHT STRADDLE block
+  // in tests/interplantRoundTrip.test.ts, so the next reader meets it in a test
+  // rather than in a driver's complaint, and logged as an open item.
+  const payable = (points: number) => (params.roundTripHalving ? Math.floor(points / 2) : points);
+  const beforePoints = payable(beforeDeducted);
+  const withPoints = payable(withDeducted);
+  const marginalPoints = withPoints - beforePoints;
+  const roundTripShortfall = withDeducted - beforeDeducted - marginalPoints;
   const incentive = marginalPoints * rate;
 
   return {
@@ -424,6 +494,7 @@ export function calculateDeliveryIncentive(params: {
     wasRepeat: scored.map((d) => d.wasRepeat),
     pointsThisTrip: dropPoints.reduce((a, b) => a + b, 0),
     deductionApplied,
+    roundTripShortfall,
     // Rounded to cents so the persisted RM value is clean (money is Decimal in
     // the DB, but the engine works in plain numbers for testability).
     incentiveThisTrip: Math.round(incentive * 100) / 100,
