@@ -263,7 +263,7 @@ export function autoDispatchFailureNote(
   // (email pt 6) and deliberately not auto's.
   if (opts?.interplantBooking) {
     const plates = [...INTERPLANT_PLATES].sort().join(" / ");
-    return `No interplant lorry (${plates}) is free for this booking — assign a backup lorry by hand.`;
+    return `No interplant lorry (${plates}) is free for this booking — held for manual assignment; cross-assign a backup lorry by hand.`;
   }
   return "No available truck has capacity for this order.";
 }
@@ -645,12 +645,46 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
     // failure. The note is persisted next to the flag (same guard, same
     // self-clearing lifecycle) so the board can show the dispatcher WHY —
     // repeated sweep retries simply overwrite it, never accumulate.
-    const reason = autoDispatchFailureNote(windowExceeded, {
-      interplantBooking: isInterplantRouteType(trip.route_type?.name),
-    });
+    const interplantBooking = isInterplantRouteType(trip.route_type?.name);
+    const reason = autoDispatchFailureNote(windowExceeded, { interplantBooking });
+    // ── PIN TO MANUAL when the INTERPLANT pool came up empty (N-fb15) ────────
+    //
+    // Feedback item 15 (16 Jul 2026, "no more auto after unassign") is the rule
+    // that once a booking has been handed to a human, the machine must not place
+    // it behind them. It was written for admin unassign; this is the same shape
+    // arriving by a different door — the note above TELLS the dispatcher to
+    // cross-assign a backup lorry by hand, and without the pin the 1-minute
+    // sweep would keep retrying and could auto-place the booking on PLX the
+    // moment it frees, mid-decision, after the office was told to handle it.
+    //
+    // ⚠ Narrow ON PURPOSE — only the empty-interplant-pool case:
+    //   - a CUSTOMER booking that found no capacity must keep being retried
+    //     (a truck frees up and the sweep places it — that is the sweep's job);
+    //   - a WINDOW breach keeps its existing behaviour for every booking, since
+    //     changing it here would alter customer dispatch inside an interplant
+    //     fix.
+    // So this pins exactly the case whose note promises a manual remedy, and
+    // nothing else.
+    //
+    // ⚠ CONSEQUENCES, both real, both accepted:
+    //   1. an interplant booking that failed at 09:00 will NOT be auto-assigned
+    //      at 11:00 when a lorry frees. A human places it. That is what "held
+    //      for manual assignment" means, and the note now says so.
+    //   2. `staleSweepWhere` excludes paused trips, so this booking also loses
+    //      the sweep's one-shot "pending order" push. It keeps the channel that
+    //      actually works: `auto_dispatch_failed` still stands, so it sits on
+    //      the needs-attention board and inside that chip's live count. No
+    //      second copy of the alert rule is introduced to compensate.
+    // The pin is cleared by any manual (re-)assignment (claimPendingTrip), so
+    // the booking can never be stuck once the office acts on it.
+    const pinToManual = interplantBooking && !windowExceeded;
     await prisma.trip.updateMany({
       where: { id: tripId, status: "pending" },
-      data: { auto_dispatch_failed: true, auto_dispatch_note: reason },
+      data: {
+        auto_dispatch_failed: true,
+        auto_dispatch_note: reason,
+        ...(pinToManual ? { auto_dispatch_paused: true } : {}),
+      },
     });
     return { assigned: false, reason };
   }

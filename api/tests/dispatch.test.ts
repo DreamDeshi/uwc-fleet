@@ -277,9 +277,12 @@ describe("autoDispatchFailureNote — the persisted failure reason", () => {
     // was empty, and the remedy is an admin cross-assigning one by hand.
     const note = autoDispatchFailureNote(null, { interplantBooking: true });
     expect(note).toBe(
-      "No interplant lorry (PLX 2406 / PPE 2406) is free for this booking — assign a backup lorry by hand."
+      "No interplant lorry (PLX 2406 / PPE 2406) is free for this booking — held for manual assignment; cross-assign a backup lorry by hand."
     );
     expect(note).not.toContain("capacity");
+    // It must name BOTH: that nothing further happens automatically, and what
+    // the human is expected to do about it (N-fb15).
+    expect(note).toContain("held for manual assignment");
   });
 
   it("the window breach still wins over the interplant wording", () => {
