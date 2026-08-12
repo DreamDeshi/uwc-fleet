@@ -146,6 +146,7 @@
     "payBreakdownTotal": "Jumlah mata",
     "payBreakdownRepeat": "(ulangan)",
     "payBreakdownDeduction": "Potongan harian",
+    "payBreakdownRoundTripHeld": "Ditahan untuk perjalanan balik (dibayar bagi perjalanan pergi-balik)",
     "payBreakdownRate": "Kadar: RM {{rate}} setiap mata",
     "payAdjustedTitle": "Bayaran diselaraskan semasa kelulusan",
     "payAdjustedAmounts": "Dicadangkan RM {{proposed}} → Muktamad RM {{final}}",

@@ -150,6 +150,7 @@
     "payBreakdownTotal": "Total points",
     "payBreakdownRepeat": "(repeat)",
     "payBreakdownDeduction": "Daily deduction",
+    "payBreakdownRoundTripHeld": "Held for the return leg (paid on the round trip)",
     "payBreakdownRate": "Rate: RM {{rate}} per point",
     "payAdjustedTitle": "Pay adjusted at approval",
     "payAdjustedAmounts": "Proposed RM {{proposed}} → Final RM {{final}}",

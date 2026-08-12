@@ -29,7 +29,20 @@ export interface PayBreakdown {
   totalPoints: number;
   /** Deduction points actually subtracted at this trip's finalization; null = not recorded (legacy). */
   deduction: number | null;
-  /** totalPoints − deduction, when the deduction was recorded. */
+  /**
+   * R5 A2 (IM10) — points HELD BACK because the day's interplant legs do not yet
+   * make up whole round trips. 0 on every customer/supplier trip; null = not
+   * recorded (finalized before the column).
+   *
+   * ⚠ THIS IS THE LINE THAT EXPLAINS RM0. Interplant is paid per completed round
+   * trip, so the day's FIRST leg pays nothing and the pay lands on the return —
+   * the only place in this system where a delivered, completed trip legitimately
+   * earns zero. Without a line saying so, the driver's breakdown shows a
+   * delivered stop worth points and a payout of RM0, which reads as the system
+   * losing his money.
+   */
+  roundTripShortfall: number | null;
+  /** totalPoints − deduction − shortfall, when the deduction was recorded. */
   payablePoints: number | null;
   /** RM per point actually paid (Decimal → number); null = not recorded (legacy). */
   rate: number | null;
@@ -40,7 +53,9 @@ export interface PayBreakdown {
  * finalized, or a legacy pre-feature trip) — callers render nothing then.
  */
 export function buildPayBreakdown(
-  trip: Pick<Trip, "stops" | "deduction_applied" | "rate_used">
+  trip: Pick<Trip, "stops" | "deduction_applied" | "rate_used"> & {
+    round_trip_shortfall?: number | null;
+  }
 ): PayBreakdown | null {
   const rows: BreakdownRow[] = (trip.stops ?? [])
     .filter((s) => s.points_awarded !== null && s.points_awarded !== undefined)
@@ -65,11 +80,20 @@ export function buildPayBreakdown(
       ? null
       : Number(rateRaw);
 
+  const shortfallRaw = trip.round_trip_shortfall;
+  const roundTripShortfall =
+    shortfallRaw === null || shortfallRaw === undefined ? null : shortfallRaw;
+
   return {
     rows,
     totalPoints,
     deduction,
-    payablePoints: deduction === null ? null : totalPoints - deduction,
+    roundTripShortfall,
+    // The withheld points come off the SAME total the deduction does, in the
+    // same order the engine applied them (deduction first, then the halving on
+    // what survives), so this figure equals what the server actually paid for.
+    payablePoints:
+      deduction === null ? null : totalPoints - deduction - (roundTripShortfall ?? 0),
     rate,
   };
 }
