@@ -92,8 +92,11 @@ export function slotNeedsCutoffOverride(
   now: Date,
   opts: { isReturn?: boolean } = {}
 ): boolean {
-  if (dayOffsetOf(dateForOffset(now, slot.dayOffset), now) !== 0) return false;
-  return sessionIsClosed(slot.hour, now, opts.isReturn === true);
+  return cutoffClosedAt(
+    slotInstant(dateForOffset(now, slot.dayOffset), slot.hour),
+    now,
+    opts.isReturn === true
+  );
 }
 
 /** The last date the calendar will let you reach. */
@@ -102,10 +105,46 @@ export function maxBookableDate(now: Date): Date {
 }
 
 /**
+ * ⚠ THE CUT-OFF IS JUDGED IN MALAYSIA TIME, NOT ON THE DEVICE CLOCK.
+ *
+ * The rest of this module is deliberately date-LOCAL: the fleet window and the
+ * past-trim are about the wall clock in front of the requestor. B7's cut-off is
+ * not — it is a Malaysian business rule that the SERVER evaluates in MYT, so
+ * judging it locally makes the picker and the server disagree by the device's
+ * offset.
+ *
+ * That is not theoretical. It turned CI red for a 10.5-hour band on the day it
+ * shipped: the runners are UTC, so at 05:36 UTC the picker read "05:36, before
+ * 08:30, the morning is open", offered a today slot, and the server refused it
+ * as 13:36 MYT — past the afternoon cut-off. `lib/trip.ts` already carried this
+ * exact lesson for the RATE tier ("reading the device's local clock would
+ * mis-rate trips on a phone whose timezone isn't Malaysia") and it was not
+ * applied here.
+ *
+ * EXPORTED so it can be tested on INSTANTS ALONE. The tests around it were
+ * written with local wall-clock fixtures on a UTC+8 machine, where local and MYT
+ * are the same number — so 40 of them passed identically before and after this
+ * fix and could not have caught it. A predicate that takes two instants is
+ * timezone-independent, and its spec fails on any runner if the MYT conversion
+ * goes.
+ */
+const MYT_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+/** MYT calendar key + minutes-since-MYT-midnight for an instant. */
+function mytParts(d: Date): { key: string; minutes: number } {
+  const m = new Date(d.getTime() + MYT_OFFSET_MS);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    key: `${m.getUTCFullYear()}-${pad(m.getUTCMonth() + 1)}-${pad(m.getUTCDate())}`,
+    minutes: m.getUTCHours() * 60 + m.getUTCMinutes(),
+  };
+}
+
+/**
  * B7's third rule: TODAY'S SESSIONS CLOSE (08:30 morning, 13:30 afternoon).
  *
- * Deliberately expressed the same way as rules (1) and (2) above — it applies
- * to TODAY ONLY, so a future date's dial is unaffected and stays stable.
+ * Applies to TODAY IN MYT only, so a future date's dial is unaffected and stays
+ * stable — and "today" means the same day the server means.
  *
  * `isReturn` defaults to FALSE, i.e. restricted, on purpose. A caller that
  * forgets to say "this is a return" over-restricts, which shows the requestor
@@ -113,7 +152,12 @@ export function maxBookableDate(now: Date): Date {
  * slot the server refuses, which is the failure this whole change exists to
  * prevent. Wrong in the harmless direction, by construction.
  */
-function sessionIsClosed(hour: number, now: Date, isReturn: boolean, isAdmin = false): boolean {
+export function cutoffClosedAt(
+  slotAt: Date,
+  now: Date,
+  isReturn = false,
+  isAdmin = false
+): boolean {
   if (isReturn) return false; // "anytime before 12am" — his own exemption
   // ⚠ AN ADMIN IS NOT EXEMPT — they may OVERRIDE, which is a different thing.
   // The picker offers them the slot; the server still refuses it unless they
@@ -121,9 +165,19 @@ function sessionIsClosed(hour: number, now: Date, isReturn: boolean, isAdmin = f
   // would remove roughly ten hours of same-day capacity a day (the working day
   // runs to midnight) and urgent same-day work exists.
   if (isAdmin) return false;
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  const cutoff = hour * 60 < SESSION_SPLIT_MIN ? MORNING_CUTOFF_MIN : AFTERNOON_CUTOFF_MIN;
-  return nowMinutes >= cutoff;
+  const nowMyt = mytParts(now);
+  const slotMyt = mytParts(slotAt);
+  // Only the MYT day the server calls "today" is gated.
+  if (slotMyt.key !== nowMyt.key) return false;
+  const cutoff = slotMyt.minutes < SESSION_SPLIT_MIN ? MORNING_CUTOFF_MIN : AFTERNOON_CUTOFF_MIN;
+  return nowMyt.minutes >= cutoff;
+}
+
+/** The instant a (date, hour) slot represents, for the MYT comparison above. */
+function slotInstant(date: Date, hour: number): Date {
+  const d = new Date(date);
+  d.setHours(hour, 0, 0, 0);
+  return d;
 }
 
 /**
@@ -142,7 +196,8 @@ export function bookableMinutes(
   const offset = dayOffsetOf(date, now);
   if (offset < 0 || offset > PICKUP_MAX_DAY_OFFSET) return [];
   if (offset > 0) return [...PICKUP_MINUTES];
-  if (sessionIsClosed(hour, now, opts.isReturn === true, opts.isAdmin === true)) return [];
+  if (cutoffClosedAt(slotInstant(date, hour), now, opts.isReturn === true, opts.isAdmin === true))
+    return [];
   if (hour > now.getHours()) return [...PICKUP_MINUTES];
   if (hour < now.getHours()) return [];
   return PICKUP_MINUTES.filter((m) => m > now.getMinutes());

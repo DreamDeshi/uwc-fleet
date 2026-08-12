@@ -8,6 +8,7 @@ import {
   dialIndexToHour,
   hourDialIndex,
   isDayBookable,
+  cutoffClosedAt,
   slotNeedsCutoffOverride,
   isMonthReachable,
   maxBookableDate,
@@ -375,5 +376,54 @@ describe("B7 — an admin is offered the closed slot, and told a reason is neede
     expect(slotNeedsCutoffOverride({ dayOffset: 1, hour: 15, minute: 0 }, afterBoth)).toBe(false);
     // Before the cut-off: nothing to override.
     expect(slotNeedsCutoffOverride({ dayOffset: 0, hour: 15, minute: 0 }, at(13, 29))).toBe(false);
+  });
+});
+
+/**
+ * ⚠ THE CUT-OFF IS A MALAYSIA RULE, AND THIS IS THE CASE THAT PROVES IT.
+ *
+ * B7 shipped judging the cut-off on the DEVICE clock. CI runners are UTC, so at
+ * 05:36 UTC the picker read "05:36, before 08:30, the morning is open", offered
+ * a today slot, and the server refused it as 13:36 MYT — four e2e booking specs
+ * red, on a 10.5-hour band every day, on MAIN.
+ *
+ * ⚠ Every other case in this file uses LOCAL wall-clock fixtures, and the
+ * developer machine is UTC+8 — so local and MYT are the same number and all 40
+ * of them passed identically before and after the fix. They could not have
+ * caught it. These take INSTANTS, so they are timezone-independent and fail on
+ * any runner if the MYT conversion is lost.
+ */
+describe("cutoffClosedAt — judged in MYT, not on the device clock", () => {
+  const at = (iso: string) => new Date(iso);
+
+  it("the exact CI failure: 05:36 UTC is 13:36 MYT, so today's afternoon is SHUT", () => {
+    const now = at("2026-08-12T05:36:00Z"); // 13:36 MYT
+    const slot = at("2026-08-12T07:00:00Z"); // 15:00 MYT, same MYT day
+    expect(cutoffClosedAt(slot, now)).toBe(true);
+  });
+
+  it("…and the morning is shut too, though the device clock reads 05:36", () => {
+    const now = at("2026-08-12T05:36:00Z"); // 13:36 MYT — past BOTH cut-offs
+    const slot = at("2026-08-12T03:00:00Z"); // 11:00 MYT, a morning pickup
+    expect(cutoffClosedAt(slot, now)).toBe(true);
+  });
+
+  it("is OPEN at 00:20 UTC — 08:20 MYT, ten minutes before the morning closes", () => {
+    const now = at("2026-08-12T00:20:00Z"); // 08:20 MYT
+    expect(cutoffClosedAt(at("2026-08-12T03:00:00Z"), now)).toBe(false); // 11:00 MYT
+  });
+
+  it("gates only the MYT day the server calls today", () => {
+    const now = at("2026-08-12T05:36:00Z"); // 13:36 MYT, 12 Aug
+    // 16:10 UTC is 00:10 MYT on the 13th — a different MYT day, so not gated,
+    // even though it is still the 12th on a UTC device.
+    expect(cutoffClosedAt(at("2026-08-12T16:10:00Z"), now)).toBe(false);
+  });
+
+  it("returns and admins are never closed out", () => {
+    const now = at("2026-08-12T05:36:00Z");
+    const slot = at("2026-08-12T07:00:00Z");
+    expect(cutoffClosedAt(slot, now, true, false)).toBe(false); // return: exempt
+    expect(cutoffClosedAt(slot, now, false, true)).toBe(false); // admin: may override
   });
 });
