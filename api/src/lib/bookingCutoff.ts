@@ -179,3 +179,35 @@ export function cutoffMessage(verdict: Extract<CutoffVerdict, { allowed: false }
   const label = verdict.session === "morning" ? "Morning" : "Afternoon";
   return `${label} pickups close at ${at}. The earliest pickup you can book now is ${verdict.earliest}.`;
 }
+
+/**
+ * THE ADMIN OVERRIDE — the rule binds the REQUESTOR; the office can step
+ * outside it, on the record.
+ *
+ * Owner ruling, 12 Aug 2026. Read literally, B7 removes ALL same-day booking
+ * after 13:30, and the working day runs to midnight — roughly ten hours of
+ * capacity the office could no longer use. Urgent same-day work exists: Mr.
+ * Teh's own Sheet1 carries "CONQUEST (est 2 pallet P7 URGENT". The first time a
+ * clerk cannot book that, they call it a broken system rather than a rule they
+ * asked for.
+ *
+ * The shape is the most Teh-consistent one in this codebase, not an invention:
+ * email pt 6 has the admin authorising cross-class lorry swaps, R3 A7 has the
+ * admin deciding when the fleet is full, and A19 gives the admin edit rights at
+ * every status. Throughout, the rule binds the requestor and the admin may step
+ * outside it — so nobody is blocked and his rule is not softened.
+ *
+ * ⚠ THE REASON IS MANDATORY, which is what keeps this an override rather than
+ * an exemption. An admin who books past the cut-off without one is refused;
+ * with one, the booking proceeds and the note below goes on the trip's own
+ * immutable timeline beside an audit row naming who did it. Same shape as
+ * `incentive_override_reason`, which is required exactly when the approved
+ * figure differs from the proposal.
+ */
+export function cutoffOverrideNote(
+  verdict: Extract<CutoffVerdict, { allowed: false }>,
+  reason: string
+): string {
+  const at = verdict.session === "morning" ? "8:30am" : "1:30pm";
+  return `Admin override: booked past the ${at} ${verdict.session} cut-off — ${reason.trim()}`;
+}

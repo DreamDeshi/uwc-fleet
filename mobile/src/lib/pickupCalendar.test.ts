@@ -8,6 +8,7 @@ import {
   dialIndexToHour,
   hourDialIndex,
   isDayBookable,
+  slotNeedsCutoffOverride,
   isMonthReachable,
   maxBookableDate,
   meridiemOf,
@@ -332,5 +333,47 @@ describe("B7 — today's sessions close", () => {
     expect(MORNING_CUTOFF_MIN).toBe(8 * 60 + 30);
     expect(AFTERNOON_CUTOFF_MIN).toBe(13 * 60 + 30);
     expect(SESSION_SPLIT_MIN).toBe(12 * 60);
+  });
+});
+
+/**
+ * THE ADMIN OVERRIDE, CLIENT SIDE (owner ruling, 12 Aug 2026).
+ *
+ * The rule binds the REQUESTOR. The office can step outside it — so the picker
+ * must OFFER an admin the closed slot, and the form must then collect the
+ * reason the server will demand. Hiding it would remove roughly ten hours of
+ * same-day capacity a day, on a system whose own Sheet1 carries urgent
+ * same-day work.
+ *
+ * ⚠ OFFERED IS NOT EXEMPT. `isAdmin` opens the picker; the server still refuses
+ * without a stated reason, and that reason is audited.
+ */
+describe("B7 — an admin is offered the closed slot, and told a reason is needed", () => {
+  const afterBoth = at(14, 0);
+
+  it("offers today's afternoon to an ADMIN when a requestor is refused it", () => {
+    expect(bookableMinutes(TODAY, 15, afterBoth)).toEqual([]);
+    expect(bookableMinutes(TODAY, 15, afterBoth, { isAdmin: true }).length).toBeGreaterThan(0);
+    expect(isDayBookable(TODAY, afterBoth, { isAdmin: true })).toBe(true);
+  });
+
+  it("still hides what the CLOCK has taken, admin or not — the past is not overridable", () => {
+    // B7 is a policy an admin may step outside. A pickup at 09:00 when it is
+    // 14:00 is not a policy, it is gone.
+    expect(bookableMinutes(TODAY, 9, afterBoth, { isAdmin: true })).toEqual([]);
+  });
+
+  it("flags exactly the slots that need a reason, and no others", () => {
+    // This predicate is what the form asks, so the reason box and the server's
+    // demand cannot disagree.
+    expect(slotNeedsCutoffOverride({ dayOffset: 0, hour: 15, minute: 0 }, afterBoth)).toBe(true);
+    // A return: exempt outright, no reason needed.
+    expect(
+      slotNeedsCutoffOverride({ dayOffset: 0, hour: 15, minute: 0 }, afterBoth, { isReturn: true })
+    ).toBe(false);
+    // Tomorrow: never gated.
+    expect(slotNeedsCutoffOverride({ dayOffset: 1, hour: 15, minute: 0 }, afterBoth)).toBe(false);
+    // Before the cut-off: nothing to override.
+    expect(slotNeedsCutoffOverride({ dayOffset: 0, hour: 15, minute: 0 }, at(13, 29))).toBe(false);
   });
 });

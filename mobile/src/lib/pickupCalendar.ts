@@ -37,6 +37,23 @@ import {
  * a future date.
  */
 
+/**
+ * Who is choosing, for B7's purposes.
+ *
+ *  - `isReturn` — HIS exemption ("anytime before 12am"), so the cut-off does
+ *    not apply at all;
+ *  - `isAdmin`  — the OVERRIDE (owner ruling, 12 Aug 2026). The slot is
+ *    offered, the server still demands a stated reason, and the reason is
+ *    audited. Not an exemption.
+ *
+ * Both default to false — restricted — so a caller that forgets shows fewer
+ * slots than the server would take rather than more.
+ */
+export interface CutoffOpts {
+  isReturn?: boolean;
+  isAdmin?: boolean;
+}
+
 /** Hours in CHRONOLOGICAL order (00…02, 07…23) rather than shift order. */
 const CHRONOLOGICAL_HOURS: readonly number[] = [...PICKUP_HOURS].sort((a, b) => a - b);
 
@@ -65,6 +82,20 @@ export function slotToDate(now: Date, slot: PickupSlot): Date {
   return d;
 }
 
+/**
+ * Would B7 refuse this slot for a REQUESTOR? — i.e. does an admin choosing it
+ * need to state an override reason? Pure, and the ONE predicate the form asks,
+ * so the reason box and the server's demand can never disagree.
+ */
+export function slotNeedsCutoffOverride(
+  slot: PickupSlot,
+  now: Date,
+  opts: { isReturn?: boolean } = {}
+): boolean {
+  if (dayOffsetOf(dateForOffset(now, slot.dayOffset), now) !== 0) return false;
+  return sessionIsClosed(slot.hour, now, opts.isReturn === true);
+}
+
 /** The last date the calendar will let you reach. */
 export function maxBookableDate(now: Date): Date {
   return dateForOffset(now, PICKUP_MAX_DAY_OFFSET);
@@ -82,8 +113,14 @@ export function maxBookableDate(now: Date): Date {
  * slot the server refuses, which is the failure this whole change exists to
  * prevent. Wrong in the harmless direction, by construction.
  */
-function sessionIsClosed(hour: number, now: Date, isReturn: boolean): boolean {
+function sessionIsClosed(hour: number, now: Date, isReturn: boolean, isAdmin = false): boolean {
   if (isReturn) return false; // "anytime before 12am" — his own exemption
+  // ⚠ AN ADMIN IS NOT EXEMPT — they may OVERRIDE, which is a different thing.
+  // The picker offers them the slot; the server still refuses it unless they
+  // state a reason, and that reason is audited. Hiding the slot from the office
+  // would remove roughly ten hours of same-day capacity a day (the working day
+  // runs to midnight) and urgent same-day work exists.
+  if (isAdmin) return false;
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const cutoff = hour * 60 < SESSION_SPLIT_MIN ? MORNING_CUTOFF_MIN : AFTERNOON_CUTOFF_MIN;
   return nowMinutes >= cutoff;
@@ -99,13 +136,13 @@ export function bookableMinutes(
   date: Date,
   hour: number,
   now: Date,
-  opts: { isReturn?: boolean } = {}
+  opts: CutoffOpts = {}
 ): number[] {
   if (!PICKUP_HOURS.includes(hour)) return [];
   const offset = dayOffsetOf(date, now);
   if (offset < 0 || offset > PICKUP_MAX_DAY_OFFSET) return [];
   if (offset > 0) return [...PICKUP_MINUTES];
-  if (sessionIsClosed(hour, now, opts.isReturn === true)) return [];
+  if (sessionIsClosed(hour, now, opts.isReturn === true, opts.isAdmin === true)) return [];
   if (hour > now.getHours()) return [...PICKUP_MINUTES];
   if (hour < now.getHours()) return [];
   return PICKUP_MINUTES.filter((m) => m > now.getMinutes());
@@ -113,12 +150,12 @@ export function bookableMinutes(
 
 /** The hours offered on one date — the window, minus anything already gone,
  *  minus any session B7 has closed for today. */
-export function bookableHours(date: Date, now: Date, opts: { isReturn?: boolean } = {}): number[] {
+export function bookableHours(date: Date, now: Date, opts: CutoffOpts = {}): number[] {
   return CHRONOLOGICAL_HOURS.filter((h) => bookableMinutes(date, h, now, opts).length > 0);
 }
 
 /** Is this calendar date reachable at all? False once its last slot has passed. */
-export function isDayBookable(date: Date, now: Date, opts: { isReturn?: boolean } = {}): boolean {
+export function isDayBookable(date: Date, now: Date, opts: CutoffOpts = {}): boolean {
   const offset = dayOffsetOf(date, now);
   if (offset < 0 || offset > PICKUP_MAX_DAY_OFFSET) return false;
   if (offset > 0) return true; // the whole window is ahead
@@ -143,7 +180,7 @@ export function isDayBookable(date: Date, now: Date, opts: { isReturn?: boolean 
 export function nextBookableSlot(
   now: Date = new Date(),
   leadMinutes = 60,
-  opts: { isReturn?: boolean } = {}
+  opts: CutoffOpts = {}
 ): PickupSlot {
   const earliest = new Date(now.getTime() + leadMinutes * 60_000);
   for (let dayOffset = 0; dayOffset <= PICKUP_MAX_DAY_OFFSET; dayOffset++) {
@@ -174,7 +211,7 @@ export function nextBookableSlot(
 export function clampSlotToDay(
   slot: PickupSlot,
   now: Date,
-  opts: { isReturn?: boolean } = {}
+  opts: CutoffOpts = {}
 ): PickupSlot {
   const date = dateForOffset(now, slot.dayOffset);
   const minutes = bookableMinutes(date, slot.hour, now, opts);

@@ -59,7 +59,13 @@ import {
   type BookingDraft,
 } from "../../lib/bookingSteps";
 import { pickupToSlot, tripRemarks, type PickupSlot } from "../../lib/bookingEdit";
-import { clampSlotToDay, nextBookableSlot, slotToDate } from "../../lib/pickupCalendar";
+import { useAuth } from "../../context/AuthContext";
+import {
+  clampSlotToDay,
+  nextBookableSlot,
+  slotNeedsCutoffOverride,
+  slotToDate,
+} from "../../lib/pickupCalendar";
 import { PickupSheet } from "../../components/PickupSheet";
 import {
   availableDirections,
@@ -285,12 +291,22 @@ export function BookingFormScreen() {
   // SERVER's six route types, not a new field — see lib/routeDirection. The
   // form still submits `route_type_id` from this list.
   const routeMatrix = useMemo(() => buildRouteMatrix(routeTypes as RouteType[]), [routeTypes]);
+  const { user } = useAuth();
   const selectedChoice = choiceForId(routeMatrix, routeTypeId);
   // B7 — a RETURN booking is exempt from the 08:30 / 13:30 cut-offs. Read from
   // the SELECTED route type rather than the `direction` toggle: the toggle can
   // sit on a pair that resolves to no route type, and the server decides on the
   // route type actually submitted.
   const isReturnBooking = selectedChoice?.direction === "return";
+  // B7 — an ADMIN booking through this form may place a same-day job past the
+  // cut-offs, on the record. The picker offers them the slot; the server still
+  // refuses it without a stated reason, so the box below is not optional
+  // decoration — it is the thing that makes the request succeed.
+  const isAdminBooking = user?.role === "admin";
+  const cutoffOpts = { isReturn: isReturnBooking, isAdmin: isAdminBooking };
+  const needsCutoffReason =
+    isAdminBooking && !isEdit && slotNeedsCutoffOverride(slot, new Date(), { isReturn: isReturnBooking });
+  const [cutoffReason, setCutoffReason] = useState("");
   // Held separately from the resolved id so the two controls stay independent:
   // picking a family before a direction is a legitimate half-made choice.
   const [family, setFamily] = useState<RouteFamily | undefined>();
@@ -311,8 +327,8 @@ export function BookingFormScreen() {
   // FORWARD onto a slot the picker itself would offer.
   useEffect(() => {
     if (isEdit) return; // an edit prefills a stored pickup; never move it silently
-    setSlot((current) => clampSlotToDay(current, new Date(), { isReturn: isReturnBooking }));
-  }, [isReturnBooking, isEdit]);
+    setSlot((current) => clampSlotToDay(current, new Date(), cutoffOpts));
+  }, [isReturnBooking, isAdminBooking, isEdit]);
 
   const chooseRoute = (nextFamily: RouteFamily, preferred: RouteDirection) => {
     setFamily(nextFamily);
@@ -571,6 +587,11 @@ export function BookingFormScreen() {
   const onNext = async () => {
     const err = validateStep();
     if (err) return setError(err);
+    // B7 — refuse locally rather than let the server 400 an admin who has
+    // already filled in the whole form. Same gate, said earlier.
+    if (isLastStep && needsCutoffReason && cutoffReason.trim().length < 3) {
+      return setError(t("booking.cutoffReasonRequired"));
+    }
     setError(null);
     if (!isLastStep) {
       setStep(step + 1);
@@ -584,6 +605,10 @@ export function BookingFormScreen() {
         pickup_datetime: pickupDate.toISOString(),
         stops: stops.map((c) => ({ consignee_id: c.id })),
         cargo_details: buildCargo(),
+        // B7 — only sent when an override is actually needed. The server
+        // ignores it otherwise and records nothing, so this can never become a
+        // way to attach free text to an ordinary booking.
+        ...(needsCutoffReason ? { cutoff_override_reason: cutoffReason.trim() } : {}),
       };
 
       if (isChangeRequest && editTripId) {
@@ -742,6 +767,8 @@ export function BookingFormScreen() {
           onPickPickup={() => setPickupOpen(true)}
           remarks={remarks}
           setRemarks={setRemarks}
+          cutoffReason={needsCutoffReason ? cutoffReason : null}
+          setCutoffReason={setCutoffReason}
         />
       )}
       {step === 3 && (
@@ -864,12 +891,13 @@ export function BookingFormScreen() {
         visible={pickupOpen}
         slot={slot}
         isReturn={isReturnBooking}
+        isAdmin={isAdminBooking}
         onConfirm={(next) => {
           slotTouched.current = true; // user's explicit choice — never auto-refresh over it
           // The sheet's own clock is a render old by the time Confirm lands;
           // re-clamp against NOW so a slot that expired while the sheet was
           // open cannot be committed and then rejected at submit.
-          setSlot(clampSlotToDay(next, new Date(), { isReturn: isReturnBooking }));
+          setSlot(clampSlotToDay(next, new Date(), cutoffOpts));
         }}
         onClose={() => setPickupOpen(false)}
       />
@@ -1542,11 +1570,18 @@ function StepWhen({
   onPickPickup,
   remarks,
   setRemarks,
+  cutoffReason,
+  setCutoffReason,
 }: {
   pickupDate: Date;
   onPickPickup: () => void;
   remarks: string;
   setRemarks: (v: string) => void;
+  /** B7 — non-null ONLY when an ADMIN has chosen a slot past a cut-off, i.e.
+   *  when the server will demand a stated reason. Null for everyone else, so
+   *  the box does not exist on the ordinary booking path at all. */
+  cutoffReason?: string | null;
+  setCutoffReason?: (v: string) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -1565,6 +1600,21 @@ function StepWhen({
         <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
       </TouchableOpacity>
       <Text style={styles.slotHint}>{t("booking.fleetHoursHint")}</Text>
+
+      {cutoffReason !== null && cutoffReason !== undefined && (
+        <>
+          <FieldLabel>{t("booking.cutoffReasonLabel")}</FieldLabel>
+          <TextInput
+            value={cutoffReason}
+            onChangeText={setCutoffReason}
+            placeholder={t("booking.cutoffReasonPlaceholder")}
+            placeholderTextColor={colors.textFaint}
+            style={styles.textarea}
+            maxLength={200}
+          />
+          <Text style={styles.slotHint}>{t("booking.cutoffReasonHint")}</Text>
+        </>
+      )}
 
       <FieldLabel>{t("booking.remarks")}</FieldLabel>
       <TextInput

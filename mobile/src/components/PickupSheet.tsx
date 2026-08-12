@@ -51,6 +51,7 @@ export function PickupSheet({
   slot,
   now,
   isReturn,
+  isAdmin,
   onConfirm,
   onClose,
 }: {
@@ -66,10 +67,16 @@ export function PickupSheet({
    * offer one the server refuses.
    */
   isReturn?: boolean;
+  /** B7 — an ADMIN is offered a closed slot (they may override on the server,
+   *  with a stated reason). Not an exemption; see pickupCalendar's CutoffOpts. */
+  isAdmin?: boolean;
   onConfirm: (slot: PickupSlot) => void;
   onClose: () => void;
 }) {
-  const cutoffOpts = useMemo(() => ({ isReturn: isReturn === true }), [isReturn]);
+  const cutoffOpts = useMemo(
+    () => ({ isReturn: isReturn === true, isAdmin: isAdmin === true }),
+    [isReturn, isAdmin]
+  );
   const { t } = useTranslation();
   const clock = useMemo(() => now ?? new Date(), [now, visible]);
 

@@ -44,7 +44,7 @@ async function routeTypeIdNamed(token: string, name: string): Promise<string> {
   return rt.id;
 }
 
-async function book(token: string, routeTypeId: string, pickup: Date) {
+async function book(token: string, routeTypeId: string, pickup: Date, overrideReason?: string) {
   const c = await ensureConsigneeInZone("P1");
   return api()
     .post("/api/v1/trips")
@@ -54,6 +54,7 @@ async function book(token: string, routeTypeId: string, pickup: Date) {
       pickup_datetime: pickup.toISOString(),
       stops: [{ consignee_id: c.id }],
       cargo_details: [{ pallet_type: "4×4", quantity: 1 }],
+      ...(overrideReason ? { cutoff_override_reason: overrideReason } : {}),
     });
 }
 
@@ -129,15 +130,82 @@ describe("B7 — booking cut-offs at the route", () => {
     expect((await book(requestor, ret, myt(23, 30))).status).toBe(201);
   });
 
-  it("does not bind an ADMIN — the office IS the dispatcher", async () => {
-    // ⚠ A judgement, not something Mr. Teh said. Same reasoning that leaves
-    // manual assignment ungated everywhere else. Stated here so it is visible
-    // rather than buried in the route.
+  /**
+   * THE ADMIN OVERRIDE (owner ruling, 12 Aug 2026).
+   *
+   * Read literally, B7 removes ALL same-day booking after 13:30 while the
+   * working day runs to midnight — about ten hours of capacity the office could
+   * not use, and urgent same-day work exists (Mr. Teh's own Sheet1: "CONQUEST
+   * (est 2 pallet P7 URGENT"). The rule binds the REQUESTOR; the admin steps
+   * outside it on the record. Same shape as email pt 6 (admin authorises
+   * cross-class swaps), R3 A7 (admin decides when the fleet is full) and A19
+   * (admin edits at every status).
+   */
+  it("REFUSES an admin who gives no reason — an override must be deliberate", async () => {
+    // This is what keeps it an override rather than an exemption. An admin who
+    // lands here by accident is stopped exactly as a requestor is.
     const admin = await loginAs(ADMIN);
     const delivery = await routeTypeIdNamed(admin, "Customer Delivery");
 
     freeze(myt(14, 0));
-    expect((await book(admin, delivery, myt(15, 0))).status).toBe(201);
+    const res = await book(admin, delivery, myt(15, 0));
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("CUTOFF_OVERRIDE_REASON_REQUIRED");
+    expect(res.body.error.message).toContain("give a reason");
+    expect(await prisma.trip.count()).toBe(0);
+  });
+
+  it("ALLOWS an admin who gives one, and writes WHO and WHY", async () => {
+    const admin = await loginAs(ADMIN);
+    const delivery = await routeTypeIdNamed(admin, "Customer Delivery");
+
+    freeze(myt(14, 0));
+    const res = await book(admin, delivery, myt(15, 0), "CONQUEST urgent, 2 pallets to P7");
+    expect(res.status).toBe(201);
+
+    // WHO: an audit row under its own action, so this is a query rather than a
+    // scan of free text.
+    const rows = await prisma.auditLog.findMany({
+      where: { action: "trip.cutoff_override", record_id: res.body.id },
+      select: { user_id: true },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].user_id).toBe((await prisma.user.findFirstOrThrow({ where: { role: "admin" } })).id);
+
+    // WHY: on the trip's own immutable timeline, where the admin trip detail
+    // already renders it.
+    const events = await prisma.tripStatusHistory.findMany({ where: { trip_id: res.body.id } });
+    expect(events).toHaveLength(1);
+    expect(events[0].note).toBe(
+      "Admin override: booked past the 1:30pm afternoon cut-off — CONQUEST urgent, 2 pallets to P7"
+    );
+  });
+
+  it("does NOT record an override when nothing was overridden", async () => {
+    // A reason sent on an ordinary booking must not become free text attached
+    // to the trip, nor a spurious audit row implying a rule was bypassed.
+    const admin = await loginAs(ADMIN);
+    const delivery = await routeTypeIdNamed(admin, "Customer Delivery");
+
+    freeze(myt(9, 0)); // afternoon still open
+    const res = await book(admin, delivery, myt(15, 0), "not actually needed");
+    expect(res.status).toBe(201);
+    expect(
+      await prisma.auditLog.count({ where: { action: "trip.cutoff_override", record_id: res.body.id } })
+    ).toBe(0);
+    const events = await prisma.tripStatusHistory.findMany({ where: { trip_id: res.body.id } });
+    expect(events[0].note).toBeNull();
+  });
+
+  it("a REQUESTOR cannot override, whatever reason they send", async () => {
+    const requestor = await loginAs(REQUESTOR);
+    const delivery = await routeTypeIdNamed(requestor, "Customer Delivery");
+
+    freeze(myt(14, 0));
+    const res = await book(requestor, delivery, myt(15, 0), "please, it is urgent");
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("PICKUP_AFTER_CUTOFF"); // not the override path
+    expect(await prisma.trip.count()).toBe(0);
   });
 
   it("binds an EDIT that MOVES the pickup, so the rule cannot be walked around", async () => {

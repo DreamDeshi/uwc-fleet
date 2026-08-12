@@ -30,7 +30,7 @@ import {
 } from "../services/tripCompletion";
 import { otDemotionReason, resolveLastTripOt } from "../services/lastTripOt";
 import { isInterplantRouteType, isReturnRouteType } from "../lib/uwcSpec";
-import { bookingCutoffVerdict, cutoffMessage } from "../lib/bookingCutoff";
+import { bookingCutoffVerdict, cutoffMessage, cutoffOverrideNote } from "../lib/bookingCutoff";
 import {
   truckRateSnapshot,
   finalizationRateParams,
@@ -293,6 +293,13 @@ export const createTripSchema = z.object({
       message: "Pickup time is in the past.",
     }),
   is_external: z.boolean().optional(),
+  /**
+   * B7 — an ADMIN's stated reason for booking past a cut-off. Ignored for a
+   * requestor (who is bound by the rule) and ignored when nothing was
+   * overridden, so it can never be a way to attach free text to an ordinary
+   * booking. Bounded like every other free-text field here.
+   */
+  cutoff_override_reason: z.string().trim().min(3).max(200).optional(),
   stops: z
     .array(
       z.object({
@@ -310,7 +317,7 @@ router.post(
   validateBody(createTripSchema),
   async (req, res, next) => {
     try {
-      const { client_request_id, route_type_id, pickup_datetime, is_external, stops, cargo_details } =
+      const { client_request_id, route_type_id, pickup_datetime, is_external, stops, cargo_details, cutoff_override_reason } =
         req.body;
 
       // ── DG-T7 idempotency, fast path ──────────────────────────────────────
@@ -350,7 +357,8 @@ router.post(
       // supplier / customer, they can choose pickup anytime before 12am") — see
       // isReturnRouteType for why ALL returns, including interplant, are taken
       // as exempt rather than only the two he named.
-      if (req.user!.role === "requestor") {
+      let cutoffOverride: string | null = null;
+      {
         const verdict = bookingCutoffVerdict({
           now: new Date(),
           pickup: pickup_datetime,
@@ -358,7 +366,21 @@ router.post(
           holidays: await loadHolidaySet(),
         });
         if (!verdict.allowed) {
-          throw new ApiError(400, "PICKUP_AFTER_CUTOFF", cutoffMessage(verdict));
+          if (req.user!.role !== "admin") {
+            throw new ApiError(400, "PICKUP_AFTER_CUTOFF", cutoffMessage(verdict));
+          }
+          // ⚠ THE REASON IS WHAT MAKES THIS AN OVERRIDE RATHER THAN AN
+          // EXEMPTION. An admin who lands here by accident is refused; one who
+          // means it says why, and the why is recorded on the trip's own
+          // timeline (below) beside an audit row naming them.
+          if (!cutoff_override_reason) {
+            throw new ApiError(
+              400,
+              "CUTOFF_OVERRIDE_REASON_REQUIRED",
+              `${cutoffMessage(verdict)} To book it anyway, give a reason.`
+            );
+          }
+          cutoffOverride = cutoffOverrideNote(verdict, cutoff_override_reason);
         }
       }
 
@@ -467,7 +489,28 @@ router.post(
       await prisma.auditLog.create({
         data: { user_id: req.user!.id, action: "trip.created", table_name: "Trip", record_id: trip.id },
       });
-      await recordTripEvent(prisma, { tripId: trip.id, event: "booked", actorId: req.user!.id });
+      // B7 override: a SECOND audit row under its own action, so "who booked
+      // past a cut-off, and when" is a query rather than a scan of notes — and
+      // the reason itself on the trip's immutable timeline, where the admin
+      // trip detail already renders it. `TripEvent` is a Prisma enum and adding
+      // a value is a migration, so the override rides on `booked` and is
+      // identified by its note.
+      if (cutoffOverride) {
+        await prisma.auditLog.create({
+          data: {
+            user_id: req.user!.id,
+            action: "trip.cutoff_override",
+            table_name: "Trip",
+            record_id: trip.id,
+          },
+        });
+      }
+      await recordTripEvent(prisma, {
+        tripId: trip.id,
+        event: "booked",
+        actorId: req.user!.id,
+        note: cutoffOverride,
+      });
 
       // Fully-automatic mode: run the dispatch engine immediately so the booking
       // is assigned the moment it's submitted. Best-effort — if no truck fits the
