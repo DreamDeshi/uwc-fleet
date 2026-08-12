@@ -84,13 +84,18 @@ export interface OtDemotion {
  * derivation that quietly stops being true the moment anything else is withheld,
  * and its failure mode is "leave the proposal standing", which is invisible.
  *
- * ⚠ THE ONE CASE THE POINTS CANNOT EXPRESS, and it is live: an INTERPLANT trip
- * post-R5 A2. The round-trip halving withholds points, and that shortfall has
- * nowhere to be stored — `roundTripShortfall` is computed and dropped, which is
- * open item IM10. On such a trip Σ points_awarded OVERSTATES what was paid. So
- * the money quotient stays as a second candidate, and the identity check below
- * is what decides between them rather than a guess. When IM10's column lands,
- * the points path covers interplant too and the fallback stops being reachable.
+ * ⚠ THE CASE THE POINTS COULD NOT EXPRESS — CLOSED 12 Aug 2026. An INTERPLANT
+ * trip post-R5 A2 has points withheld by the round-trip halving, and that
+ * shortfall used to be computed and dropped (IM10), so Σ points_awarded
+ * OVERSTATED what was paid and the identity check pushed every such trip onto
+ * the money quotient. `Trip.round_trip_shortfall` now stores it and
+ * `persistedPaidPoints` subtracts it, so the STORED path covers interplant too.
+ *
+ * The money quotient stays anyway, for trips finalized before that column and
+ * for any shape neither term describes. It is now a fallback that should not
+ * fire in normal operation rather than one interplant relies on — if you see
+ * `source: "money"` on a trip finalized after 12 Aug 2026, something is wrong
+ * with the stored evidence and it is worth knowing.
  *
  * Neither candidate is trusted on its own: whichever is used must satisfy
  * `points × rate_used == incentive_earned` to the cent. If neither does, the
@@ -99,10 +104,22 @@ export interface OtDemotion {
  */
 const CENT = 0.005;
 
-/** Σ points_awarded − deduction_applied, or null if a stop was never scored. */
+/**
+ * Σ points_awarded − deduction_applied − round_trip_shortfall, or null if a stop
+ * was never scored.
+ *
+ * ⚠ THE SHORTFALL TERM IS WHAT MAKES THIS WORK ON INTERPLANT. R5 A2 withholds
+ * points that the stops still record as scored, so without it this sum
+ * OVERSTATES an interplant trip and the identity check below rejects it — which
+ * is what forced the money-quotient fallback (IM10). `?? 0` for a trip finalized
+ * before the column existed: that is exactly the pre-column behaviour, and if it
+ * is wrong for such a trip the identity check still catches it rather than
+ * paying on a guess.
+ */
 export function persistedPaidPoints(trip: {
   stops: { points_awarded: number | null; delivered_at: Date | null }[];
   deduction_applied: number | null;
+  round_trip_shortfall?: number | null;
 }): number | null {
   let total = 0;
   for (const s of trip.stops) {
@@ -115,7 +132,7 @@ export function persistedPaidPoints(trip: {
     }
     total += s.points_awarded;
   }
-  return total - (trip.deduction_applied ?? 0);
+  return total - (trip.deduction_applied ?? 0) - (trip.round_trip_shortfall ?? 0);
 }
 
 /** The money quotient — the fallback, and only where it proves itself. */
@@ -181,6 +198,7 @@ export async function resolveLastTripOt(
       entitled_claim_weekday: true,
       entitled_claim_offpeak: true,
       deduction_applied: true,
+      round_trip_shortfall: true,
       truck: { select: { entitled_claim_weekday: true, entitled_claim_offpeak: true } },
       stops: { select: { delivered_at: true, points_awarded: true } },
     },

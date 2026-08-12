@@ -116,6 +116,7 @@ function anchorBreakdown(): FinalizeBreakdown {
         rateUsed: 11,
         isOffPeak: false,
         deductionApplied: 2,
+        roundTripShortfall: 0,
       },
     },
   ]);
@@ -157,10 +158,50 @@ describe("proposeTripIncentiveOnce (POD-approval gate: write-once propose)", () 
       rate_used: 11,
       off_peak: false,
       deduction_applied: 2,
+      // Recorded as 0, not absent: customer work withholds nothing, and a
+      // reader must be able to tell that from "finalized before the column".
+      round_trip_shortfall: 0,
     });
     // No incentive_final yet — payroll counts only `completed` trips.
     expect(row.incentive_final).toBeUndefined();
     expect(stopRows["s1"]).toEqual({ points_awarded: 6, was_repeat: false, zone_code: "A2" });
+  });
+
+  /**
+   * R5 A2 (IM10) — the withheld points must reach the Trip row, or the driver's
+   * breakdown cannot explain a RM0 leg and A4 cannot read an interplant trip's
+   * paid points from stored evidence.
+   */
+  it("carries the round-trip shortfall onto the trip, SUMMED across day groups", () => {
+    // The midnight straddler: one booking, two delivery-day groups, each with a
+    // lone interplant leg it could not pair. Same shape as the deduction — each
+    // group withheld its own day's figure, so they add.
+    const breakdown = collectFinalizeBreakdown([
+      {
+        stops: [{ id: "s1", zoneCode: "P2" }],
+        result: { dropPoints: [1], wasRepeat: [false], rateUsed: 6, isOffPeak: false, deductionApplied: 0, roundTripShortfall: 1 },
+      },
+      {
+        stops: [{ id: "s2", zoneCode: "P2" }],
+        result: { dropPoints: [1], wasRepeat: [false], rateUsed: 6, isOffPeak: false, deductionApplied: 0, roundTripShortfall: 1 },
+      },
+    ]);
+    expect(breakdown.tripData.round_trip_shortfall).toBe(2);
+    // Both legs still SCORED — the points are on the record, the pay is not.
+    expect(breakdown.stopRows.map((r) => r.points_awarded)).toEqual([1, 1]);
+  });
+
+  it("records a ZERO shortfall on customer work — recorded, not absent", () => {
+    // `null` means "finalized before the column"; 0 means "measured, nothing
+    // withheld". Every customer/supplier trip must write the 0, so a future
+    // reader can tell the two apart.
+    const breakdown = collectFinalizeBreakdown([
+      {
+        stops: [{ id: "s1", zoneCode: "A2" }],
+        result: { dropPoints: [6], wasRepeat: [false], rateUsed: 11, isOffPeak: false, deductionApplied: 2, roundTripShortfall: 0 },
+      },
+    ]);
+    expect(breakdown.tripData.round_trip_shortfall).toBe(0);
   });
 
   it("a second proposal loses and never overwrites the stored proposal OR evidence", async () => {
@@ -169,7 +210,7 @@ describe("proposeTripIncentiveOnce (POD-approval gate: write-once propose)", () 
     const rerun = collectFinalizeBreakdown([
       {
         stops: [{ id: "s1", zoneCode: "A2" }],
-        result: { dropPoints: [6], wasRepeat: [false], rateUsed: 13, isOffPeak: true, deductionApplied: 0 },
+        result: { dropPoints: [6], wasRepeat: [false], rateUsed: 13, isOffPeak: true, deductionApplied: 0, roundTripShortfall: 0 },
       },
     ]);
     expect(await proposeTripIncentiveOnce(client, "t1", 66, rerun)).toBe(false);
@@ -356,6 +397,7 @@ describe("collectFinalizeBreakdown (the engine's outputs → persisted evidence)
           rateUsed: 11,
           isOffPeak: false,
           deductionApplied: 2,
+          roundTripShortfall: 0,
         },
       },
     ]);
@@ -364,24 +406,24 @@ describe("collectFinalizeBreakdown (the engine's outputs → persisted evidence)
       { id: "s2", points_awarded: 3, was_repeat: false, zone_code: "K1" },
       { id: "s3", points_awarded: 1, was_repeat: true, zone_code: "A2" },
     ]);
-    expect(b.tripData).toEqual({ rate_used: 11, off_peak: false, deduction_applied: 2 });
+    expect(b.tripData).toEqual({ rate_used: 11, off_peak: false, deduction_applied: 2, round_trip_shortfall: 0 });
   });
 
   it("midnight-straddler (two day groups): per-stop rows exact, trip-level tier NULL, deductions sum", () => {
     const b = collectFinalizeBreakdown([
       {
         stops: [{ id: "s1", zoneCode: "A2" }],
-        result: { dropPoints: [6], wasRepeat: [false], rateUsed: 13, isOffPeak: true, deductionApplied: 2 },
+        result: { dropPoints: [6], wasRepeat: [false], rateUsed: 13, isOffPeak: true, deductionApplied: 2, roundTripShortfall: 0 },
       },
       {
         stops: [{ id: "s2", zoneCode: "K1" }],
-        result: { dropPoints: [3], wasRepeat: [false], rateUsed: 11, isOffPeak: false, deductionApplied: 2 },
+        result: { dropPoints: [3], wasRepeat: [false], rateUsed: 11, isOffPeak: false, deductionApplied: 2, roundTripShortfall: 0 },
       },
     ]);
     expect(b.stopRows.map((s) => s.points_awarded)).toEqual([6, 3]);
     // A single trip-level rate would be wrong for half the drops → NULL, while
     // each group's own-day deduction is well-defined and sums.
-    expect(b.tripData).toEqual({ rate_used: null, off_peak: null, deduction_applied: 4 });
+    expect(b.tripData).toEqual({ rate_used: null, off_peak: null, deduction_applied: 4, round_trip_shortfall: 0 });
   });
 });
 

@@ -41,6 +41,11 @@ export const REQUESTOR_HIDDEN_MONEY_FIELDS: ReadonlySet<string> = new Set([
   "entitled_claim_offpeak",
   "daily_deduction_points",
   "deduction_applied",
+  // Trip: points WITHHELD by the interplant round-trip halving (R5 A2). Same
+  // class as `deduction_applied` — it is a term in the driver's pay arithmetic,
+  // and together with the per-stop points it reconstructs what he was paid. A
+  // requestor has no business with any of it.
+  "round_trip_shortfall",
   // Trip: the APPROVAL story. `incentive_override_reason` is required whenever
   // the approved figure differs from the proposal (POD-approval gate, 16 Jul
   // 2026), so it is free-text disciplinary judgement — "driver damaged pallet,

@@ -207,6 +207,102 @@ describe("R5 A4 - reading the persisted points", () => {
       })
     ).toBe(4);
   });
+
+  /**
+   * ⚠ THE INTERPLANT CASE — the one this reading could not express until
+   * `Trip.round_trip_shortfall` was persisted (IM10, 12 Aug 2026).
+   *
+   * R5 A2 withholds points that the STOPS still record as scored. Without the
+   * shortfall term the sum overstates what was paid, the identity check
+   * downstream rejects it, and every interplant trip fell through to the money
+   * quotient. These cases are what make the stored path cover interplant too.
+   */
+  it("subtracts the points HELD BACK by the round-trip halving", () => {
+    // A day's first interplant leg: 1 point scored, 1 withheld, 0 paid for.
+    expect(
+      persistedPaidPoints({
+        stops: [{ points_awarded: 1, delivered_at: DELIVERED }],
+        deduction_applied: 0,
+        round_trip_shortfall: 1,
+      })
+    ).toBe(0);
+    // Without the term this reads 1 — the overstatement that forced the fallback.
+    expect(
+      persistedPaidPoints({
+        stops: [{ points_awarded: 1, delivered_at: DELIVERED }],
+        deduction_applied: 0,
+      })
+    ).toBe(1);
+  });
+
+  it("applies the deduction AND the shortfall together", () => {
+    // 7 scored, 2 to the deduction, 3 held by the halving → paid for 2.
+    expect(
+      persistedPaidPoints({
+        stops: [{ points_awarded: 7, delivered_at: DELIVERED }],
+        deduction_applied: 2,
+        round_trip_shortfall: 3,
+      })
+    ).toBe(2);
+  });
+
+  it("treats a missing shortfall column as zero — every trip finalized before it", () => {
+    expect(
+      persistedPaidPoints({
+        stops: [{ points_awarded: 3, delivered_at: DELIVERED }],
+        deduction_applied: 2,
+        round_trip_shortfall: null,
+      })
+    ).toBe(1);
+  });
+});
+
+/**
+ * The end the column was added for: an interplant trip's OT demotion is now
+ * priced from STORED evidence rather than from dividing money by the rate.
+ */
+describe("R5 A4 x A2 - an interplant trip prices from stored points", () => {
+  const INTERPLANT_OFFPEAK = 8;
+  const INTERPLANT_WEEKDAY = 6;
+
+  it("uses the STORED source on a leg that was paid, not the money quotient", () => {
+    // One leg of a pair: 1 point scored, 0 withheld, so it was paid for 1 point
+    // at the off-peak interplant rate.
+    const priced = weekdayEquivalent({
+      proposed: 1 * INTERPLANT_OFFPEAK,
+      rateUsed: INTERPLANT_OFFPEAK,
+      weekdayRate: INTERPLANT_WEEKDAY,
+      storedPoints: persistedPaidPoints({
+        stops: [{ points_awarded: 1, delivered_at: DELIVERED }],
+        deduction_applied: 0,
+        round_trip_shortfall: 0,
+      }),
+    });
+    expect(priced).toEqual({ amount: INTERPLANT_WEEKDAY, points: 1, source: "stored" });
+  });
+
+  it("a MULTI-LEG interplant trip agrees on the stored reading too", () => {
+    // 3 legs in one booking, prior 0: floor(3/2) = 1 round trip paid, 1 point
+    // withheld... and the stops still add up to 3. Before the column, stored
+    // said 3 while the money said 1, so `source` came back "money".
+    const priced = weekdayEquivalent({
+      proposed: 1 * INTERPLANT_OFFPEAK,
+      rateUsed: INTERPLANT_OFFPEAK,
+      weekdayRate: INTERPLANT_WEEKDAY,
+      storedPoints: persistedPaidPoints({
+        stops: [
+          { points_awarded: 1, delivered_at: DELIVERED },
+          { points_awarded: 1, delivered_at: DELIVERED },
+          { points_awarded: 1, delivered_at: DELIVERED },
+        ],
+        deduction_applied: 0,
+        round_trip_shortfall: 2,
+      }),
+    });
+    expect(priced?.source).toBe("stored");
+    expect(priced?.points).toBe(1);
+    expect(priced?.amount).toBe(INTERPLANT_WEEKDAY);
+  });
 });
 
 

@@ -330,6 +330,22 @@ export function TripDetailsScreen() {
                       </Text>
                     </View>
                   ) : null}
+                  {/* R5 A2 (IM10) — the line that explains RM0. Interplant pays
+                      per COMPLETED ROUND TRIP, so the day's first leg earns
+                      nothing and the pay lands on the return. Without this row
+                      the card shows a delivered stop worth points and a total of
+                      zero, which reads as the system having lost his money. It
+                      renders only when something was actually withheld, so no
+                      customer/supplier trip ever grows a line about interplant
+                      rules. */}
+                  {breakdown.roundTripShortfall !== null && breakdown.roundTripShortfall > 0 ? (
+                    <View style={styles.breakdownRow}>
+                      <Text style={styles.breakdownName}>{t("trip.payBreakdownRoundTripHeld")}</Text>
+                      <Text style={styles.breakdownPts}>
+                        −{t("trip.payBreakdownPts", { pts: breakdown.roundTripShortfall })}
+                      </Text>
+                    </View>
+                  ) : null}
                   <View style={[styles.breakdownRow, styles.breakdownTotalRow]}>
                     <Text style={styles.breakdownTotalLabel}>{t("trip.payBreakdownTotal")}</Text>
                     <Text style={styles.breakdownTotalPts}>

@@ -60,6 +60,26 @@ enum ExceptionCategory {
   documentation // E. Documentation Problem (missing/wrong POD, customs rejected)
 }
 
+// C9 (IM12) — WHICH canned phrase the driver tapped, as a CODE.
+//
+// Mr. Teh's C9 answer is "OPTION B": the requestor sees the reason, and his
+// example — "nobody at site to receive" — is one of these four, not one of the
+// five categories. The four exist already in the driver's sheet (design frame
+// 19) but only ever APPENDED text to `reason`, which is free text and therefore
+// unshowable to a requestor: 2000 characters of a driver's own words at a locked
+// gate can name other customers, other jobs, or his opinion of the site. The
+// requestor's redacted contract is category + coarse status + timestamps.
+//
+// A code is redactable and translatable, so it can cross that line where the
+// sentence it came from cannot. The free text stays exactly where it is and
+// stays internal.
+enum ExceptionCannedReason {
+  gate_locked
+  nobody_at_site
+  site_closed
+  wrong_address
+}
+
 // Admin decision after an exception (Teh's button set). `return_cargo` is a
 // RESOLUTION value, not a TripStatus. Phase 1 EXECUTES only `resume` and `retry`
 // (both keep the trip in_progress and change no pay/capacity); the others are
@@ -329,6 +349,27 @@ model Trip {
   rate_used                 Decimal?       @db.Decimal(10, 2) // RM/point actually paid
   off_peak                  Boolean? // which tier picked rate_used
   deduction_applied         Int? // deduction points actually subtracted (may be < the truck's figure when floored at 0)
+  // R5 A2 (IM10) — points this trip SCORED but was not PAID for, because the
+  // day's interplant legs do not yet make up whole round trips. The engine has
+  // always computed it (`roundTripShortfall`); it had nowhere to be stored, and
+  // that gap cost twice over:
+  //   • the driver's pay breakdown renders only from finalize evidence, so the
+  //     day's first interplant leg reads RM0 against a delivered stop with no
+  //     line explaining it — the first place in this system where completed work
+  //     legitimately earns nothing;
+  //   • A4 (last-trip OT) recovers a trip's PAID points as
+  //     Σ points_awarded − deduction_applied, which OVERSTATES an interplant
+  //     trip by exactly this figure, forcing it onto the money-quotient
+  //     fallback. With this column the stored-points path covers interplant too.
+  // 0 on every customer/supplier trip and on any interplant trip that completes
+  // its pair. NULL means NOT RECORDED (finalized before this column existed) —
+  // deliberately distinguishable from a recorded zero, and never backfilled: no
+  // interplant trip has ever been finalized in production, so there is nothing
+  // to reconstruct and a guessed value would be indistinguishable from a
+  // measured one. Kept OUT of deduction_applied: interplant is the one work type
+  // with no deduction, so folding them would print a deduction the client says
+  // does not exist.
+  round_trip_shortfall      Int?
   // POD-approval gate (Mr. Teh 16 Jul 2026): `incentive_earned` above is the
   // engine's PROPOSAL, computed and frozen when the last stop is delivered (the
   // trip then sits `pending_approval`). At admin approval `incentive_final` is
@@ -577,6 +618,12 @@ model TripException {
   request_fingerprint  String?
   category             ExceptionCategory
   reason               String // driver's free-text at report
+  // C9 (IM12) — the canned phrase the driver tapped, if he tapped one. NULL when
+  // he only typed. This is the ONLY reason-bearing field a requestor may be
+  // shown at finer grain than the category; `reason` above never crosses that
+  // line. Additive and never backfilled: a report filed before this column
+  // simply has no code, and the banner falls back to the category wording.
+  canned_reason        ExceptionCannedReason?
   reported_by          String // driver User id (no FK — matches TripStatusHistory.actor_id)
   reported_at          DateTime             @default(now()) // SERVER receipt — immutable
   client_reported_at   DateTime? // device capture time (offline gap)

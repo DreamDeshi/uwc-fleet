@@ -57,19 +57,30 @@ async function interplantRouteTypeId(token: string): Promise<string> {
 }
 
 /** Book → assign to the interplant lorry → start → deliver its single P2 stop. */
-async function runOneLeg(): Promise<{ incentive: number; rate: number; points: number }> {
+async function runOneLeg(): Promise<{
+  incentive: number;
+  rate: number;
+  points: number;
+  shortfall: number | null;
+}> {
   const trip = await bookTrip(requestor, ["P2"], interplantRt);
   await approveTrip(admin, trip.id, driverId, TRUCK, true);
   await startTrip(driver, trip.id);
   await arriveAndDeliver(driver, trip.id, trip.stops[0].id);
   const row = await prisma.trip.findUniqueOrThrow({
     where: { id: trip.id },
-    select: { incentive_earned: true, rate_used: true, stops: { select: { points_awarded: true } } },
+    select: {
+      incentive_earned: true,
+      rate_used: true,
+      round_trip_shortfall: true,
+      stops: { select: { points_awarded: true } },
+    },
   });
   return {
     incentive: num(row.incentive_earned),
     rate: num(row.rate_used),
     points: row.stops.reduce((sum, s) => sum + (s.points_awarded ?? 0), 0),
+    shortfall: row.round_trip_shortfall,
   };
 }
 
@@ -100,6 +111,10 @@ describe("interplant round trips — what the driver is actually paid", () => {
     expect(leg.points).toBe(1);
     // But a single leg is half a round trip, and half a round trip pays nothing.
     expect(leg.incentive).toBe(0);
+    // ⚠ IM10: and the WHY is now on the row. Without this the driver's
+    // breakdown shows a delivered stop worth 1 point above a total of RM0 and
+    // nothing to explain the gap. `1`, not null — null means "not recorded".
+    expect(leg.shortfall).toBe(1);
   });
 
   it("the return leg pays the whole round trip, ONCE across the two legs", async () => {
@@ -115,6 +130,9 @@ describe("interplant round trips — what the driver is actually paid", () => {
     // rule unwired too, because one unhalved leg also pays exactly one rate. Two
     // legs paying one rate BETWEEN them is what only the halving produces.
     expect(await paidToday()).toBe(back.rate);
+    // The leg that PAID withheld nothing — 0, recorded, so the breakdown grows
+    // no "held back" line on it.
+    expect(back.shortfall).toBe(0);
   });
 
   it("a third leg waits for its pair — the day stays at whole round trips", async () => {

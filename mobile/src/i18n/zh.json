@@ -146,6 +146,7 @@
     "payBreakdownTotal": "总分数",
     "payBreakdownRepeat": "（重复）",
     "payBreakdownDeduction": "每日扣分",
+    "payBreakdownRoundTripHeld": "保留至回程（往返一趟才计酬）",
     "payBreakdownRate": "费率：每分 RM {{rate}}",
     "payAdjustedTitle": "审批时薪酬已调整",
     "payAdjustedAmounts": "拟定 RM {{proposed}} → 最终 RM {{final}}",

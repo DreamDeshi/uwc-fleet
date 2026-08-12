@@ -200,6 +200,10 @@ export interface Trip {
   // Null = finalized pre-feature. The server has always shipped these.
   rate_used?: string | number | null;
   deduction_applied?: number | null;
+  // R5 A2 (IM10) — points withheld because the day's interplant legs do not yet
+  // make up whole round trips. 0 on customer/supplier work; null = finalized
+  // before the column. This is what lets the breakdown explain a RM0 leg.
+  round_trip_shortfall?: number | null;
   is_external: boolean;
   rejection_reason?: string | null;
   created_at: string;
