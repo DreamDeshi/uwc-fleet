@@ -366,6 +366,23 @@ describe("queued photos are moved out of the evictable cache", () => {
  * (3 Jul, 26 Jul, 2 Aug 2026), and a driver holding a queued POD across any of
  * them would have had the only copy of that delivery's proof destroyed by his
  * own phone, at the first flush after the wipe, on a 404 that means "gone".
+ *
+ * ⚠ EVERY CASE HERE ALSO ASSERTS THE ATTEMPT, not just the outcome.
+ *
+ * Writing these, the mock was first spelled `uploadPhoto` where PodOutboxApi
+ * says `uploadPod`. That left the real method undefined, so the call threw a
+ * TypeError, the item was merely KEPT — and "kept" is what a weaker version of
+ * these cases would have happily asserted. A green test that never reached the
+ * upload at all.
+ *
+ * It is the fifth shape of the same failure this repo has met: a suite that
+ * agrees with you instead of exercising you (see AGENTS.md — the vacuous scan,
+ * the tautological pin, the unreached branch, the hazard test that avoids the
+ * hazard). The general fix is not another rule: A TEST THAT ASSERTS AN OUTCOME
+ * SHOULD ALSO ASSERT THE ATTEMPT, so a mock that never runs FAILS rather than
+ * agreeing. `expect(api.uploadPod).toHaveBeenCalled()` is that assertion here,
+ * and it is what makes the negative case below (orphaned === 0) mean anything:
+ * without it, a never-called mock produces exactly that number.
  */
 describe("DG-D6 — an unuploadable POD is quarantined, not destroyed", () => {
   const STALE = Object.assign(new Error("gone"), { response: { data: { error: { code: "TRIP_NOT_FOUND" } } } });
@@ -400,8 +417,10 @@ describe("DG-D6 — an unuploadable POD is quarantined, not destroyed", () => {
 
   it("writes the item — PHOTO INCLUDED — to a scoped quarantine key", async () => {
     mockStorage.getItem.mockResolvedValue(JSON.stringify([QUEUED]));
-    const res = await flushPodOutbox(staleApi() as never);
+    const api = staleApi();
+    const res = await flushPodOutbox(api as never);
 
+    expect(api.uploadPod).toHaveBeenCalled(); // the attempt, not just the outcome
     expect(res.orphaned).toBe(1);
     const writes = quarantineWrites();
     expect(writes).toHaveLength(1);
@@ -415,8 +434,10 @@ describe("DG-D6 — an unuploadable POD is quarantined, not destroyed", () => {
 
   it("still removes it from the LIVE queue — quarantined is not stuck", async () => {
     mockStorage.getItem.mockResolvedValue(JSON.stringify([QUEUED]));
-    await flushPodOutbox(staleApi() as never);
+    const api = staleApi();
+    await flushPodOutbox(api as never);
 
+    expect(api.uploadPod).toHaveBeenCalled();
     const live = writesTo(KEY);
     expect(live.length).toBeGreaterThan(0);
     expect(JSON.parse(String(live[live.length - 1][1]))).toEqual([]);
@@ -427,8 +448,10 @@ describe("DG-D6 — an unuploadable POD is quarantined, not destroyed", () => {
     // a duplicate (recoverable); interrupted the other way round leaves the
     // item deleted and unquarantined, which is the bug.
     mockStorage.getItem.mockResolvedValue(JSON.stringify([QUEUED]));
-    await flushPodOutbox(staleApi() as never);
+    const api = staleApi();
+    await flushPodOutbox(api as never);
 
+    expect(api.uploadPod).toHaveBeenCalled();
     const keys = mockStorage.setItem.mock.calls.map((c) => String(c[0]));
     expect(keys.findIndex((k) => k.includes(".podOutbox.orphaned."))).toBeLessThan(
       keys.lastIndexOf(KEY)
@@ -445,6 +468,10 @@ describe("DG-D6 — an unuploadable POD is quarantined, not destroyed", () => {
       .mockRejectedValue(Object.assign(new Error("boom"), { response: { data: { error: { code: "INTERNAL" } } } }));
 
     const res = await flushPodOutbox(api as never);
+    // ⚠ THE ATTEMPT FIRST. `orphaned === 0` is exactly what a mock that never
+    // ran would produce, so without this line the negative case agrees with a
+    // broken harness instead of proving the 500 was seen and not quarantined.
+    expect(api.uploadPod).toHaveBeenCalled();
     expect(res.orphaned).toBe(0);
     expect(quarantineWrites()).toHaveLength(0);
   });
