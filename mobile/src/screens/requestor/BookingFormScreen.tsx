@@ -239,6 +239,9 @@ export function BookingFormScreen() {
   // dependency). One slot rather than separate day/hour state — the picker
   // commits all three fields together, so splitting them would let a half-
   // applied choice exist between renders.
+  // No route type is chosen yet at mount, so the default is computed as a
+  // DELIVERY — the restricted case. The effect below re-clamps the moment a
+  // return is picked, which can only ever widen what is on offer.
   const [slot, setSlot] = useState<PickupSlot>(() => nextBookableSlot());
   // DG-R7: the NewBooking TAB never unmounts, so these mount-time defaults
   // went stale — hours later the pre-filled slot was in the past and the
@@ -283,6 +286,11 @@ export function BookingFormScreen() {
   // form still submits `route_type_id` from this list.
   const routeMatrix = useMemo(() => buildRouteMatrix(routeTypes as RouteType[]), [routeTypes]);
   const selectedChoice = choiceForId(routeMatrix, routeTypeId);
+  // B7 — a RETURN booking is exempt from the 08:30 / 13:30 cut-offs. Read from
+  // the SELECTED route type rather than the `direction` toggle: the toggle can
+  // sit on a pair that resolves to no route type, and the server decides on the
+  // route type actually submitted.
+  const isReturnBooking = selectedChoice?.direction === "return";
   // Held separately from the resolved id so the two controls stay independent:
   // picking a family before a direction is a legitimate half-made choice.
   const [family, setFamily] = useState<RouteFamily | undefined>();
@@ -293,6 +301,18 @@ export function BookingFormScreen() {
     setFamily(selectedChoice.family);
     setDirection(selectedChoice.direction);
   }, [selectedChoice?.id]);
+
+  // B7 — switching between a delivery and a return changes which of today's
+  // slots are legal, so the chosen slot has to be re-checked against the new
+  // rule. Without this, picking "Customer Delivery" at 14:00 (today closed, so
+  // the slot lands tomorrow) and THEN switching to "Customer Return" is merely
+  // wider — harmless — but the reverse leaves a today-afternoon slot selected
+  // that the server will refuse at submit. Clamping only ever moves the slot
+  // FORWARD onto a slot the picker itself would offer.
+  useEffect(() => {
+    if (isEdit) return; // an edit prefills a stored pickup; never move it silently
+    setSlot((current) => clampSlotToDay(current, new Date(), { isReturn: isReturnBooking }));
+  }, [isReturnBooking, isEdit]);
 
   const chooseRoute = (nextFamily: RouteFamily, preferred: RouteDirection) => {
     setFamily(nextFamily);
@@ -843,12 +863,13 @@ export function BookingFormScreen() {
       <PickupSheet
         visible={pickupOpen}
         slot={slot}
+        isReturn={isReturnBooking}
         onConfirm={(next) => {
           slotTouched.current = true; // user's explicit choice — never auto-refresh over it
           // The sheet's own clock is a render old by the time Confirm lands;
           // re-clamp against NOW so a slot that expired while the sheet was
           // open cannot be committed and then rejected at submit.
-          setSlot(clampSlotToDay(next, new Date()));
+          setSlot(clampSlotToDay(next, new Date(), { isReturn: isReturnBooking }));
         }}
         onClose={() => setPickupOpen(false)}
       />

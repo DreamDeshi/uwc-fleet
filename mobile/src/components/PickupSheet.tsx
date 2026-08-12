@@ -50,6 +50,7 @@ export function PickupSheet({
   visible,
   slot,
   now,
+  isReturn,
   onConfirm,
   onClose,
 }: {
@@ -57,9 +58,18 @@ export function PickupSheet({
   slot: PickupSlot;
   /** Injectable for tests/screenshots; defaults to the device clock. */
   now?: Date;
+  /**
+   * B7 — a RETURN booking is exempt from the 08:30 / 13:30 cut-offs ("for
+   * return cargo from supplier / customer, they can choose pickup anytime
+   * before 12am"). Defaults to false, i.e. RESTRICTED: forgetting it shows
+   * fewer slots than the server would take, where the opposite default would
+   * offer one the server refuses.
+   */
+  isReturn?: boolean;
   onConfirm: (slot: PickupSlot) => void;
   onClose: () => void;
 }) {
+  const cutoffOpts = useMemo(() => ({ isReturn: isReturn === true }), [isReturn]);
   const { t } = useTranslation();
   const clock = useMemo(() => now ?? new Date(), [now, visible]);
 
@@ -82,8 +92,8 @@ export function PickupSheet({
   }, [visible]);
 
   const selectedDate = dateForOffset(clock, draft.dayOffset);
-  const hoursToday = bookableHours(selectedDate, clock);
-  const minutesThisHour = bookableMinutes(selectedDate, draft.hour, clock);
+  const hoursToday = bookableHours(selectedDate, clock, cutoffOpts);
+  const minutesThisHour = bookableMinutes(selectedDate, draft.hour, clock, cutoffOpts);
 
   const weekdays = weekdayShortNames();
   const cells = monthGrid(cursor.getFullYear(), cursor.getMonth());
@@ -94,11 +104,11 @@ export function PickupSheet({
 
   const pickDay = (date: Date) => {
     const dayOffset = dayOffsetOf(date, clock);
-    const hours = bookableHours(date, clock);
+    const hours = bookableHours(date, clock, cutoffOpts);
     // Keep the chosen time when the new date still offers it; otherwise fall to
     // that date's first open slot rather than holding a pickup in the past.
     const hour = hours.includes(draft.hour) ? draft.hour : hours[0];
-    const minutes = bookableMinutes(date, hour, clock);
+    const minutes = bookableMinutes(date, hour, clock, cutoffOpts);
     const minute = minutes.includes(draft.minute) ? draft.minute : (minutes[0] ?? 0);
     setDraft({ dayOffset, hour, minute });
     setMeridiem(meridiemOf(hour));
@@ -106,7 +116,7 @@ export function PickupSheet({
 
   const pickHour = (index: number) => {
     const hour = dialIndexToHour(index, meridiem);
-    const minutes = bookableMinutes(selectedDate, hour, clock);
+    const minutes = bookableMinutes(selectedDate, hour, clock, cutoffOpts);
     if (minutes.length === 0) return;
     setDraft((d) => ({
       ...d,
@@ -118,7 +128,7 @@ export function PickupSheet({
   const switchMeridiem = (next: "AM" | "PM") => {
     setMeridiem(next);
     const hour = dialIndexToHour(hourDialIndex(draft.hour), next);
-    const minutes = bookableMinutes(selectedDate, hour, clock);
+    const minutes = bookableMinutes(selectedDate, hour, clock, cutoffOpts);
     // A meridiem with nothing open under the current hour still switches the
     // ring — the requestor is mid-choice — but the draft only moves if it can.
     if (minutes.length === 0) return;
@@ -178,7 +188,7 @@ export function PickupSheet({
               {cells.map((cell, i) => {
                 if (!cell.date) return <View key={`blank-${i}`} style={styles.cell} />;
                 const date = cell.date;
-                const enabled = isDayBookable(date, clock);
+                const enabled = isDayBookable(date, clock, cutoffOpts);
                 const selected = sameDay(date, selectedDate);
                 const today = sameDay(date, clock);
                 return (
@@ -282,7 +292,7 @@ export function PickupSheet({
                   const isHour = step === "hour";
                   const hour24 = isHour ? dialIndexToHour(index, meridiem) : draft.hour;
                   const enabled = isHour
-                    ? bookableMinutes(selectedDate, hour24, clock).length > 0
+                    ? bookableMinutes(selectedDate, hour24, clock, cutoffOpts).length > 0
                     : minutesThisHour.includes(value);
                   const selected = isHour
                     ? draft.hour === hour24
