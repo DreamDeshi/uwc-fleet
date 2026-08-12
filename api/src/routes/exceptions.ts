@@ -15,6 +15,7 @@ import { testHook } from "../lib/testHooks";
 import { sha256Hex, reportFingerprint, evidenceFingerprint } from "../lib/exceptionFingerprint";
 import {
   EXCEPTION_EVIDENCE_FOLDER,
+  OPEN_EXCEPTION_WHERE,
   serializeException,
   type ExceptionAudience,
 } from "../lib/exceptionEvidence";
@@ -688,7 +689,7 @@ router.post("/:id/exception/:exId/resolve", requireRole("admin"), validateBody(r
 router.get("/exceptions/open", requireRole("admin"), async (_req, res, next) => {
   try {
     const rows = await prisma.tripException.findMany({
-      where: { closed_at: null },
+      where: OPEN_EXCEPTION_WHERE,
       orderBy: { created_at: "asc" },
       include: {
         trip: { select: { id: true, ticket_number: true, truck_plate: true, driver: { select: { name: true } } } },

@@ -1589,6 +1589,7 @@
     "affectedStop": "Hentian terlibat: {{n}}",
     "reportedAt": "Dilaporkan {{time}}",
     "laneTitle": "Pengecualian",
+    "laneWithCount": "Pengecualian ({{count}})",
     "noneOpen": "Tiada pengecualian terbuka.",
     "evidenceLabel": "Bukti",
     "timelineLabel": "Aktiviti",

@@ -13,6 +13,8 @@ import {
   mytMonthStart,
 } from "../lib/myt";
 import { ApiError } from "../lib/apiError";
+import { exceptionsEnabled } from "../lib/featureFlags";
+import { OPEN_EXCEPTION_WHERE } from "../lib/exceptionEvidence";
 import { buildPayrollRows } from "../services/payroll";
 import {
   firstEarningInstant,
@@ -55,6 +57,7 @@ router.get("/dashboard", async (_req, res, next) => {
       autoDispatchFailed,
       trucks,
       completedThisMonth,
+      openExceptions,
     ] = await Promise.all([
       prisma.truck.count(),
       prisma.trip.findMany({
@@ -105,6 +108,22 @@ router.get("/dashboard", async (_req, res, next) => {
         // right answer for exactly this set.
         select: { pickup_datetime: true, stops: { select: { delivered_at: true } } },
       }),
+      // Exception reports nobody has closed yet — the count behind the lane
+      // chip. It is on the DASHBOARD, which every admin already polls every 30
+      // seconds, because the alert channel cannot be relied on to reach anyone:
+      // both exception pushes filter on `expo_push_token != null`, and push
+      // registration returns null on web and on simulators, so a token exists
+      // only for a native install. Verified against production on 12 Aug 2026 —
+      // ZERO users of ANY role hold a push token, so until an APK is in hands
+      // this count is not a supplement to the notification, it IS the
+      // notification.
+      //
+      // Gated on the flag like every other exception read: with the feature
+      // dark this reports 0 rather than counting rows the rest of the API would
+      // 404 on.
+      exceptionsEnabled()
+        ? prisma.tripException.count({ where: OPEN_EXCEPTION_WHERE })
+        : Promise.resolve(0),
     ]);
 
     // Document-expiry alerts: any truck doc expiring within 30 days (or expired).
@@ -146,6 +165,8 @@ router.get("/dashboard", async (_req, res, next) => {
       // attention) vs simply AWAITING MANUAL dispatch. failed ⊆ pending.
       auto_dispatch_failed: autoDispatchFailed,
       awaiting_manual: Math.max(0, pendingTrips - autoDispatchFailed),
+      // Open exception reports (0 while FEATURE_EXCEPTIONS is off).
+      open_exceptions: openExceptions,
       alerts: expiringDocs + pendingTrips, // doc expiries + unassigned bookings
     });
   } catch (err) {

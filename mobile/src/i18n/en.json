@@ -1589,6 +1589,7 @@
     "affectedStop": "Affected stop: {{n}}",
     "reportedAt": "Reported {{time}}",
     "laneTitle": "Exceptions",
+    "laneWithCount": "Exceptions ({{count}})",
     "noneOpen": "No open exceptions.",
     "evidenceLabel": "Evidence",
     "timelineLabel": "Activity",

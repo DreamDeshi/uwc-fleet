@@ -454,6 +454,12 @@ export interface DashboardKpis {
   auto_dispatch_failed: number; // pending bookings the engine couldn't place
   awaiting_manual: number; // pending bookings simply awaiting manual dispatch
   alerts: number;
+  // Exception reports nobody has closed. Optional so a client running against an
+  // older API renders the chip without a count instead of "undefined".
+  // ⚠ This is the exception workflow's ONLY dependable admin signal: both
+  // exception pushes need `expo_push_token`, which never issues on web, and a
+  // production read on 12 Aug 2026 found ZERO users of any role holding one.
+  open_exceptions?: number;
 }
 
 // FR-CT5 — fuel cost tracking.

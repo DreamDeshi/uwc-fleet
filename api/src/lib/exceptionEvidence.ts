@@ -7,6 +7,22 @@ import { signedAssetUrl } from "./podPhotos";
 /** Cloudinary folder for authenticated exception-evidence uploads. */
 export const EXCEPTION_EVIDENCE_FOLDER = "uwc/exceptions";
 
+/**
+ * WHAT "STILL OPEN" MEANS — one definition, for every reader.
+ *
+ * `closed_at IS NULL`, and deliberately NOT `Trip.open_exception_id`: since the
+ * one-BLOCKING-per-trip relaxation, that pointer means "an exception is blocking
+ * this trip", so a driver who continued past a report leaves it open but
+ * unblocking. A count built on the pointer would under-report exactly the
+ * reports nobody has actioned.
+ *
+ * Kept here because three readers need the same answer — the admin lane's list,
+ * the 30-minute escalation sweep, and the dashboard count. This file's own
+ * neighbourhood already had one predicate drift into two copies that agreed
+ * only by accident (see reports.ts on the on-time rule), so there is one.
+ */
+export const OPEN_EXCEPTION_WHERE = { closed_at: null } as const;
+
 /** A freshly-signed, unguessable delivery URL for one evidence asset (image). */
 export function signExceptionEvidenceUrl(publicId: string): string {
   return signedAssetUrl(publicId, { resourceType: "image" });
