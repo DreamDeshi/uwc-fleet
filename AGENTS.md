@@ -522,6 +522,70 @@ symptom: the suite is green and you cannot name the line that would turn it red.
 
 
 
+\#### A PROD PROBE ASSERTS IDENTITY FIRST — AN EMPTY ANSWER IS NOT A FINDING
+
+
+
+Same family, different door. On 12 Aug 2026 an authorised read-only probe of
+
+production was run with the Railway CLI still linked to `uwc-fleet-demo`. It
+
+connected, authenticated, and answered:
+
+
+
+&#x20;   The table `public.User` does not exist in the current database.
+
+
+
+A clean, confident answer — from the wrong database. Read as a finding it would
+
+have meant "production has no users". A later attempt against a different proxy
+
+authenticated fine and returned a real number, and NOTHING in either result said
+
+"you are not where you think you are". What caught it was adding an identity
+
+check and re-running, not anything the CLI reported.
+
+
+
+So, for ANY probe, dump, count or manual query against production:
+
+
+
+1\. ASSERT IDENTITY BEFORE REPORTING ANYTHING — the nine fleet plates AND the
+
+&#x20;  four-figure consignee count (1564 at the last read). The demo instance is
+
+&#x20;  deliberately re-plated `UWC 1001`–`1009`, so the plate list separates the two
+
+&#x20;  unambiguously. Make the probe EXIT on a mismatch; do not leave it to the
+
+&#x20;  reader to notice.
+
+2\. TREAT AN EMPTY ANSWER AS UNVERIFIED until identity has passed. No rows, a
+
+&#x20;  missing table, a zero count — "there is nothing there" and "I am not there"
+
+&#x20;  are the same observation until you have proved which one it is. This is the
+
+&#x20;  rule: a query that returns nothing has measured nothing.
+
+3\. SAY WHICH INSTANCE YOU READ in the same breath as the number, every time.
+
+4\. Never print a connection string, a password or a token. Mask the password if
+
+&#x20;  you must show the target at all.
+
+
+
+Recognise the shape: a well-formed, confident answer that is about the wrong
+
+thing — the stale build, the vacuous scan, and this.
+
+
+
 When a task touches frozen work, explain the missing decision and stop.
 
 

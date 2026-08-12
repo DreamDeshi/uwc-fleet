@@ -675,6 +675,13 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
     //      actually works: `auto_dispatch_failed` still stands, so it sits on
     //      the needs-attention board and inside that chip's live count. No
     //      second copy of the alert rule is introduced to compensate.
+    //      ⚠ SO THIS BOOKING'S VISIBILITY IS THAT CHIP. Not a push — a
+    //      production read on 12 Aug 2026 found ZERO users of any role holding
+    //      an `expo_push_token`, and push never issues on web at all, so the
+    //      alert it gives up was reaching nobody. `auto_dispatch_failed` on the
+    //      dashboard is the whole channel. If that count is ever removed or
+    //      stops being rendered, a held interplant booking becomes invisible
+    //      until somebody opens the trip board — check here before touching it.
     // The pin is cleared by any manual (re-)assignment (claimPendingTrip), so
     // the booking can never be stuck once the office acts on it.
     const pinToManual = interplantBooking && !windowExceeded;
