@@ -39,6 +39,39 @@ export function exceptionStateLabelKey(state: string): string {
   return `exception.state.${state}`;
 }
 
+/**
+ * C9 — WHAT THE REQUESTOR IS SHOWN ON A FAILED DELIVERY.
+ *
+ * Mr. Teh, 11 Aug 2026: "OPTION B" — the REASON (his example: nobody at site to
+ * receive), never the pay decision.
+ *
+ * The requestor's redacted payload carries the CATEGORY, coarse status and
+ * timestamps, and nothing else — the driver's `reason` is free text (≤2000
+ * chars, his own words at a kerbside) and is deliberately not in that contract.
+ * So the category is the only reason-bearing field a requestor may see, and it
+ * was being rendered through `exception.category.*` — the DRIVER'S PICKER
+ * labels, which are a taxonomy ("Customer / Site", "Truck") and read as
+ * filing, not as an explanation.
+ *
+ * These labels restate the same five categories as a reason, in Mr. Teh's own
+ * words from the workflow he specified (R1 Q2, 24 Jul 2026): "A. Customer /
+ * Site Problem · B. Truck Problem · C. Cargo Problem · D. External Problem
+ * (flood, bad weather, security issue) · E. Documentation Problem". The word
+ * his categories all carried — PROBLEM — is what the picker labels dropped.
+ *
+ * ⚠ NOT the finer grain. His C9 example, "nobody at site to receive", is a
+ * CANNED_REASON, and those are appended to free text rather than stored as a
+ * code — there is no structured field to redact and translate. Surfacing that
+ * exact line needs a column on TripException, which is frozen. Logged as an
+ * open item; this ships the honest granularity the data already supports.
+ *
+ * Returns null for a category outside the five, so an unknown value renders
+ * NOTHING rather than a raw i18n key on a customer's screen.
+ */
+export function requestorReasonLabelKey(category: string): string | null {
+  return CATEGORY_KEYS.includes(category) ? `exception.requestorReason.${category}` : null;
+}
+
 // ── Driver report form validation (pure) ─────────────────────────────────────
 export interface ExceptionFormValues {
   category: string | null;

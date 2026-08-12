@@ -1629,6 +1629,13 @@
       "external": "Luaran",
       "documentation": "Dokumentasi"
     },
+    "requestorReason": {
+      "customer_site": "Masalah di pelanggan / tapak",
+      "truck": "Masalah dengan trak",
+      "cargo": "Masalah dengan kargo",
+      "external": "Masalah luaran (cuaca, banjir atau keselamatan)",
+      "documentation": "Masalah dokumen"
+    },
     "state": {
       "reported": "Dilaporkan",
       "more_evidence": "Perlu bukti tambahan",
