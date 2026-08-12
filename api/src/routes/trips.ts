@@ -29,7 +29,8 @@ import {
   type FinalizedGroup,
 } from "../services/tripCompletion";
 import { otDemotionReason, resolveLastTripOt } from "../services/lastTripOt";
-import { isInterplantRouteType } from "../lib/uwcSpec";
+import { isInterplantRouteType, isReturnRouteType } from "../lib/uwcSpec";
+import { bookingCutoffVerdict, cutoffMessage } from "../lib/bookingCutoff";
 import {
   truckRateSnapshot,
   finalizationRateParams,
@@ -335,6 +336,30 @@ router.post(
       const routeType = await prisma.routeType.findUnique({ where: { id: route_type_id } });
       if (!routeType) {
         throw new ApiError(400, "ROUTE_TYPE_NOT_FOUND", "Route type does not exist.");
+      }
+
+      // ── B7 — the booking cut-offs (08:30 morning / 13:30 afternoon) ─────────
+      //
+      // REQUESTORS ONLY. An admin booking is the office booking, and the office
+      // is the dispatcher this cut-off exists to protect — the same reasoning
+      // that leaves manual assignment ungated everywhere else in this codebase.
+      // ⚠ That scoping is a judgement, not something Mr. Teh said; if the
+      // office wants the cut-off to bind itself too, this is the line.
+      //
+      // Return legs are exempt by his own sentence ("for return cargo from
+      // supplier / customer, they can choose pickup anytime before 12am") — see
+      // isReturnRouteType for why ALL returns, including interplant, are taken
+      // as exempt rather than only the two he named.
+      if (req.user!.role === "requestor") {
+        const verdict = bookingCutoffVerdict({
+          now: new Date(),
+          pickup: pickup_datetime,
+          isReturn: isReturnRouteType(routeType.name),
+          holidays: await loadHolidaySet(),
+        });
+        if (!verdict.allowed) {
+          throw new ApiError(400, "PICKUP_AFTER_CUTOFF", cutoffMessage(verdict));
+        }
       }
 
       const consigneeIds = stops.map((s: { consignee_id: string }) => s.consignee_id);
@@ -727,6 +752,27 @@ router.patch(
           "INVALID_STATUS",
           "Only bookings that have not been assigned yet can be edited."
         );
+      }
+
+      // B7 — the cut-offs bind an EDIT that moves the pickup, not merely a
+      // create. Otherwise the rule is one booking-then-edit away from useless:
+      // book 09:00 for tomorrow morning, then at 14:00 edit it to this
+      // afternoon. Only a CHANGED pickup is re-checked, so a requestor fixing a
+      // consignee at 16:00 is not told to rebook a time they never touched.
+      if (pickup_datetime.getTime() !== existing.pickup_datetime.getTime()) {
+        const editedRouteType = await prisma.routeType.findUnique({
+          where: { id: route_type_id },
+          select: { name: true },
+        });
+        const verdict = bookingCutoffVerdict({
+          now: new Date(),
+          pickup: pickup_datetime,
+          isReturn: isReturnRouteType(editedRouteType?.name),
+          holidays: await loadHolidaySet(),
+        });
+        if (!verdict.allowed) {
+          throw new ApiError(400, "PICKUP_AFTER_CUTOFF", cutoffMessage(verdict));
+        }
       }
 
       const { effectiveCargo, changeNote } = await validateTripEdit(existing, {

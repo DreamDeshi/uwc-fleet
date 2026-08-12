@@ -97,6 +97,32 @@ export function isInterplantRouteType(name: string | null | undefined): boolean 
 }
 
 /**
+ * True for a RETURN booking — cargo coming back, rather than going out.
+ *
+ * Used by B7's booking cut-offs, which Mr. Teh exempted in his own sentence:
+ * "for return cargo from supplier / customer, they can choose pickup anytime
+ * before 12am". The three seeded return types are Customer Return, Supplier
+ * Return and Inter-Plant Return.
+ *
+ * ⚠ HE NAMED TWO; THIS EXEMPTS ALL THREE, and that is a decision. A return leg
+ * is collection-driven in every case — it moves when the other site says the
+ * cargo is ready, not when our dispatcher would prefer — which is the whole
+ * reason he exempted returns at all. For INTERPLANT it matters more, not less:
+ * pay is per completed ROUND TRIP (R5 A2), so refusing a return leg after 13:30
+ * would not merely delay a booking, it would strand the outbound leg's point
+ * unpaid until the next day and, if the return then lands on the following
+ * calendar day, lose it entirely (IM11). Erring toward ALLOWED is the direction
+ * that cannot take money off a driver for a rule whose boundary we chose.
+ *
+ * Matched on the same normalised NAME basis as isInterplantRouteType, and
+ * pinned against the seeded names in tests/bookingCutoff.test.ts.
+ */
+export function isReturnRouteType(name: string | null | undefined): boolean {
+  if (!name) return false;
+  return name.replace(/[^a-z0-9]/gi, "").toLowerCase().endsWith("return");
+}
+
+/**
  * The authoritative truck list. Returns the bundled spec values (always present
  * in the container); honours UWC_SPEC_PATH if it points at a readable JSON file.
  * Never throws for a missing file — the bundled data is the guaranteed fallback.
