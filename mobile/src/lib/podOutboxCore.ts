@@ -75,8 +75,28 @@ export const DELIVERED_STEP_ALREADY_CODES = [
   "TRIP_NOT_ACTIVE",
 ] as const;
 
-// The item can never succeed for THIS driver anymore (trip reassigned or
-// gone) — drop it and let the screens show server truth.
+// The item can never succeed for THIS driver anymore (trip reassigned or gone).
+//
+// ⚠ DG-D6 — QUARANTINED, NOT DELETED (owner ruling, 12 Aug 2026).
+//
+// This used to DROP the item, and dropping deletes the queued photo with it.
+// That is right for the case it was written for — a trip reassigned away can
+// never succeed, so retrying forever is worse than giving up — and it is a hole
+// for a WIPE. Prod trips have been deleted three times (3 Jul, 26 Jul, 2 Aug
+// 2026); a driver holding a queued POD across any of them would have had the
+// only copy of that delivery's evidence destroyed BY HIS OWN PHONE, at the first
+// flush after the wipe, on a 404 that means "gone" rather than "not yours".
+//
+// The row was a log-only item while "prod has no trips" made it hypothetical.
+// It stopped being hypothetical this week: there is a delivered stop with a POD
+// in production, so every future delivery is real evidence.
+//
+// So a stale code now moves the item to the evidence quarantine instead
+// (`uwc.u.<uid>.podOutbox.orphaned.<ts>`), under the SAME 30-day / 20-entry
+// ceiling as the other quarantines (PR #145). A wipe costs a manual recovery
+// rather than the record. Same shape as DG-D5, which was the retry budget
+// spending itself on logout: a rule correct for its own case, blind to the case
+// it is actually in.
 export const OUTBOX_STALE_CODES = ["FORBIDDEN", "TRIP_NOT_FOUND", "STOP_NOT_FOUND"] as const;
 
 // A persistent non-network API error (e.g. an unexpected 500) must not retry
@@ -144,7 +164,14 @@ export function findOutboxItem(
 
 // ── Flush state machine ──────────────────────────────────────────────────
 
-export type FlushOutcome = "synced" | "kept" | "dropped";
+/**
+ * `orphaned` leaves the queue exactly as `dropped` does — the difference is
+ * that its bytes are written to the quarantine first. Kept as a SEPARATE
+ * outcome rather than a flag on `dropped` so the two can never be counted
+ * together: one means "the evidence is gone", the other "the evidence is
+ * somewhere a human can get it", and the driver is told different things.
+ */
+export type FlushOutcome = "synced" | "kept" | "dropped" | "orphaned";
 
 export interface PodOutboxApi {
   /** PATCH status=arrived for the stop. INVALID_STATUS = already arrived. */
@@ -215,7 +242,7 @@ async function flushOneItem(
     }
     const code = api.errorCode(err);
     if ((OUTBOX_STALE_CODES as readonly string[]).includes(code ?? "")) {
-      return { item, outcome: "dropped" };
+      return { item, outcome: "orphaned" };
     }
     // DG-D5: an OPPORTUNISTIC flush must not spend the retry budget.
     //
@@ -253,6 +280,8 @@ export interface FlushResult {
   outcomes: ItemOutcome[];
   synced: number;
   dropped: number;
+  /** Moved to the evidence quarantine rather than deleted (DG-D6). */
+  orphaned: number;
 }
 
 /** Replay every item sequentially (stop order matters for multi-stop trips). */
@@ -271,6 +300,7 @@ export async function flushOutboxItems(
     outcomes,
     synced: outcomes.filter((o) => o.outcome === "synced").length,
     dropped: outcomes.filter((o) => o.outcome === "dropped").length,
+    orphaned: outcomes.filter((o) => o.outcome === "orphaned").length,
   };
 }
 
@@ -294,7 +324,9 @@ export function reconcileOutboxAfterFlush(
     } else if (o.outcome === "kept") {
       next.push(o.item); // keep, with step progress persisted
     }
-    // synced/dropped → removed
+    // synced/dropped/orphaned → removed from the QUEUE. An orphaned item's
+    // bytes have been written to the quarantine by the caller before this
+    // runs — see quarantineOrphaned in podOutbox.ts.
   }
   return next;
 }

@@ -92,6 +92,15 @@ export function usePodOutboxFlush(): void {
         qc.invalidateQueries({ queryKey: ["incentives", "mine"] });
         toast(t("trip.outboxSynced", { count: res.synced }), "success");
       }
+      // DG-D6 — an ORPHANED item is not a destroyed one. Its photo is in the
+      // evidence quarantine on this handset, so the driver is told the stop may
+      // need doing again WITHOUT being told his proof is gone. Counted and
+      // spoken separately from `dropped`, which still means exactly that.
+      if (res.orphaned > 0) {
+        qc.invalidateQueries({ queryKey: ["trips"] });
+        qc.invalidateQueries({ queryKey: ["trip"] });
+        toast(t("trip.outboxOrphaned", { count: res.orphaned }), "error");
+      }
       if (res.dropped > 0) {
         // Rare: the item can never complete (trip reassigned/removed, or a
         // persistent server error). The queries above resync the screens to
