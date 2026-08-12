@@ -2,6 +2,7 @@ import { prisma } from "../lib/prisma";
 import { sendPushNotifications } from "../lib/pushNotifications";
 import { exceptionsEnabled } from "../lib/featureFlags";
 import { minutesFromEnv } from "../lib/envNumbers";
+import { OPEN_EXCEPTION_WHERE } from "../lib/exceptionEvidence";
 
 // Overdue-open-exception alert sweep (failed-delivery plan, [R] alert-only).
 //
@@ -54,7 +55,7 @@ export async function sweepOverdueExceptions(): Promise<void> {
   if (!exceptionsEnabled()) return;
 
   const open = await prisma.tripException.findMany({
-    where: { closed_at: null },
+    where: OPEN_EXCEPTION_WHERE,
     select: {
       id: true,
       reported_at: true,

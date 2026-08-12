@@ -56,6 +56,9 @@ export function DashboardWide() {
   if (dash.isError) return <ErrorState message={t("admin.dashboard.loadError")} onRetry={() => dash.refetch()} />;
 
   const k = dash.data!;
+  // `?? 0` because the field is optional: an app running against an API that
+  // predates it must render the lane chip plain, not "Exceptions (undefined)".
+  const openExceptions = k.open_exceptions ?? 0;
   const truckList: Truck[] = trucks.data ?? [];
   const recentTrips = (trips.data ?? []).slice(0, 6);
   const liveCount = (live.data ?? []).filter((p) => !p.stale).length;
@@ -106,17 +109,34 @@ export function DashboardWide() {
                 flexDirection: "row",
                 alignItems: "center",
                 gap: 6,
-                backgroundColor: colors.blueTint,
+                backgroundColor: openExceptions > 0 ? colors.redTint : colors.blueTint,
                 borderWidth: 1,
-                borderColor: colors.blue,
+                borderColor: openExceptions > 0 ? colors.red : colors.blue,
                 borderRadius: radius.pill,
                 paddingVertical: 5,
                 paddingHorizontal: 11,
               }}
             >
-              <Ionicons name="warning-outline" size={13} color={colors.blue} />
-              <Text style={{ color: colors.blue, fontSize: font.sm, fontWeight: "700" }}>
-                {t("exception.laneTitle")}
+              {/* Deliberately the SAME red-on-redTint as the auto-dispatch chip
+                  beside it: two "needs attention now" chips in one row must read
+                  as one system. (That pair is ~3.9:1 — a real contrast weakness,
+                  but it belongs to a palette pass across both chips, not to a
+                  one-sided fix that makes them look like different states.) */}
+              <Ionicons
+                name={openExceptions > 0 ? "warning" : "warning-outline"}
+                size={13}
+                color={openExceptions > 0 ? colors.red : colors.blue}
+              />
+              <Text
+                style={{
+                  color: openExceptions > 0 ? colors.red : colors.blue,
+                  fontSize: font.sm,
+                  fontWeight: "700",
+                }}
+              >
+                {openExceptions > 0
+                  ? t("exception.laneWithCount", { count: openExceptions })
+                  : t("exception.laneTitle")}
               </Text>
             </Pressable>
           )}

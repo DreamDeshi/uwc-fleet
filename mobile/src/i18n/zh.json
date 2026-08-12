@@ -1589,6 +1589,7 @@
     "affectedStop": "受影响的站点：{{n}}",
     "reportedAt": "{{time}} 报告",
     "laneTitle": "异常",
+    "laneWithCount": "异常（{{count}}）",
     "noneOpen": "没有待处理的异常。",
     "evidenceLabel": "证据",
     "timelineLabel": "活动记录",
