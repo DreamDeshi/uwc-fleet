@@ -557,6 +557,28 @@ Two other things that job does on purpose, so nobody "fixes" them:
 
 &#x20; off-peak and midnight defects the suite exists to catch.
 
+\- A UNIT SUITE WITH NO PINNED TIMEZONE IS THE SAME FAMILY: it passes locally
+
+&#x20; and means something different on the runner. This machine is UTC+8 and the
+
+&#x20; runners are UTC, so a fixture like `new Date(2026, 6, 15, 10, 30)` was 10:30
+
+&#x20; MYT here and 18:30 MYT there — six B7 cut-off specs went red in CI only, and
+
+&#x20; the failure is TIME-OF-DAY SHAPED, so it reads as flaky rather than wrong.
+
+&#x20; `mobile/vitest.config.ts` pins `TZ=Asia/Kuala_Lumpur`.
+
+&#x20; ⚠ THE PIN ALONE IS NOT ENOUGH — on its own it just makes the WRONG answer
+
+&#x20; stable. Pair it with at least one spec written on INSTANTS rather than local
+
+&#x20; wall-clock (see `cutoffClosedAt`), which is timezone-independent by
+
+&#x20; construction and still fails if the MYT conversion breaks. Verify that by
+
+&#x20; re-breaking the conversion WITH the pin in place.
+
 \- It builds a STATIC web export rather than running `expo start --web`. The dev
 
 &#x20; server rebuilds lazily — on a cold runner the first navigation can outlive
@@ -1484,6 +1506,30 @@ Text and layout:
 &#x20; in both; do not break one to restyle the other.
 \- Small utilities are embedded as widgets on existing screens, never given
 &#x20; their own navigation tab or screen.
+
+\- A NEW NATIVE MODULE CANNOT BE SHIPPED AS AN OTA, AND A FEATURE FLAG DOES NOT
+
+&#x20; SAVE YOU. Adding a package with native code (`expo-local-authentication`,
+
+&#x20; `expo-secure-store`, anything with an Android/iOS side) changes the module
+
+&#x20; set compiled into the BINARY. `runtimeVersion` in `app.json` is a fixed
+
+&#x20; string, so an OTA published against it is served to APKs that do NOT
+
+&#x20; contain the new module — and a STATIC IMPORT of an absent native module
+
+&#x20; THROWS AT REQUIRE TIME, before any flag is read. A dark feature can
+
+&#x20; therefore brick a running app on launch.
+
+&#x20; A RELEASE RULE, not a preference: such a change may be merged dark, but it
+
+&#x20; must NOT be published as an OTA until the rebuild it rides with. Bumping
+
+&#x20; `runtimeVersion` instead orphans the published OTA history for everyone
+
+&#x20; still on the old binary — a different way to strand the same users.
 
 Standing owner design rulings (do not revert):
 
