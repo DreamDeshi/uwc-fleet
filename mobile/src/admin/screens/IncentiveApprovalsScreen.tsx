@@ -82,16 +82,24 @@ export function IncentiveApprovalsScreen() {
       }
       refreshControl={<RefreshControl refreshing={pending.isRefetching} onRefresh={() => pending.refetch()} />}
     >
+      {/* ⚠ AMBER, NOT ORANGE — and the accent is spent ONCE, here.
+          Orange is reserved app-wide for OFFLINE / QUEUED states (standing owner
+          ruling), so wearing it for "awaiting approval" both breaks that reserve
+          and says the wrong thing: nothing here is offline, these trips are
+          waiting on a person. Amber is already the theme's documented "pending"
+          colour. The per-card orange edge that used to repeat this accent on
+          every row below is gone — the same signal drawn once is a signal, drawn
+          on every card it is wallpaper. */}
       <Card
         pad={14}
         style={[
           { flexDirection: "row", alignItems: "center", gap: 12 },
-          trips.length > 0 && { borderLeftWidth: 5, borderLeftColor: colors.orange },
+          trips.length > 0 && { borderLeftWidth: 5, borderLeftColor: colors.amber },
         ]}
       >
         {trips.length > 0 && (
-          <View style={{ backgroundColor: colors.orangeTint, borderRadius: radius.pill, paddingVertical: 3, paddingHorizontal: 11 }}>
-            <Text style={{ color: colors.orange, fontSize: font.sm, fontWeight: "800" }}>{trips.length}</Text>
+          <View style={{ backgroundColor: colors.yellowTint, borderRadius: radius.pill, paddingVertical: 3, paddingHorizontal: 11 }}>
+            <Text style={{ color: colors.amber, fontSize: font.sm, fontWeight: "800" }}>{trips.length}</Text>
           </View>
         )}
         <Text style={{ fontSize: font.md, color: colors.text, flex: 1 }}>
@@ -186,8 +194,12 @@ function ApprovalCard({ trip }: { trip: Trip }) {
     </View>
   );
 
+  // No coloured left edge on the card. Every card in this queue is awaiting
+  // approval, so an accent that fires on all of them distinguishes nothing —
+  // the summary card above carries the one amber edge that means "there is a
+  // queue", and repeating it per row turned a signal into wallpaper.
   return (
-    <Card style={{ borderLeftWidth: 5, borderLeftColor: colors.orange, gap: 12 }}>
+    <Card style={{ gap: 12 }}>
       {/* Heading: ticket + driver + delivered time */}
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
@@ -219,12 +231,20 @@ function ApprovalCard({ trip }: { trip: Trip }) {
             );
           })()}
         </View>
-        {/* Proposed incentive — the amount pay defaults to. */}
+        {/* Proposed incentive — the amount pay defaults to.
+            ⚠ NAVY, NEVER GREEN. This is the single most misreadable thing on the
+            screen: green means SETTLED everywhere else in this app, and this
+            amount is the opposite of settled — it is a proposal that does not
+            become payable until the admin approves it, and that they may edit
+            downward before they do. Colouring a pending figure with the settled
+            colour tells the reader the decision has already been made on the one
+            screen whose entire job is making it. Follows the PR #30 completion
+            re-tone ruling; do not put it back. */}
         <View style={{ alignItems: "flex-end" }}>
           <Text style={{ fontSize: font.xs, color: colors.textMuted }}>
             {t("admin.incentiveApprovals.proposed")}
           </Text>
-          <Text style={{ fontSize: 22, fontWeight: "900", color: colors.green }}>
+          <Text style={{ fontSize: 22, fontWeight: "900", color: colors.navy }}>
             {formatMoney(proposed)}
           </Text>
         </View>
@@ -360,6 +380,22 @@ function K2ApprovalGate({
   );
 }
 
+// The evidence controls (POD, K2). A bordered tinted chip, so the two things on
+// a stop row that CAN be opened are visibly different from the pills beside
+// them, which are inert status. Kept as plain objects rather than a StyleSheet
+// so the pressed state can compose with them inline.
+const evidenceButton = {
+  flexDirection: "row" as const,
+  alignItems: "center" as const,
+  backgroundColor: colors.blueTint,
+  borderWidth: 1,
+  borderColor: colors.blue,
+  borderRadius: radius.sm,
+  paddingVertical: 5,
+  paddingHorizontal: 9,
+};
+const evidenceButtonText = { fontSize: font.sm, fontWeight: "700" as const, color: colors.blue };
+
 function StopRow({ stop, ticket }: { stop: TripStop; ticket: string }) {
   const { t } = useTranslation();
   const [podOpen, setPodOpen] = useState(false);
@@ -375,12 +411,27 @@ function StopRow({ stop, ticket }: { stop: TripStop; ticket: string }) {
   // the only per-drop time, unlabelled, invited exactly the wrong correction:
   // a 7-point drop "fixed" from RM91 to RM77. So the POD time says "uploaded",
   // and the delivery confirm sits beside it as the instant that actually paid.
+  // THE UPLOAD TIME EARNS ITS SPACE ONLY WHEN IT DIFFERS FROM THE DELIVERY.
+  // "delivered 12:36 pm · POD uploaded 12:36 pm" prints one fact twice, and on a
+  // row already carrying points, a repeat flag and a zone it is the noise that
+  // pushes the consignee out of view. IM6's point was never that the upload time
+  // is interesting on its own — it is that the GAP between the two is the
+  // evidence a contested approval is argued over. No gap, nothing to show.
+  //
+  // Compared on the RENDERED minute, deliberately: what makes the pair redundant
+  // is that they read identically, and that is a property of the formatted
+  // string, not of the underlying millisecond difference. When there is no
+  // delivery confirm at all (a settled-undelivered stop) the upload time is the
+  // only instant available, so it always shows.
+  const deliveredText = stop.delivered_at ? formatTime(stop.delivered_at) : null;
+  const uploadedText = stop.pod_uploaded_at ? formatTime(stop.pod_uploaded_at) : null;
+  const showUploaded = uploadedText != null && uploadedText !== deliveredText;
   const evidenceParts = [
-    stop.points_awarded != null ? t("admin.incentiveApprovals.dropPoints", { pts: stop.points_awarded }) : null,
+    stop.points_awarded != null ? t("admin.incentiveApprovals.dropPoints", { count: stop.points_awarded }) : null,
     stop.points_awarded != null && stop.was_repeat ? t("admin.incentiveApprovals.repeat") : null,
     stop.points_awarded != null && stop.zone_code ? stop.zone_code : null,
-    stop.delivered_at ? t("admin.incentiveApprovals.stopDelivered", { time: formatTime(stop.delivered_at) }) : null,
-    stop.pod_uploaded_at ? t("admin.incentiveApprovals.podTime", { time: formatTime(stop.pod_uploaded_at) }) : null,
+    deliveredText ? t("admin.incentiveApprovals.stopDelivered", { time: deliveredText }) : null,
+    showUploaded ? t("admin.incentiveApprovals.podTime", { time: uploadedText }) : null,
     // Device capture time, shown ONLY when it materially differs from the
     // upload — i.e. the POD was queued offline and replayed later. Online the
     // gap is seconds and repeating it would just be noise. Labelled "(device)"
@@ -407,7 +458,11 @@ function StopRow({ stop, ticket }: { stop: TripStop; ticket: string }) {
         <Text style={{ color: "#fff", fontSize: font.xs, fontWeight: "700" }}>{stop.sequence}</Text>
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text numberOfLines={1} style={{ fontSize: font.md, color: colors.text }}>
+        {/* TWO LINES. This is the screen where an admin decides whether a
+            delivery happened; WHERE it went is not a detail to be elided. One
+            line truncated the longer consignee names to an ellipsis, leaving the
+            decisive fact as the least legible thing in the row. */}
+        <Text numberOfLines={2} style={{ fontSize: font.md, color: colors.text, lineHeight: 20 }}>
           {stop.consignee.company_name}
         </Text>
         {/* Per-drop pay evidence: points + repeat flag, so the admin sees WHY
@@ -426,8 +481,21 @@ function StopRow({ stop, ticket }: { stop: TripStop; ticket: string }) {
         {stop.pod_photo ? (
           // Opens IN-APP now (frame 16). K2 below deliberately still leaves the
           // app: it may be a multi-page PDF — see the warning on that row.
-          <Pressable onPress={() => setPodOpen(true)}>
-            <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.blue }}>📷 POD</Text>
+          //
+          // ⚠ IT MUST LOOK LIKE A CONTROL. The POD is the evidence this entire
+          // approval rests on, and as bare blue text it read as a label sitting
+          // beside the pills rather than the thing to press — on a row where
+          // everything else at that position (No POD, No K2, Not delivered) IS
+          // an inert pill, blue text alone is not an affordance. Bordered,
+          // tinted, with an explicit "view" chevron, so the one item you can
+          // open does not look like the ones you cannot.
+          <Pressable
+            onPress={() => setPodOpen(true)}
+            accessibilityRole="button"
+            hitSlop={8}
+            style={({ pressed }) => [evidenceButton, pressed && { opacity: 0.65 }]}
+          >
+            <Text style={evidenceButtonText}>📷 {t("admin.incentiveApprovals.viewPod")} ›</Text>
           </Pressable>
         ) : stop.status !== "delivered" ? (
           // Cut short by a partial abort — not paid, not missing evidence. Muted
@@ -452,8 +520,18 @@ function StopRow({ stop, ticket }: { stop: TripStop; ticket: string }) {
             complete while hiding pages, which is exactly the silent truncation
             signedK2Url refuses to risk. Hand it to the system viewer whole. */}
         {k2 === "present" ? (
-          <Pressable onPress={() => Linking.openURL(stop.k2_photo!)}>
-            <Text style={{ fontSize: font.sm, fontWeight: "700", color: colors.blue }}>📄 K2 ↗</Text>
+          // Same affordance as POD — the two tappable pieces of evidence on this
+          // row must read alike, or the one left as plain text looks broken
+          // beside the one that gained a border. It keeps its ↗: this one leaves
+          // the app for the system viewer, and that is worth telling the admin
+          // before they tap.
+          <Pressable
+            onPress={() => Linking.openURL(stop.k2_photo!)}
+            accessibilityRole="button"
+            hitSlop={8}
+            style={({ pressed }) => [evidenceButton, pressed && { opacity: 0.65 }]}
+          >
+            <Text style={evidenceButtonText}>📄 K2 ↗</Text>
           </Pressable>
         ) : k2 === "missing" && stop.status === "delivered" ? (
           // DELIVERED ONLY (owner ruling, 2 Aug 2026). Marking a stop delivered
