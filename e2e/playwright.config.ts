@@ -31,7 +31,15 @@ export default defineConfig({
   // fall back to localhost or reach production. On a runner with no such
   // variable that refusal is correct behaviour, not a failure — it just must
   // not be run here. It ships via playwright.demoshots.config.ts.
-  testIgnore: /(uiAuditSweep|manualShots|demoShots)\.spec\.ts/,
+  //
+  // posterShots and driverScreens are excluded for a FOURTH reason, and it is
+  // the sharpest one: unlike demoShots they do NOT refuse without DEMO_WEB_URL.
+  // Their refusal lives in their own configs, which CI never loads, and their
+  // specs fall back to the deployed demo API by default. driverScreens then
+  // WRITES — it walks a seeded trip forward through the real driver routes to
+  // reach the states it photographs. Left in this config's set, every CI run
+  // would silently drive the live demo instance through a delivery.
+  testIgnore: /(uiAuditSweep|manualShots|demoShots|posterShots|driverScreens)\.spec\.ts/,
   // Capture the backend's dispatch_mode before the run and restore that exact
   // value after — resetState() flips it to manual per spec and a prod run once
   // left the live trial that way.
