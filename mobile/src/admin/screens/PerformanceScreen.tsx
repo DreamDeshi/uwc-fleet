@@ -19,6 +19,11 @@
 // driver self-view asks for the metric by its points name), so it needs its own
 // change with both consumers moved together. This comment exists so the next
 // reader knows the unit before they trust the name.
+//
+// Tracked as IM14 in the private OPEN_ITEMS list — that row carries the scope
+// (rename to a unit-bearing name, move both consumers in one PR, keep the old
+// key on the wire for a release). It is NOT DG-M5, which is odometer
+// plausibility and unrelated.
 import React, { useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -430,8 +435,13 @@ function Workload({ drivers }: { drivers: DriverPerformance[] }) {
 
   return (
     <Lens title={t("admin.performance.workload")} hint={t("admin.performance.workloadHint")}>
+      {/* amberText, not orange. Caught in a 1440 capture on 15 Aug 2026 AFTER
+          the palette pass had already gone through the screens it was aimed at:
+          `orange` on `orangeTint` is 2.56:1, the worst pair in the app, and this
+          is a full-width sentence of it. The code sweep missed it because the
+          sweep followed the screens being edited and this one was not. */}
       <View style={{ backgroundColor: uneven ? colors.orangeTint : colors.blueTint, borderRadius: radius.md, paddingVertical: 10, paddingHorizontal: 14, marginBottom: 16 }}>
-        <Text style={{ color: uneven ? colors.orange : colors.blue, fontSize: font.sm, fontWeight: "600" }}>{note}</Text>
+        <Text style={{ color: uneven ? colors.amberText : colors.blue, fontSize: font.sm, fontWeight: "600" }}>{note}</Text>
       </View>
       <View style={{ gap: 10 }}>
         {byLoad.map((d) => {
