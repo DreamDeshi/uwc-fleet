@@ -762,6 +762,16 @@ Platform:
 &#x20; Use RN primitives only — no raw HTML elements, no CSS files, no
 &#x20; DOM-only libraries. Styling goes through `StyleSheet` / the shared
 &#x20; theme tokens in `mobile/src/theme`.
+\- ⚠ **`fullPage: true` SILENTLY RETURNS THE VIEWPORT, NOT THE PAGE.** RN-Web
+&#x20; scrolls an INNER container, not the document, so Playwright's full-page
+&#x20; screenshot has nothing to extend into: it succeeds, writes a normal-looking
+&#x20; PNG, and gives you exactly what a plain `screenshot()` would. Nothing warns
+&#x20; you, and the file looks correct on its own — you only notice if you already
+&#x20; knew what was below the fold. This is the same family as the stale build and
+&#x20; the wrong-database probe: **a confident, well-formed answer about less than
+&#x20; you asked for.** To capture below the fold, scroll the container
+&#x20; (`page.mouse.wheel`) and take successive shots. Found 15 Aug 2026 capturing
+&#x20; the admin Performance screen at 1440.
 \- Do NOT add `react-native-svg` (repeatedly rejected; crashes our build).
 &#x20; Icons come from `@expo/vector-icons` (Ionicons).
 \- Do NOT touch native dependency pins (`expo-font` is deliberately pinned;
@@ -792,6 +802,41 @@ Text and layout:
 \- EVERY user-visible string goes through i18n. A new string must be added to
 &#x20; ALL THREE files: `mobile/src/i18n/en.json`, `ms.json`, `zh.json`.
 &#x20; Hard-coded literals in JSX are a defect.
+\- **THE REGISTER RULE — WORKPLACE MALAY, NOT TEXTBOOK MALAY** (owner ruling,
+&#x20; 15 Aug 2026). UWC's office and drivers speak Malay with English loanwords
+&#x20; for role and system terms. "Pentadbir Armada" is a dictionary translation
+&#x20; nobody would say out loud; Admin is "Admin". The test is what someone at
+&#x20; Batu Kawan would actually say — NOT consistency for its own sake.
+&#x20; **If a UWC clerk or driver would say the English word inside a Malay
+&#x20; sentence, keep the English word. If there is a natural everyday Malay word,
+&#x20; use that.**
+&#x20; ENGLISH: Admin, POD, Dashboard, Requestor, Fleet (in labels), Trip (see
+&#x20; below), Password, Sustainability, and the role labels.
+&#x20; MALAY: pemandu, tempahan, hantar, lori, muatan, zon, penerima, dokumen,
+&#x20; laporan, insentif, prestasi, status. "Log masuk" STAYS — it is already
+&#x20; half-English and it is said out loud.
+&#x20; **ENTITY-OR-LABEL vs PROSE is the dividing line.** A label, or the name of a
+&#x20; thing, takes the English term (Trip Management, the trip list, trip status).
+&#x20; A sentence about a driver's journey does not.
+&#x20; ⚠ **WATCH FOR IDIOMS WEARING THE ENTITY'S NAME.** Ten `Perjalanan` strings
+&#x20; looked like trip labels and were not: their English source is "In Transit",
+&#x20; "En Route" or "In Progress" — the idiom for being on the way, not the noun.
+&#x20; "Dalam Perjalanan" is right; "Dalam Trip" is not something anyone says.
+&#x20; Read the ENGLISH SOURCE before converting, never the Malay alone.
+&#x20; **WHEN AMBIGUOUS, LEAVE IT MALAY** — the failure mode of over-anglicising is
+&#x20; worse than a few inconsistent labels.
+&#x20; The same rule governs `zh.json` (仪表板 and 申请人 went the same way), with
+&#x20; ONE difference: Chinese does not absorb a latin word mid-sentence as easily
+&#x20; as Malay does, so there the English term is used for LABELS ONLY and prose
+&#x20; keeps the Chinese. 罗里 STAYS — that is the Malaysian-Chinese loanword for
+&#x20; lorry, and whoever wrote it got Penang right.
+\- **ONE CONCEPT, ONE WORD, PER LOCALE.** `admin.pod.title` was 送达凭证 while
+&#x20; `bookingDetail.podTitle` was 签收证明 — two different words for Proof of
+&#x20; Delivery, in a file that already used "POD" as a loanword in five other
+&#x20; strings. That is a BUG, not a matter of taste, and it is the same shape as
+&#x20; the zh 预订 collision (`tabs.bookings` and `requestor.book` sharing one word
+&#x20; for two destinations). A locale can be internally inconsistent while every
+&#x20; parity and selector guard passes, because those check KEYS, not WORDING.
 \- The app has TWO layouts: the phone layout (primary, bottom tabs) and the
 &#x20; desktop shell at ≥1024px (`useWide`, sidebar). A UI change must be checked
 &#x20; in both; do not break one to restyle the other.
