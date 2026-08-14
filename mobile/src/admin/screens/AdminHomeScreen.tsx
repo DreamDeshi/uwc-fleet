@@ -293,7 +293,17 @@ export function AdminHomeScreen() {
             fleet is healthy. "Open trip board" jumps to the Trips tab. */}
         {attentionHasRows(attention.data) && (
           <View style={styles.section}>
-            <AttentionPanel report={attention.data} onOpenBoard={() => navigation.navigate("AdminTrips")} />
+            <AttentionPanel
+              report={attention.data}
+              onOpenBoard={() => navigation.navigate("AdminTrips")}
+              // A row is a door to the trip itself, with Abort and Reassign in
+              // reach — these rows never clear on their own (DG-T1 skips
+              // in_progress by design), so acting from here is the only thing
+              // that empties the card.
+              onOpenTrip={(focusTripId, focusTicket) =>
+                navigation.navigate("AdminTrips", { focusTripId, focusTicket })
+              }
+            />
           </View>
         )}
 

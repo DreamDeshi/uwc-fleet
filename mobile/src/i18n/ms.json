@@ -924,6 +924,7 @@
       "engineActive": "Enjin aktif — tempahan baharu ditugaskan automatik",
       "autoFailed": "{{count}} auto-penghantaran gagal",
       "awaitingManual": "{{count}} menunggu penghantaran manual",
+      "inProgressCount": "{{count}} sedang berjalan",
       "activeTrucks": "Lori Aktif",
       "ofFleet": "daripada {{count}} armada",
       "inProgressDone": "{{inProgress}} dalam perjalanan · {{done}} selesai",

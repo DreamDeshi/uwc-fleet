@@ -924,6 +924,7 @@
       "engineActive": "Engine active — new orders auto-assign",
       "autoFailed": "{{count}} auto-dispatch failed",
       "awaitingManual": "{{count}} awaiting manual dispatch",
+      "inProgressCount": "{{count}} in progress",
       "activeTrucks": "Active Trucks",
       "ofFleet": "of {{count}} total fleet",
       "inProgressDone": "{{inProgress}} in progress · {{done}} done",

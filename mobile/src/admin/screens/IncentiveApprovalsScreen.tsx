@@ -99,7 +99,7 @@ export function IncentiveApprovalsScreen() {
       >
         {trips.length > 0 && (
           <View style={{ backgroundColor: colors.yellowTint, borderRadius: radius.pill, paddingVertical: 3, paddingHorizontal: 11 }}>
-            <Text style={{ color: colors.amber, fontSize: font.sm, fontWeight: "800" }}>{trips.length}</Text>
+            <Text style={{ color: colors.amberText, fontSize: font.sm, fontWeight: "800" }}>{trips.length}</Text>
           </View>
         )}
         <Text style={{ fontSize: font.md, color: colors.text, flex: 1 }}>
@@ -224,7 +224,7 @@ function ApprovalCard({ trip }: { trip: Trip }) {
             if (done >= stops.length) return null;
             return (
               <View style={{ alignSelf: "flex-start", marginTop: 4 }}>
-                <Pill bg={colors.yellowTint} fg={colors.amber}>
+                <Pill bg={colors.yellowTint} fg={colors.amberText}>
                   {t("admin.incentiveApprovals.partialTrip", { done, total: stops.length })}
                 </Pill>
               </View>
@@ -257,7 +257,7 @@ function ApprovalCard({ trip }: { trip: Trip }) {
         ))}
       </View>
 
-      {error ? <Text style={{ fontSize: font.sm, color: colors.red }}>{error}</Text> : null}
+      {error ? <Text style={{ fontSize: font.sm, color: colors.redText }}>{error}</Text> : null}
 
       {actions}
 
@@ -340,7 +340,7 @@ function K2ApprovalGate({
         }}
       >
         {gaps.blocking.map((s) => (
-          <Text key={s.id} style={{ fontSize: font.sm, fontWeight: "700", color: colors.orange }}>
+          <Text key={s.id} style={{ fontSize: font.sm, fontWeight: "700", color: colors.amberText }}>
             {s.sequence}. {s.consignee.company_name}
           </Text>
         ))}
@@ -504,7 +504,7 @@ function StopRow({ stop, ticket }: { stop: TripStop; ticket: string }) {
             {t("admin.incentiveApprovals.notDelivered")}
           </Pill>
         ) : (
-          <Pill bg={colors.orangeTint} fg={colors.orange}>
+          <Pill bg={colors.orangeTint} fg={colors.amberText}>
             {t("admin.incentiveApprovals.noPod")}
           </Pill>
         )}
@@ -545,7 +545,7 @@ function StopRow({ stop, ticket }: { stop: TripStop; ticket: string }) {
           // muted "Not delivered" pill beside this already explains the stop.
           // Orange here would manufacture a problem to chase, the same mistake
           // the POD branch above documents avoiding.
-          <Pill bg={colors.orangeTint} fg={colors.orange}>
+          <Pill bg={colors.orangeTint} fg={colors.amberText}>
             {t("admin.incentiveApprovals.noK2")}
           </Pill>
         ) : null}
@@ -627,7 +627,7 @@ function EditRateModal({
         onChange={setReason}
         placeholder={t("admin.incentiveApprovals.reasonPlaceholder")}
       />
-      {error ? <Text style={{ fontSize: font.sm, color: colors.red, marginBottom: 10 }}>{error}</Text> : null}
+      {error ? <Text style={{ fontSize: font.sm, color: colors.redText, marginBottom: 10 }}>{error}</Text> : null}
       <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
         <Button variant="ghost" onPress={onClose} disabled={pending} style={{ flex: 1 }}>
           {t("common.cancel")}

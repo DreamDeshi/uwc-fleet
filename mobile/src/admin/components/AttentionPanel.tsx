@@ -6,6 +6,7 @@
 // dashboard passes nothing and looks exactly as before).
 import React from "react";
 import { Pressable, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { colors, font } from "../theme";
 import { Card, SectionTitle } from "./ui";
@@ -24,7 +25,33 @@ export function attentionHasRows(report?: AttentionReport): boolean {
   );
 }
 
-export function AttentionPanel({ report, onOpenBoard }: { report?: AttentionReport; onOpenBoard?: () => void }) {
+/**
+ * ⚠ THE ROWS ARE THE POINT, NOT THE HEADING LINK.
+ *
+ * Every row here is a trip that will sit in this card indefinitely: DG-T1's 3am
+ * sweep deliberately never touches `in_progress`, because ADMIN ABORT is the
+ * lever for those, and nothing else ages them out. An alert that shows the same
+ * rows every morning and offers no way to act on them trains people to stop
+ * reading it — and then it is worse than absent, because it looks like cover.
+ *
+ * So `onOpenTrip` takes the admin to that trip on the board with Abort and
+ * Reassign in reach (see TripsScreen's focus effect). The card empties because
+ * somebody ACTED, which is what it was asking for.
+ *
+ * Deliberately NOT an ageing rule and NOT an acknowledge button: a trip stuck
+ * six days is more worth surfacing than one stuck eight hours, so hiding the
+ * oldest rows to keep the card tidy would be lying to stay quiet, and an
+ * acknowledgement goes stale over a problem that is still live.
+ */
+export function AttentionPanel({
+  report,
+  onOpenBoard,
+  onOpenTrip,
+}: {
+  report?: AttentionReport;
+  onOpenBoard?: () => void;
+  onOpenTrip?: (tripId: string, ticket: string) => void;
+}) {
   const { t } = useTranslation();
   if (!report) return null;
   // A row is TWO lines, and the first one decides whether to act: WHO has the
@@ -140,15 +167,34 @@ export function AttentionPanel({ report, onOpenBoard }: { report?: AttentionRepo
             </Text>
             {g.rows.slice(0, 5).map((tr) => {
               const { primary, secondary } = (g.row ?? defaultRow)(tr);
-              return (
-                <View key={(tr as EarlyTapTrip).stop_id ?? tr.id} style={{ paddingVertical: 4 }}>
-                  <Text numberOfLines={1} style={{ fontSize: font.sm, fontWeight: "700", color: colors.text }}>
-                    {primary}
-                  </Text>
-                  <Text numberOfLines={1} style={{ fontSize: font.xs, color: colors.textFaint, marginTop: 1 }}>
-                    {secondary}
-                  </Text>
-                </View>
+              const body = (
+                <>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text numberOfLines={1} style={{ fontSize: font.sm, fontWeight: "700", color: colors.text }}>
+                      {primary}
+                    </Text>
+                    <Text numberOfLines={1} style={{ fontSize: font.xs, color: colors.textFaint, marginTop: 1 }}>
+                      {secondary}
+                    </Text>
+                  </View>
+                  {onOpenTrip ? <Ionicons name="chevron-forward" size={16} color={colors.textFaint} /> : null}
+                </>
+              );
+              const rowStyle = { flexDirection: "row" as const, alignItems: "center" as const, gap: 8, paddingVertical: 6 };
+              const key = (tr as EarlyTapTrip).stop_id ?? tr.id;
+              // Without a handler this stays exactly what it was — inert text.
+              // A row that LOOKS tappable and is not is its own small betrayal.
+              return onOpenTrip ? (
+                <Pressable
+                  key={key}
+                  accessibilityRole="button"
+                  onPress={() => onOpenTrip(tr.id, tr.ticket_number)}
+                  style={({ pressed }) => [rowStyle, pressed && { opacity: 0.6 }]}
+                >
+                  {body}
+                </Pressable>
+              ) : (
+                <View key={key} style={rowStyle}>{body}</View>
               );
             })}
             {g.rows.length > 5 && (

@@ -5,7 +5,7 @@
 // → fleet map + alerts/load rail → recent-trips table → drivers footnote.
 // The map area renders the Phase-3 placeholder until the real map lands.
 import React from "react";
-import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Platform, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { useNavigation, type NavigationProp, type ParamListBase } from "@react-navigation/native";
@@ -39,6 +39,9 @@ import { AttentionPanel } from "../components/AttentionPanel";
 import { AdminFleetMap } from "../platform/map";
 import { ORIGIN_LABEL, cargoSummary, tripDestination, tripProgress } from "../lib/trip";
 import type { Truck } from "../types";
+
+// Same definition as TripsScreen — a ticket is a code, not prose.
+const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
 
 export function DashboardWide() {
   const { t } = useTranslation();
@@ -92,8 +95,8 @@ export function DashboardWide() {
                 paddingHorizontal: 11,
               }}
             >
-              <Ionicons name="warning" size={13} color={colors.red} />
-              <Text style={{ color: colors.red, fontSize: font.sm, fontWeight: "700" }}>
+              <Ionicons name="warning" size={13} color={colors.redText} />
+              <Text style={{ color: colors.redText, fontSize: font.sm, fontWeight: "700" }}>
                 {t("admin.dashboard.autoFailed", { count: k.auto_dispatch_failed })}
               </Text>
             </View>
@@ -119,17 +122,18 @@ export function DashboardWide() {
             >
               {/* Deliberately the SAME red-on-redTint as the auto-dispatch chip
                   beside it: two "needs attention now" chips in one row must read
-                  as one system. (That pair is ~3.9:1 — a real contrast weakness,
-                  but it belongs to a palette pass across both chips, not to a
-                  one-sided fix that makes them look like different states.) */}
+                  as one system. ✅ That palette pass HAPPENED (15 Aug 2026):
+                  both chips moved together from `red` (3.70:1 on redTint,
+                  measured) to `redText` (4.92:1), so they still read as one
+                  system and now clear AA. Change them together or not at all. */}
               <Ionicons
                 name={openExceptions > 0 ? "warning" : "warning-outline"}
                 size={13}
-                color={openExceptions > 0 ? colors.red : colors.blue}
+                color={openExceptions > 0 ? colors.redText : colors.blue}
               />
               <Text
                 style={{
-                  color: openExceptions > 0 ? colors.red : colors.blue,
+                  color: openExceptions > 0 ? colors.redText : colors.blue,
                   fontSize: font.sm,
                   fontWeight: "700",
                 }}
@@ -140,13 +144,29 @@ export function DashboardWide() {
               </Text>
             </Pressable>
           )}
+          {/* IN PROGRESS, elevated from the phone hero (owner, 15 Aug 2026).
+              The rest of that hero stays where it is: wide answers "what is the
+              state" through the KPI tiles and the attention panel, narrow
+              answers "what do I do next" because it can only gesture at the
+              panel. But how many trips are ON THE ROAD RIGHT NOW is a dispatch
+              fact, not a status one, and the dispatch bar was the one place on
+              this screen that never said it. It sits beside "awaiting manual"
+              because the pair is the whole question: moving, and not yet moving. */}
+          <Text style={{ fontSize: font.sm, color: colors.textMuted }}>
+            {t("admin.dashboard.inProgressCount", { count: k.trips_in_progress })}
+          </Text>
+          <Text style={{ fontSize: font.sm, color: colors.textFaint }}>·</Text>
           <Text style={{ fontSize: font.sm, color: colors.textMuted }}>
             {t("admin.dashboard.awaitingManual", { count: k.awaiting_manual })}
           </Text>
         </View>
       </Card>
 
-      <AttentionPanel report={attention.data} onOpenBoard={openTrips} />
+      <AttentionPanel
+        report={attention.data}
+        onOpenBoard={openTrips}
+        onOpenTrip={(focusTripId, focusTicket) => navigation.navigate("AdminTrips", { focusTripId, focusTicket })}
+      />
 
       {/* KPI cards — the gradient tiles from the web admin. */}
       <View style={{ flexDirection: "row", gap: 16 }}>
@@ -349,7 +369,13 @@ export function DashboardWide() {
             </TableHeader>
             {recentTrips.map((tr) => (
               <TableRow key={tr.id}>
-                <TableCell flex={1} textStyle={{ fontWeight: "800", color: colors.blue }}>{tr.ticket_number}</TableCell>
+                {/* MONOSPACED, like every other ticket in the app. Frame 4
+                    monospaced the trips board on the grounds that a ticket is a
+                    CODE you read character by character and compare against
+                    another screen — TR-20880 against TR-20830 — and that is if
+                    anything MORE true of six tickets stacked in a table column
+                    than of one on a phone card. This cell was simply missed. */}
+                <TableCell flex={1} textStyle={{ fontFamily: MONO, fontWeight: "700", color: colors.blue }}>{tr.ticket_number}</TableCell>
                 <TableCell flex={1.7}>
                   <Text numberOfLines={2} style={{ fontSize: font.md }}>
                     <Text style={{ color: colors.textMuted }}>{ORIGIN_LABEL} → </Text>
@@ -398,10 +424,15 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
+// The three expiry bands. The GROUND carries the severity (red → orange →
+// yellow); the text colour only has to be readable on it, which is why two
+// bands share `amberText`. Measured before choosing: the old pairs were
+// red 3.70:1, orange 2.56:1 and amber 3.00:1 — all below the 4.5:1 floor, on a
+// panel whose entire purpose is to be noticed.
 function alertTone(daysLeft: number) {
-  if (daysLeft < 0) return { bg: colors.redTint, fg: colors.red };
-  if (daysLeft <= 14) return { bg: colors.orangeTint, fg: colors.orange };
-  return { bg: colors.yellowTint, fg: colors.amber };
+  if (daysLeft < 0) return { bg: colors.redTint, fg: colors.redText };
+  if (daysLeft <= 14) return { bg: colors.orangeTint, fg: colors.amberText };
+  return { bg: colors.yellowTint, fg: colors.amberText };
 }
 
 // i18n form of lib/format's relativeExpiry (the ported lib stays untouched).

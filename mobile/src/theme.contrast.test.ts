@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { colors, statusColors } from "./theme";
+import { colors as admin } from "./admin/theme";
 
 /**
  * CONTRAST FLOOR for every colour pair a user actually reads.
@@ -84,6 +85,45 @@ describe("palette contrast (WCAG AA, normal text)", () => {
       expect(ratio, `white on ${bg} = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_NORMAL);
     });
   }
+
+  // ── THE ADMIN PALETTE, added 15 Aug 2026 ────────────────────────────────
+  //
+  // The 4 Aug audit that produced everything above covered the DRIVER and
+  // REQUESTOR theme only. The admin app has its own token file, it was never
+  // measured, and it had drifted into exactly the failures this file exists to
+  // stop: warning text painted with a FILL colour on that fill's own tint.
+  //
+  // Every pair below is one that a real screen renders, and each was failing:
+  // the approvals count pill (amber on yellowTint, 3.00:1), the "No POD" and
+  // "No K2" pills (orange on orangeTint, 2.56:1 — the worst in the app), the
+  // dispatch-bar attention chips (red on redTint, 3.70:1) and inline error text
+  // (red on white, 4.23:1). Same rule as above: if one fails, pick a better
+  // colour rather than lowering the floor.
+  const ADMIN_TEXT_ON_TINT: [string, string, string][] = [
+    ["approvals count / partial-trip pill", admin.amberText, admin.yellowTint],
+    ["missing-evidence pill (No POD / No K2)", admin.amberText, admin.orangeTint],
+    ["fleet-alert row, expiring band", admin.amberText, admin.orangeTint],
+    ["fleet-alert row, expired band", admin.redText, admin.redTint],
+    ["dispatch-bar attention chips", admin.redText, admin.redTint],
+    ["evidence button (POD / K2)", admin.blue, admin.blueTint],
+    ["inline error text", admin.redText, "#ffffff"],
+    ["proposed incentive amount", admin.navy, "#ffffff"],
+  ];
+  for (const [name, fg, bg] of ADMIN_TEXT_ON_TINT) {
+    it(`admin: ${name} clears ${AA_NORMAL}:1`, () => {
+      const ratio = contrastRatio(fg, bg);
+      expect(ratio, `${fg} on ${bg} = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_NORMAL);
+    });
+  }
+
+  // The split is the point: `amber`/`red`/`orange` stay as FILLS and borders,
+  // and none of them is fit to be small text on its own tint. Pinning that
+  // keeps someone from "simplifying" the two tokens back into one.
+  it("admin: the raw fill colours are NOT text-safe — which is why the Text variants exist", () => {
+    expect(contrastRatio(admin.amber, admin.yellowTint)).toBeLessThan(AA_NORMAL);
+    expect(contrastRatio(admin.orange, admin.orangeTint)).toBeLessThan(AA_NORMAL);
+    expect(contrastRatio(admin.red, admin.redTint)).toBeLessThan(AA_NORMAL);
+  });
 
   // Guard the decision itself: textFaint must stay READABLE but still be a
   // distinct third tier. If it drifts darker than textMuted the hierarchy has

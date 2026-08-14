@@ -924,6 +924,7 @@
       "engineActive": "引擎已启用 — 新订单自动分配",
       "autoFailed": "{{count}} 个自动调度失败",
       "awaitingManual": "{{count}} 个等待手动调度",
+      "inProgressCount": "{{count}} 趟进行中",
       "activeTrucks": "活跃罗里",
       "ofFleet": "共 {{count}} 辆",
       "inProgressDone": "{{inProgress}} 进行中 · {{done}} 已完成",
