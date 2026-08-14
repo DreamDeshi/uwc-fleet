@@ -785,7 +785,7 @@ function TripCard({
   const needsAttention = trip.status === "pending" && trip.auto_dispatch_failed;
   const accent = needsAttention
     ? colors.red
-    : group === "pending" ? colors.orange : group === "active" ? colors.blue : group === "completed" ? colors.green : "#9ca3af";
+    : group === "pending" ? colors.amber : group === "active" ? colors.blue : group === "completed" ? colors.green : "#9ca3af";
   return (
     <Pressable
       onPress={onPress}

@@ -213,7 +213,7 @@ const styles = StyleSheet.create({
   rowCard: { backgroundColor: colors.white, borderRadius: radius.md, padding: spacing.md, ...{} },
   rowTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   ticket: { fontWeight: "700", color: colors.text },
-  badge: { backgroundColor: colors.orange, paddingVertical: 3, paddingHorizontal: 10, borderRadius: radius.pill },
+  badge: { backgroundColor: colors.amberText, paddingVertical: 3, paddingHorizontal: 10, borderRadius: radius.pill },
   badgeText: { color: colors.white, fontSize: 11, fontWeight: "700" },
   cat: { color: colors.text, fontWeight: "600", marginTop: spacing.xs },
   meta: { color: colors.textMuted, fontSize: 13, marginTop: 2 },

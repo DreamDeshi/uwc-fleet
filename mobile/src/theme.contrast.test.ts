@@ -116,6 +116,50 @@ describe("palette contrast (WCAG AA, normal text)", () => {
     });
   }
 
+  // Second pass, same day: the first one fixed the screens being edited, and a
+  // 1440 capture then found the workload note still at 2.56:1 on a screen the
+  // sweep had not visited. So this sweeps the REST of the admin app. Every pair
+  // below was measured failing before it was changed:
+  //
+  //     sidebar approvals badge   white on orange        2.80:1
+  //     exception state badge     white on orange        2.80:1
+  //     truck expiry text         orange on white        2.80:1
+  //     home "awaiting dispatch"  orange on white        2.80:1  (34px bold —
+  //                               fails even the 3:1 large-text allowance)
+  //     incentive tier pill       orange on orange@10%   2.53:1
+  //
+  // ⚠ Two screens had already hit this and each defined its OWN `ACCENT_AMBER =
+  // "#B45309"` — the same hex, twice, loose. Both now read the token.
+  const ADMIN_PASS_TWO: [string, string, string][] = [
+    ["truck expiry / awaiting-dispatch figure", admin.amberText, "#ffffff"],
+    ["incentive tier pill (orange at 10% over white)", admin.amberText, "#fef1e8"],
+  ];
+  for (const [name, fg, bg] of ADMIN_PASS_TWO) {
+    it(`admin: ${name} clears ${AA_NORMAL}:1`, () => {
+      const ratio = contrastRatio(fg, bg);
+      expect(ratio, `${fg} on ${bg} = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_NORMAL);
+    });
+  }
+
+  it("admin: the count badges carry white text at 4.5:1", () => {
+    // Sidebar approvals badge and the exception lane's state badge. The latter
+    // matters most: that surface is the next one due to be switched on.
+    const ratio = contrastRatio("#ffffff", admin.amberText);
+    expect(ratio, `white on ${admin.amberText} = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_NORMAL);
+  });
+
+  // NON-TEXT components (borders, accent bars, dots) have a 3:1 floor, not 4.5.
+  // The trips board's group accent is a border, so it does NOT need the dark
+  // text token — but it did need to stop being `orange`, which was 2.80:1 and
+  // failed even this lower bar.
+  const AA_NON_TEXT = 3;
+  it("admin: the trips-board group accent clears the 3:1 non-text floor", () => {
+    const ratio = contrastRatio(admin.amber, "#ffffff");
+    expect(ratio, `${admin.amber} on white = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    // And the colour it replaced did not — this is why the swap happened.
+    expect(contrastRatio(admin.orange, "#ffffff")).toBeLessThan(AA_NON_TEXT);
+  });
+
   // The split is the point: `amber`/`red`/`orange` stay as FILLS and borders,
   // and none of them is fit to be small text on its own tint. Pinning that
   // keeps someone from "simplifying" the two tokens back into one.

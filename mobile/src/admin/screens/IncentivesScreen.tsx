@@ -374,7 +374,7 @@ function tierOf(points: number) {
   if (points <= 1) return { key: "admin.incentives.tierLocal", color: colors.green };
   if (points <= 3) return { key: "admin.incentives.tierNearby", color: colors.blue };
   if (points <= 5) return { key: "admin.incentives.tierMedium", color: colors.amber };
-  if (points <= 6) return { key: "admin.incentives.tierFar", color: colors.orange };
+  if (points <= 6) return { key: "admin.incentives.tierFar", color: colors.amberText };
   return { key: "admin.incentives.tierLong", color: colors.red };
 }
 

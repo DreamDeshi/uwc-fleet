@@ -188,7 +188,7 @@ export function AdminHomeScreen() {
             <View style={styles.heroStats}>
               <HeroStat value={k ? k.trips_in_progress : null} label={t("admin.home.inProgress")} color={colors.violet} />
               <View style={styles.heroDivider} />
-              <HeroStat value={k ? k.awaiting_manual : null} label={t("admin.home.awaitingDispatch")} color={colors.orange} />
+              <HeroStat value={k ? k.awaiting_manual : null} label={t("admin.home.awaitingDispatch")} color={colors.amberText} />
               <View style={styles.heroDivider} />
               <HeroStat
                 value={k ? k.auto_dispatch_failed : null}

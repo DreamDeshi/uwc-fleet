@@ -34,7 +34,10 @@ const STATUS_META: Record<string, { labelKey: string; bg: string; fg: string; do
 };
 
 // Accessible on-tint text — colors.amber is 3.19:1, a decorative hue.
-const ACCENT_AMBER = "#B45309";
+// Was a loose hex here AND an identical one in DriversScreen — the very
+// duplication the theme file complains about for the grey family. Both now
+// point at the token: colors.amberText.
+const ACCENT_AMBER = colors.amberText;
 
 type Filter = "all" | "active" | "idle" | "maintenance" | "retired";
 
@@ -348,9 +351,9 @@ function AlertsPanel() {
   if (list.length === 0) return null;
 
   return (
-    <Card pad={0} style={{ overflow: "hidden", borderLeftWidth: 5, borderLeftColor: colors.orange }}>
+    <Card pad={0} style={{ overflow: "hidden", borderLeftWidth: 5, borderLeftColor: colors.amber }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 14, paddingHorizontal: 16, backgroundColor: colors.orangeTint, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-        <Ionicons name="warning-outline" size={20} color={colors.orange} />
+        <Ionicons name="warning-outline" size={20} color={colors.amberText} />
         <Text style={{ fontSize: font.md, fontWeight: "800", color: colors.text }}>{t("admin.trucks.docAlertsTitle")}</Text>
         <Text style={{ marginLeft: "auto", fontSize: font.sm, color: colors.textMuted }}>
           {t("admin.trucks.needAttention", { count: list.length })}
@@ -627,7 +630,7 @@ function findAlert(alerts: TruckAlert[], doc: TruckAlert["doc"]) {
 function DocRow({ label, date, alert }: { label: string; date: string | null; alert?: TruckAlert }) {
   const { t } = useTranslation();
   const flagged = !!alert;
-  const color = !flagged ? colors.text : alert!.daysLeft < 0 ? colors.red : colors.orange;
+  const color = !flagged ? colors.text : alert!.daysLeft < 0 ? colors.redText : colors.amberText;
   return (
     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>

@@ -47,12 +47,12 @@ export function ChangeRequestsScreen() {
         pad={14}
         style={[
           { flexDirection: "row", alignItems: "center", gap: 12 },
-          rows.length > 0 && { borderLeftWidth: 5, borderLeftColor: colors.orange },
+          rows.length > 0 && { borderLeftWidth: 5, borderLeftColor: colors.amber },
         ]}
       >
         {rows.length > 0 && (
           <View style={{ backgroundColor: colors.orangeTint, borderRadius: radius.pill, paddingVertical: 3, paddingHorizontal: 11 }}>
-            <Text style={{ color: colors.orange, fontSize: font.sm, fontWeight: "800" }}>{rows.length}</Text>
+            <Text style={{ color: colors.amberText, fontSize: font.sm, fontWeight: "800" }}>{rows.length}</Text>
           </View>
         )}
         <Text style={{ fontSize: font.md, color: colors.text, flex: 1 }}>
@@ -127,7 +127,7 @@ function RequestCard({ row }: { row: ChangeRequestRow }) {
   );
 
   return (
-    <Card style={{ borderLeftWidth: 5, borderLeftColor: colors.orange, gap: 12 }}>
+    <Card style={{ borderLeftWidth: 5, borderLeftColor: colors.amber, gap: 12 }}>
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={{ fontSize: 15, fontWeight: "800", color: colors.text }}>{row.ticket_number}</Text>

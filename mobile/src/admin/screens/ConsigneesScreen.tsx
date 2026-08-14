@@ -406,7 +406,7 @@ function EditConsigneeModal({ consignee, onClose }: { consignee: Consignee; onCl
 
       {zoneChanged && (
         <View style={{ backgroundColor: colors.orangeTint, borderRadius: radius.sm, paddingVertical: 8, paddingHorizontal: 10, marginBottom: 14 }}>
-          <Text style={{ fontSize: font.sm, color: colors.orange }}>{t("admin.consignees.zoneChangeNote")}</Text>
+          <Text style={{ fontSize: font.sm, color: colors.amberText }}>{t("admin.consignees.zoneChangeNote")}</Text>
         </View>
       )}
 
