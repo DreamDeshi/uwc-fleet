@@ -224,6 +224,8 @@
     "savedOffline": "Disimpan pada telefon ini — akan dimuat naik apabila talian kembali.",
     "podQueued": "Foto disimpan — dimuat naik apabila dalam talian",
     "outboxSynced": "Penghantaran tersimpan telah dimuat naik ({{count}})",
+    "outboxOrphaned_one": "Satu penghantaran tersimpan tidak dapat dimuat naik — hentian itu mungkin perlu diulang. Foto disimpan pada telefon ini; beritahu pejabat.",
+    "outboxOrphaned_other": "{{count}} penghantaran tersimpan tidak dapat dimuat naik — hentian itu mungkin perlu diulang. Foto disimpan pada telefon ini; beritahu pejabat.",
     "outboxDropped_one": "Satu penghantaran yang disimpan gagal dimuat naik. Beritahu pejabat — hentian itu mungkin perlu diulang.",
     "outboxDropped_other": "{{count}} penghantaran yang disimpan gagal dimuat naik. Beritahu pejabat — hentian tersebut mungkin perlu diulang."
   },

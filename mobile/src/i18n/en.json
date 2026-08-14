@@ -224,6 +224,8 @@
     "savedOffline": "Saved on this phone — will upload when you're back online.",
     "podQueued": "Photo saved — uploads when online",
     "outboxSynced": "Saved deliveries uploaded ({{count}})",
+    "outboxOrphaned_one": "A saved delivery could not be uploaded — that stop may need doing again. The photo is kept on this phone; tell the office.",
+    "outboxOrphaned_other": "{{count}} saved deliveries could not be uploaded — those stops may need doing again. The photos are kept on this phone; tell the office.",
     "outboxDropped_one": "A saved delivery could not be uploaded. Tell the office — that stop may need doing again.",
     "outboxDropped_other": "{{count}} saved deliveries could not be uploaded. Tell the office — those stops may need doing again."
   },

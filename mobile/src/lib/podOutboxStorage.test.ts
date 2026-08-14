@@ -100,7 +100,7 @@ describe("POD outbox storage edge — a read failure must never destroy the queu
 
     const res = await flushPodOutbox(api as never);
 
-    expect(res).toEqual({ outcomes: [], synced: 0, dropped: 0 });
+    expect(res).toEqual({ outcomes: [], synced: 0, dropped: 0, orphaned: 0 });
     expect(api.confirmDelivered).not.toHaveBeenCalled();
     expect(writesTo(KEY)).toHaveLength(0);
   });
@@ -267,10 +267,17 @@ describe("POD outbox storage edge — an empty write must be accounted for", () 
 
     // One writer, and it is the guarded one.
     expect(src.match(/scopedSetItem\(OUTBOX_SUFFIX/g) ?? []).toHaveLength(1);
-    // Any other scopedSetItem in this file must be the corrupt-quarantine key,
-    // which by definition is not the live queue.
+    // Any other scopedSetItem in this file must be a QUARANTINE key, which by
+    // definition is not the live queue.
+    //
+    // ⚠ WIDENED DELIBERATELY, 12 Aug 2026 (DG-D6). This guard caught the new
+    // orphan-quarantine writer and made the widening a decision instead of an
+    // accident, which is what it is for. Both allowlisted names are
+    // write-once-per-flush quarantine prefixes under scopedStorage's 30-day /
+    // 20-entry ceiling; the assertion above — exactly ONE writer of the LIVE
+    // key — is untouched and is the part that matters.
     const otherWrites = (src.match(/scopedSetItem\(\s*(?!OUTBOX_SUFFIX)([^)]*)/g) ?? []).filter(
-      (m) => !m.includes("CORRUPT_SUFFIX_PREFIX")
+      (m) => !m.includes("CORRUPT_SUFFIX_PREFIX") && !m.includes("ORPHANED_SUFFIX_PREFIX")
     );
     expect(otherWrites).toEqual([]);
     // And nothing bypasses the scoped layer altogether (comments may NAME
@@ -343,5 +350,129 @@ describe("queued photos are moved out of the evictable cache", () => {
     await removePodItem("s1");
     // Nothing referenced any more → every stored photo is collectable.
     expect(photoStore.sweepPodPhotos).toHaveBeenCalledWith([]);
+  });
+});
+
+/**
+ * DG-D6 — A STALE CODE MUST QUARANTINE THE EVIDENCE, NOT DELETE IT.
+ *
+ * `podOutbox.test.ts` proves the CORE returns `orphaned`. It cannot prove
+ * anything was written: the core is pure and never touches storage, so an
+ * outcome nobody acts on would leave the photo exactly as deleted as before —
+ * the unreached-branch shape this repo keeps meeting. These cases drive the
+ * real `flushPodOutbox` against mocked storage and read what actually landed.
+ *
+ * The scenario is not hypothetical: prod trips have been wiped three times
+ * (3 Jul, 26 Jul, 2 Aug 2026), and a driver holding a queued POD across any of
+ * them would have had the only copy of that delivery's proof destroyed by his
+ * own phone, at the first flush after the wipe, on a 404 that means "gone".
+ *
+ * ⚠ EVERY CASE HERE ALSO ASSERTS THE ATTEMPT, not just the outcome.
+ *
+ * Writing these, the mock was first spelled `uploadPhoto` where PodOutboxApi
+ * says `uploadPod`. That left the real method undefined, so the call threw a
+ * TypeError, the item was merely KEPT — and "kept" is what a weaker version of
+ * these cases would have happily asserted. A green test that never reached the
+ * upload at all.
+ *
+ * It is the fifth shape of the same failure this repo has met: a suite that
+ * agrees with you instead of exercising you (see AGENTS.md — the vacuous scan,
+ * the tautological pin, the unreached branch, the hazard test that avoids the
+ * hazard). The general fix is not another rule: A TEST THAT ASSERTS AN OUTCOME
+ * SHOULD ALSO ASSERT THE ATTEMPT, so a mock that never runs FAILS rather than
+ * agreeing. `expect(api.uploadPod).toHaveBeenCalled()` is that assertion here,
+ * and it is what makes the negative case below (orphaned === 0) mean anything:
+ * without it, a never-called mock produces exactly that number.
+ */
+describe("DG-D6 — an unuploadable POD is quarantined, not destroyed", () => {
+  const STALE = Object.assign(new Error("gone"), { response: { data: { error: { code: "TRIP_NOT_FOUND" } } } });
+  const quarantineWrites = () =>
+    mockStorage.setItem.mock.calls.filter((c) => String(c[0]).includes(".podOutbox.orphaned."));
+
+  /** A queued delivery that still holds its photo — the thing worth keeping. */
+  const QUEUED = {
+    tripId: "t1",
+    stopId: "s3",
+    photo: "file://pod3.jpg",
+    confirmDelivered: true,
+    queuedAt: "2026-07-30T03:00:00.000Z",
+  };
+
+  function staleApi() {
+    return {
+      markArrived: vi.fn(),
+      // The PHOTO step is where a wiped trip fails first — the upload is the
+      // first call that names the trip — so the stale code arrives here.
+      // ⚠ `uploadPod`, the name on PodOutboxApi. Spelling it `uploadPhoto`
+      // leaves the real method undefined, the call throws a TypeError, and the
+      // item is merely KEPT — a green-looking mock that exercises nothing.
+      uploadPod: vi.fn().mockRejectedValue(STALE),
+      ackK2: vi.fn(),
+      confirmDelivered: vi.fn().mockRejectedValue(STALE),
+      isNetworkError: () => false,
+      errorCode: (e: unknown) =>
+        (e as { response?: { data?: { error?: { code?: string } } } })?.response?.data?.error?.code ?? null,
+    };
+  }
+
+  it("writes the item — PHOTO INCLUDED — to a scoped quarantine key", async () => {
+    mockStorage.getItem.mockResolvedValue(JSON.stringify([QUEUED]));
+    const api = staleApi();
+    const res = await flushPodOutbox(api as never);
+
+    expect(api.uploadPod).toHaveBeenCalled(); // the attempt, not just the outcome
+    expect(res.orphaned).toBe(1);
+    const writes = quarantineWrites();
+    expect(writes).toHaveLength(1);
+    // Scoped to THIS driver — a shared handset must not pool evidence.
+    expect(String(writes[0][0])).toContain(`uwc.u.${TEST_USER}.podOutbox.orphaned.`);
+    // The photo is the whole point. Losing it while keeping the metadata would
+    // be the same defect wearing a different shape.
+    expect(String(writes[0][1])).toContain("file://pod3.jpg");
+    expect(String(writes[0][1])).toContain("s3");
+  });
+
+  it("still removes it from the LIVE queue — quarantined is not stuck", async () => {
+    mockStorage.getItem.mockResolvedValue(JSON.stringify([QUEUED]));
+    const api = staleApi();
+    await flushPodOutbox(api as never);
+
+    expect(api.uploadPod).toHaveBeenCalled();
+    const live = writesTo(KEY);
+    expect(live.length).toBeGreaterThan(0);
+    expect(JSON.parse(String(live[live.length - 1][1]))).toEqual([]);
+  });
+
+  it("quarantines BEFORE the queue write, so an interrupted flush cannot lose it", async () => {
+    // Ordering is the safety property: interrupted after the quarantine leaves
+    // a duplicate (recoverable); interrupted the other way round leaves the
+    // item deleted and unquarantined, which is the bug.
+    mockStorage.getItem.mockResolvedValue(JSON.stringify([QUEUED]));
+    const api = staleApi();
+    await flushPodOutbox(api as never);
+
+    expect(api.uploadPod).toHaveBeenCalled();
+    const keys = mockStorage.setItem.mock.calls.map((c) => String(c[0]));
+    expect(keys.findIndex((k) => k.includes(".podOutbox.orphaned."))).toBeLessThan(
+      keys.lastIndexOf(KEY)
+    );
+  });
+
+  it("does NOT quarantine an ordinary failure — only a stale code", async () => {
+    // A 500 is retried, not orphaned. If everything were quarantined the
+    // ceiling would fill with items that were going to succeed.
+    mockStorage.getItem.mockResolvedValue(JSON.stringify([QUEUED]));
+    const api = staleApi();
+    api.uploadPod = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error("boom"), { response: { data: { error: { code: "INTERNAL" } } } }));
+
+    const res = await flushPodOutbox(api as never);
+    // ⚠ THE ATTEMPT FIRST. `orphaned === 0` is exactly what a mock that never
+    // ran would produce, so without this line the negative case agrees with a
+    // broken harness instead of proving the 500 was seen and not quarantined.
+    expect(api.uploadPod).toHaveBeenCalled();
+    expect(res.orphaned).toBe(0);
+    expect(quarantineWrites()).toHaveLength(0);
   });
 });

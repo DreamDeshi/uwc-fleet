@@ -224,6 +224,8 @@
     "savedOffline": "已保存到本机——恢复网络后将自动上传。",
     "podQueued": "照片已保存——联网后上传",
     "outboxSynced": "已上传保存的送货记录（{{count}}）",
+    "outboxOrphaned_one": "一项已保存的送达无法上传——该站点可能需要重做。照片已保留在本机；请通知办公室。",
+    "outboxOrphaned_other": "{{count}} 项已保存的送达无法上传——这些站点可能需要重做。照片已保留在本机；请通知办公室。",
     "outboxDropped_one": "有一笔已保存的送达未能上传。请通知办公室——该停靠点可能需要重做。",
     "outboxDropped_other": "有 {{count}} 笔已保存的送达未能上传。请通知办公室——这些停靠点可能需要重做。"
   },

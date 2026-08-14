@@ -55,6 +55,35 @@ type ReadOutcome =
   | { ok: false; error: unknown };
 
 const CORRUPT_SUFFIX_PREFIX = "podOutbox.corrupt";
+const ORPHANED_SUFFIX_PREFIX = "podOutbox.orphaned";
+
+/**
+ * DG-D6 — KEEP A STALE ITEM'S EVIDENCE INSTEAD OF DELETING IT.
+ *
+ * The server has said this item's trip or stop is gone (or not this driver's),
+ * so it can never be uploaded. It leaves the queue either way — what changes is
+ * that its bytes, INCLUDING the photo, are written to the quarantine first, so
+ * a wipe costs a manual recovery rather than the only copy of a delivery's
+ * proof.
+ *
+ * ⚠ WRITTEN BEFORE THE ITEM LEAVES THE QUEUE, never after. The checkpoint that
+ * removes it can be interrupted by the app being killed; ordering it this way
+ * means the worst case is an item quarantined AND still queued (a duplicate,
+ * recoverable) rather than removed and unquarantined (the deletion this fix
+ * exists to prevent).
+ *
+ * Best-effort like quarantineCorrupt: if storage refuses, the item still leaves
+ * the queue. Failing to quarantine must not wedge the driver's outbox on an
+ * item the server will never accept.
+ */
+async function quarantineOrphaned(items: PodOutboxItem[]): Promise<void> {
+  if (items.length === 0) return;
+  try {
+    await scopedSetItem(`${ORPHANED_SUFFIX_PREFIX}.${Date.now()}`, JSON.stringify(items));
+  } catch {
+    // Storage is already misbehaving; see above.
+  }
+}
 
 /** Keep unparseable bytes instead of destroying them. Best effort by design. */
 async function quarantineCorrupt(raw: string): Promise<void> {
@@ -283,14 +312,14 @@ export async function flushPodOutbox(
   api: PodOutboxApi,
   opts: FlushOptions = {}
 ): Promise<FlushResult> {
-  if (flushing) return { outcomes: [], synced: 0, dropped: 0 };
+  if (flushing) return { outcomes: [], synced: 0, dropped: 0, orphaned: 0 };
   flushing = true;
   try {
     const read = await readOutboxOutcome();
     // Unreadable: replaying nothing is safe, guessing is not.
-    if (!read.ok) return { outcomes: [], synced: 0, dropped: 0 };
+    if (!read.ok) return { outcomes: [], synced: 0, dropped: 0, orphaned: 0 };
     const snapshot = read.items;
-    if (snapshot.length === 0) return { outcomes: [], synced: 0, dropped: 0 };
+    if (snapshot.length === 0) return { outcomes: [], synced: 0, dropped: 0, orphaned: 0 };
     // Checkpoint after every item: progress (e.g. photoUploaded) survives the
     // app being killed mid-flush, and completed items leave the queue at once.
     const checkpoint = async (outcomes: ItemOutcome[]) => {
@@ -302,6 +331,8 @@ export async function flushPodOutbox(
       // What the flush actually SETTLED. "kept" is not settled — an item the
       // server never accepted must not license emptying the queue.
       const resolved = outcomes.filter((o) => o.outcome !== "kept").map((o) => o.item);
+      // DG-D6: quarantine BEFORE the reconcile removes them (see above).
+      await quarantineOrphaned(outcomes.filter((o) => o.outcome === "orphaned").map((o) => o.item));
       await writeOutbox(reconcileOutboxAfterFlush(current.items, outcomes), { resolved });
     };
     return await flushOutboxItems(snapshot, { ...api, persist: checkpoint }, opts);

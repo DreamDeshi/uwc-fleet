@@ -163,11 +163,19 @@ describe("flushOutboxItems — replay when connectivity returns", () => {
     expect(res.synced).toBe(1);
   });
 
-  it("drops stale items the driver can never complete (reassigned / deleted trip)", async () => {
+  it("ORPHANS a stale item — it leaves the queue, its evidence does not (DG-D6)", async () => {
+    // Prod trips have been wiped three times. A driver holding a queued POD
+    // across any of them used to have the only copy of that delivery's proof
+    // deleted by his own phone, on a 404 meaning "gone" rather than "not
+    // yours". The item still leaves the queue; the bytes are quarantined.
     const api = fakeApi({ confirmFails: apiErr("FORBIDDEN") });
     const res = await flushOutboxItems([item({ photo: null })], api);
-    expect(res.outcomes[0].outcome).toBe("dropped");
-    expect(res.dropped).toBe(1);
+    expect(res.outcomes[0].outcome).toBe("orphaned");
+    expect(res.orphaned).toBe(1);
+    // ⚠ AND NOT COUNTED AS DROPPED. The two must never merge: `dropped` is what
+    // the driver is told means "gone", and telling him that about evidence
+    // sitting on his own handset is the miscommunication this fix removes.
+    expect(res.dropped).toBe(0);
   });
 
   it("gives up after MAX_API_FAILURES persistent non-network errors, not before", async () => {
@@ -209,15 +217,21 @@ describe("flushOutboxItems — replay when connectivity returns", () => {
     expect(after.outcomes[0].item.apiFailures).toBe(1);
   });
 
-  it("still drops a STALE item on a logout flush — that is not a failure", async () => {
+  it("still RESOLVES a stale item on a logout flush — that is not a failure", async () => {
     // Not spending the budget must not become "logout can never resolve
     // anything". A stale code means the server already has this work; keeping
     // it would replay a delivery that is already recorded.
+    //
+    // ⚠ The outcome changed from "dropped" to "orphaned" on 12 Aug 2026
+    // (DG-D6): it still leaves the queue, but its bytes are quarantined first
+    // rather than deleted. The point of THIS case is unchanged — a logout
+    // flush resolves it rather than keeping it forever.
     const api = fakeApi({ confirmFails: apiErr(OUTBOX_STALE_CODES[0]) });
     const res = await flushOutboxItems([item({ photo: null })], api, {
       consumeFailureBudget: false,
     });
-    expect(res.outcomes[0].outcome).toBe("dropped");
+    expect(res.outcomes[0].outcome).toBe("orphaned");
+    expect(res.outcomes[0].outcome).not.toBe("kept"); // not stuck in the queue
   });
 });
 

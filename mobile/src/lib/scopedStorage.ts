@@ -71,6 +71,12 @@ function orphanKey(suffix: string, now: number): string {
 const QUARANTINE_FAMILIES = [
   { name: "orphaned", match: (k: string) => k.startsWith(`${ORPHAN_PREFIX}.`) },
   { name: "podOutbox.corrupt", match: (k: string) => k.includes(".podOutbox.corrupt.") },
+  // DG-D6: a queued POD whose trip the server says is GONE. Registered here and
+  // not merely written with a quarantine-shaped key — an unregistered family is
+  // never pruned, and "keep a driver's delivery photos forever on a shared
+  // handset" is the liability this ceiling exists to prevent. Capped separately
+  // so a run of stale trips cannot evict the corrupt-bytes evidence.
+  { name: "podOutbox.orphaned", match: (k: string) => k.includes(".podOutbox.orphaned.") },
 ] as const;
 
 /** Trailing `.<epochMs>` on a quarantine key, or null if this is not one. */
