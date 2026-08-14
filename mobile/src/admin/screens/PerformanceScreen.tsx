@@ -7,6 +7,23 @@
 //   productivity + workload) — the wide podium/table doesn't fit a phone, and
 //   the old cards already read well there.
 // Same hook + same weighted score; only presentation changed.
+//
+// ⚠ UNIT NOTE — `points_this_month` IS RINGGIT, NOT POINTS. The API computes it
+// from `incentive_earned`, the only per-trip earnings figure the schema stores,
+// and `routes/users.ts` re-exposes the very same number as `rm_earned_this_month`
+// for this screen. Both keys, one value, one unit: MYR. This screen therefore
+// reads the RM-named key and formats it with formatMoney(), which is correct —
+// but anything new reading `points_this_month` and rendering it beside a points
+// label would be showing money under the wrong word.
+// NOT FIXED HERE ON PURPOSE: renaming the field is a breaking API change (the
+// driver self-view asks for the metric by its points name), so it needs its own
+// change with both consumers moved together. This comment exists so the next
+// reader knows the unit before they trust the name.
+//
+// Tracked as IM14 in the private OPEN_ITEMS list — that row carries the scope
+// (rename to a unit-bearing name, move both consumers in one PR, keep the old
+// key on the wire for a release). It is NOT DG-M5, which is odometer
+// plausibility and unrelated.
 import React, { useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -418,8 +435,13 @@ function Workload({ drivers }: { drivers: DriverPerformance[] }) {
 
   return (
     <Lens title={t("admin.performance.workload")} hint={t("admin.performance.workloadHint")}>
+      {/* amberText, not orange. Caught in a 1440 capture on 15 Aug 2026 AFTER
+          the palette pass had already gone through the screens it was aimed at:
+          `orange` on `orangeTint` is 2.56:1, the worst pair in the app, and this
+          is a full-width sentence of it. The code sweep missed it because the
+          sweep followed the screens being edited and this one was not. */}
       <View style={{ backgroundColor: uneven ? colors.orangeTint : colors.blueTint, borderRadius: radius.md, paddingVertical: 10, paddingHorizontal: 14, marginBottom: 16 }}>
-        <Text style={{ color: uneven ? colors.orange : colors.blue, fontSize: font.sm, fontWeight: "600" }}>{note}</Text>
+        <Text style={{ color: uneven ? colors.amberText : colors.blue, fontSize: font.sm, fontWeight: "600" }}>{note}</Text>
       </View>
       <View style={{ gap: 10 }}>
         {byLoad.map((d) => {

@@ -20,7 +20,27 @@ export const colors = {
   greenDeep: "#14532D",
   red: "#E53935",
   orange: "#F97316",
-  amber: "#d97706", // weekend / pending text
+  amber: "#d97706",
+  // ── TEXT-SAFE variants. Mirrors the driver/requestor palette, which was
+  // audited on 4 Aug 2026 and gained exactly this split. `amber`, `red` and
+  // `orange` above are FILLS, BORDERS AND GLYPHS; none of them clears WCAG AA
+  // as small text on its own tint, and every one of them was being used that
+  // way somewhere in the admin app. Measured, not estimated:
+  //
+  //     amber  #d97706 on yellowTint   3.00:1   ← the approvals count pill
+  //     orange #F97316 on orangeTint   2.56:1   ← the "No POD" / "No K2" pills
+  //     red    #E53935 on redTint      3.70:1   ← the dispatch-bar chips
+  //     red    #E53935 on white        4.23:1   ← inline error text
+  //
+  //     amberText #B45309 on yellowTint 4.73:1 · on orangeTint 4.58:1
+  //     redText   #C62828 on redTint    4.92:1 · on white      5.62:1
+  //
+  // Admins read this indoors, so the sunlight argument that drove the driver
+  // audit is weaker here — but "needs attention" text that is hard to read is
+  // a poor joke either way, and the pairs are pinned in theme.contrast.test.ts
+  // so this cannot quietly regress.
+  amberText: "#B45309",
+  redText: "#C62828",
   violet: "#6D28D9", // in-progress (live) status family
   teal: "#0F766E", // approved status family
 

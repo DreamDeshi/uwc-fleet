@@ -11,6 +11,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Linking, Pressable, RefreshControl, ScrollView, Text, TextInput, View, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useRoute } from "@react-navigation/native";
 import { useTranslation } from "react-i18next";
 import {
   useApproveTrip,
@@ -136,6 +137,40 @@ export function TripsScreen() {
   const [needsAttentionOnly, setNeedsAttentionOnly] = useState(false);
   const [driverPickerOpen, setDriverPickerOpen] = useState(false);
   const [zonePickerOpen, setZonePickerOpen] = useState(false);
+
+  /**
+   * FOCUS A SINGLE TRIP, sent here from the attention panel.
+   *
+   * The panel's rows are the trips nothing will ever clear on its own — DG-T1's
+   * 3am sweep deliberately never touches `in_progress`, because admin abort is
+   * the lever there. So the panel has to BE the way to reach that lever, or it
+   * is a list of complaints with no door out of it.
+   *
+   * ⚠ IT MUST CLEAR THE DATE RANGE, AND THAT IS THE WHOLE TRICK. This board
+   * opens on TODAY (Mr. Teh, 16 Jul) and the panel's defining case is a trip
+   * stuck for DAYS — 108 hours was the live example. Navigating here without
+   * widening the dates lands the admin on a board that does not contain the
+   * trip they just tapped, which reads as a broken link rather than a filter.
+   * Searching by TICKET rather than trusting pagination is deliberate for the
+   * same reason: a four-day-old trip may be several pages down, and the search
+   * is a server query that finds it wherever it sits.
+   *
+   * The filtered board is left visible on purpose — the admin can see WHY they
+   * are looking at one row, and Clear puts them back.
+   */
+  const focus = useRoute().params as { focusTripId?: string; focusTicket?: string } | undefined;
+  useEffect(() => {
+    if (!focus?.focusTripId) return;
+    setQ(focus.focusTicket ?? "");
+    setDebouncedQ(focus.focusTicket ?? "");
+    setDateFrom("");
+    setDateTo("");
+    setStatus("");
+    setDriverId("");
+    setZone("");
+    setNeedsAttentionOnly(false);
+    setSelectedId(focus.focusTripId);
+  }, [focus]);
   // Narrow only: driver/zone/date filters live behind a disclosure so the
   // board itself is visible without scrolling past a wall of controls.
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -750,7 +785,7 @@ function TripCard({
   const needsAttention = trip.status === "pending" && trip.auto_dispatch_failed;
   const accent = needsAttention
     ? colors.red
-    : group === "pending" ? colors.orange : group === "active" ? colors.blue : group === "completed" ? colors.green : "#9ca3af";
+    : group === "pending" ? colors.amber : group === "active" ? colors.blue : group === "completed" ? colors.green : "#9ca3af";
   return (
     <Pressable
       onPress={onPress}

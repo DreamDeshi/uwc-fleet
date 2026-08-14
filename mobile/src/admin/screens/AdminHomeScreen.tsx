@@ -74,6 +74,13 @@ export function AdminHomeScreen() {
   //
   // Colour still earns its place on this screen — it is just spent where it
   // means something: the status figures and the red alert row above.
+  //
+  // COUNT: eight in production today — two full rows of four, no orphan tile on
+  // a third row. That is the shape to keep. It holds with FEATURE_EXCEPTIONS on
+  // and FEATURE_CHANGE_REQUESTS off, which is production as of 15 Aug 2026;
+  // switching change requests on makes NINE and leaves one tile alone on row
+  // three, so that flag flip needs a decision about what leaves the grid, not
+  // just a flag flip.
   const quickTiles: {
     route: string;
     labelKey: string;
@@ -88,8 +95,13 @@ export function AdminHomeScreen() {
     { route: "AdminReports", labelKey: "admin.nav.reports", icon: "bar-chart-outline" },
     { route: "AdminSustainability", labelKey: "admin.nav.sustainability", icon: "leaf-outline" },
     { route: "AdminConsignees", labelKey: "admin.nav.consignees", icon: "business-outline" },
+    // ⚠ PERFORMANCE IS NOT A TILE. It moved INSIDE User Management as a third
+    // segment (owner, 15 Aug 2026), because the real question is "how is THIS
+    // driver doing" — a per-driver question, asked where the drivers already
+    // are, not a top-level destination of its own. The route stays registered
+    // in both shells, so DashboardWide's card and the DriversScreen row still
+    // resolve; it is only this grid that drops it.
     { route: "AdminUsers", labelKey: "admin.users.title", icon: "people-outline", count: pendingCount },
-    { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },
     { route: "AdminCalendar", labelKey: "admin.nav.calendar", icon: "calendar-outline" },
     // Failed-delivery / exception lane (feature-gated — hidden while the flag is off).
     ...(exceptionsEnabled() ? [{ route: "AdminExceptions", labelKey: "exception.laneTitle", icon: "warning-outline" as IoniconName }] : []),
@@ -176,7 +188,7 @@ export function AdminHomeScreen() {
             <View style={styles.heroStats}>
               <HeroStat value={k ? k.trips_in_progress : null} label={t("admin.home.inProgress")} color={colors.violet} />
               <View style={styles.heroDivider} />
-              <HeroStat value={k ? k.awaiting_manual : null} label={t("admin.home.awaitingDispatch")} color={colors.orange} />
+              <HeroStat value={k ? k.awaiting_manual : null} label={t("admin.home.awaitingDispatch")} color={colors.amberText} />
               <View style={styles.heroDivider} />
               <HeroStat
                 value={k ? k.auto_dispatch_failed : null}
@@ -281,7 +293,17 @@ export function AdminHomeScreen() {
             fleet is healthy. "Open trip board" jumps to the Trips tab. */}
         {attentionHasRows(attention.data) && (
           <View style={styles.section}>
-            <AttentionPanel report={attention.data} onOpenBoard={() => navigation.navigate("AdminTrips")} />
+            <AttentionPanel
+              report={attention.data}
+              onOpenBoard={() => navigation.navigate("AdminTrips")}
+              // A row is a door to the trip itself, with Abort and Reassign in
+              // reach — these rows never clear on their own (DG-T1 skips
+              // in_progress by design), so acting from here is the only thing
+              // that empties the card.
+              onOpenTrip={(focusTripId, focusTicket) =>
+                navigation.navigate("AdminTrips", { focusTripId, focusTicket })
+              }
+            />
           </View>
         )}
 

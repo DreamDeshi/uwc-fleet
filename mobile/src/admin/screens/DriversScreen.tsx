@@ -61,7 +61,7 @@ function scoreColor(score: number): { bg: string; fg: string } {
 // (3.19:1) are decorative hues — fine for a dot, not for a score someone
 // reads. Same values the mobile theme calls greenText / amberText.
 const ACCENT_GREEN = "#2A7F24";
-const ACCENT_AMBER = "#B45309";
+const ACCENT_AMBER = colors.amberText;
 
 type Filter = "all" | DriverStatus;
 
@@ -226,7 +226,7 @@ function DriverCard({ driver: d, perf, onManage }: { driver: DriverPerf; perf?: 
         )}
         {/* Leave is date-scoped — a badge alongside status, not a status. */}
         {d.on_leave_today && (
-          <Pill bg={colors.yellowTint} fg={ACCENT_AMBER} dot={colors.orange}>
+          <Pill bg={colors.yellowTint} fg={ACCENT_AMBER} dot={colors.amberText}>
             {t("admin.drivers.onLeave")}
           </Pill>
         )}

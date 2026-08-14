@@ -78,7 +78,13 @@ const NAV_GROUPS: { headingKey: string; items: NavItem[] }[] = [
         : []),
       { route: "AdminDrivers", labelKey: "admin.nav.drivers", icon: "person-outline" },
       { route: "AdminTrucks", labelKey: "admin.nav.trucks", icon: "bus-outline" },
-      { route: "AdminPerformance", labelKey: "admin.nav.performance", icon: "trophy-outline" },
+      // ⚠ NO PERFORMANCE ENTRY. It lives inside User Management as a third
+      // segment (owner, 15 Aug 2026) — "how is this driver doing" is a question
+      // about a person, asked where the people already are. `AdminPerformance`
+      // stays a REGISTERED screen below so every existing link still resolves
+      // (DashboardWide's on-time KPI card, the DriversScreen row), but keeping
+      // a sidebar entry as well gave one screen two doors in the same
+      // navigation, which is the clutter this change set out to remove.
       { route: "AdminCalendar", labelKey: "admin.nav.calendar", icon: "calendar-outline" },
     ],
   },
@@ -212,13 +218,13 @@ function AdminDrawerContent(props: DrawerContentComponentProps) {
                     {item.route === "AdminIncentiveApprovals" && approvalCount > 0 && (
                       <View
                         style={{
-                          backgroundColor: isActive ? colors.card : colors.orange,
+                          backgroundColor: isActive ? colors.card : colors.amberText,
                           borderRadius: radius.pill,
                           paddingVertical: 1,
                           paddingHorizontal: 7,
                         }}
                       >
-                        <Text style={{ color: isActive ? colors.orange : colors.card, fontSize: font.xs, fontWeight: "800" }}>
+                        <Text style={{ color: isActive ? colors.amberText : colors.card, fontSize: font.xs, fontWeight: "800" }}>
                           {approvalCount}
                         </Text>
                       </View>
