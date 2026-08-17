@@ -18,7 +18,7 @@
 //     being claimed
 //   - the live "you are here" dot from this device's GPS, when present
 import React, { useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Polyline, Tooltip, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import { InvalidateOnLayout } from "./leafletCommon";
 import { PLANT_ORIGIN, type LatLng } from "../lib/geo";
@@ -87,17 +87,14 @@ map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14, animate: false });
 export function ActiveTripMap({
   dest,
   destLabel,
-  polyline,
   current,
 }: {
   /** Native takes an initialRegion; web derives framing from the points. */
   region?: any;
   dest: LatLng;
   destLabel: string;
-  polyline?: LatLng[] | null;
   current?: LatLng | null;
 }) {
-  const road = polyline?.length ? polyline : null;
 
   const points = useMemo(
     () => [PLANT_ORIGIN, dest, ...(current ? [current] : [])],
@@ -129,22 +126,16 @@ export function ActiveTripMap({
         <FitToPoints points={points} />
         <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-        {/* ONLY the real road geometry, and only when we have it.
-            ⚠ There used to be a dashed plant→destination fallback here. It was
-            drawn between two pins, not routed on roads, so it implied a path
-            that was never computed — and at this zoom a dashed line across the
-            map reads as "your route", not as "these two things are related".
-            The stand-in is gone; the road line stays, because that one IS
-            computed (RouteLeg). Owner ruling, 18 Aug 2026. */}
-        {road ? (
-          <Polyline
-            positions={road.map((p) => [p.latitude, p.longitude] as [number, number])}
-            // weight 2 / opacity 0.55 — was 5 / 0.85, which drew wider than the
-            // motorways underneath it and read as the dominant road on the map.
-            pathOptions={{ color: colors.blue, weight: 2, opacity: 0.55 }}
-          />
-        ) : null}
-
+        {/* ⚠ NO ROUTE LINE ON THE ACTIVE-TRIP MAP. Owner ruling, 18 Aug 2026.
+            The geometry is PLANT-anchored by construction, so once the driver
+            is moving it is wrong at BOTH ends: it starts at a warehouse he left
+            an hour ago and it finishes at a zone centroid he is not going to.
+            A line like that is worse than no line. It stays on the PRE-TRIP map
+            (LiveTripMap), where he really is at the plant and it is the shape
+            of the run he is about to do.
+            Routing from his live position is the only thing that would be
+            correct here, and it needs a runtime routing provider we removed on
+            purpose — a costed decision, not a tweak. */}
         <Marker position={[PLANT_ORIGIN.latitude, PLANT_ORIGIN.longitude]} icon={plantIcon} interactive={false} />
 
         <Marker position={[dest.latitude, dest.longitude]} icon={destIcon}>

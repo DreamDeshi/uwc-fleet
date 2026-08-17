@@ -685,6 +685,55 @@ Both proven by DEGRADING THE DATA, not the logic: empty the corpus, point the
 walk at a directory with no source. If your break does not turn the guard red,
 check the break applied at all before concluding the guard works.
 
+\#### A COMMENT THAT PREDICTS A BREAK CANNOT DETECT THE BREAK
+
+⚠ **A THIRD WAY THE RECORD AND THE CODE DISAGREE, and it is not either of the
+two already written down here.** Those are a STALE record trusted too long
+(interplant scoring) and a CORRECT record trusted too little (the trips date
+range). This one is a **CORRECT WARNING THAT CAME TRUE AND NOBODY WAS
+WATCHING.** Nothing was stale, nothing was ignored, nobody reasoned past
+anything. The comment was right on the day it was written, right on the day the
+thing it predicted happened, and right for every week afterwards while the
+system quietly ran on a broken assumption.
+
+**The instance, found 18 Aug 2026.** `services/routeLegs.ts` carried this in its
+header, correctly, from the day it replaced the live Directions call:
+
+    "It works because trip destinations are ZONE CENTROIDS, not real addresses
+     (Consignee stores zone_code only) … Geocoding real consignee addresses
+     would break that assumption."
+
+Consignee addresses were then geocoded. 1,006 of 1,564 carried a coordinate at
+the last production read. The named condition became true, and the consequence
+shipped to drivers: the route line ends at a zone centroid while the destination
+pin sits at the real address, up to 27 km apart. It surfaced only because the
+owner looked at a map and asked why the line started at a warehouse the driver
+had left.
+
+**Why nothing caught it.** A sentence has no failure mode. It cannot go red, it
+is not imported by anything, and the change that invalidates it happens in a
+different file, in a different workspace, weeks later, by someone who has no
+reason to open it. The comment was doing the only thing a comment can do —
+telling a reader who was already there.
+
+**THE RULE. If a comment names a condition that would invalidate the design,
+that condition wants a TEST, not a sentence.** Write the assertion that fails
+when the condition becomes true, or — when the condition is a product fact
+rather than a code fact — pin the CONSEQUENCES you decided once it did.
+
+`tests/routeLegAssumption.test.ts` is the worked example. It does not try to
+stop the geometry being coarse; that is by design and un-fixing it costs a
+routing provider. It pins what was decided *because* the assumption broke: the
+active-trip map draws no route line, the pre-trip map keeps it, and only real
+routed geometry is ever drawn. Proven in both directions — put a line back on
+the active map, take it off the pre-trip one.
+
+**How to spot the shape in your own writing.** You are about to type "this
+relies on", "this assumes", "this would break if", or "do not X or Y stops
+working". Stop and ask what would go red when someone does X. If the answer is
+"nothing, but the comment says not to", you are writing a prediction, and
+predictions do not get read at the moment they matter.
+
 \#### ABSENCE LOOKS EXACTLY LIKE SUCCESS — FIVE INSTANCES IN ONE WEEK
 
 ⚠ **THIS IS THE MOST COMMON DEFECT IN THIS REPOSITORY.** It is not a family of
