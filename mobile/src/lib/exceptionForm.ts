@@ -89,6 +89,65 @@ export function validateExceptionForm(v: ExceptionFormValues): string | null {
 }
 
 /** The driver may add MORE evidence only when the admin asked for it. */
+/**
+ * THE OFFICE'S LAST WORDS TO THE DRIVER.
+ *
+ * Every admin action on an exception can carry a `note`, it is stored on the
+ * append-only action log, and the DRIVER is served the full view — notes
+ * included. Until 17 Aug 2026 nothing rendered it: a dispatcher typing
+ * "customer says try the side gate" had it delivered to the driver's device
+ * and thrown away, and he phoned the office to ask what he had already been
+ * told.
+ *
+ * Latest wins. The log is append-only and an admin can act more than once
+ * (request evidence, then verify, then resolve); the newest note is the
+ * standing instruction, and older ones are history he does not need at a
+ * locked gate.
+ *
+ * ⚠ ADMIN NOTES ONLY. A driver's own evidence note must never come back to him
+ * as if the office had said it.
+ */
+export interface OfficeNote {
+  note: string;
+  at: string;
+  /** Which action carried it — drives the label ("asked for", "decided"). */
+  type: string;
+}
+
+export function latestOfficeNote(
+  actions: ReadonlyArray<{ actor_role?: string | null; note?: string | null; type?: string | null; created_at?: string | null }> | null | undefined
+): OfficeNote | null {
+  if (!actions || actions.length === 0) return null;
+  let best: OfficeNote | null = null;
+  let bestAt = -Infinity;
+  for (const a of actions) {
+    if (a.actor_role !== "admin") continue;
+    const note = (a.note ?? "").trim();
+    if (!note) continue;
+    // A missing/unparseable timestamp must not win by accident — treat it as
+    // the oldest, so a real dated note always beats it.
+    const at = a.created_at ? Date.parse(a.created_at) : NaN;
+    const rank = Number.isNaN(at) ? -Infinity : at;
+    if (rank >= bestAt) {
+      bestAt = rank;
+      best = { note, at: a.created_at ?? "", type: a.type ?? "" };
+    }
+  }
+  return best;
+}
+
+/**
+ * Is this exception CLOSED with an outcome the driver has to be told?
+ *
+ * `rejected` and `resolved` are terminal. The card used to render nothing at
+ * all for them, so a rejection — which is final, has no undo path, and means
+ * the stop does not pay — reached the driver as a component quietly
+ * disappearing. The first he knew of it was his pay.
+ */
+export function isClosedOutcome(state: string): boolean {
+  return state === "rejected" || state === "resolved";
+}
+
 export function canDriverAddEvidence(state: string): boolean {
   return state === "more_evidence";
 }

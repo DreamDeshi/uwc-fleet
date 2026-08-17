@@ -1698,6 +1698,14 @@
       "reasonRequired": "请描述发生了什么。",
       "reasonTooLong": "原因过长。",
       "photoRequired": "需要一张照片。"
+    },
+    "officeSays": "来自办公室",
+    "outcome": {
+      "rejectedTitle": "办公室已驳回此报告",
+      "rejectedBody": "此站点不会计入薪酬。驳回为最终决定，无法在此撤销。如果您认为有误，请致电办公室。",
+      "resolvedTitle": "办公室已关闭此报告",
+      "resolvedBody": "此站点没有其他事项需要您处理。",
+      "noReasonGiven": "未提供原因。如需了解，请致电办公室。"
     }
   },
   "changeRequest": {
