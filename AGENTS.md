@@ -924,6 +924,52 @@ Text and layout:
 \- EVERY user-visible string goes through i18n. A new string must be added to
 &#x20; ALL THREE files: `mobile/src/i18n/en.json`, `ms.json`, `zh.json`.
 &#x20; Hard-coded literals in JSX are a defect.
+\- **THE VOICE RULE — WRITE LIKE A COLLEAGUE, NOT LIKE A SYSTEM.** Adapted from
+&#x20; `github.com/blader/humanizer` (Wikipedia's "Signs of AI writing"), which is
+&#x20; written for PROSE. Product copy is not prose: it is read mid-task, one-handed,
+&#x20; in a lorry cab in sunlight. Take the judgement, not the substitutions.
+&#x20; **What transfers, and what it means here:**
+&#x20; 1. ONE IDEA PER STRING. If it needs a semicolon or a second clause, it is
+&#x20;    two strings or one shorter thought.
+&#x20; 2. EM DASHES ARE TWO SENTENCES PRETENDING TO BE ONE. 107 strings currently
+&#x20;    carry one. In prose it is a style choice; in a 13px banner it is a place
+&#x20;    the eye trips. Default to a full stop.
+&#x20; 3. AN ERROR NAMES WHAT HAPPENED AND WHAT TO DO. "Something went wrong" is
+&#x20;    half an error. If there is nothing to do, say who to tell.
+&#x20; 4. NO APOLOGIES, NO "OOPS", NO EXCLAMATION MARKS. The app is not sorry; it
+&#x20;    is a tool. Say the fact.
+&#x20; 5. THE ACTOR IS NAMED. "A document failed to upload" hides who failed at
+&#x20;    what. "The document did not upload."
+&#x20; 6. NO HEDGING. "May", "might", "could potentially" — either state the
+&#x20;    condition or state the fact.
+&#x20; 7. NO WORDS NOBODY AT BATU KAWAN WOULD SAY: seamless, robust, leverage,
+&#x20;    utilise, streamline, ensure, kindly.
+&#x20; 8. DO NOT ANNOUNCE. "Note that", "Please be aware", "In order to".
+&#x20; 9. A BUTTON SAYS WHAT HAPPENS, and the confirmation says it happened in the
+&#x20;    same words. Book → "Booked", not "Success".
+&#x20; **What does NOT transfer, and why — check before applying a rule from it:**
+&#x20; - CURLY QUOTES. Humanizer bans them as an AI tell in plain text. In UI they
+&#x20;   are correct typography; keep “ ” and ’ in copy, and keep the locale's own
+&#x20;   marks in zh. This is a rule about prose files, not about rendered type.
+&#x20; - EMOJI. Banned there, but the greeting wave on the three Home screens and
+&#x20;   the 🇲🇾 flag on the phone field are approved design. Do not add new ones;
+&#x20;   do not strip those.
+&#x20; - "PLEASE". Dropping it sharpens ENGLISH. It does not transfer: Malay "Sila
+&#x20;   masukkan…" and Chinese "请输入…" are ordinary politeness, and removing them
+&#x20;   reads as rude rather than direct. **Decide per language, never by mirroring
+&#x20;   the English edit** — see the register rule below.
+&#x20; **⚠ WHAT THIS PASS MUST NOT TOUCH** (owner constraint, 17 Aug 2026): any
+&#x20; string that states a MONEY RULE or a legal-ish fact — incentives, rates,
+&#x20; deductions, zone points, the POD/K2 gate, incentive approval, the B7
+&#x20; cut-offs, holiday entitlement, GPS consent, audit wording. Those are precise
+&#x20; on purpose, they are the ones read back to the client, and the plain-language
+&#x20; pass on the pay panel is already done and DERIVED FROM THE ENGINE. Shortening
+&#x20; a rule changes what it promises. When a money string reads badly, raise it;
+&#x20; do not rewrite it in a style pass.
+&#x20; ⚠ Work in BATCHES BY SURFACE with the before/after shown, never a 1,500-string
+&#x20; sweep: this repo has 1,593 English strings and a copy regression is invisible
+&#x20; to every test in it.
+
 \- **THE REGISTER RULE — WORKPLACE MALAY, NOT TEXTBOOK MALAY** (owner ruling,
 &#x20; 15 Aug 2026). UWC's office and drivers speak Malay with English loanwords
 &#x20; for role and system terms. "Pentadbir Armada" is a dictionary translation
