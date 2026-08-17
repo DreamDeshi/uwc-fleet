@@ -1715,5 +1715,21 @@
     "rejectBody": "The booking stays exactly as it is. Tell the requestor why, so they can send a different request.",
     "rejectPlaceholder": "Reason (the requestor sees this)",
     "actionFailed": "Could not complete the decision"
+  },
+  "unlock": {
+    "title": "Unlock UWC Fleet",
+    "body": "Use your fingerprint to get back into your account on this phone.",
+    "retry": "Unlock with fingerprint",
+    "usePassword": "Use my password instead",
+    "settingTitle": "Fingerprint unlock",
+    "settingOn": "On for this phone. Your account opens with a fingerprint.",
+    "settingOff": "Off. You sign in with your password each time.",
+    "enrolFailed": "That did not set up. Try again, or use your password.",
+    "failure": {
+      "biometric_failed": "That fingerprint was not recognised. Try again, or use your password.",
+      "offline_expired": "You are offline and this phone has been locked too long. Sign in with your password when you have signal.",
+      "session_rejected": "You signed in on another phone, so this one is signed out. Sign in again here — notifications now go to the other phone until you do.",
+      "unavailable": "This phone can no longer use fingerprint unlock. Sign in with your password."
+    }
   }
 }

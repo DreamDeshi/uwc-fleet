@@ -35,6 +35,7 @@ import { AppLanguage } from "../../types";
 import { EditProfileModal, ChangePasswordModal } from "../../components/AccountModals";
 import { FeedbackModal } from "../../components/FeedbackModal";
 import { AppUpdatesCard } from "../../components/AppUpdatesCard";
+import { BiometricUnlockRow } from "../../components/BiometricUnlockRow";
 
 // Language display names are the native endonyms (English / Bahasa Malaysia /
 // 简体中文) — identical in every locale — so they reuse the existing
@@ -306,6 +307,7 @@ export function AdminSettingsScreen() {
             the embedded bundle) so "did the phone get the update?" is a fact,
             not a guess — plus a manual check that downloads and restarts in
             one tap, replacing the two-cold-launch dance. */}
+        <BiometricUnlockRow style={{ marginTop: 20 }} />
         <AppUpdatesCard style={{ marginTop: 20 }} />
 
         {/* Sign out — phone only, and the same DANGER BUTTON every other role

@@ -25,3 +25,20 @@ export function exceptionsEnabled(): boolean {
 export function changeRequestsEnabled(): boolean {
   return process.env.EXPO_PUBLIC_FEATURE_CHANGE_REQUESTS === "true";
 }
+
+/**
+ * Biometric unlock (opt-in, per device). Off by default; enable with
+ * EXPO_PUBLIC_FEATURE_BIOMETRIC_UNLOCK=true.
+ *
+ * ⚠ THIS FLAG DOES NOT MAKE THE FEATURE OTA-SAFE, AND MUST NOT BE READ AS IF IT
+ * DOES. It gates the UI and the enrolment offer, nothing more. The feature
+ * depends on two NATIVE modules (`expo-local-authentication`,
+ * `expo-secure-store`) that are absent from every APK built before them, and a
+ * static import of an absent native module throws at require time — before this
+ * function is ever called. `lib/biometricEnrolment` therefore resolves them
+ * lazily inside a try/catch, and the whole feature must still ride with the next
+ * REBUILD rather than an OTA. See AGENTS.md.
+ */
+export function biometricUnlockEnabled(): boolean {
+  return process.env.EXPO_PUBLIC_FEATURE_BIOMETRIC_UNLOCK === "true";
+}

@@ -14,6 +14,7 @@ import { AppLanguage } from "../../types";
 import { EditProfileModal, ChangePasswordModal } from "../../components/AccountModals";
 import { FeedbackModal } from "../../components/FeedbackModal";
 import { AppUpdatesCard } from "../../components/AppUpdatesCard";
+import { BiometricUnlockRow } from "../../components/BiometricUnlockRow";
 
 // Profile, rebuilt to the approved design (frame 37).
 //
@@ -153,6 +154,10 @@ export function ProfileScreen() {
         </View>
 
         {/* One inline segmented control, not three stacked full-width buttons. */}
+        {/* Opt-in biometric unlock. Renders nothing on a build or device that
+            cannot do it, so no platform check is needed here. */}
+        <BiometricUnlockRow style={{ marginTop: 20 }} />
+
         <Text style={styles.sectionLabel}>{t("profile.language")}</Text>
         <View style={styles.segment}>
           {(["en", "ms", "zh"] as const).map((l) => {
