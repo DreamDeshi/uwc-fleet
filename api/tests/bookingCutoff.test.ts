@@ -68,8 +68,18 @@ describe("mytMinutes / sessionOf — the day's shape", () => {
     expect(SESSION_SPLIT_MIN).toBe(12 * 60); // the default, absent an override
     expect(MORNING_CUTOFF_MIN).toBe(8 * 60 + 30);
     expect(AFTERNOON_CUTOFF_MIN).toBe(13 * 60 + 30);
-    const src = readFileSync(join(__dirname, "..", "src", "lib", "bookingCutoff.ts"), "utf8");
-    expect(src.length).toBeGreaterThan(500); // not a vacuous read
+    const raw = readFileSync(join(__dirname, "..", "src", "lib", "bookingCutoff.ts"), "utf8");
+    expect(raw.length).toBeGreaterThan(500); // not a vacuous read
+    // ⚠ SCAN THE CODE, NOT THE COMMENTS. A source guard that reads comments is
+    // wrong in BOTH directions, and this one asserts in both. The positive
+    // below would be satisfied by a comment merely MENTIONING the env read —
+    // the guard would pass while the code no longer did it. The two negatives
+    // would go red on a comment EXPLAINING that his cut-offs must not become
+    // env-tunable, i.e. the guard would punish the note that says why it
+    // exists. (Latent here, not live: today's mention on line 71 is too short
+    // to satisfy the positive. Found 18 Aug after the same defect turned up in
+    // mobile/src/lib/mytDay.test.ts.)
+    const src = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     expect(src).toContain('minutesFromEnv("BOOKING_SESSION_SPLIT_MIN"');
     // His two are literals — no env name may appear against either.
     expect(src).not.toContain("MORNING_CUTOFF_MIN = minutesFromEnv");

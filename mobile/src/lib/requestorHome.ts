@@ -1,5 +1,6 @@
 import type { Trip } from "../types";
 import { ACTIVE_STATUSES, isDelivered } from "./tripStatus";
+import { sameMytDay } from "./mytDay";
 
 /**
  * What the requestor's Home screen is showing (design frame 10), computed
@@ -28,13 +29,12 @@ function pickupTime(trip: Trip): number {
   return +new Date(trip.pickup_datetime);
 }
 
-function sameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
+/**
+ * The MYT calendar day, not the device's — see lib/mytDay. The requestor is the
+ * likeliest of the three roles to be on a DESKTOP, which is exactly where the
+ * device clock and the server's day part company.
+ */
+const sameDay = sameMytDay;
 
 /**
  * The one booking the hero shows.

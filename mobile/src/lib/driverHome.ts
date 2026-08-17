@@ -17,6 +17,7 @@
 import type { Trip, TripStop } from "../types";
 import { isDelivered } from "./tripStatus";
 import { isStopAdjudicated } from "./stopSettled";
+import { sameMytDay } from "./mytDay";
 
 export type DriverDayState = "no_trips" | "before" | "running" | "between" | "finished";
 
@@ -39,14 +40,21 @@ export interface DriverDay {
 }
 
 /**
- * Local calendar day, matching every other date comparison in the driver app.
- * The phones run on MYT; using the device day keeps "today" the same day the
- * driver's own clock shows, and keeps this function free of a timezone
- * dependency the tests would have to fake.
+ * The MYT calendar day — the same day the SERVER means by "today".
+ *
+ * ⚠ This used to read the DEVICE clock (`toDateString()`), on the reasoning
+ * that "the phones run on MYT". They mostly do; the WEB BUILD does not. A
+ * driver or admin opening the app on a laptop set to UTC is 8 hours behind, so
+ * from midnight to 08:00 MYT this screen called it yesterday while the
+ * dashboard beside it called it today — and "no trips assigned today" is the
+ * sentence that gets it wrong.
+ *
+ * `lib/trip.ts` already anchors the pay estimate to MYT for exactly this
+ * reason. See lib/mytDay for the full note, including why the SHIFT day (a
+ * 00:55 pickup belonging to the previous evening) is a different question that
+ * is deliberately not answered here.
  */
-function sameDay(a: Date, b: Date): boolean {
-  return a.toDateString() === b.toDateString();
-}
+const sameDay = sameMytDay;
 
 export function stopsOf(trip: Trip): TripStop[] {
   return [...(trip.stops ?? [])].sort((a, b) => a.sequence - b.sequence);

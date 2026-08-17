@@ -685,6 +685,68 @@ Both proven by DEGRADING THE DATA, not the logic: empty the corpus, point the
 walk at a directory with no source. If your break does not turn the guard red,
 check the break applied at all before concluding the guard works.
 
+\#### A PINNED TIMEZONE HIDES THE DEVICE-VERSUS-SERVER BUG BY CONSTRUCTION
+
+`mobile/vitest.config.ts` pins the suite to `Asia/Kuala_Lumpur`, and the reason
+is good: most of this app's date arithmetic is LOCAL on purpose, so wall-clock
+fixtures like `new Date(2026, 6, 15, 10, 30)` only mean something if "local" is
+a known quantity. Before the pin, six specs passed on a UTC+8 laptop and failed
+on UTC CI.
+
+**Its first consequence, found 18 Aug 2026 — days after the pin landed.** Two
+home screens decided which trips were "today" from the DEVICE clock
+(`toDateString()`, and a local Y/M/D compare) while every "today" the server
+computes is MYT. Under the pin, device and server are the same clock, so no
+test could tell the two implementations apart. On the web build — a laptop on
+UTC — the driver's Home said "no trips assigned today" about a day the
+dashboard called today, from midnight to 08:00 MYT.
+
+The pin did not cause the bug; it removed the only condition under which a test
+would have shown it. **A pinned timezone makes time tests deterministic AND
+makes the device-versus-server class of bug untestable, because in the test the
+two never disagree.** Keep the pin — the alternative is worse — and:
+
+- Build any case about WHICH CLOCK IS CONSULTED from INSTANTS whose MYT day
+  differs from their UTC day (e.g. `2026-08-17T18:30:00Z` is the 18th in MYT).
+  Those are timezone-independent by construction, so they still discriminate
+  under the pin.
+- A wall-clock fixture (`new Date(y, m, d, h)`) can never prove a conversion.
+  It is a fixture ABOUT local time, and under the pin local time is correct by
+  assumption. Use it for picker and window logic, never for "is this the
+  server's day".
+- When a screen and the server both compute a day, the guard belongs on SOURCE
+  — which clock the code reads — because no unit test under the pin can see it.
+  `mobile/src/lib/mytDay.test.ts` is the worked example.
+
+\#### A SOURCE GUARD THAT READS COMMENTS IS WRONG IN BOTH DIRECTIONS
+
+Several guards here assert against a file's raw text. Raw text includes
+comments, and that breaks the guard twice over:
+
+- **FALSE NEGATIVE (the dangerous one).** A positive assertion —
+  `expect(src).toContain('minutesFromEnv("BOOKING_SESSION_SPLIT_MIN"')` — is
+  satisfied by a comment that merely MENTIONS the thing. The code can stop
+  doing it and the guard stays green. This is the vacuous scan again, arriving
+  through the comments rather than through an empty corpus.
+- **FALSE POSITIVE (the one that trains people badly).** A negative assertion —
+  `not.toContain("toDateString()")` — goes red on the comment EXPLAINING that
+  the code used to do that and no longer does. The guard then punishes the note
+  that makes the fix understandable, in a repo where explaining WHY is half the
+  practice. It happened on the fix itself, 18 Aug 2026, in the same hour the
+  guard was written.
+
+**So strip comments before scanning, and say at the guard why you did** — the
+next person will otherwise rediscover this by having their explanation
+rejected, and may "fix" it by deleting the comment.
+
+    const src = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+Fixed in `mobile/src/lib/mytDay.test.ts` (found live) and
+`api/tests/bookingCutoff.test.ts` (found latent, and it guards client-quoted
+cut-off constants — the positive there would have gone green on a commented-out
+env read). Prove such a guard in BOTH directions: comment out the required code
+and watch it go red, then add a comment naming the forbidden form and watch it
+stay green.
 \#### A COMMENT THAT PREDICTS A BREAK CANNOT DETECT THE BREAK
 
 ⚠ **A THIRD WAY THE RECORD AND THE CODE DISAGREE, and it is not either of the

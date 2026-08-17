@@ -19,6 +19,20 @@ import { defineConfig } from "vitest/config";
  * that take two INSTANTS and are therefore timezone-independent by
  * construction — those are what actually prove the conversion, and they would
  * still fail here if it broke.
+ *
+ * ⚠ WHAT THE PIN HIDES — its first known consequence, 18 Aug 2026.
+ *
+ * Under the pin, the DEVICE clock and the SERVER's MYT are the same clock, so
+ * no test can tell "reads MYT" from "reads whatever the device says". Two home
+ * screens read the device (`toDateString()`, a local Y/M/D compare) and every
+ * suite was green; on the web build, a laptop on UTC, the driver's Home said
+ * "no trips assigned today" about a day the dashboard called today.
+ *
+ * The pin did not cause it — it removed the only condition that would have
+ * shown it. So a spec about WHICH CLOCK IS CONSULTED must use INSTANTS whose
+ * MYT day differs from their UTC day (`2026-08-17T18:30:00Z` is the 18th in
+ * MYT), never a wall-clock fixture, which is correct by assumption here. See
+ * `src/lib/mytDay.test.ts`.
  */
 export default defineConfig({
   /**
