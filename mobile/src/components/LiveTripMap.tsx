@@ -51,7 +51,7 @@ export function LiveTripMap({
         {/* ⚠ ONLY real road geometry — no straight-line stand-in. See the note
             in ActiveTripMap.tsx. Owner ruling, 18 Aug 2026. */}
         {route?.polyline?.length ? (
-          <Polyline coordinates={route.polyline} strokeColor={colors.blue} strokeWidth={2} />
+          <Polyline coordinates={route.polyline} strokeColor={colors.blue} strokeWidth={1} />
         ) : null}
         {live && pos ? (
           <Marker

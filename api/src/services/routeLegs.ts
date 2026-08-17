@@ -27,10 +27,15 @@
  * consignee's own coordinate, up to 27 km away in K2. Consequences, so nobody
  * re-derives them:
  *
- *   · The ACTIVE-trip map draws NO route line (owner ruling, 18 Aug 2026). A
- *     plant-anchored path is wrong at both ends once the driver is moving.
- *   · The PRE-TRIP map still draws it, honestly: he is at the plant, and the
- *     shape of the run is what he wants to see.
+ *   · BOTH maps draw the line, at 1px, as CONTEXT — the shape of the run, not
+ *     the driver's remaining leg. It was removed from the active-trip map on
+ *     18 Aug 2026 (a plant-anchored path is wrong at both ends once he is
+ *     moving) and REINSTATED the same day by owner call, knowing that. The
+ *     trade-off is decided: "the line starts at a warehouse he left" is a
+ *     correct observation, not a defect report. Turn-by-turn is, and always
+ *     was, the Google Maps handoff.
+ *   · ⚠ Nothing may present this line as his route. It does not start where he
+ *     is and it does not end where he is going.
  *   · `distance_m` / `duration_s` here are plant→centroid figures. They are
  *     estimates of the ZONE, not of the address, and must not be presented as
  *     the latter.
