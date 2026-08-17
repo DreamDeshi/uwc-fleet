@@ -39,6 +39,22 @@ const loaded = Object.fromEntries(
 ) as Record<(typeof LOCALES)[number], Flat>;
 
 describe("i18n locale parity", () => {
+  /**
+   * ⚠ NON-VACUITY FIRST — every test below walks en's key list, so an en.json
+   * that failed to load or flatten would make all of them pass while checking
+   * nothing. This is the mechanism that made the e2e selector-drift guard
+   * useless (17 Aug 2026): a check BUILT FROM the data it checks degrades to
+   * accepting everything and reports it as success.
+   *
+   * The floor is deliberately a real number rather than > 0: a flatten bug that
+   * returned one key would otherwise still pass.
+   */
+  it("actually loaded all three locales", () => {
+    for (const locale of LOCALES) {
+      expect(Object.keys(loaded[locale]).length, `${locale}.json looks empty`).toBeGreaterThan(1_000);
+    }
+  });
+
   it("ms and zh define every key en defines", () => {
     const en = Object.keys(loaded.en);
     const missing: string[] = [];

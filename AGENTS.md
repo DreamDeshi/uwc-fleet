@@ -642,6 +642,74 @@ test of the bug; it is a note about it.
 
 
 
+\#### A GUARD BUILT FROM THE THING IT CHECKS CAN DEGRADE TO ACCEPTING EVERYTHING
+
+The fourth name for the family above, found 17 Aug 2026, and the worst of them:
+the previous three were tests that could not SEE a defect. This one was
+reachable, ran on every pull request, and actively said the defect was absent.
+
+The e2e SELECTOR-DRIFT GUARD exists to catch a spec locating by copy the app no
+longer renders. It compares each literal against en.json, and — so that an
+interpolated string can still vouch for a selector — compiles every
+`{{placeholder}}` to `.+`. One key is nothing but placeholders:
+
+```
+admin.sustainability.heroMonth = "{{month}} {{year}}"   →   ^.+ .+$
+```
+
+**Any two words.** From the day that key landed, essentially every multi-word
+selector in the suite was "live copy" whatever the app rendered. It approved
+`getByText("Booking Submitted!")` minutes before the browser suite failed on
+that exact selector, in the same CI run.
+
+**THE MECHANISM IS NOT THE KEY — IT IS DERIVING A MATCHER FROM DATA.** A
+literal assertion fails when the code changes. A matcher built from the data it
+is checking can be *widened by that data* until it accepts everything, and it
+reports that as success. Whenever a guard builds a regex, a set, an allowlist or
+a loop out of a corpus, ask the second question: **what does this do if the
+corpus is empty, degenerate, or too permissive?** If the answer is "passes", it
+is not a guard yet.
+
+Two more instances were found in the same sweep and fixed with POSITIVE
+CONTROLS rather than more assertions:
+
+- `i18n/localeParity.test.ts` — all five tests iterate en's key list, so an
+  en.json that failed to load would pass every one of them. It now asserts each
+  locale carries > 1,000 keys BEFORE comparing them.
+- `lib/scopedStorage.test.ts` — the AsyncStorage scan asserts an empty
+  offender list, which is also exactly what a walk that visited nothing
+  produces. It now records what it visited and asserts it reached every
+  allowlisted file.
+
+Both proven by DEGRADING THE DATA, not the logic: empty the corpus, point the
+walk at a directory with no source. If your break does not turn the guard red,
+check the break applied at all before concluding the guard works.
+
+\#### WHEN A JOB FAILS ON YOUR BRANCH, PROVE IT AGAINST MAIN BEFORE TOUCHING THE TEST
+
+An empty commit on a branch cut from unmodified `main`, pushed as a draft pull
+request, runs the same CI on a clean tree. It costs one push and it answers the
+only question that matters when a suite goes red on your work: **is this mine?**
+
+On 17 Aug 2026 the browser suite failed on a feature branch. The theory was an
+overlay intercepting taps; the artifact refuted it. The next theory was flake,
+and a green re-run would have "confirmed" it. The empty-commit control settled
+it in one step instead — main PASSED, the branch FAILED TWICE — so the failure
+was a regression, the test was left alone, and the branch stayed unmerged.
+
+Use it whenever you are about to say "CI is flaky" or "that is the environment":
+
+```
+git checkout -b ci/probe main && git commit --allow-empty -m "ci: probe" && git push
+gh pr create --draft --base main --title "ci: probe"      # then close it after
+```
+
+⚠ A GREEN RE-RUN SETTLES NOTHING. It is consistent with flake AND with a
+regression that failed to reproduce. "Add setup until the test goes green" and
+"adjust the test until it stops complaining" are indistinguishable from the
+outside — only evidence separates them, and this is the cheapest evidence there
+is.
+
 \#### A PROD PROBE ASSERTS IDENTITY FIRST — AN EMPTY ANSWER IS NOT A FINDING
 
 

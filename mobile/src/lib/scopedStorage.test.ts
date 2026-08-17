@@ -304,6 +304,8 @@ describe("only the storage layer may touch AsyncStorage", () => {
   it("no module outside the storage layer imports AsyncStorage", () => {
     const srcDir = path.resolve(__dirname, "..");
     const offenders: string[] = [];
+    // Positive control — see the assertion below.
+    const seen: string[] = [];
 
     const walk = (dir: string) => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -321,10 +323,26 @@ describe("only the storage layer may touch AsyncStorage", () => {
         if (!touchesStorage) continue;
 
         const rel = path.relative(srcDir, full).split(path.sep).join("/");
+        seen.push(rel);
         if (!(rel in ALLOWED_DIRECT_STORAGE)) offenders.push(rel);
       }
     };
     walk(srcDir);
+
+    /**
+     * ⚠ PROVE THE SCAN RAN BEFORE TRUSTING ITS SILENCE. An empty offender list
+     * is exactly what a walk that visited nothing produces — a renamed folder,
+     * a changed extension filter, a bad path — and it reports as a pass.
+     *
+     * Both halves matter: that files were visited AT ALL, and that the visit
+     * reached the ones known to touch storage. The second is the real control:
+     * if the walk stopped finding storage-touching files, the allowlist would
+     * be the only thing still proving they exist.
+     */
+    expect(seen.length, "the scan visited no storage-touching files").toBeGreaterThan(0);
+    for (const allowed of Object.keys(ALLOWED_DIRECT_STORAGE)) {
+      expect(seen, `the scan never reached ${allowed}`).toContain(allowed);
+    }
 
     expect(offenders).toEqual([]);
   });
