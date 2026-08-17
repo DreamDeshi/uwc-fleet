@@ -59,6 +59,16 @@ export function BookingListScreen() {
   // The empty state has to answer the tab that produced it: "no bookings yet"
   // is wrong when the requestor has twenty completed ones and simply filtered
   // to Active.
+  //
+  // ⚠ THE EMPTY STATE'S OWN CTA AND THE FLOATING BUTTON ARE THE SAME ACTION.
+  // Showing both put two "New Booking" affordances on one otherwise-empty
+  // screen, and the navy button already carries it. The rule this screen now
+  // follows is NEVER TWO, NEVER ZERO: the FAB stands down exactly when the
+  // empty state is offering the button itself, and comes back everywhere else —
+  // including the empty COMPLETED tab, where the empty state deliberately
+  // offers nothing (a requestor with active bookings and no completed ones
+  // would otherwise be left with no way to book from this screen at all).
+  const emptyOffersItsOwnCta = filtered.length === 0 && filter !== "completed";
   const emptyState = (
     <View style={styles.empty}>
       <View style={styles.emptyIcon}>
@@ -151,15 +161,19 @@ export function BookingListScreen() {
             )}
           />
           {/* New Booking is not a tab; this and the Home hero CTA are the two
-              ways in. Floating over the list so it survives scrolling. */}
-          <TouchableOpacity
-            style={styles.fab}
-            onPress={() => navigation.navigate("NewBooking")}
-            accessibilityLabel={t("tabs.newBooking")}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="add" size={26} color={colors.navy} />
-          </TouchableOpacity>
+              ways in. Floating over the list so it survives scrolling — and
+              suppressed while the empty state is offering the same action (see
+              `emptyOffersItsOwnCta` above). */}
+          {emptyOffersItsOwnCta ? null : (
+            <TouchableOpacity
+              style={styles.fab}
+              onPress={() => navigation.navigate("NewBooking")}
+              accessibilityLabel={t("tabs.newBooking")}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="add" size={26} color={colors.navy} />
+            </TouchableOpacity>
+          )}
         </>
       )}
     </View>
