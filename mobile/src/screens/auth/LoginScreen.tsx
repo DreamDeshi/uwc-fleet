@@ -21,6 +21,7 @@ import { colors, layout, radius, shadow } from "../../theme";
 import { useWide } from "../../hooks/useWide";
 import { BrandLogo } from "../../components/BrandLogo";
 import { Button } from "../../components/Button";
+import { DemoRoleSwitcher } from "../../components/DemoRoleSwitcher";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
 
@@ -148,6 +149,10 @@ export function LoginScreen({ navigation }: Props) {
 
         <View style={styles.formSide}>
           <View style={styles.desktopCard}>
+            {/* Demo instance only — renders null everywhere else, gate in
+                lib/demoLogin.ts. It sits ABOVE the form on purpose: a judge
+                should never have to scroll past a keyboard to find it. */}
+            <DemoRoleSwitcher style={{ marginTop: 0, marginBottom: 4 }} />
             {fields}
             <Text style={styles.footerDesktop}>{t("login.footer")}</Text>
           </View>
@@ -180,6 +185,12 @@ export function LoginScreen({ navigation }: Props) {
         <BrandLogo height={84} style={styles.phoneLogo} />
         <Text style={styles.phoneWelcome}>{t("login.welcome")}</Text>
         <Text style={styles.phoneSubtitle}>{t("login.subtitle")}</Text>
+
+        {/* Demo instance only — renders null everywhere else, gate in
+            lib/demoLogin.ts. Above the form because the QR lands a judge here
+            and the whole point is that they type nothing. The normal form is
+            untouched below it. */}
+        <DemoRoleSwitcher />
 
         <View style={styles.phoneFields}>{fields}</View>
 

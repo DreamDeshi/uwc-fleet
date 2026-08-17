@@ -21,6 +21,19 @@ import { defineConfig } from "vitest/config";
  * still fail here if it broke.
  */
 export default defineConfig({
+  /**
+   * `react-native` itself is Flow-typed source that Vite cannot parse, so any
+   * test importing a screen or component used to fail at collection — which is
+   * why every spec here was a pure-logic one and no RENDER was ever asserted.
+   *
+   * Aliasing to `react-native-web` is exactly what the app does on web (this is
+   * the same package Expo's web build resolves RN to), so a component rendered
+   * under this alias is the real component, not a stand-in. It lets a spec ask
+   * the question that matters for a gated surface: does this actually DRAW
+   * anything? See `components/DemoRoleSwitcher.test.tsx`, which renders the
+   * login screen with the demo flag off and asserts the markup is bare.
+   */
+  resolve: { alias: { "react-native": "react-native-web" } },
   test: {
     env: { TZ: "Asia/Kuala_Lumpur" },
   },

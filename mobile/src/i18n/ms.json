@@ -37,7 +37,15 @@
     "signIn": "Log Masuk",
     "createAccount": "Cipta Akaun",
     "forgotPassword": "Lupa password? Hubungi pejabat — admin boleh menetapkannya semula untuk anda.",
-    "footer": "UWC Berhad © 2026"
+    "footer": "UWC Berhad © 2026",
+    "demo": {
+      "title": "Demo — satu tap",
+      "subtitle": "Terus lihat sistem ini sebagai salah satu akaun demo. Tak perlu taip apa-apa.",
+      "admin": "Cuba sebagai Admin",
+      "driver": "Cuba sebagai Pemandu",
+      "requestor": "Cuba sebagai Requestor",
+      "or": "atau log masuk"
+    }
   },
   "register": {
     "title": "Cipta Akaun",

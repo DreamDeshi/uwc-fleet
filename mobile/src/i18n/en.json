@@ -37,7 +37,15 @@
     "signIn": "Sign In",
     "createAccount": "Create Account",
     "forgotPassword": "Forgotten your password? Contact the office — an admin can reset it for you.",
-    "footer": "UWC Berhad © 2026"
+    "footer": "UWC Berhad © 2026",
+    "demo": {
+      "title": "Demo — one tap",
+      "subtitle": "Explore the system straight away as one of the demo accounts. Nothing to type.",
+      "admin": "Try as Admin",
+      "driver": "Try as Driver",
+      "requestor": "Try as Requestor",
+      "or": "or sign in"
+    }
   },
   "register": {
     "title": "Create Account",
