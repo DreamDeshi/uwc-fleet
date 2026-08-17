@@ -17,14 +17,34 @@
 // labelled approximate. Same honesty rule as the admin fleet map's ghosted
 // markers: never let a placeholder read as a real location.
 import React, { useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Tooltip, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Polyline, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import { useTranslation } from "react-i18next";
 import { InvalidateOnLayout } from "./leafletCommon";
 import { PLANT_ORIGIN, zoneCoord, type LatLng } from "../lib/geo";
 import { ORIGIN_LABEL } from "../lib/trip";
 import { colors } from "../theme";
-import { useTripLatestLocation } from "../hooks/queries";
+import { useTripLatestLocation, useTripRoute } from "../hooks/queries";
+
+
+// ⚠ WHY THE ROUTE LINE STOPS SHORT OF THE PIN — READ BEFORE "FIXING" EITHER.
+//
+// The precomputed geometry (RouteLeg) is keyed on {PLANT} + the eight ZONE
+// CENTROIDS, so it ENDS AT A CENTROID. The destination marker is drawn at the
+// consignee's own geocoded coordinate, which since Aug 2026 exists for most of
+// them — 1,006 of 1,564 at last count, and up to 27 km from its centroid in K2.
+// On screen the line therefore stops in the middle of nowhere while the pin
+// sits somewhere else, and that reads exactly like a rendering bug.
+//
+// It is not one, and ⚠ THE WRONG FIX IS TO MOVE THE MARKER BACK TO THE
+// CENTROID. The marker is the accurate half. The geometry is coarse because it
+// is shared reference data: nine nodes, generated once offline, with no runtime
+// routing provider, no key and no quota — the live Directions call was removed
+// on purpose (2026-07-20).
+//
+// Making the line actually reach the pin means routing to an arbitrary
+// coordinate, i.e. a routing request per trip and a provider bill. That is a
+// costed product decision and it has deliberately not been taken.
 
 // ── MARKER SCALE ───────────────────────────────────────────────────────────
 // Sized against the MAP, not the screen. The band frames a ~50 km run in about
@@ -112,6 +132,9 @@ export function LiveTripMap({
   const { t } = useTranslation();
   const dest = destCoord ?? zoneCoord(destZone);
   const { data: pos } = useTripLatestLocation(tripId, live);
+  // THE PRE-TRIP ROUTE SHAPE. Native has always drawn this; the web build had
+  // no line at all, which was a gap rather than a decision.
+  const { data: route } = useTripRoute(tripId, true);
 
   const truck: LatLng | null =
     live && pos ? { latitude: pos.latitude, longitude: pos.longitude } : null;
@@ -142,12 +165,23 @@ export function LiveTripMap({
         <FitToPoints points={points} />
         <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-        {/* ⚠ NO CONNECTOR LINE. A dashed plant→destination two-pointer used to
-            be drawn here as "an indication of the journey". It is drawn between
-            pins rather than routed on roads, so it claims a path nobody
-            computed — and this map has no road geometry to fall back on at all.
-            The two pins say where the trip runs between; a line between them
-            says how, and we do not know how. Owner ruling, 18 Aug 2026. */}
+        {/* THE ROUTE SHAPE, and ONLY when it is real road geometry.
+            ⚠ Two different lines have lived here. The one that is gone was a
+            dashed plant→destination TWO-POINTER: drawn between pins rather than
+            routed on roads, so it claimed a path nobody computed. The one that
+            stays is the precomputed RouteLeg geometry, a genuinely routed path,
+            and it belongs on THIS map — the pre-trip screen, where the driver
+            really is at the plant and this is the shape of the run he is about
+            to do. The ACTIVE-trip map deliberately has no line: once he is
+            moving, a plant-anchored path is wrong at both ends.
+            ⚠ The line ends at a ZONE CENTROID and the pin does not. Expected,
+            not a rendering bug — see the note above the icons. */}
+        {route?.polyline?.length ? (
+          <Polyline
+            positions={route.polyline.map((pt) => [pt.latitude, pt.longitude] as [number, number])}
+            pathOptions={{ color: colors.blue, weight: 2, opacity: 0.55 }}
+          />
+        ) : null}
 
         <Marker position={[PLANT_ORIGIN.latitude, PLANT_ORIGIN.longitude]} icon={plantIcon} interactive={false} />
 

@@ -6,10 +6,43 @@
  * legs were generated once against a locally-run OpenRouteService — see
  * scripts/gen-route-legs.ts and the RouteLeg model in schema.prisma.
  *
- * It works because trip destinations are ZONE CENTROIDS, not real addresses
- * (Consignee stores zone_code only), so every path the system can ask for is a
- * concatenation of legs over {PLANT} ∪ {the 8 zone centroids}. Geocoding real
- * consignee addresses would break that assumption — see the model comment.
+ * ⚠ THE ASSUMPTION THIS WAS BUILT ON HAS ALREADY BROKEN. The paragraph here
+ * used to read:
+ *
+ *     "It works because trip destinations are ZONE CENTROIDS, not real
+ *      addresses (Consignee stores zone_code only) … Geocoding real consignee
+ *      addresses would break that assumption."
+ *
+ * Consignee addresses WERE geocoded. 1,006 of 1,564 carried a coordinate at the
+ * last production read (18 Aug 2026). The warning was correct, the condition it
+ * named came true, and nothing noticed for weeks — a comment can predict a
+ * break but it cannot detect one.
+ *
+ * WHAT STILL HOLDS: this table is keyed on {PLANT} ∪ {the 8 zone centroids} and
+ * every path is a concatenation of legs over those nine nodes. That is a fine
+ * way to draw the SHAPE OF A RUN, and it is what the pre-trip map uses.
+ *
+ * WHAT NO LONGER HOLDS: the end of a route is not where the driver is going.
+ * The geometry stops at a zone centroid; the destination marker is the
+ * consignee's own coordinate, up to 27 km away in K2. Consequences, so nobody
+ * re-derives them:
+ *
+ *   · The ACTIVE-trip map draws NO route line (owner ruling, 18 Aug 2026). A
+ *     plant-anchored path is wrong at both ends once the driver is moving.
+ *   · The PRE-TRIP map still draws it, honestly: he is at the plant, and the
+ *     shape of the run is what he wants to see.
+ *   · `distance_m` / `duration_s` here are plant→centroid figures. They are
+ *     estimates of the ZONE, not of the address, and must not be presented as
+ *     the latter.
+ *   · ⚠ DO NOT "fix" the gap by moving the destination marker back to the
+ *     centroid. The marker is the accurate half.
+ *
+ * Closing the gap properly means routing to an arbitrary coordinate, i.e. a
+ * runtime routing provider, a key and a per-request bill — precisely what was
+ * removed on 2026-07-20. That is a costed decision, not a maintenance task.
+ *
+ * The condition is now pinned by a test (tests/routeLegAssumption.test.ts)
+ * rather than by this sentence, because the sentence already failed once.
  *
  * Everything degrades to the straight line rather than failing: a missing leg,
  * an unknown zone, or a STALE leg (one generated for coordinates that have since

@@ -30,7 +30,6 @@ import {
   useTrip,
   useUpdateTripStatus,
   useUpdateStopDocs,
-  useTripRoute,
   useUploadPod,
   useUploadK2,
 } from "../../hooks/queries";
@@ -249,7 +248,10 @@ export function ActiveTripScreen() {
     gpsRetry,
     bg.backgroundActive
   );
-  const { data: route } = useTripRoute(params.tripId, Boolean(trip));
+  // ⚠ NO useTripRoute HERE. The route line was removed from this map (it is
+  // plant-anchored, so it is wrong at both ends once he is moving), and the
+  // polyline was its ONLY consumer on this screen — so the fetch went with it
+  // rather than being left running for nothing.
 
   const [error, setError] = useState<string | null>(null);
   const [earned, setEarned] = useState<string | number | null>(null);
@@ -656,7 +658,6 @@ export function ActiveTripScreen() {
           region={region}
           dest={dest}
           destLabel={tripDestination(trip)}
-          polyline={route?.polyline}
           current={tracking.current}
         />
         <TouchableOpacity

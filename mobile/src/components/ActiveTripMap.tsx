@@ -1,6 +1,6 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
-import MapView, { Marker, Polyline } from "react-native-maps";
+import MapView, { Marker } from "react-native-maps";
 import { colors } from "../theme";
 import { PLANT_ORIGIN } from "../lib/geo";
 import { mapsEnabled } from "../lib/maps";
@@ -15,13 +15,11 @@ export function ActiveTripMap({
   region,
   dest,
   destLabel,
-  polyline,
   current,
 }: {
   region: any;
   dest: LatLng;
   destLabel: string;
-  polyline?: LatLng[] | null;
   current?: LatLng | null;
 }) {
   // Falls back to a placeholder when no Google Maps API key is configured,
@@ -32,13 +30,10 @@ export function ActiveTripMap({
     <MapView style={StyleSheet.absoluteFill} initialRegion={region}>
       <Marker coordinate={PLANT_ORIGIN} title="UWC Batu Kawan" pinColor={colors.blue} />
       <Marker coordinate={dest} title={destLabel} pinColor={colors.red} />
-      {/* ⚠ ONLY the real road path. This used to fall back to
-          `[PLANT_ORIGIN, dest]` — a straight two-pointer drawn at the SAME
-          solid 5px weight as real geometry, so a line that was never routed
-          was indistinguishable from one that was. Owner ruling, 18 Aug 2026. */}
-      {polyline?.length ? (
-        <Polyline coordinates={polyline} strokeColor={colors.blue} strokeWidth={2} />
-      ) : null}
+      {/* ⚠ NO ROUTE LINE HERE. Owner ruling, 18 Aug 2026 — the geometry is
+          PLANT-anchored, so once he is moving it is wrong at both ends. See
+          ActiveTripMap.web.tsx for the full reasoning; the pre-trip map
+          (LiveTripMap) keeps the line. */}
       {/* Live "you are here" dot from this phone's GPS */}
       {current ? (
         <Marker coordinate={current} anchor={{ x: 0.5, y: 0.5 }} flat>
