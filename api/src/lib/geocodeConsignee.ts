@@ -135,6 +135,26 @@ export function geocodeStoreFields(g: GeoResult): {
 }
 
 /**
+ * Record why a lookup produced no position, WITHOUT inventing one.
+ *
+ * Fill-only (`latitude: null, longitude: null` in the where) so it can never
+ * overwrite a coordinate that arrived meanwhile from an admin fix, a batch run
+ * or the self-heal. Swallows its own errors: this is called from a
+ * fire-and-forget path and from a catch block, and it must not be able to
+ * escalate a geocode problem into a failed consignee creation.
+ */
+async function recordVerdict(id: string, verdict: string): Promise<void> {
+  try {
+    await prisma.consignee.updateMany({
+      where: { id, latitude: null, longitude: null },
+      data: { geocode_match_type: verdict },
+    });
+  } catch {
+    /* best effort — the caller is already handling a failure */
+  }
+}
+
+/**
  * Creation-time geocode, fire-and-forget (call with `void`, never await on
  * the request path). No key → no-op. Fill-only write: never overwrites
  * coordinates that appeared meanwhile (admin fix, batch run, self-heal).
@@ -148,7 +168,22 @@ export async function geocodeNewConsignee(c: {
   postal_code: string | null;
 }): Promise<void> {
   const key = process.env.GOOGLE_MAPS_KEY ?? process.env.GOOGLE_MAPS_API_KEY ?? "";
-  if (!key) return;
+  if (!key) {
+    // ⚠ THIS USED TO BE A BARE `return`, AND THAT WAS THE WHOLE DEFECT.
+    //
+    // With no key, every new consignee was left exactly as if nothing had been
+    // attempted: null coords, null match_type. `/consignees/coverage` reads a
+    // null match_type as NEVER GEOCODED and the admin screen then says "a
+    // geocode run would fill it" — advice that is precisely wrong, because a
+    // run with no key fills nothing. The count grows with every consignee
+    // added, the advice stays confidently wrong, and NOTHING anywhere says the
+    // lookup is not running.
+    //
+    // So record the verdict. It costs one fill-only write and turns an
+    // invisible misconfiguration into a number an admin can see.
+    await recordVerdict(c.id, "NO_API_KEY");
+    return;
+  }
   try {
     // 2 attempts (not the batch script's 6): this runs per creation and must
     // stay bounded; a miss is caught by the next manual batch run anyway.
@@ -159,5 +194,10 @@ export async function geocodeNewConsignee(c: {
     });
   } catch (err) {
     console.warn(`geocodeNewConsignee(${c.id}): ${(err as Error).message}`);
+    // Same reasoning as the no-key path: a thrown error wrote nothing, so a
+    // broken lookup was indistinguishable from one that never ran. This write
+    // is itself best-effort — if the database is what failed, there is nothing
+    // further to do and this must still never throw into a creation request.
+    await recordVerdict(c.id, "ERROR");
   }
 }

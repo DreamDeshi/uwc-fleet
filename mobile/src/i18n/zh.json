@@ -848,6 +848,8 @@
       "coverageMissing_other": "{{total}} 个有效收货方中有 {{count}} 个没有地图坐标 — 前往该处的配送将指向区域中心",
       "coverageNeverGeocoded_one": "{{count}} 个从未做过地理编码 — 运行一次地理编码即可补齐",
       "coverageNeverGeocoded_other": "{{count}} 个从未做过地理编码 — 运行一次地理编码即可补齐",
+      "coverageFailed_one": "{{count}} 无法查询。是查询失败，不是地址有问题。",
+      "coverageFailed_other": "{{count}} 无法查询。是查询失败，不是地址有问题。",
       "coveragePartial": "{{count}} 个坐标不完整（数据异常）",
       "showing": "显示 {{count}} 条结果（最多 10 条 — 请细化搜索）",
       "noMatch": "没有匹配的收货方。",

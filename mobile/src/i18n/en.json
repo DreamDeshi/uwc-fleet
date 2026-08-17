@@ -848,6 +848,8 @@
       "coverageMissing_other": "{{count}} of {{total}} active consignees have no map position — deliveries there aim at the zone centre",
       "coverageNeverGeocoded_one": "{{count}} never geocoded — a geocode run would fill it",
       "coverageNeverGeocoded_other": "{{count}} never geocoded — a geocode run would fill them",
+      "coverageFailed_one": "{{count}} could not be looked up. The lookup failed, not the address.",
+      "coverageFailed_other": "{{count}} could not be looked up. The lookup failed, not the address.",
       "coveragePartial": "{{count}} with half-missing coordinates (data anomaly)",
       "showing": "Showing {{count}} results (max 10 — refine the search)",
       "noMatch": "No consignees match this search.",

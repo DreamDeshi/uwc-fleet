@@ -62,6 +62,10 @@ const PRECISION_BY_MATCH_TYPE: Readonly<Record<string, GeocodePrecision>> = {
   GEOMETRIC_CENTER: "road", // the centre of a street segment or polyline
   APPROXIMATE: "area", // a postcode or locality centroid
   ZERO_RESULTS: "unknown",
+  // ⚠ NOT a provider value — OURS. Written when GOOGLE_MAPS_KEY is absent, so
+  // that a missing configuration leaves a mark instead of leaving the row
+  // looking untouched. See `isBrokenAttempt`.
+  NO_API_KEY: "unknown",
   ERROR: "unknown",
   RETRY_EXHAUSTED: "unknown",
   OVER_QUERY_LIMIT: "unknown",
@@ -96,6 +100,49 @@ export const BUILDING_MATCH_TYPES: readonly string[] = Object.entries(PRECISION_
 
 /** The vocabulary this module claims to cover — the parity test reads this. */
 export const KNOWN_MATCH_TYPES: readonly string[] = Object.keys(PRECISION_BY_MATCH_TYPE);
+
+/**
+ * Verdicts that mean THE LOOKUP BROKE, as opposed to the geocoder answering and
+ * declining to place the address.
+ *
+ * The distinction is the whole point of recording them, and it is the
+ * difference between two pieces of advice:
+ *
+ *   ZERO_RESULTS      the geocoder read the address and could not find it.
+ *                     Another run returns the same answer. Fix the ADDRESS.
+ *   NO_API_KEY, ERROR the lookup never reached a verdict — no key, a transport
+ *   RETRY_EXHAUSTED   failure, a quota wall, a malformed query of ours.
+ *   OVER_QUERY_LIMIT  Another run MIGHT work, once the cause is fixed. Fix the
+ *   REQUEST_DENIED    SYSTEM.
+ *   UNKNOWN_ERROR
+ *   INVALID_REQUEST
+ *
+ * Before this existed, a broken lookup wrote NOTHING, so the row kept
+ * `geocode_match_type = null` and was indistinguishable from one that had never
+ * been attempted. `/consignees/coverage` counts those as "a geocode run would
+ * fill it" — advice that is exactly wrong when the key is missing, because a
+ * run fills none of them and the count grows every time a consignee is added.
+ */
+const BROKEN_ATTEMPT = new Set([
+  "NO_API_KEY",
+  "ERROR",
+  "RETRY_EXHAUSTED",
+  "OVER_QUERY_LIMIT",
+  "REQUEST_DENIED",
+  "UNKNOWN_ERROR",
+  "INVALID_REQUEST",
+]);
+
+/** The list form, for a database filter. Non-empty by construction; pinned. */
+export const BROKEN_MATCH_TYPES: readonly string[] = [...BROKEN_ATTEMPT];
+
+/**
+ * Did the lookup BREAK, rather than answer? A row with no coordinates and a
+ * broken verdict needs someone to look at the system, not at the address.
+ */
+export function isBrokenAttempt(matchType: string | null | undefined): boolean {
+  return matchType != null && BROKEN_ATTEMPT.has(matchType.trim());
+}
 
 /**
  * The grade of a stored pin. Total: every input returns a grade, and anything

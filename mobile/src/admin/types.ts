@@ -408,6 +408,12 @@ export interface ConsigneeCoverage {
    *  have already been asked and declined (coarse match, or a demoted
    *  duplicate). Only this number justifies suggesting a run. */
   never_geocoded: number;
+  /** The subset where the LOOKUP BROKE rather than answered — no API key, a
+   *  transport failure, a quota wall. Disjoint from never_geocoded. These need
+   *  someone to look at the system, not at the address, and a geocode run only
+   *  helps once the cause is fixed. Before this existed a broken lookup wrote
+   *  nothing, so it counted as never_geocoded and the screen advised a run. */
+  failed_lookup: number;
   partial_coords: number;
 }
 
