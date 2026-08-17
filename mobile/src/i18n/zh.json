@@ -13,17 +13,17 @@
     "close": "关闭",
     "dismiss": "关闭",
     "km": "公里",
-    "errorGeneric": "出了点问题。",
+    "errorGeneric": "操作没有成功。请重试。",
     "reconnecting": "正在重新连接…",
     "updateReady": "新版本已就绪",
     "updateRestart": "立即重启",
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
     "noData": "这里还没有内容。",
-    "fileTooLarge": "文件过大。请发送小于 10 MB 的文件。",
+    "fileTooLarge": "该文件超过 10 MB。请发送较小的文件。",
     "passwordTooWeak": "密码必须至少 {{count}} 个字符，并包含小写字母、大写字母和数字。",
-    "errorOffline": "没有网络连接。请移动到有信号的地方再试——如果紧急，请致电办公室。",
-    "errorTimeout": "服务器响应超时。请重试——如果持续出现，请致电办公室。",
+    "errorOffline": "当前离线。恢复网络后请重试。如果紧急，请致电办公室。",
+    "errorTimeout": "服务器没有响应。请重试。如果持续出现，请致电办公室。",
     "clear": "清除"
   },
   "login": {
@@ -76,7 +76,7 @@
     "departmentRequired": "请选择您的部门。",
     "phoneRequired": "请输入您的电话号码。",
     "successTitle": "账户已创建！",
-    "pendingMessage": "您的账户正在等待管理员批准——激活后即可登录。",
+    "pendingMessage": "您的账户正在等待管理员批准。激活后即可登录。",
     "goToLogin": "返回登录"
   },
   "tabs": {

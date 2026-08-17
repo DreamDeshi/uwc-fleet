@@ -13,17 +13,17 @@
     "close": "Tutup",
     "dismiss": "Tolak",
     "km": "km",
-    "errorGeneric": "Sesuatu telah berlaku.",
+    "errorGeneric": "Itu tidak menjadi. Cuba lagi.",
     "reconnecting": "Menyambung semula…",
     "updateReady": "Versi baharu telah sedia",
     "updateRestart": "Mula semula",
     "showPassword": "Tunjukkan password",
     "hidePassword": "Sembunyikan password",
     "noData": "Belum ada apa-apa di sini.",
-    "fileTooLarge": "Fail itu terlalu besar. Sila hantar fail bawah 10 MB.",
+    "fileTooLarge": "Fail itu melebihi 10 MB. Sila hantar yang lebih kecil.",
     "passwordTooWeak": "Password mesti sekurang-kurangnya {{count}} aksara dan mengandungi huruf kecil, huruf besar dan satu digit.",
-    "errorOffline": "Tiada sambungan internet. Pergi ke kawasan bertalian dan cuba lagi — hubungi pejabat jika mendesak.",
-    "errorTimeout": "Pelayan mengambil masa terlalu lama untuk membalas. Cuba lagi — hubungi pejabat jika ia berterusan.",
+    "errorOffline": "Anda di luar talian. Cuba lagi apabila talian kembali. Jika mendesak, hubungi pejabat.",
+    "errorTimeout": "Pelayan tidak menjawab. Cuba lagi. Jika berterusan, hubungi pejabat.",
     "clear": "Kosongkan"
   },
   "login": {
@@ -76,7 +76,7 @@
     "departmentRequired": "Sila pilih jabatan anda.",
     "phoneRequired": "Sila masukkan nombor telefon anda.",
     "successTitle": "Akaun Dicipta!",
-    "pendingMessage": "Akaun anda menunggu kelulusan admin — anda boleh log masuk setelah diaktifkan.",
+    "pendingMessage": "Akaun anda menunggu kelulusan admin. Anda boleh log masuk setelah ia aktif.",
     "goToLogin": "Kembali ke Log Masuk"
   },
   "tabs": {
