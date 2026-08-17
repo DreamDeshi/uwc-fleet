@@ -33,3 +33,4 @@ playwright-report/
 
 # Claude Code session files
 .claude/
+e2e/__*.mjs
