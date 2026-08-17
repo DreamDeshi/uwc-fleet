@@ -158,7 +158,7 @@ function K2Badge() {
 
 function Marker({ kind }: { kind: "pickup" | "done" | "now" | "next" | "final" }) {
   if (kind === "done") {
-    return <Ionicons name="checkmark-circle" size={15} color="#2E7D32" />;
+    return <Ionicons name="checkmark-circle" size={15} color={colors.greenText} />;
   }
   if (kind === "final") {
     return <Ionicons name="location" size={18} color={colors.red} />;

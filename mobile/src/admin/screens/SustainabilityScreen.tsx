@@ -17,7 +17,7 @@ import { Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from "re
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { useConsolidationSavings, useFuelSummary } from "../hooks/queries";
-import { colors, font, radius } from "../theme";
+import { colors, font, radius, status } from "../theme";
 import { Button, Card, ErrorState, Loading, SectionTitle } from "../components/ui";
 import { formatNumber } from "../lib/format";
 import { fleetFuelRollup } from "../lib/fleetFuel";
@@ -131,7 +131,7 @@ export function SustainabilityScreen() {
       {!fleet.hasData && (
         <Card style={{ backgroundColor: "#F0FDF4", borderColor: "#BBE5C8" }}>
           <View style={{ flexDirection: "row", gap: 10 }}>
-            <Ionicons name="information-circle-outline" size={18} color="#16A34A" />
+            <Ionicons name="information-circle-outline" size={18} color={status.success.solid} />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={{ fontSize: font.md, fontWeight: "700", color: colors.text }}>
                 {t("admin.sustainability.emptyTitle")}
@@ -159,7 +159,7 @@ export function SustainabilityScreen() {
                 justifyContent: "center",
               }}
             >
-              <Ionicons name="trending-down" size={22} color="#16A34A" />
+              <Ionicons name="trending-down" size={22} color={status.success.solid} />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={{ fontSize: 30, fontWeight: "900", color: "#166534", letterSpacing: -0.5 }}>

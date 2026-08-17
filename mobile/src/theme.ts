@@ -11,14 +11,14 @@ export const colors = {
   bg: "#f4f6fb", // app background
   // Brand green — DECORATIVE ONLY (dots, thin accents, icons on a light
   // background). ⚠ Do NOT put white text on it: white on #3DAA35 is 3.00:1.
-  green: "#3DAA35",
+  green: "#16A34A",
   // The ACCESSIBLE green, used two ways: as green TEXT on a light background
   // (5.05:1 on white), and as a FILL underneath white text (also 5.05:1 —
   // contrast is symmetric). The 4 Aug 2026 sweep found the original comment
   // here was half right: it moved green NUMBERS off `green`, but left the
   // white-on-green FILLS at 3.00:1 — including the driver's primary "Delivered"
   // button and the completed status pill, both read outdoors in direct sun.
-  greenText: "#2A7F24",
+  greenText: "#15803D",
   red: "#E53935", // error — DECORATIVE ONLY, white on it is 4.23:1
   // Red as a FILL under white text (5.62:1). `red` itself falls just short of
   // AA, which is why the danger button and the rejected pill use this instead.
@@ -49,8 +49,8 @@ export const colors = {
   borderLight: "#e8ecf4",
   fieldBg: "#f4f6fb",
   tintBlue: "#EBF3FB", // pale blue surface
-  tintGreen: "#E8F5E9",
-  tintYellow: "#FFF8E1",
+  tintGreen: "#F0FDF4",
+  tintYellow: "#FFFBEB",
   tintOrange: "#FFF3E0",
   tintRed: "#FFEBEE",
   tintViolet: "#EDE9FE",
@@ -179,7 +179,7 @@ export const actionShadow = {
     elevation: 6,
   },
   green: {
-    shadowColor: "#2A7F24",
+    shadowColor: "#15803D", // same hue as `greenText`, the fill it sits under
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 12,

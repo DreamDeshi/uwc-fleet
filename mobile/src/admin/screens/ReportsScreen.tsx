@@ -10,8 +10,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { LinearGradient } from "expo-linear-gradient";
 import { useConsolidationSavings, useMonthly, usePayroll, useTrips } from "../hooks/queries";
-import { colors, font, gradients, radius } from "../theme";
-import { Button, Card, ErrorState, Loading, SectionTitle, TableCell, TableHeader, TableRow } from "../components/ui";
+import { colors, font, gradients, radius, status } from "../theme";
+import { Button, Card, ErrorState, Loading, SectionTitle, SegmentedFilter, TableCell, TableHeader, TableRow } from "../components/ui";
 import { formatDateTime, formatMoney, formatNumber } from "../lib/format";
 import { buildPayrollCsv, lastNMytMonthKeys, monthKeyLabel, payrollBusy } from "../lib/payroll";
 import { CSV_BOM } from "../lib/csv";
@@ -20,6 +20,8 @@ import { IncentiveBarChart, RouteSplitDonut, PIE_COLORS } from "../platform/repo
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { OptionsModal } from "../../components/OptionsModal";
 import type { MonthlyRow, PayrollDriverRow } from "../types";
+
+type ReportTab = "overview" | "payroll" | "monthly";
 
 export function ReportsScreen() {
   const { t } = useTranslation();
@@ -32,6 +34,17 @@ export function ReportsScreen() {
   const monthOptions = useMemo(() => lastNMytMonthKeys(new Date(), 12), []);
   const [month, setMonth] = useState(monthOptions[0]);
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+
+  /**
+   * ONE TAB AT A TIME, NOT ONE LONG SCROLL (design handoff, 17 Aug 2026).
+   *
+   * The screen stacked four KPIs, two charts, the savings strip, the payroll
+   * table AND the monthly table into a single column — the payroll sheet a
+   * clerk opens this screen FOR sat two screenfuls down, under charts nobody
+   * asked for at month end. The three tabs are the three jobs: read the shape
+   * of the month, close payroll, compare months.
+   */
+  const [tab, setTab] = useState<ReportTab>("overview");
   const payroll = usePayroll(month);
   const consolidation = useConsolidationSavings();
 
@@ -85,12 +98,27 @@ export function ReportsScreen() {
         </Button>
       </View>
 
+      {/* Three jobs, three tabs — see the note on `tab` above. */}
+      <View style={{ alignSelf: wide ? "center" : "stretch" }}>
+        <SegmentedFilter<ReportTab>
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: "overview", label: t("admin.reports.tabOverview") },
+            { value: "payroll", label: t("admin.reports.tabPayroll") },
+            { value: "monthly", label: t("admin.reports.tabMonthly") },
+          ]}
+        />
+      </View>
+
+      {tab === "overview" ? (
+        <>
       {/* KPI cards */}
       <View style={{ flexDirection: wide ? "row" : "column", gap: 16 }}>
-        <MiniKpi label={t("admin.reports.kpiTotalIncentive")} value={formatMoney(totalIncentive)} bg={colors.blueTint} fg={colors.blue} wide={wide} />
-        <MiniKpi label={t("admin.reports.kpiAvgTrip")} value={formatMoney(avgTrip)} bg={colors.greenTint} fg={colors.green} wide={wide} />
-        <MiniKpi label={t("admin.reports.kpiTotalTrips")} value={formatNumber(totalTrips)} bg={colors.yellowTint} fg={colors.amber} wide={wide} />
-        <MiniKpi label={t("admin.reports.kpiExternal")} value={formatNumber(totalExternal)} bg={colors.orangeTint} fg={colors.orange} wide={wide} />
+        <MiniKpi label={t("admin.reports.kpiTotalIncentive")} value={formatMoney(totalIncentive)} bg={colors.blueTint} fg={colors.blue} wide={wide} icon="cash-outline" />
+        <MiniKpi label={t("admin.reports.kpiAvgTrip")} value={formatMoney(avgTrip)} bg={colors.greenTint} fg={status.success.text} wide={wide} icon="trending-up-outline" />
+        <MiniKpi label={t("admin.reports.kpiTotalTrips")} value={formatNumber(totalTrips)} bg={colors.yellowTint} fg={status.warning.text} wide={wide} icon="cube-outline" />
+        <MiniKpi label={t("admin.reports.kpiExternal")} value={formatNumber(totalExternal)} bg={colors.orangeTint} fg={status.external.text} wide={wide} icon="git-branch-outline" />
       </View>
 
       {/* Charts */}
@@ -135,14 +163,17 @@ export function ReportsScreen() {
         <Card>
           <SectionTitle title={t("admin.reports.consolidationTitle")} subtitle={t("admin.reports.consolidationSub")} />
           <View style={{ flexDirection: wide ? "row" : "column", gap: 16, marginTop: 8 }}>
-            <MiniKpi label={t("admin.reports.tripsSaved")} value={formatNumber(consolidation.data.tripsSaved)} bg={colors.greenTint} fg={colors.green} wide={wide} />
-            <MiniKpi label={t("admin.reports.co2Saved")} value={`${formatNumber(consolidation.data.estCo2eKgSaved)} kg`} bg={colors.greenTint} fg={colors.green} wide={wide} />
-            <MiniKpi label={t("admin.reports.kmSaved")} value={`${formatNumber(consolidation.data.estKmSaved)} km`} bg={colors.greenTint} fg={colors.green} wide={wide} />
+            <MiniKpi label={t("admin.reports.tripsSaved")} value={formatNumber(consolidation.data.tripsSaved)} bg={status.eco.tint} fg={status.eco.text} wide={wide} icon="repeat-outline" />
+            <MiniKpi label={t("admin.reports.co2Saved")} value={`${formatNumber(consolidation.data.estCo2eKgSaved)} kg`} bg={status.eco.tint} fg={status.eco.text} wide={wide} icon="leaf-outline" />
+            <MiniKpi label={t("admin.reports.kmSaved")} value={`${formatNumber(consolidation.data.estKmSaved)} km`} bg={status.eco.tint} fg={status.eco.text} wide={wide} icon="map-outline" />
           </View>
           <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 10 }}>{t("admin.reports.consolidationEstNote")}</Text>
         </Card>
       )}
 
+        </>
+      ) : tab === "payroll" ? (
+        <>
       {/* Payroll table — the clerk's month-end sheet; a row expands to the
           per-trip lines its total is the sum of (dispute path). */}
       <Card pad={0}>
@@ -208,6 +239,9 @@ export function ReportsScreen() {
       </Card>
 
       {/* Monthly summary table */}
+        </>
+      ) : (
+        <>
       <Card pad={0} style={{ overflow: "hidden" }}>
         <View style={{ padding: 18, borderBottomWidth: 1, borderBottomColor: colors.border }}>
           <SectionTitle
@@ -254,6 +288,8 @@ export function ReportsScreen() {
         onSelect={setMonth}
         onClose={() => setMonthPickerOpen(false)}
       />
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -296,29 +332,74 @@ function PayrollRow({ row }: { row: PayrollDriverRow }) {
   );
 }
 
-function MiniKpi({ label, value, bg, fg, wide }: { label: string; value: string; bg: string; fg: string; wide: boolean }) {
+/**
+ * One stat card, one treatment (design handoff, 17 Aug 2026).
+ *
+ * These used to paint the NUMBER in a different accent per card — blue, green,
+ * amber, orange down the row — so four unrelated figures read as four severity
+ * levels. Nothing was wrong with any of them; "external trips: 0" was simply
+ * rendered in alarm-orange because it happened to be fourth.
+ *
+ * Now the hue lives in a small tinted ICON CHIP, which is decoration, and every
+ * value is the same navy: the eye compares magnitudes instead of colours. The
+ * `tint`/`fg` pair still varies per card, so the row stays scannable — it just
+ * no longer implies a ranking that does not exist.
+ */
+function MiniKpi({
+  label,
+  value,
+  bg,
+  fg,
+  wide,
+  icon,
+}: {
+  label: string;
+  value: string;
+  bg: string;
+  fg: string;
+  wide: boolean;
+  icon?: keyof typeof Ionicons.glyphMap;
+}) {
   return (
     <View
       style={{
         flex: wide ? 1 : undefined,
         backgroundColor: colors.card,
         borderRadius: radius.lg,
-        padding: 18,
+        padding: 16,
         borderWidth: 1,
         borderColor: colors.border,
-        borderLeftWidth: 4,
-        borderLeftColor: fg,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
         shadowColor: "#000",
         shadowOpacity: 0.06,
         shadowRadius: 12,
         shadowOffset: { width: 0, height: 2 },
       }}
     >
-      <Text style={{ fontSize: font.xs, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.4, color: colors.textMuted }}>
-        {label}
-      </Text>
-      <Text style={{ fontSize: 26, fontWeight: "800", color: fg, marginTop: 8 }}>{value}</Text>
-      <View style={{ width: 28, height: 4, backgroundColor: bg, borderRadius: 2, marginTop: 8 }} />
+      {icon ? (
+        <View
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: radius.md,
+            backgroundColor: bg,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name={icon} size={19} color={fg} />
+        </View>
+      ) : null}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontSize: font.xs, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.4, color: colors.textMuted }}>
+          {label}
+        </Text>
+        <Text style={{ fontSize: 24, fontWeight: "800", color: colors.text, marginTop: 4 }} numberOfLines={1}>
+          {value}
+        </Text>
+      </View>
     </View>
   );
 }

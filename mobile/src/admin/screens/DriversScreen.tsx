@@ -18,7 +18,7 @@ import {
   useSetDriverStatus,
   useTrucks,
 } from "../hooks/queries";
-import { colors, font, radius } from "../theme";
+import { colors, font, radius, status } from "../theme";
 import {
   Avatar,
   Button,
@@ -47,7 +47,7 @@ import type { DriverPerf, DriverPerformance, DriverStatus, Truck } from "../type
 // Driver status wears the same badge language as trip statuses.
 const STATUS_META: Record<DriverStatus, { labelKey: string; bg: string; fg: string; dot: string }> = {
   on_trip: { labelKey: "admin.drivers.statusOnTrip", bg: colors.blueTint, fg: colors.blue, dot: "#2563EB" },
-  available: { labelKey: "admin.drivers.statusAvailable", bg: colors.greenTint, fg: "#2E7D32", dot: colors.green },
+  available: { labelKey: "admin.drivers.statusAvailable", bg: colors.greenTint, fg: status.success.text, dot: colors.green },
   off_duty: { labelKey: "admin.drivers.statusOffDuty", bg: "#f3f4f6", fg: "#4B5563", dot: "#9CA3AF" },
 };
 
@@ -60,7 +60,7 @@ function scoreColor(score: number): { bg: string; fg: string } {
 // Accessible on-tint text. The admin theme's `green` (3.00:1) and `amber`
 // (3.19:1) are decorative hues — fine for a dot, not for a score someone
 // reads. Same values the mobile theme calls greenText / amberText.
-const ACCENT_GREEN = "#2A7F24";
+const ACCENT_GREEN = status.success.text;
 const ACCENT_AMBER = colors.amberText;
 
 type Filter = "all" | DriverStatus;

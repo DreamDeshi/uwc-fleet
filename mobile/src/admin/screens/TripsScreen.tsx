@@ -22,7 +22,7 @@ import {
   useTrip,
   useTripBoard,
 } from "../hooks/queries";
-import { colors, font, radius } from "../theme";
+import { colors, font, radius, status } from "../theme";
 import {
   Avatar,
   Button,
@@ -70,7 +70,7 @@ const GROUP_ORDER = ["pending", "active", "completed", "cancelled"] as const;
 const GROUP_META: Record<string, { labelKey: string; dot: string; tint: string; fg: string }> = {
   pending: { labelKey: "admin.trips.groupPending", dot: colors.orange, tint: colors.orangeTint, fg: "#B45309" },
   active: { labelKey: "admin.trips.groupActive", dot: colors.blue, tint: colors.blueTint, fg: colors.blue },
-  completed: { labelKey: "admin.trips.groupCompleted", dot: colors.green, tint: colors.greenTint, fg: "#2E7D32" },
+  completed: { labelKey: "admin.trips.groupCompleted", dot: colors.green, tint: colors.greenTint, fg: status.success.text },
   cancelled: { labelKey: "admin.trips.groupCancelled", dot: "#9ca3af", tint: "#F3F4F6", fg: "#4B5563" },
 };
 
@@ -408,14 +408,23 @@ export function TripsScreen() {
                 was silently limiting the board and put an everyday control
                 behind an extra click. Driver and zone are genuinely secondary;
                 these are not. */}
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.from")}</Text>
-              <DateInputInline value={dateFrom} onChange={setDateFrom} />
-            </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.to")}</Text>
-              <DateInputInline value={dateTo} onChange={setDateTo} />
-            </View>
+            {/* ONE control, not four (design handoff, 17 Aug 2026) — but still
+                DIRECTLY EDITABLE, which is the part the handoff could not know.
+                The row used to spend ~330px on "From [YYYY-MM-DD] To
+                [YYYY-MM-DD]": two captions and two boxes for what an admin
+                reads as a single filter. This is one bordered field holding
+                both dates with a dash between them, ~200px, no captions.
+
+                ⚠ IT IS NOT A DISCLOSURE, AND THAT WAS TRIED. Collapsing these
+                behind a pill is the obvious way to make the row shorter, and
+                the comment this replaces already warned against it: the range
+                defaults to TODAY, so it is the one filter that is always
+                active, and WIDENING IT IS AN EVERYDAY ACT — two e2e specs
+                drive it directly. The first attempt at this redesign did
+                collapse it, and those two specs went red in CI, which is
+                exactly what they are for. Compact the control; do not hide
+                it. */}
+            <DateRangeField from={dateFrom} to={dateTo} onFrom={setDateFrom} onTo={setDateTo} />
             <MoreFiltersToggle
               open={filtersOpen}
               count={secondaryCountWide}
@@ -475,11 +484,15 @@ export function TripsScreen() {
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={trips.isRefetching} onRefresh={() => trips.refetch()} />}
         >
-          <Card pad={12}>
-            <DispatchToggle compact />
-          </Card>
-
+          {/* ONE card, not two (design handoff, 17 Aug 2026). Dispatch mode had
+              a card of its own directly above the filter card — two panels, one
+              toolbar, and the seam read as a section break that isn't there. It
+              keeps the hairline BELOW it, because dispatch mode is still not a
+              filter: it changes what the server does to new bookings, where
+              everything under the line only changes what you are looking at. */}
           <Card pad={12} style={{ gap: 10 }}>
+            <DispatchToggle compact />
+            <View style={{ height: 1, backgroundColor: colors.border, marginHorizontal: -12 }} />
             {/* THREE rows, none of them orphaned (owner, 9 Aug: "it looks
                 messy"). It was four: the status dropdown had a full-width box
                 to itself for one word, and "Save view" sat alone on its own
@@ -736,6 +749,91 @@ function MoreFiltersToggle({ open, count, onPress }: { open: boolean; count: num
     </Pressable>
   ) : (
     body
+  );
+}
+
+/**
+ * The date range as ONE FIELD (design handoff, 17 Aug 2026).
+ *
+ * Both dates live inside a single bordered control with a dash between them and
+ * no "From"/"To" captions — the handoff's de-cluttering — while staying typed
+ * into directly, because widening the board is an everyday act and this filter
+ * is silently limiting it the whole time. Wears the blue active ring whenever a
+ * bound is set, for the same reason.
+ */
+function DateRangeField({
+  from,
+  to,
+  onFrom,
+  onTo,
+}: {
+  from: string;
+  to: string;
+  onFrom: (v: string) => void;
+  onTo: (v: string) => void;
+}) {
+  const { t } = useTranslation();
+  const active = !!(from || to);
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 2,
+        borderRadius: radius.md,
+        borderWidth: 1,
+        borderColor: active ? colors.blue : colors.border,
+        backgroundColor: active ? colors.blueTint : colors.card,
+        paddingLeft: 10,
+        paddingRight: 4,
+      }}
+    >
+      <Ionicons name="calendar-outline" size={14} color={active ? colors.blue : colors.textMuted} />
+      <DateInputBare value={from} onChange={onFrom} placeholder={t("admin.trips.from")} />
+      <Text style={{ fontSize: font.sm, color: colors.textMuted }}>–</Text>
+      <DateInputBare value={to} onChange={onTo} placeholder={t("admin.trips.to")} />
+      {active ? (
+        <Pressable
+          onPress={() => {
+            onFrom("");
+            onTo("");
+          }}
+          hitSlop={6}
+          accessibilityLabel={t("admin.trips.dateRangeAny")}
+          style={{ paddingHorizontal: 4 }}
+        >
+          <Ionicons name="close-circle" size={15} color={colors.textFaint} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/** A date input with no chrome of its own — the field around it draws that. */
+function DateInputBare({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <TextInput
+      value={value}
+      onChangeText={onChange}
+      placeholder={placeholder}
+      placeholderTextColor={colors.textFaint}
+      style={{
+        paddingVertical: 8,
+        paddingHorizontal: 6,
+        fontSize: font.sm,
+        color: colors.text,
+        width: 96,
+        backgroundColor: "transparent",
+      }}
+    />
   );
 }
 

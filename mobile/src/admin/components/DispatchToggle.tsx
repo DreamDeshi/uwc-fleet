@@ -12,10 +12,22 @@ import { useDispatchMode, type DispatchMode } from "../lib/dispatchMode";
 export function DispatchToggle({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation();
   const [mode, setMode, pending] = useDispatchMode();
-  const options: { value: DispatchMode; labelKey: string }[] = [
-    { value: "manual", labelKey: "admin.dashboard.manualDispatch" },
-    { value: "auto", labelKey: "admin.dashboard.fullyAutomatic" },
-  ];
+  // COMPACT drops the qualifier (design handoff, 17 Aug 2026): inside the trips
+  // toolbar the pills sit next to the search box with no caption, and "Manual
+  // Dispatch / Fully Automatic" spent ~90px restating a context the toolbar
+  // already gives. The DASHBOARD keeps the full labels, where the control
+  // stands alone under a "Dispatch mode" caption and the qualifier is the only
+  // thing telling an admin that "automatic" means the server assigns on its
+  // own — that is a consequential setting to shorten into ambiguity.
+  const options: { value: DispatchMode; labelKey: string }[] = compact
+    ? [
+        { value: "manual", labelKey: "admin.dashboard.manualShort" },
+        { value: "auto", labelKey: "admin.dashboard.autoShort" },
+      ]
+    : [
+        { value: "manual", labelKey: "admin.dashboard.manualDispatch" },
+        { value: "auto", labelKey: "admin.dashboard.fullyAutomatic" },
+      ];
 
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" }}>

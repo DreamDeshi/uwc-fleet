@@ -98,15 +98,127 @@ export function AdminSettingsScreen() {
         </View>
       ) : null}
 
-      <View
-        style={
-          mode === "wide"
-            ? { paddingVertical: 24, paddingHorizontal: 28, maxWidth: 680, width: "100%", alignSelf: "center" }
-            : { padding: 16 }
-        }
-      >
-        {/* Facts the office owns — read-only, plainly secondary. Phone only:
-            on wide these already sit in the sidebar's account block. */}
+      {mode === "wide" ? (
+        /* ── DESKTOP: A REAL TWO-COLUMN LAYOUT ────────────────────────────
+           Design handoff, 17 Aug 2026: this screen was a 680px-wide mobile
+           column parked in the middle of a 1440px window, with the admin's own
+           identity — the thing the page is about — nowhere on it, because the
+           narrow layout puts that in the blue header and the wide layout
+           dropped the header.
+
+           Left rail: who you are. Right: what you can change, two cards abreast
+           so ACCOUNT and SYSTEM stop stacking into a single ribbon of white.
+
+           ⚠ ONE DELIBERATE OMISSION from the frame: its left rail also carries
+           a section nav (Account / System / Language / Feedback / App). Every
+           section is on screen at once here, so that list would be a jump menu
+           with nothing to jump to — decoration in the exact dead space the
+           handoff asked us to fill. The identity card is the half that carries
+           information. */
+        <View style={{ flexDirection: "row", gap: 20, paddingVertical: 24, paddingHorizontal: 28, alignItems: "flex-start" }}>
+          <View style={{ width: 300, flexGrow: 0, flexShrink: 0 }}>
+            <View style={styles.identityCard}>
+              <View style={styles.identityAvatar}>
+                <Text style={styles.identityAvatarText}>{initials(user?.name ?? "")}</Text>
+              </View>
+              <Text style={styles.identityName} numberOfLines={2}>{user?.name ?? "—"}</Text>
+              {subtitle ? <Text style={styles.identitySubtitle} numberOfLines={2}>{subtitle}</Text> : null}
+              <View style={{ alignSelf: "stretch", gap: 8, marginTop: 16 }}>
+                {facts.map((f) => (
+                  <View key={f.label} style={styles.identityFact}>
+                    <Ionicons name={f.icon} size={15} color={colors.textFaint} />
+                    <Text style={styles.identityFactValue} numberOfLines={1}>{f.value}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </View>
+
+          <View style={{ flex: 1, minWidth: 0, gap: 16, maxWidth: 980 }}>
+            <View style={{ flexDirection: "row", gap: 16, alignItems: "flex-start" }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+        {/* Account — self-service profile + password (any role, incl. admin) */}
+        <Text style={styles.sectionLabel}>{t("account.section")}</Text>
+        <View style={styles.card}>
+          {accountRows.map((r, i) => (
+            <TouchableOpacity
+              key={r.key}
+              onPress={r.onPress}
+              style={[styles.row, i < accountRows.length - 1 && styles.rowDivider]}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+            >
+              <Ionicons name={r.icon} size={19} color={colors.blue} />
+              <Text style={styles.actionLabel}>{t(r.labelKey)}</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+            </TouchableOpacity>
+          ))}
+        </View>
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+        {/* System — admin-only, and the reason this screen is not just Profile.
+            Audit log lives here (moved out of the top-level nav). */}
+        <Text style={styles.sectionLabel}>{t("admin.navGroups.system")}</Text>
+        <View style={styles.card}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate("AdminAudit")}
+            style={styles.row}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+          >
+            <Ionicons name="receipt-outline" size={19} color={colors.blue} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionLabel}>{t("admin.audit.navLabel")}</Text>
+              <Text style={styles.actionSub}>{t("admin.audit.subtitle")}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+          </TouchableOpacity>
+        </View>
+
+        {/* One inline segmented control, not three stacked radio rows — the
+            shared Profile's control, and the reason this screen used to look
+            like a different app. See ProfileScreen for why the buttons size
+            from content (flexBasis "auto") instead of equal thirds: at 320px
+            an equal third starves "Bahasa Malaysia" and it wraps. */}
+        <Text style={styles.sectionLabel}>{t("profile.language")}</Text>
+        <View style={styles.segment}>
+          {LANGUAGES.map((l) => {
+            const active = current === l.code;
+            return (
+              <TouchableOpacity
+                key={l.code}
+                style={[styles.segmentBtn, active && styles.segmentBtnActive]}
+                onPress={() => setLanguage(l.code)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+              >
+                <Text style={[styles.segmentText, active && styles.segmentTextActive]} numberOfLines={1}>
+                  {t(l.labelKey)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+              </View>
+            </View>
+        {/* User feedback inbox (28 Jul 2026) — what drivers / requestors /
+            admins submitted through "Report a problem or idea". This is the
+            owner's dev-planning inbox; embedded here per the no-new-screens
+            rule. Admin-only, so it keeps its own panel look. */}
+        <View style={{ marginTop: 20 }}>
+          <FeedbackInboxCard />
+        </View>
+
+        {/* App & updates — OTA ground truth (27 Jul 2026). Shows WHICH update
+            this install is actually running (the platform update id, null on
+            the embedded bundle) so "did the phone get the update?" is a fact,
+            not a guess — plus a manual check that downloads and restarts in
+            one tap, replacing the two-cold-launch dance. */}
+        <AppUpdatesCard style={{ marginTop: 20 }} />
+          </View>
+        </View>
+      ) : (
+      <View style={{ padding: 16 }}>
         {narrow ? (
           <View style={styles.card}>
             {facts.map((f, i) => (
@@ -198,17 +310,17 @@ export function AdminSettingsScreen() {
 
         {/* Sign out — phone only, and the same DANGER BUTTON every other role
             gets. It used to be a quiet row, which made the one irreversible
-            action on the screen the least prominent thing on it. */}
-        {narrow ? (
-          <AppButton
-            title={t("admin.signOut")}
-            variant="danger"
-            onPress={() => setConfirmOut(true)}
-            style={{ marginTop: 20 }}
-            icon={<Ionicons name="log-out-outline" size={18} color="#fff" />}
-          />
-        ) : null}
+            action on the screen the least prominent thing on it. (On desktop
+            the sidebar carries Sign Out.) */}
+        <AppButton
+          title={t("admin.signOut")}
+          variant="danger"
+          onPress={() => setConfirmOut(true)}
+          style={{ marginTop: 20 }}
+          icon={<Ionicons name="log-out-outline" size={18} color="#fff" />}
+        />
       </View>
+      )}
     </ScrollView>
 
     <EditProfileModal visible={editOpen} onClose={() => setEditOpen(false)} />
@@ -233,6 +345,38 @@ export function AdminSettingsScreen() {
 const styles = StyleSheet.create({
   header: { backgroundColor: colors.blue, paddingHorizontal: 20, paddingBottom: 22 },
   identityRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+  // Desktop identity card — the left rail's whole job.
+  identityCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 20,
+    alignItems: "center",
+  },
+  identityAvatar: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.navy,
+    borderWidth: 2,
+    borderColor: colors.yellow,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  identityAvatarText: { color: colors.yellow, fontSize: 24, fontWeight: "800" },
+  identityName: { marginTop: 12, fontSize: font.lg, fontWeight: "800", color: colors.text, textAlign: "center" },
+  identitySubtitle: { marginTop: 4, fontSize: font.sm, color: colors.textMuted, textAlign: "center" },
+  identityFact: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.panel,
+    borderRadius: radius.sm,
+    paddingVertical: 9,
+    paddingHorizontal: 11,
+  },
+  identityFactValue: { flex: 1, fontSize: font.sm, color: colors.text, fontWeight: "600" },
   avatar: {
     width: 64,
     height: 64,
