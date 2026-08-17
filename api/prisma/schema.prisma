@@ -738,22 +738,44 @@ model Consignee {
   // All THREE are nullable and additive: a consignee with no geocode must behave
   // exactly as before (destination = its zone centroid).
   //
-  // ── PRESENCE OF THE COORDINATES IS THE GATE ────────────────────────────────
+  // ── PRESENCE OF THE COORDINATES MEANS "WE KNOW A POSITION" ─────────────────
   //
-  // A non-null lat/lng pair is a real building. NULL means fall back to the zone
-  // centroid. That is the whole rule, and it is the ONLY rule readers get.
+  // ⚠ REWRITTEN 18 Aug 2026. This block used to say "a non-null lat/lng pair is
+  // a real building", and that was true until the write gate changed. Leaving
+  // it would have been the stale-record trap this repo keeps falling into: a
+  // NEVER instruction sitting next to code that now correctly does the
+  // opposite. Comment-only edit — no DDL, no migration.
   //
-  // The precision gate is applied at WRITE time, which is why readers need no
-  // second check: lib/geocodeConsignee stores coordinates for ROOFTOP and
-  // RANGE_INTERPOLATED only, and writes NULL coords for anything coarser, for a
-  // failure, and for every member of a cluster that resolved to one shared point
-  // (a demoted duplicate). services/consigneeUpdate additionally clears all
-  // three columns when an admin edits the address, since a stored position is a
-  // statement about the address it was looked up from.
+  // A non-null lat/lng pair is a position the geocoder could actually place:
+  // a BUILDING, a ROAD (street centre) or an AREA (postcode centroid). NULL
+  // means we have no position at all and the zone centroid is used instead —
+  // one shared dot for a whole zone, up to 26.94 km from the actual address.
   //
-  // ⚠ NEVER GATE ON `geocode_match_type`. It records the provider's verbatim
-  // verdict for provenance and is NOT a precision signal, because it carries
-  // FOUR different vocabularies depending on what last wrote the row:
+  // HOW GOOD that position is now travels with the row, and there is exactly
+  // ONE reader of it: `lib/geocodePrecision.ts`. Ask it, never the column.
+  //
+  //   NAVIGATION  any pin beats the centroid. Use the coordinates.
+  //   JUDGEMENT   `lib/earlyTap.ts` measures a driver's GPS against the stored
+  //               point and flags him past 500 m. It calls `isJudgeablePin`
+  //               and evaluates BUILDING grade only, so widening the store
+  //               gate did not change who gets flagged.
+  //
+  // The write gate (lib/geocodeConsignee `isStorable`) stores coordinates for
+  // any answer with a position and NULL for a non-answer (ZERO_RESULTS, an
+  // error, a retry exhaustion), and for every member of a cluster that
+  // resolved to one shared point (a demoted duplicate). services/consigneeUpdate
+  // additionally clears all three columns when an admin edits the address,
+  // since a stored position is a statement about the address it was looked up
+  // from.
+  //
+  // ⚠ NEVER MATCH ON `geocode_match_type` INLINE — go through
+  // `lib/geocodePrecision.ts`. The prohibition here used to be absolute, and
+  // its reason still holds exactly as written: the column carries FOUR
+  // different vocabularies depending on what last wrote the row, so a reader
+  // matching on one silently mis-handles rows written by the other three.
+  // That is an argument against SCATTERED PARTIAL matching, and the fix is one
+  // total audited mapping — pinned by a test that fails if a vocabulary is
+  // dropped — not permanent blindness to a column we write on purpose:
   //   Geoapify   `full_match` / `match_by_street` / `match_by_postcode`
   //              (legacy rows from the retired scripts/geocode-consignees.ts)
   //   Google     `ROOFTOP` / `RANGE_INTERPOLATED` / `GEOMETRIC_CENTER` /
@@ -766,9 +788,11 @@ model Consignee {
   // OPPOSITE, naming match_type "the GATE", and was left behind by the Geoapify
   // → Google migration.
   //
-  // The one legitimate read is in routes/consignees `/coverage`, and it is not a
-  // gate: match_type IS NULL with no coords distinguishes "never geocoded"
-  // (a run would fix it) from "asked and declined" (a run would not).
+  // Two legitimate reads today, both of them through geocodePrecision or beside
+  // it: `lib/earlyTap.ts` (building grade only, above), and routes/consignees
+  // `/coverage`, which is not a gate — match_type IS NULL with no coords
+  // distinguishes "never geocoded" (a run would fix it) from "asked and
+  // declined" (a run would not).
   //
   // ⚠ Geoapify's `confidence` was deliberately never stored. It lied: FRONTKEN
   // came back conf=1.00 on what is plainly a postcode centroid. The lesson
