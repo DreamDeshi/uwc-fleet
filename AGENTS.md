@@ -685,7 +685,7 @@ Both proven by DEGRADING THE DATA, not the logic: empty the corpus, point the
 walk at a directory with no source. If your break does not turn the guard red,
 check the break applied at all before concluding the guard works.
 
-\#### ABSENCE LOOKS EXACTLY LIKE SUCCESS — FIVE INSTANCES IN ONE WEEK
+\#### ABSENCE LOOKS EXACTLY LIKE SUCCESS — SIX INSTANCES IN ONE WEEK
 
 ⚠ **THIS IS THE MOST COMMON DEFECT IN THIS REPOSITORY.** It is not a family of
 related mistakes; it is one mistake wearing five costumes, and it has been found
@@ -721,6 +721,21 @@ feature that is silently dark.
    would have arrived ungraded, every call returned null, and the whole admin
    review list gone empty. **An empty review list is indistinguishable from a
    clean week.**
+6. **THE SCREENSHOT THAT SHOWED NO ROUTE LINE** (18 Aug 2026) — and this one is
+   the worst of the six, because **the VERIFICATION TOOL was the thing showing
+   the false clean.** A capture taken to check a thinned route stroke came back
+   a complete, correct-looking map with no line on it: the shots fixture served
+   no road geometry, so the map correctly drew nothing. "The stroke is now
+   subtle" and "there is no stroke" produce the same image, and the image is
+   what this repo treats as ground truth.
+
+   Everywhere else on this list a test or a query was lying and the screenshot
+   was the appeal of last resort (see the ACCOUNT_BLOCK placeholders, the empty
+   driver lane, and `fullPage: true` returning the viewport under UI). **When
+   the appeal of last resort is the thing that is empty, nothing catches it.**
+   So: before reading a capture as evidence FOR a change, confirm the FIXTURE
+   renders the thing you changed at all. An element that is absent and an
+   element that is subtle look identical, and only one of them is the work.
 
 **THE RULE. When a surface can legitimately show nothing, it must be able to
 tell you WHICH nothing it is.** One of these two, always:
@@ -739,8 +754,10 @@ tell you WHICH nothing it is.** One of these two, always:
 the line that would turn the suite red. If the answer is "the test would pass on
 an empty database", you have not written a test yet.
 
-⚠ A rule with one example gets forgotten. This one has five — add the sixth here
-when you find it, rather than starting a new section.
+⚠ A rule with one example gets forgotten. This one has six — add the seventh
+here when you find it, rather than starting a new section. The list grew by one
+within three hours of being written, which is the best evidence available that
+this is a category and not a run of bad luck.
 
 \#### WHEN A JOB FAILS ON YOUR BRANCH, PROVE IT AGAINST MAIN BEFORE TOUCHING THE TEST
 
