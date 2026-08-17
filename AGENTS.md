@@ -178,13 +178,7 @@ Unless a latest written client answer explicitly resolves it, keep these frozen:
 
 &#x20; retired R2 doc).
 
-\- Interplant SCORING — R5 A2's "a round trip is TWO bookings", i.e. 1 point per
-
-&#x20; completed round trip (legs ÷ 2). NOT built. Interplant is bookable in
-
-&#x20; production today, so a completed round trip currently scores per LEG.
-
-&#x20; (The 28 Jul fleet / interplant workbook changes are NOT frozen — see below.)
+&#x20; (Interplant SCORING used to be listed here. It is BUILT — see below.)
 
 \- Prisma schema changes and database migrations.
 
@@ -218,7 +212,47 @@ here so it is not re-added:
 
 
 
-What remains unbuilt is interplant SCORING only, listed above.
+\- Interplant SCORING shipped 12 Aug 2026 — PR #147, `7603a0e`.
+
+&#x20; `tripFinalize.ts` passes `roundTripHalving: pool === "interplant"` into
+
+&#x20; `calculateDeliveryIncentive`, which floors the day's interplant points at
+
+&#x20; legs ÷ 2. It is LIVE in production.
+
+
+
+Nothing on that workbook change is unbuilt now.
+
+
+
+\#### THIS LIST WAS WRONG ABOUT INTERPLANT SCORING FOR FIVE DAYS
+
+
+
+Until 17 Aug 2026 the frozen list above said interplant scoring was "NOT built"
+
+and that "a completed round trip currently scores per LEG" — five days after
+
+`7603a0e` made it live. That is the SECOND time in one week this file described
+
+a shipped thing as frozen, after the fleet-migration entry recorded directly
+
+above, and the failure mode is the same both times: a hold that outlives its
+
+reason reads exactly like a live one, so the next agent either re-derives a rule
+
+that already exists or refuses to touch something it should.
+
+It surfaced only because a screen was being made to explain the pay rules and
+
+the engine disagreed with this file — nothing checks it.
+
+So: when you finish work that a frozen entry covers, DELETE THE ENTRY IN THE
+
+SAME PULL REQUEST. A frozen list is only as trustworthy as its most stale line,
+
+and this one now has two corrections in its history where it should have none.
 
 
 
