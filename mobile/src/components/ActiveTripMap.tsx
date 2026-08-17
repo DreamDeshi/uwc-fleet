@@ -2,10 +2,6 @@ import React from "react";
 import { StyleSheet, View } from "react-native";
 import MapView, { Marker, Polyline } from "react-native-maps";
 import { colors } from "../theme";
-
-// Mirrors mapMarkers.web.ts — outdoor-grade fills, legible in direct sun.
-const MARKER_DESTINATION = "#AE1A1A";
-const MARKER_PLANT = "#3A3F52";
 import { PLANT_ORIGIN } from "../lib/geo";
 import { mapsEnabled } from "../lib/maps";
 import { MapPlaceholder } from "./MapPlaceholder";
@@ -34,21 +30,14 @@ export function ActiveTripMap({
 
   return (
     <MapView style={StyleSheet.absoluteFill} initialRegion={region}>
-      {/* Destination first and largest; the plant is context. react-native-maps
-          gives no size control over a default pin, so the ordering is carried
-          by WEIGHT instead: the destination keeps a full pin, the plant is a
-          small flat square. The web build's shared set (mapMarkers.web.ts)
-          holds the same three roles. */}
-      <Marker coordinate={dest} title={destLabel} pinColor={MARKER_DESTINATION} />
-      <Marker coordinate={PLANT_ORIGIN} title="UWC Batu Kawan" anchor={{ x: 0.5, y: 0.5 }} flat>
-        <View style={styles.plantDot} />
-      </Marker>
+      <Marker coordinate={PLANT_ORIGIN} title="UWC Batu Kawan" pinColor={colors.blue} />
+      <Marker coordinate={dest} title={destLabel} pinColor={colors.red} />
       {/* ⚠ ONLY the real road path. This used to fall back to
           `[PLANT_ORIGIN, dest]` — a straight two-pointer drawn at the SAME
           solid 5px weight as real geometry, so a line that was never routed
           was indistinguishable from one that was. Owner ruling, 18 Aug 2026. */}
       {polyline?.length ? (
-        <Polyline coordinates={polyline} strokeColor={colors.blue} strokeWidth={5} />
+        <Polyline coordinates={polyline} strokeColor={colors.blue} strokeWidth={2} />
       ) : null}
       {/* Live "you are here" dot from this phone's GPS */}
       {current ? (
@@ -63,14 +52,6 @@ export function ActiveTripMap({
 }
 
 const styles = StyleSheet.create({
-  plantDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 2,
-    backgroundColor: MARKER_PLANT,
-    borderWidth: 2,
-    borderColor: colors.white,
-  },
   liveDotRing: {
     width: 26,
     height: 26,

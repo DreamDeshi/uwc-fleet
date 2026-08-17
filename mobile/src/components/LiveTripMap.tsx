@@ -2,10 +2,6 @@ import React from "react";
 import { StyleSheet, View } from "react-native";
 import MapView, { Marker, Polyline } from "react-native-maps";
 import { colors } from "../theme";
-
-// Mirrors mapMarkers.web.ts — outdoor-grade fills, legible in direct sun.
-const MARKER_DESTINATION = "#AE1A1A";
-const MARKER_PLANT = "#3A3F52";
 import { PLANT_ORIGIN, regionFor, zoneCoord, type LatLng } from "../lib/geo";
 import { mapsEnabled } from "../lib/maps";
 import { MapPlaceholder } from "./MapPlaceholder";
@@ -50,14 +46,12 @@ export function LiveTripMap({
         rotateEnabled={false}
         pitchEnabled={false}
       >
-        <Marker coordinate={dest} title="Destination" pinColor={MARKER_DESTINATION} />
-        <Marker coordinate={PLANT_ORIGIN} title="UWC Batu Kawan" anchor={{ x: 0.5, y: 0.5 }} flat>
-          <View style={styles.plantDot} />
-        </Marker>
+        <Marker coordinate={PLANT_ORIGIN} title="UWC Batu Kawan" pinColor={colors.blue} />
+        <Marker coordinate={dest} title="Destination" pinColor={colors.red} />
         {/* ⚠ ONLY real road geometry — no straight-line stand-in. See the note
             in ActiveTripMap.tsx. Owner ruling, 18 Aug 2026. */}
         {route?.polyline?.length ? (
-          <Polyline coordinates={route.polyline} strokeColor={colors.blue} strokeWidth={4} />
+          <Polyline coordinates={route.polyline} strokeColor={colors.blue} strokeWidth={2} />
         ) : null}
         {live && pos ? (
           <Marker
@@ -77,14 +71,6 @@ export function LiveTripMap({
 }
 
 const styles = StyleSheet.create({
-  plantDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 2,
-    backgroundColor: MARKER_PLANT,
-    borderWidth: 2,
-    borderColor: colors.white,
-  },
   wrap: { borderRadius: 14, overflow: "hidden" },
   truckRing: {
     width: 24,

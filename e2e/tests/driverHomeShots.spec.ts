@@ -250,6 +250,23 @@ async function mockApi(page: Page, state: string) {
     // The truck's last posted fix — what LiveTripMap draws as the DRIVER
     // marker. Without this the tracking maps render two pins and no driver,
     // and the marker that is second in the size order goes unreviewed.
+    // The pre-computed road geometry (RouteLeg). Without it the map draws NO
+    // line at all — correct behaviour since #172, and it means a capture taken
+    // without this fixture cannot show the route line's weight. A coarse
+    // Batu Kawan -> Perai path is enough to judge the stroke against the
+    // motorways underneath it.
+    if (/\/trips\/[^/]+\/route/.test(url)) {
+      return json({
+        polyline: [
+          { latitude: 5.2162, longitude: 100.4446 },
+          { latitude: 5.2571, longitude: 100.4489 },
+          { latitude: 5.2903, longitude: 100.4372 },
+          { latitude: 5.3225, longitude: 100.4218 },
+          { latitude: 5.3508, longitude: 100.4074 },
+          { latitude: 5.3814, longitude: 100.3915 },
+        ],
+      });
+    }
     if (/\/trips\/[^/]+\/location/.test(url)) {
       return json({
         latitude: 5.3421,
