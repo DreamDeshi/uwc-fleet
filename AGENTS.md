@@ -756,6 +756,54 @@ to look. Neither is detectable by reading the diff you intended to make.
 
 
 
+\#### A BARE CLI NOUN MAY CREATE — ALWAYS TYPE THE `list` SUBCOMMAND
+
+
+
+Same hazard class as the checkout above: a verb that WRITES when you expected it
+
+to READ. On 17 Aug 2026, `railway domain` — reached for to find a database's
+
+proxy host — did not list domains. It GENERATED a public domain on the demo
+
+Postgres service, and reported it like a lookup result:
+
+
+
+&#x20;   Service domain created:
+
+&#x20;     URL: https://postgres-production-5d185.up.railway.app
+
+
+
+Nothing was exposed (Postgres does not speak HTTP) and it was deleted
+
+immediately with `railway domain delete <host>`, but the safe outcome was luck:
+
+the same verb aimed at a web service would have published it.
+
+
+
+The rule, for ANY CLI: when the intent is to INSPECT, type the explicit
+
+subcommand — `railway domain list`, not `railway domain`; `railway variables
+
+list`, not a bare noun you are guessing at. A bare noun is an invitation for the
+
+tool to pick a default action, and defaults on infrastructure tools skew toward
+
+CREATE. Read `--help` before the first use of a verb on a service you did not
+
+create.
+
+&#x20; (Railway specifics: a Postgres service's public host is on the service
+
+&#x20; itself as `RAILWAY_TCP_PROXY_DOMAIN` / `RAILWAY_TCP_PROXY_PORT` — read the
+
+&#x20; variables, never the domain command.)
+
+
+
 \## Money and dispatch safety
 
 
