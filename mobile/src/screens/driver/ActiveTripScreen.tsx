@@ -118,9 +118,20 @@ const DELIVERED_ALREADY_CODES = [
 //         unchanged and the stop card keeps its room on the smallest screens.
 //   MAX — so a tablet or a desktop browser (the driver app has no wide layout;
 //         it just stretches) cannot push the current-stop card out of view.
-const MAP_BAND_MIN = 196;
-const MAP_BAND_MAX = 330;
-const MAP_BAND_RATIO = 0.3;
+//
+// ⚠ RAISED 18 Aug 2026 (owner review at 390×844): at ratio 0.30 the band came
+// out 253px — "a strip that shows the region without showing anything useful
+// about it". Both pins and the driver's dot had to share ~250px including the
+// fitBounds padding, so at any real trip length they sat almost on top of each
+// other. The space comes from BELOW: the scroll body keeps the current-stop
+// card at the top of its own scroll, and on a one- or two-stop trip it was
+// already part empty — which is the same reasoning that made this ratio-based
+// rather than fixed in the first place.
+//   390×844 (iPhone 14/15):  253 → 321px
+//   MIN also rises, so the small phones the design pack was drawn for gain too.
+const MAP_BAND_MIN = 240;
+const MAP_BAND_MAX = 380;
+const MAP_BAND_RATIO = 0.38;
 function mapBandHeight(viewportHeight: number): number {
   return Math.round(
     Math.min(MAP_BAND_MAX, Math.max(MAP_BAND_MIN, viewportHeight * MAP_BAND_RATIO))

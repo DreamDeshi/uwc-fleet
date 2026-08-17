@@ -22,38 +22,8 @@ import { MapContainer, TileLayer, Marker, Polyline, Tooltip, useMap } from "reac
 import L from "leaflet";
 import { InvalidateOnLayout } from "./leafletCommon";
 import { PLANT_ORIGIN, type LatLng } from "../lib/geo";
-import { ORIGIN_LABEL } from "../lib/trip";
 import { colors } from "../theme";
-
-const plantIcon = L.divIcon({
-  className: "uwc-truck-label",
-  html: `
-    <div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-6px)">
-      <div style="background:${colors.navy};color:${colors.yellow};font:700 10px Inter,sans-serif;
-           padding:2px 7px;border-radius:6px;white-space:nowrap;margin-bottom:3px">${ORIGIN_LABEL}</div>
-      <div style="width:14px;height:14px;background:${colors.yellow};border:3px solid ${colors.navy};border-radius:3px"></div>
-    </div>`,
-  iconSize: [14, 32],
-  iconAnchor: [7, 26],
-});
-
-const destIcon = L.divIcon({
-  className: "uwc-truck-label",
-  html: `<div style="width:16px;height:16px;border-radius:50%;background:${colors.red};border:3px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.35)"></div>`,
-  iconSize: [16, 16],
-  iconAnchor: [8, 8],
-});
-
-/** The driver's own position — same ring-and-core as the native marker. */
-const liveIcon = L.divIcon({
-  className: "uwc-truck-label",
-  html: `
-    <div style="width:26px;height:26px;border-radius:50%;background:rgba(0,48,135,0.18);display:flex;align-items:center;justify-content:center">
-      <div style="width:14px;height:14px;border-radius:50%;background:${colors.blue};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.3)"></div>
-    </div>`,
-  iconSize: [26, 26],
-  iconAnchor: [13, 13],
-});
+import { destinationIcon, driverIcon, plantIcon } from "./mapMarkers.web";
 
 /**
  * Keep every point in frame. The map is locked (matching native's hero map,
@@ -66,7 +36,10 @@ function FitToPoints({ points }: { points: LatLng[] }) {
   React.useEffect(() => {
     if (points.length === 0) return;
     const bounds = L.latLngBounds(points.map((p) => [p.latitude, p.longitude] as [number, number]));
-    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14, animate: false });
+    // Top padding carries the DESTINATION PIN's height: it is anchored at its
+    // tip and draws 42px upward, so a bounds fitted to the coordinate alone
+    // clips the pin head at the top edge of the band.
+    map.fitBounds(bounds, { paddingTopLeft: [30, 52], paddingBottomRight: [30, 30], maxZoom: 14, animate: false });
     // `key`, not `points` — a re-render with identical coordinates must not
     // re-fit and fight the tile load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -119,30 +92,30 @@ export function ActiveTripMap({
         <FitToPoints points={points} />
         <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-        {/* Solid when it is the real road geometry, dashed when it is the
-            straight-line stand-in — the driver should never read a placeholder
-            as a route he can follow. */}
-        <Polyline
-          positions={(road ?? [PLANT_ORIGIN, dest]).map(
-            (p) => [p.latitude, p.longitude] as [number, number]
-          )}
-          pathOptions={
-            road
-              ? { color: colors.blue, weight: 5, opacity: 0.85 }
-              : { color: colors.blue, weight: 3, opacity: 0.6, dashArray: "6 8" }
-          }
-        />
+        {/* ONLY the real road geometry, and only when we have it.
+            ⚠ There used to be a dashed plant→destination fallback here. It was
+            drawn between two pins, not routed on roads, so it implied a path
+            that was never computed — and at this zoom a dashed line across the
+            map reads as "your route", not as "these two things are related".
+            The stand-in is gone; the road line stays, because that one IS
+            computed (RouteLeg). Owner ruling, 18 Aug 2026. */}
+        {road ? (
+          <Polyline
+            positions={road.map((p) => [p.latitude, p.longitude] as [number, number])}
+            pathOptions={{ color: colors.blue, weight: 5, opacity: 0.85 }}
+          />
+        ) : null}
 
         <Marker position={[PLANT_ORIGIN.latitude, PLANT_ORIGIN.longitude]} icon={plantIcon} interactive={false} />
 
-        <Marker position={[dest.latitude, dest.longitude]} icon={destIcon}>
+        <Marker position={[dest.latitude, dest.longitude]} icon={destinationIcon}>
           <Tooltip direction="top" offset={[0, -10]}>
             <span style={{ fontSize: 12 }}>{destLabel}</span>
           </Tooltip>
         </Marker>
 
         {current ? (
-          <Marker position={[current.latitude, current.longitude]} icon={liveIcon} zIndexOffset={500} interactive={false} />
+          <Marker position={[current.latitude, current.longitude]} icon={driverIcon()} zIndexOffset={500} interactive={false} />
         ) : null}
       </MapContainer>
     </div>

@@ -17,53 +17,14 @@
 // labelled approximate. Same honesty rule as the admin fleet map's ghosted
 // markers: never let a placeholder read as a real location.
 import React, { useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Polyline, Tooltip, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import { useTranslation } from "react-i18next";
 import { InvalidateOnLayout } from "./leafletCommon";
 import { PLANT_ORIGIN, zoneCoord, type LatLng } from "../lib/geo";
-import { ORIGIN_LABEL } from "../lib/trip";
 import { colors } from "../theme";
+import { destinationIcon, driverIcon, plantIcon } from "./mapMarkers.web";
 import { useTripLatestLocation } from "../hooks/queries";
-
-const plantIcon = L.divIcon({
-  className: "uwc-truck-label",
-  html: `
-    <div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-6px)">
-      <div style="background:${colors.navy};color:${colors.yellow};font:700 10px Inter,sans-serif;
-           padding:2px 7px;border-radius:6px;white-space:nowrap;margin-bottom:3px">${ORIGIN_LABEL}</div>
-      <div style="width:14px;height:14px;background:${colors.yellow};border:3px solid ${colors.navy};border-radius:3px"></div>
-    </div>`,
-  iconSize: [14, 32],
-  iconAnchor: [7, 26],
-});
-
-// Dashed outline + "~" — the same visual language the fleet map uses for a
-// position we are approximating rather than measuring.
-const destIcon = L.divIcon({
-  className: "uwc-truck-label",
-  html: `
-    <div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-6px)">
-      <div style="width:14px;height:14px;border-radius:50%;background:#fff;border:3px dashed ${colors.red}"></div>
-    </div>`,
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
-});
-
-/** Green pulse when the fix is fresh, grey when the signal has gone stale. */
-function truckIcon(stale: boolean) {
-  const ring = stale ? "rgba(154,165,196,0.25)" : "rgba(61,170,53,0.2)";
-  const dot = stale ? colors.textFaint : colors.green;
-  return L.divIcon({
-    className: "uwc-truck-label",
-    html: `
-      <div style="width:24px;height:24px;border-radius:50%;background:${ring};display:flex;align-items:center;justify-content:center">
-        <div style="width:14px;height:14px;border-radius:50%;background:${dot};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.3)"></div>
-      </div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-  });
-}
 
 /**
  * Keep every point in view. The map is locked (no drag/zoom, matching native),
@@ -76,7 +37,9 @@ function FitToPoints({ points }: { points: LatLng[] }) {
   React.useEffect(() => {
     if (points.length === 0) return;
     const bounds = L.latLngBounds(points.map((p) => [p.latitude, p.longitude] as [number, number]));
-    map.fitBounds(bounds, { padding: [36, 36], maxZoom: 13, animate: false });
+    // Top padding carries the destination pin's 42px height — it is anchored at
+    // its tip, so fitting to the coordinate alone clips the head.
+    map.fitBounds(bounds, { paddingTopLeft: [36, 56], paddingBottomRight: [36, 36], maxZoom: 13, animate: false });
     // `key` (not `points`) so a re-render with identical coordinates doesn't
     // re-fit and fight the tile load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -132,25 +95,23 @@ export function LiveTripMap({
         <FitToPoints points={points} />
         <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-        {/* Plant → destination, dashed: an indication of the journey, NOT a route */}
-        <Polyline
-          positions={[
-            [PLANT_ORIGIN.latitude, PLANT_ORIGIN.longitude],
-            [dest.latitude, dest.longitude],
-          ]}
-          pathOptions={{ color: colors.blue, weight: 3, opacity: 0.6, dashArray: "6 8" }}
-        />
+        {/* ⚠ NO CONNECTOR LINE. A dashed plant→destination two-pointer used to
+            be drawn here as "an indication of the journey". It is drawn between
+            pins rather than routed on roads, so it claims a path nobody
+            computed — and this map has no road geometry to fall back on at all.
+            The two pins say where the trip runs between; a line between them
+            says how, and we do not know how. Owner ruling, 18 Aug 2026. */}
 
         <Marker position={[PLANT_ORIGIN.latitude, PLANT_ORIGIN.longitude]} icon={plantIcon} interactive={false} />
 
-        <Marker position={[dest.latitude, dest.longitude]} icon={destIcon}>
+        <Marker position={[dest.latitude, dest.longitude]} icon={destinationIcon}>
           <Tooltip direction="top" offset={[0, -8]}>
             <span style={{ fontSize: 12 }}>{t("bookingDetail.mapDestApprox")}</span>
           </Tooltip>
         </Marker>
 
         {truck && (
-          <Marker position={[truck.latitude, truck.longitude]} icon={truckIcon(Boolean(pos?.stale))} zIndexOffset={500}>
+          <Marker position={[truck.latitude, truck.longitude]} icon={driverIcon(Boolean(pos?.stale))} zIndexOffset={500}>
             <Tooltip direction="top" offset={[0, -12]}>
               <span style={{ fontSize: 12, fontWeight: 700, color: pos?.stale ? colors.textMuted : colors.green }}>
                 {pos?.stale ? t("bookingDetail.locStale") : t("bookingDetail.locLive")}
