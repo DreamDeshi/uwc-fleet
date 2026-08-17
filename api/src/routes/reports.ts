@@ -25,6 +25,7 @@ import { EARNING_STOP_SELECT, earnedInWindow } from "../services/undeliveredPay"
 import { attentionConfig, hoursSince } from "../services/attention";
 import { isFullyDelivered, isTripOnTime } from "../lib/performanceScore";
 import { earlyTapDistanceM, isEarlyTap } from "../lib/earlyTap";
+import { BUILDING_MATCH_TYPES } from "../lib/geocodePrecision";
 import { consolidationSavingsFromTotals } from "../lib/consolidationSavings";
 import { rightSizingSavings } from "../lib/rightSizingSavings";
 
@@ -368,8 +369,13 @@ router.get("/attention", async (_req, res, next) => {
     // Early-tap review flags (lib/earlyTap): deliveries confirmed far from the
     // consignee's stored coordinate. DETECTION ONLY — computed at read time
     // from LocationLog, no stored flag, so it can never block a delivery,
-    // alter pay, or gate finalization. Consignees without coords never appear
-    // (coord presence is the gate — geocode_match_type is never read). Scope:
+    // alter pay, or gate finalization. Consignees without coords never appear,
+    // and neither do ROAD or AREA pins: only a BUILDING-grade pin may be used
+    // to judge where a driver stood. The `geocode_match_type` filter below is
+    // an optimisation — `earlyTapDistanceM` re-checks every row through
+    // `isJudgeablePin`, which is the authority. ⚠ THE SELECT MUST CARRY
+    // `geocode_match_type`: without it every row reads as ungraded and this
+    // whole report silently empties. Scope:
     // last 7 days, so the review list self-expires. Two indexed findFirsts per
     // candidate stop ((trip_id, recorded_at) index) — trial-scale volumes.
     const EARLY_TAP_LOOKBACK_DAYS = 7;
@@ -377,13 +383,19 @@ router.get("/attention", async (_req, res, next) => {
     const candidateStops = await prisma.tripStop.findMany({
       where: {
         delivered_at: { gte: deliveredCutoff },
-        consignee: { latitude: { not: null }, longitude: { not: null } },
+        consignee: {
+          latitude: { not: null },
+          longitude: { not: null },
+          geocode_match_type: { in: [...BUILDING_MATCH_TYPES] },
+        },
         trip: { driver_id: { not: null } },
       },
       select: {
         id: true,
         delivered_at: true,
-        consignee: { select: { company_name: true, latitude: true, longitude: true } },
+        consignee: {
+          select: { company_name: true, latitude: true, longitude: true, geocode_match_type: true },
+        },
         trip: { select: shape },
       },
       orderBy: { delivered_at: "desc" },
