@@ -12,6 +12,18 @@
         "buildType": "apk"
       }
     },
+    "//demo": "APK for the DEMO instance. `preview` has no env block, so it falls through to extra.apiUrl and points at PRODUCTION — that is deliberate and must stay. This profile overrides the API at build time (EXPO_PUBLIC_API_URL wins over extra.apiUrl in services/api.ts) and turns on the one-tap demo login. Its OWN channel, so an OTA published for the prod-pointing preview build can never land on a demo handset. EXPO_PUBLIC_DEMO_PASSWORD is NOT here: it lives as an EAS project variable, because this file is public.",
+    "demo": {
+      "extends": "preview",
+      "channel": "demo",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://uwc-api-demo-production.up.railway.app",
+        "EXPO_PUBLIC_FEATURE_DEMO_LOGIN": "true"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "channel": "production",
