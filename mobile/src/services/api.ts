@@ -18,6 +18,14 @@ const API_URL =
   // live hazard: the file is committed, the override is a production URL, and a
   // run that dies before its revert leaves "http://localhost:3000" staged for
   // release. An env var cannot be committed by accident.
+  // ⚠ THIS IS ALSO WHAT SEPARATES THE DEMO APK FROM THE PRODUCTION ONE.
+  // eas.json's `preview` profile has NO env block, so it falls through to
+  // extra.apiUrl and builds against PRODUCTION — deliberate, and it must stay.
+  // The `demo` profile sets EXPO_PUBLIC_API_URL to the demo API, which wins
+  // here, and takes its own OTA channel so an update published for the
+  // prod-pointing build can never land on a demo handset and re-point it.
+  // (eas.json is strict JSON with a schema and rejects comment keys, so the
+  // reasoning lives here, next to the line that implements it.)
   process.env.EXPO_PUBLIC_API_URL?.trim() ||
   (Constants.expoConfig?.extra?.apiUrl as string | undefined) ||
   "http://localhost:3000";
