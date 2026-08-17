@@ -710,6 +710,32 @@ regression that failed to reproduce. "Add setup until the test goes green" and
 outside — only evidence separates them, and this is the cheapest evidence there
 is.
 
+\#### THE STATE YOU CHANGED TO DIAGNOSE SOMETHING IS STATE YOU LEFT BEHIND
+
+On a SHARED or DEMO instance, a diagnostic write is not temporary just because
+your reason for making it was. On 17 Aug 2026 a CI failure was being chased by
+replaying the i18n sweep's three passes against the demo — the last pass sets
+the driver's `language_pref` to **zh**, and it stayed there. Three hours later a
+screenshot taken for an unrelated feature showed the driver app in Chinese. A
+judge tapping "Try as Driver" would have got a Chinese app with no idea why,
+and nothing else would have caught it: no test covers "the demo is in the right
+language", and the API was answering correctly the whole time.
+
+So, whenever a diagnosis writes to a shared instance — a language, a flag, a
+truck's operating window, a dispatch mode, a seeded row:
+
+1. WRITE DOWN WHAT YOU CHANGED, before you change it, in the same message or
+   scratch file you are working from.
+2. RESTORE IT IN THE SAME SESSION. Not "later" — the diagnosis will end
+   somewhere unexpected and the note will not survive the detour.
+3. RE-READ IT AFTERWARDS. A restore you did not verify is a restore you did not
+   make; the failed one looks exactly like the successful one.
+
+⚠ This is the third time in one week a SCREENSHOT found what no diff could —
+after the ACCOUNT_BLOCK placeholders and the empty driver lane. The pattern is
+now explicit: state, unlike code, has no diff to read. Looking at the screen is
+the only review it gets.
+
 \#### A PROD PROBE ASSERTS IDENTITY FIRST — AN EMPTY ANSWER IS NOT A FINDING
 
 
