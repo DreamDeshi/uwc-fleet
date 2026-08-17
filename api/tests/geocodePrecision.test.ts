@@ -4,7 +4,9 @@ import { join } from "node:path";
 import {
   geocodePrecision,
   isJudgeablePin,
+  isBrokenAttempt,
   BUILDING_MATCH_TYPES,
+  BROKEN_MATCH_TYPES,
   KNOWN_MATCH_TYPES,
 } from "../src/lib/geocodePrecision";
 import { isStorable, isUsable, geocodeStoreFields } from "../src/lib/geocodeConsignee";
@@ -235,5 +237,87 @@ describe("the BATCH script and creation-time geocoding apply the SAME store gate
     // backstop is about coordinates precise enough that two identical ones mean
     // the geocoder gave up, which is a statement about building grade only.
     expect(src).toContain("if (isUsable(m.location_type)) demotedIds.add(m.id)");
+  });
+});
+
+describe("a BROKEN lookup is distinguishable from one that never ran", () => {
+  /**
+   * THE DEFECT. `geocodeNewConsignee` returned early with a bare `return` when
+   * GOOGLE_MAPS_KEY was absent, and wrote nothing at all when the call threw.
+   * Either way the row was left exactly as if nothing had been attempted:
+   * null coords, null match_type.
+   *
+   * `/consignees/coverage` reads a null match_type as NEVER GEOCODED, and the
+   * admin screen then says "a geocode run would fill it". With no key that is
+   * confidently wrong advice, it gets more wrong with every consignee added,
+   * and NOTHING anywhere reports that geocoding is not running. A misconfigured
+   * production instance looks exactly like a well-configured one with some
+   * awkward addresses.
+   *
+   * Same family as the empty early-tap report: absence indistinguishable from
+   * success, and the fix is to make the empty state say WHICH nothing it is.
+   */
+  it("separates a broken lookup from a genuine 'address not found'", () => {
+    // ZERO_RESULTS is a real answer: the geocoder read the address and could
+    // not place it. Another run returns the same thing — fix the ADDRESS.
+    expect(isBrokenAttempt("ZERO_RESULTS")).toBe(false);
+    // These never reached a verdict — fix the SYSTEM.
+    for (const v of ["NO_API_KEY", "ERROR", "RETRY_EXHAUSTED", "OVER_QUERY_LIMIT", "REQUEST_DENIED"]) {
+      expect(isBrokenAttempt(v), v).toBe(true);
+    }
+  });
+
+  it("does not call an untouched row broken", () => {
+    // A null match_type means NEVER ATTEMPTED, which is a different problem
+    // with different advice. Conflating the two is the bug, in reverse.
+    expect(isBrokenAttempt(null)).toBe(false);
+    expect(isBrokenAttempt(undefined)).toBe(false);
+    expect(isBrokenAttempt("")).toBe(false);
+  });
+
+  it("grades every broken verdict as unknown, so none can be navigated to", () => {
+    for (const v of BROKEN_MATCH_TYPES) expect(geocodePrecision(v), v).toBe("unknown");
+  });
+
+  it("BROKEN_MATCH_TYPES is non-empty — an empty filter would count zero forever", () => {
+    // POSITIVE CONTROL. This list becomes a database `in` filter. Emptied, the
+    // count is always 0 and the screen silently reports "nothing broken",
+    // which is the exact failure this whole feature exists to remove.
+    expect(BROKEN_MATCH_TYPES.length).toBeGreaterThan(4);
+    expect(BROKEN_MATCH_TYPES).toContain("NO_API_KEY");
+  });
+
+  describe("WIRING: the silent paths actually record a verdict", () => {
+    /**
+     * Asserted on SOURCE. The no-key path is an early return inside a
+     * fire-and-forget function with no seam to observe, and the catch path only
+     * runs when a live HTTP call throws. A unit test can reach neither without
+     * standing up Prisma and the network, and the thing that broke was not the
+     * logic — it was that NOTHING WAS WRITTEN. Comments stripped, because the
+     * code now explains the old `return` at length.
+     */
+    const raw = readFileSync(join(__dirname, "..", "src", "lib", "geocodeConsignee.ts"), "utf8");
+    const src = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+    it("the missing-key path records NO_API_KEY instead of returning silently", () => {
+      expect(src.length, "the module moved or was renamed").toBeGreaterThan(1000);
+      expect(src, "a bare early return leaves the row looking untouched").not.toMatch(
+        /if \(!key\) return;/
+      );
+      expect(src).toContain('recordVerdict(c.id, "NO_API_KEY")');
+    });
+
+    it("the catch path records ERROR instead of only logging", () => {
+      const katch = src.slice(src.indexOf("} catch (err) {"));
+      expect(katch.length, "the catch block moved").toBeGreaterThan(50);
+      expect(katch).toContain('recordVerdict(c.id, "ERROR")');
+    });
+
+    it("recording is FILL-ONLY, so it can never erase a coordinate", () => {
+      // The verdict write must not overwrite a position that arrived meanwhile
+      // from an admin fix, a batch run or the self-heal.
+      const fn = src.slice(src.indexOf("async function recordVerdict"));
+      expect(fn).toContain("latitude: null, longitude: null");
+    });
   });
 });

@@ -118,6 +118,9 @@ export function ConsigneesScreen() {
               {coverage.data.never_geocoded > 0
                 ? ` · ${t("admin.consignees.coverageNeverGeocoded", { count: coverage.data.never_geocoded })}`
                 : ""}
+              {coverage.data.failed_lookup > 0
+                ? ` · ${t("admin.consignees.coverageFailed", { count: coverage.data.failed_lookup })}`
+                : ""}
               {coverage.data.partial_coords > 0
                 ? ` · ${t("admin.consignees.coveragePartial", { count: coverage.data.partial_coords })}`
                 : ""}

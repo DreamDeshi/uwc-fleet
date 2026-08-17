@@ -9,6 +9,7 @@ import { requireRole } from "../middleware/roleGuard";
 import { activeBookingsForConsigneeWhere, updateConsignee } from "../services/consigneeUpdate";
 import { parseConsigneeCsv } from "../lib/consigneeCsv";
 import { geocodeNewConsignee } from "../lib/geocodeConsignee";
+import { BROKEN_MATCH_TYPES } from "../lib/geocodePrecision";
 
 const router = Router();
 router.use(requireAuth);
@@ -227,11 +228,12 @@ async function similarActiveConsignees(
 // them". For most of that count a run fills NOTHING, because the geocoder has
 // already been there and deliberately declined:
 //
-//   scripts/geocode-google.ts writes coords ONLY for ROOFTOP and
-//   RANGE_INTERPOLATED. A GEOMETRIC_CENTER / APPROXIMATE / ZERO_RESULTS answer
-//   is written back as NULL COORDS + the raw location_type, and so is every
-//   member of a cluster that resolved to one shared point (a demoted
-//   duplicate). Re-running returns the same verdict.
+//   scripts/geocode-google.ts stores coordinates for any answer carrying a
+//   POSITION — building, road or area (updated 18 Aug 2026; it used to keep
+//   ROOFTOP/RANGE_INTERPOLATED only, which is why 349 rows had their answer
+//   discarded). A ZERO_RESULTS is written back as NULL COORDS + the raw
+//   location_type, and so is every member of a cluster that resolved to one
+//   shared point (a demoted duplicate). Re-running returns the same verdict.
 //
 // So `geocode_match_type` is the discriminator, and it costs one more COUNT:
 //   match_type NULL + no coords -> NEVER ATTEMPTED. A run would fix these, and
@@ -240,6 +242,13 @@ async function similarActiveConsignees(
 //     (services/consigneeUpdate clears the position when the address moves).
 //   match_type SET + no coords  -> ASKED AND DECLINED. A run changes nothing;
 //     these need a better address, not another lookup.
+//   match_type = a BROKEN verdict -> THE LOOKUP ITSELF FAILED (isBrokenAttempt:
+//     NO_API_KEY, ERROR, RETRY_EXHAUSTED, a quota wall). These need someone to
+//     look at the SYSTEM, not at the address, and a run only helps once the
+//     cause is fixed. Before this was counted, a broken lookup wrote nothing at
+//     all, so it fell into "never attempted" and the screen advised a geocode
+//     run — confidently wrong advice that got MORE wrong with every consignee
+//     added, while nothing anywhere reported that geocoding was not running.
 //
 // ⚠ `geocode_match_type` is NOT a gate for READERS — routing and every other
 // consumer gate on the PRESENCE OF COORDS, because the vocabulary is
@@ -249,17 +258,25 @@ async function similarActiveConsignees(
 router.get("/coverage", requireRole("admin"), async (_req, res, next) => {
   try {
     const noCoords = { is_active: true, latitude: null, longitude: null };
-    const [totalActive, missingBoth, missingAny, neverGeocoded] = await Promise.all([
+    const [totalActive, missingBoth, missingAny, neverGeocoded, failedLookup] = await Promise.all([
       prisma.consignee.count({ where: { is_active: true } }),
       prisma.consignee.count({ where: noCoords }),
       prisma.consignee.count({ where: { is_active: true, OR: [{ latitude: null }, { longitude: null }] } }),
       prisma.consignee.count({ where: { ...noCoords, geocode_match_type: null } }),
+      prisma.consignee.count({
+        where: { ...noCoords, geocode_match_type: { in: [...BROKEN_MATCH_TYPES] } },
+      }),
     ]);
     res.json({
       total_active: totalActive,
       missing_coords: missingBoth,
       // The ACTIONABLE subset of missing_coords — what a geocode run would fill.
       never_geocoded: neverGeocoded,
+      // The subset where the LOOKUP broke rather than answered. Disjoint from
+      // never_geocoded by construction (that one requires a null match_type,
+      // this one requires a set-and-broken match_type), so the two never
+      // double-count the same row.
+      failed_lookup: failedLookup,
       // Four unsynchronised COUNTs: a write landing between the second and the
       // third makes this negative, and "-1 with half-missing coordinates" is a
       // worse bug report than the anomaly it exists to report.

@@ -34,6 +34,9 @@ describe("GET /consignees/coverage", () => {
     total_active: number;
     missing_coords: number;
     never_geocoded: number;
+    /** Rows whose LOOKUP broke (no key, transport failure, quota) rather than
+     *  answering. Disjoint from never_geocoded. */
+    failed_lookup: number;
     partial_coords: number;
   };
   const coverage = async (): Promise<Coverage> => {
@@ -146,7 +149,27 @@ describe("GET /consignees/coverage", () => {
     expect(after.never_geocoded - before.never_geocoded, "a declined lookup is not actionable").toBe(0);
   });
 
-  it("a NEW consignee is never-geocoded, and therefore actionable", async () => {
+  /**
+   * ⚠ REWRITTEN 18 Aug 2026, and the change of expectation is the FEATURE.
+   *
+   * This used to assert a new consignee lands in `never_geocoded`, i.e.
+   * "actionable, a geocode run would fill it". That was true only because a
+   * missing GOOGLE_MAPS_KEY made `geocodeNewConsignee` return on a bare
+   * `return`, writing nothing — so a row whose lookup never ran was
+   * indistinguishable from one that was never attempted, and the admin screen
+   * advised a run that could not possibly work.
+   *
+   * CI has no key, which is exactly the misconfigured case. So the row now
+   * lands in `failed_lookup`, and this test asserts THAT. It went red on the
+   * change and it was right to: the number it guarded genuinely moved.
+   *
+   * ⚠ AND IT MUST POLL. The verdict is written from a FIRE-AND-FORGET call
+   * (`void geocodeNewConsignee(...)`), so it lands some time after the 201.
+   * Reading coverage immediately is a race the old test never had — it passed
+   * because nothing was written at all. A single read here would flake in
+   * whichever direction the scheduler happened to go.
+   */
+  it("a NEW consignee with no geocoder configured is a FAILED lookup, not never-attempted", async () => {
     const before = await coverage();
     const res = await api()
       .post("/api/v1/consignees")
@@ -160,8 +183,22 @@ describe("GET /consignees/coverage", () => {
     expect(res.status, res.text).toBe(201);
     made.push(res.body.id);
 
-    const after = await coverage();
-    expect(after.never_geocoded - before.never_geocoded).toBe(1);
+    // Wait for the fire-and-forget verdict rather than guessing at a delay.
+    let after = await coverage();
+    for (let i = 0; i < 40 && after.failed_lookup === before.failed_lookup; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      after = await coverage();
+    }
+
+    expect(after.missing_coords - before.missing_coords, "it has no position either way").toBe(1);
+    expect(
+      after.failed_lookup - before.failed_lookup,
+      "no API key means the LOOKUP broke — someone must fix the system"
+    ).toBe(1);
+    expect(
+      after.never_geocoded - before.never_geocoded,
+      "and it must NOT be advertised as something a geocode run would fill"
+    ).toBe(0);
   });
 
   it("a half-null row is reported as a data anomaly, not as missing", async () => {
