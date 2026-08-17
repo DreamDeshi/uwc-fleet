@@ -49,6 +49,27 @@ import publicRoutes from "../src/routes/public";
 import { errorHandler } from "../src/middleware/errorHandler";
 import { signTrackingToken } from "../src/lib/trackingToken";
 
+/**
+ * How long a "did it settle?" race waits before calling the request HUNG.
+ *
+ * ⚠ THIS IS A DEADLINE, NOT A DELAY — and it is the only timing in this file,
+ * so it is the first suspect when the suite flakes. `asyncRouteBridging` was
+ * seen failing twice on 18 Aug 2026 and passing on immediate re-run; there is
+ * no port to pin (supertest binds an ephemeral one per request), which leaves
+ * this race as the mechanism: on a loaded runner a request that WOULD respond
+ * can outlive the deadline and be reported as a hang.
+ *
+ * Raising it is safe in both directions and weakens nothing. The unbridged
+ * case asserts HUNG, so more time only makes that proof stronger — a genuine
+ * hang stays hung however long you wait. The bridged case asserts a response,
+ * and more time is exactly what stops a slow-but-correct response being
+ * misread. The cost is paid only when a test actually fails.
+ *
+ * If it recurs at 5s, the cause is NOT scheduling latency and this note has
+ * ruled one thing out rather than nothing.
+ */
+const SETTLE_DEADLINE_MS = 5000;
+
 /** Did the request settle, or is it still open? Never waits longer than `ms`. */
 async function settlesWithin(app: express.Express, path: string, ms: number): Promise<string> {
   return Promise.race([
@@ -74,7 +95,7 @@ describe("async route handlers must bridge rejections to errorHandler", () => {
       unbridged.use(errorHandler);
 
       expect(
-        await settlesWithin(unbridged, "/boom", 500),
+        await settlesWithin(unbridged, "/boom", SETTLE_DEADLINE_MS),
         "Express 4 delivered an async rejection to errorHandler — if this ever passes, " +
           "the framework changed and the rest of this file is over-caution rather than a fix"
       ).toBe("HUNG");
@@ -94,7 +115,7 @@ describe("async route handlers must bridge rejections to errorHandler", () => {
     });
     bridged.use(errorHandler);
 
-    expect(await settlesWithin(bridged, "/boom", 2000)).toBe("responded:500");
+    expect(await settlesWithin(bridged, "/boom", SETTLE_DEADLINE_MS)).toBe("responded:500");
   });
 
   it("REAL ROUTE: a database failure on /track/:token is a 500, not a hang", async () => {
