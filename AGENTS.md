@@ -226,6 +226,58 @@ Nothing on that workbook change is unbuilt now.
 
 
 
+\#### RULED BUT UNIMPLEMENTED — THE THIRD FAILURE MODE, AND THE UNWATCHED ONE
+
+Two ways the record and the code disagree are already written down here: a
+STALE record trusted too long (interplant scoring, below) and a CORRECT record
+trusted too little (the trips date range, under UI). **B6 is the third: a
+ruling that was recorded and never built.** Nobody was looking for it, because
+both other failures announce themselves — one blocks work that is already done,
+the other turns CI red. This one is silent. The app simply keeps doing the old
+thing while the answer file says otherwise.
+
+**B6, as it stands on 17 Aug 2026.** Mr. Teh asked US a question on 11 Aug:
+*"what is your suggestion if 2am is not convenience? Can we set to 12am?
+Because we have one driver working shift is 2pm to 12am"*. The OWNER answered
+the same day: **12am, and 12am is when the lorry must be BACK** — the operating
+window becomes 07:00–00:00. `CLIENT_ANSWERS.md` records the answer and notes
+the fleet is "(seeded 07:00–02:00)".
+
+It still is, in every place that states it:
+
+```
+mobile/src/lib/bookingEdit.ts        PICKUP_WINDOW_END_HOUR = 2
+api/src/services/operatingWindow.ts  DEFAULT_WINDOW_END = "02:00"
+the Truck rows themselves            07:00–02:00
+```
+
+**Six days live with a ruling that was recorded and never built**, and it was
+found only because a copy pass went looking at whether one hint string was
+stale. It was not: `booking.fleetHoursHint` ("Fleet hours 7 AM – 2 AM")
+correctly describes what the app DOES. The app is what is wrong.
+
+⚠ **DO NOT "CORRECT" THE COPY TO MIDNIGHT.** That would make a true sentence
+false while the picker still offers 23:00, 00:00, 01:00 and 02:00 underneath
+it. Fix the window, and the copy follows.
+
+**When it is built** (it is a DISPATCH change — the window decides which
+pickups can be assigned at all — so it needs explicit approval and boundary
+tests):
+
+- move both constants together, client and server, or the picker and the
+  assignment check disagree about the same booking;
+- **MOVE THE SEEDED TRUCK ROWS WITH IT.** The per-truck window is data, not a
+  constant; changing the default alone leaves nine trucks still open to 02:00;
+- 02:00–00:00 shortens the day, so a pickup that was legal yesterday is refused
+  today. Check nothing in flight sits in the removed two hours before applying;
+- the window WRAPS midnight today (07:00 → 02:00). At 07:00 → 00:00 it stops
+  wrapping, and any code that assumes a wrap becomes reachable-dead. Read
+  `operatingWindow.ts` for the wrap arithmetic before changing the bound.
+
+**The rule this leaves behind:** when a written answer changes a NUMBER the code
+holds, grep for that number the same day and either change it or record why not.
+An answer file is not an implementation, and nothing in CI compares the two.
+
 \#### THIS LIST WAS WRONG ABOUT INTERPLANT SCORING FOR FIVE DAYS
 
 
