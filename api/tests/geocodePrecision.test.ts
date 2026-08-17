@@ -203,6 +203,33 @@ describe("the BATCH script and creation-time geocoding apply the SAME store gate
     );
   });
 
+  it("captures the provider's coordinate UNGATED — the gate is at the write", () => {
+    /**
+     * ⚠ THE SECOND HALF OF THE SAME DEFECT, and the half that made the first
+     * fix useless. The capture line read `lat: usable ? g.lat : null`, so the
+     * road-level coordinates were destroyed before any gate could keep them.
+     * Widening the write gate changed nothing, the --out dump was already
+     * lossy, and the A1 dry run reported "will hold coordinates: 16" against
+     * sixteen null latitudes.
+     *
+     * One decision, implemented in THREE places (capture, write, summary), and
+     * the earliest one silently outranked the other two.
+     */
+    const capture = src.slice(src.indexOf("perRow.push({"), src.indexOf("if (OUT)"));
+    expect(capture.length, "the capture block moved").toBeGreaterThan(50);
+    expect(capture, "the coordinate must be captured as given").toContain("lat: g.lat");
+    expect(capture, "gating at capture destroys what the write gate would keep").not.toContain(
+      "lat: usable ? g.lat"
+    );
+  });
+
+  it("counts storable rows by COORDINATE, not by verdict", () => {
+    // A storable location_type with a null lat stores nothing. Counting
+    // verdicts overstated the A1 run by 16 — a summary promising coordinates
+    // the write could not deliver.
+    expect(src).toContain("isStorable(r.location_type) && r.lat != null");
+  });
+
   it("still demotes duplicate BUILDING pins — the backstop is unchanged", () => {
     // Widening the store gate must not widen the duplicate demotion: that
     // backstop is about coordinates precise enough that two identical ones mean

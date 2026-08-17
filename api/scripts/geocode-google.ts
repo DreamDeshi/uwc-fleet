@@ -104,9 +104,20 @@ async function main() {
       const g = await googleGeocode(q, KEY);
       await sleep(GAP_MS);
       const usable = isUsable(g.locationType);
+      // ⚠ CAPTURE THE COORDINATE THE PROVIDER GAVE, UNGATED.
+      //
+      // This line used to read `lat: usable ? g.lat : null`, which threw the
+      // road-level and area-level coordinates away HERE, before any gate could
+      // choose to keep them — so widening the write gate below changed nothing
+      // and the --out dump was already lossy. That is the same decision
+      // implemented in a THIRD place, and it silently outranked the other two.
+      //
+      // The gate belongs at the WRITE (`keep`, below) and nowhere else. `usable`
+      // is still recorded, because the duplicate backstop and the summary need
+      // to know which rows are building grade.
       perRow.push({
         id: c.id, name: c.company_name, zone: c.zone_code, address_1: c.address_1, query: q,
-        lat: usable ? g.lat : null, lng: usable ? g.lng : null, location_type: g.locationType, usable,
+        lat: g.lat, lng: g.lng, location_type: g.locationType, usable,
       });
       if ((i + 1) % 100 === 0 || i === rows.length - 1) console.log(`  ${String(i + 1).padStart(4)}/${rows.length} processed`);
     }
@@ -130,13 +141,21 @@ async function main() {
     console.log(`  ${k.padEnd(20)} ${String(n).padStart(5)}  ${((n / N) * 100).toFixed(1)}%  ${fate}`);
   }
   const usableTotal = perRow.filter((r) => isUsable(r.location_type)).length;
-  const storableTotal = perRow.filter((r) => isStorable(r.location_type)).length;
+  // Counted on the COORDINATE, not on the verdict: a storable location_type
+  // with a null lat stores nothing, and counting verdicts overstated this by 16
+  // on the first A1 dry run — a summary that promised coordinates the write
+  // could not deliver.
+  const storableTotal = perRow.filter((r) => isStorable(r.location_type) && r.lat != null).length;
   console.log(`  ${"BUILDING grade".padEnd(20)} ${String(usableTotal).padStart(5)}  ${((usableTotal / N) * 100).toFixed(1)}%`);
   console.log(`  ${"STORABLE (any pin)".padEnd(20)} ${String(storableTotal).padStart(5)}  ${((storableTotal / N) * 100).toFixed(1)}%`);
 
   // ── Duplicate-coordinate audit ─────────────────────────────────────────────
+  // BUILDING rows only — deliberately unchanged in meaning now that coarse
+  // coordinates survive capture. Two identical ROOFTOP pins mean the geocoder
+  // gave up; two identical street centres just mean one street, which is not a
+  // defect and must not demote anything.
   const byCoord = new Map<string, typeof perRow>();
-  for (const r of perRow) { if (r.lat == null) continue; const k = `${r.lat.toFixed(5)},${r.lng.toFixed(5)}`; (byCoord.get(k) ?? byCoord.set(k, []).get(k)!).push(r); }
+  for (const r of perRow) { if (r.lat == null || !isUsable(r.location_type)) continue; const k = `${r.lat.toFixed(5)},${r.lng.toFixed(5)}`; (byCoord.get(k) ?? byCoord.set(k, []).get(k)!).push(r); }
   const norm = (s: string) => nz(s).toUpperCase().replace(/[^A-Z0-9]/g, "");
   const clusters = [...byCoord.entries()]
     .map(([coord, members]) => ({ coord, members, distinctAddresses: new Set(members.map((m) => norm(m.address_1))).size }))
