@@ -22,9 +22,58 @@ import L from "leaflet";
 import { useTranslation } from "react-i18next";
 import { InvalidateOnLayout } from "./leafletCommon";
 import { PLANT_ORIGIN, zoneCoord, type LatLng } from "../lib/geo";
+import { ORIGIN_LABEL } from "../lib/trip";
 import { colors } from "../theme";
-import { destinationIcon, driverIcon, plantIcon } from "./mapMarkers.web";
 import { useTripLatestLocation } from "../hooks/queries";
+
+// ── MARKER SCALE ───────────────────────────────────────────────────────────
+// Sized against the MAP, not the screen. The band frames a ~50 km run in about
+// 320px, so a 26px dot covered roughly 4 km of ground and the plant square sat
+// wider than Batu Kawan itself. Owner review, 18 Aug 2026: markers are a
+// fraction of their former size — readable, not dominating. Previous values are
+// in the comment beside each, so a future change is a deliberate step.
+// The chip LABEL scales with the marker (10px -> 6px, padding 2/7 -> 0.5/3):
+// left at its old size it outweighed the destination and inverted the
+// priority, which is the thing the sizing is for. It stays on the map rather
+// than moving to a hover — a driver benefits from seeing the plant named.
+const plantIcon = L.divIcon({
+  className: "uwc-truck-label",
+  html: `
+    <div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-3px)">
+      <div style="background:${colors.navy};color:${colors.yellow};font:700 6px Inter,sans-serif;
+           padding:0.5px 3px;border-radius:2px;white-space:nowrap;margin-bottom:2px">${ORIGIN_LABEL}</div>
+      <div style="width:7px;height:7px;background:${colors.yellow};border:1.5px solid ${colors.navy};border-radius:2px"></div>
+    </div>`,
+  iconSize: [7, 18], // was [14, 32]
+  iconAnchor: [3.5, 15],
+});
+
+// Dashed outline — the same visual language the fleet map uses for a position
+// we are approximating rather than measuring.
+const destIcon = L.divIcon({
+  className: "uwc-truck-label",
+  html: `
+    <div style="display:flex;flex-direction:column;align-items:center">
+      <div style="width:8px;height:8px;border-radius:50%;background:#fff;border:1.5px dashed ${colors.red}"></div>
+    </div>`,
+  iconSize: [8, 8], // was [14, 14]
+  iconAnchor: [4, 4],
+});
+
+/** Green pulse when the fix is fresh, grey when the signal has gone stale. */
+function truckIcon(stale: boolean) {
+  const ring = stale ? "rgba(154,165,196,0.25)" : "rgba(61,170,53,0.2)";
+  const dot = stale ? colors.textFaint : colors.green;
+  return L.divIcon({
+    className: "uwc-truck-label",
+    html: `
+      <div style="width:13px;height:13px;border-radius:50%;background:${ring};display:flex;align-items:center;justify-content:center">
+        <div style="width:8px;height:8px;border-radius:50%;background:${dot};border:1.5px solid #fff;box-shadow:0 1px 2px rgba(0,0,0,0.3)"></div>
+      </div>`,
+    iconSize: [13, 13], // was [24, 24]
+    iconAnchor: [6.5, 6.5],
+  });
+}
 
 /**
  * Keep every point in view. The map is locked (no drag/zoom, matching native),
@@ -37,9 +86,7 @@ function FitToPoints({ points }: { points: LatLng[] }) {
   React.useEffect(() => {
     if (points.length === 0) return;
     const bounds = L.latLngBounds(points.map((p) => [p.latitude, p.longitude] as [number, number]));
-    // Top padding carries the destination pin's 42px height — it is anchored at
-    // its tip, so fitting to the coordinate alone clips the head.
-    map.fitBounds(bounds, { paddingTopLeft: [36, 56], paddingBottomRight: [36, 36], maxZoom: 13, animate: false });
+map.fitBounds(bounds, { padding: [36, 36], maxZoom: 13, animate: false });
     // `key` (not `points`) so a re-render with identical coordinates doesn't
     // re-fit and fight the tile load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -104,14 +151,14 @@ export function LiveTripMap({
 
         <Marker position={[PLANT_ORIGIN.latitude, PLANT_ORIGIN.longitude]} icon={plantIcon} interactive={false} />
 
-        <Marker position={[dest.latitude, dest.longitude]} icon={destinationIcon}>
+        <Marker position={[dest.latitude, dest.longitude]} icon={destIcon}>
           <Tooltip direction="top" offset={[0, -8]}>
             <span style={{ fontSize: 12 }}>{t("bookingDetail.mapDestApprox")}</span>
           </Tooltip>
         </Marker>
 
         {truck && (
-          <Marker position={[truck.latitude, truck.longitude]} icon={driverIcon(Boolean(pos?.stale))} zIndexOffset={500}>
+          <Marker position={[truck.latitude, truck.longitude]} icon={truckIcon(Boolean(pos?.stale))} zIndexOffset={500}>
             <Tooltip direction="top" offset={[0, -12]}>
               <span style={{ fontSize: 12, fontWeight: 700, color: pos?.stale ? colors.textMuted : colors.green }}>
                 {pos?.stale ? t("bookingDetail.locStale") : t("bookingDetail.locLive")}
