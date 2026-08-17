@@ -1,6 +1,6 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
-import MapView, { Marker } from "react-native-maps";
+import MapView, { Marker, Polyline } from "react-native-maps";
 import { colors } from "../theme";
 import { PLANT_ORIGIN } from "../lib/geo";
 import { mapsEnabled } from "../lib/maps";
@@ -14,11 +14,14 @@ type LatLng = { latitude: number; longitude: number };
 export function ActiveTripMap({
   region,
   dest,
+  polyline,
   destLabel,
   current,
 }: {
   region: any;
   dest: LatLng;
+  /** Pre-computed road geometry — context, never the remaining leg. */
+  polyline?: LatLng[] | null;
   destLabel: string;
   current?: LatLng | null;
 }) {
@@ -30,10 +33,15 @@ export function ActiveTripMap({
     <MapView style={StyleSheet.absoluteFill} initialRegion={region}>
       <Marker coordinate={PLANT_ORIGIN} title="UWC Batu Kawan" pinColor={colors.blue} />
       <Marker coordinate={dest} title={destLabel} pinColor={colors.red} />
-      {/* ⚠ NO ROUTE LINE HERE. Owner ruling, 18 Aug 2026 — the geometry is
-          PLANT-anchored, so once he is moving it is wrong at both ends. See
-          ActiveTripMap.web.tsx for the full reasoning; the pre-trip map
-          (LiveTripMap) keeps the line. */}
+      {/* THE SHAPE OF THE RUN — context, not navigation. ⚠ Deliberate
+          reinstatement (owner call, 18 Aug 2026) after being removed earlier
+          the same day. Plant-anchored and centroid-ended, so it is NOT his
+          remaining leg; turn-by-turn is the Google Maps handoff. Do not remove
+          it as a bug and do not present it as a route. Full reasoning in
+          ActiveTripMap.web.tsx. Real geometry only — never a stand-in. */}
+      {polyline?.length ? (
+        <Polyline coordinates={polyline} strokeColor={colors.blue} strokeWidth={1} />
+      ) : null}
       {/* Live "you are here" dot from this phone's GPS */}
       {current ? (
         <Marker coordinate={current} anchor={{ x: 0.5, y: 0.5 }} flat>

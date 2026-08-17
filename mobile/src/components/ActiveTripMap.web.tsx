@@ -18,7 +18,7 @@
 //     being claimed
 //   - the live "you are here" dot from this device's GPS, when present
 import React, { useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Tooltip, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Polyline, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import { InvalidateOnLayout } from "./leafletCommon";
 import { PLANT_ORIGIN, type LatLng } from "../lib/geo";
@@ -86,16 +86,21 @@ map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14, animate: false });
 
 export function ActiveTripMap({
   dest,
+  polyline,
   destLabel,
   current,
 }: {
   /** Native takes an initialRegion; web derives framing from the points. */
   region?: any;
   dest: LatLng;
+  /** Pre-computed road geometry (RouteLeg). Plant-anchored and centroid-ended:
+   *  context, never the driver's remaining leg. */
+  polyline?: LatLng[] | null;
   destLabel: string;
   current?: LatLng | null;
 }) {
 
+  const road = polyline?.length ? polyline : null;
   const points = useMemo(
     () => [PLANT_ORIGIN, dest, ...(current ? [current] : [])],
     [dest?.latitude, dest?.longitude, current?.latitude, current?.longitude] // eslint-disable-line react-hooks/exhaustive-deps
@@ -126,16 +131,31 @@ export function ActiveTripMap({
         <FitToPoints points={points} />
         <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-        {/* ⚠ NO ROUTE LINE ON THE ACTIVE-TRIP MAP. Owner ruling, 18 Aug 2026.
-            The geometry is PLANT-anchored by construction, so once the driver
-            is moving it is wrong at BOTH ends: it starts at a warehouse he left
-            an hour ago and it finishes at a zone centroid he is not going to.
-            A line like that is worse than no line. It stays on the PRE-TRIP map
-            (LiveTripMap), where he really is at the plant and it is the shape
-            of the run he is about to do.
-            Routing from his live position is the only thing that would be
-            correct here, and it needs a runtime routing provider we removed on
-            purpose — a costed decision, not a tweak. */}
+        {/* THE SHAPE OF THE RUN. ⚠ DELIBERATE REINSTATEMENT — owner call,
+            18 Aug 2026. This line was removed earlier the same day on the
+            reasoning below, and put back knowing it.
+
+            IT IS CONTEXT, NOT NAVIGATION. The geometry is PLANT-ANCHORED and
+            terminates at a ZONE CENTROID (RouteLeg is keyed on {PLANT} + the
+            eight centroids), so it is NOT the driver's remaining leg: it does
+            not start where he is and it does not end where he is going. It
+            shows the shape of the run. Turn-by-turn is the Google Maps
+            handoff, and it always has been.
+
+            ⚠ DO NOT REMOVE THIS AS A BUG. "The line starts at a warehouse he
+            left" is a correct observation and a decided trade-off, not a
+            defect report. ⚠ AND DO NOT MISTAKE IT FOR A ROUTE — anything that
+            presents it as his remaining path is wrong.
+
+            Only REAL routed geometry is ever drawn; there is no straight-line
+            stand-in, because a two-pointer would claim a path nobody
+            computed. */}
+        {road ? (
+          <Polyline
+            positions={road.map((p) => [p.latitude, p.longitude] as [number, number])}
+            pathOptions={{ color: colors.blue, weight: 1, opacity: 0.55 }}
+          />
+        ) : null}
         <Marker position={[PLANT_ORIGIN.latitude, PLANT_ORIGIN.longitude]} icon={plantIcon} interactive={false} />
 
         <Marker position={[dest.latitude, dest.longitude]} icon={destIcon}>

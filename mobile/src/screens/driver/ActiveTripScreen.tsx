@@ -28,6 +28,7 @@ import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { TripsStackParamList, DriverTabParamList } from "../../navigation/types";
 import {
   useTrip,
+  useTripRoute,
   useUpdateTripStatus,
   useUpdateStopDocs,
   useUploadPod,
@@ -248,10 +249,10 @@ export function ActiveTripScreen() {
     gpsRetry,
     bg.backgroundActive
   );
-  // ⚠ NO useTripRoute HERE. The route line was removed from this map (it is
-  // plant-anchored, so it is wrong at both ends once he is moving), and the
-  // polyline was its ONLY consumer on this screen — so the fetch went with it
-  // rather than being left running for nothing.
+  // The road geometry behind the map's context line. ⚠ Plant-anchored and
+  // centroid-ended — it is the SHAPE OF THE RUN, not his remaining leg. See
+  // components/ActiveTripMap.web.tsx.
+  const { data: route } = useTripRoute(params.tripId, Boolean(trip));
 
   const [error, setError] = useState<string | null>(null);
   const [earned, setEarned] = useState<string | number | null>(null);
@@ -657,6 +658,7 @@ export function ActiveTripScreen() {
         <ActiveTripMap
           region={region}
           dest={dest}
+          polyline={route?.polyline}
           destLabel={tripDestination(trip)}
           current={tracking.current}
         />

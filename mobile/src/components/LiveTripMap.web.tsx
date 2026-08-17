@@ -179,7 +179,7 @@ export function LiveTripMap({
         {route?.polyline?.length ? (
           <Polyline
             positions={route.polyline.map((pt) => [pt.latitude, pt.longitude] as [number, number])}
-            pathOptions={{ color: colors.blue, weight: 2, opacity: 0.55 }}
+            pathOptions={{ color: colors.blue, weight: 1, opacity: 0.55 }}
           />
         ) : null}
 

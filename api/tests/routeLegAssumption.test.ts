@@ -56,27 +56,38 @@ describe("the decisions taken once the assumption broke", () => {
     return raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   };
 
+  /**
+   * ⚠ THIS ASSERTION WAS INVERTED ON 18 Aug 2026, THE DAY IT WAS WRITTEN.
+   *
+   * It first asserted the active-trip map draws NO route line, encoding the
+   * ruling that a plant-anchored path is wrong at both ends once the driver is
+   * moving. The owner then reversed that call: the line goes back, as CONTEXT.
+   *
+   * Both readings of the fact are correct and the fact has not changed — the
+   * geometry really is plant-anchored and really does end at a zone centroid.
+   * What changed is what we do about it: a line that shows THE SHAPE OF THE RUN
+   * is useful even when it is not the remaining leg, provided nothing presents
+   * it as navigation.
+   *
+   * Recorded rather than quietly rewritten, because a guard that flips without
+   * explanation is indistinguishable from one that was adjusted until it went
+   * green — and this repo cannot tell those apart from the outside either.
+   */
   for (const file of ["ActiveTripMap.web.tsx", "ActiveTripMap.tsx"]) {
-    it(`${file} draws NO route line`, () => {
-      /**
-       * Owner ruling, 18 Aug 2026. Plant-anchored geometry is wrong at BOTH
-       * ends once the driver is moving: it starts at a warehouse he left an
-       * hour ago and ends at a zone centroid he is not going to.
-       *
-       * If this goes red, someone has put the line back. That is only correct
-       * if routing now starts from the driver's live position — which needs a
-       * runtime routing provider, deliberately removed on 2026-07-20.
-       */
+    it(`${file} draws the route line, and ONLY real geometry`, () => {
       const src = read(file);
       expect(src.length, `${file} moved or was renamed`).toBeGreaterThan(500);
-      expect(src, "the map itself must still be here").toContain("Marker");
-      expect(src, "a route line on the active-trip map is wrong at both ends").not.toContain(
+      expect(src, "the context line is deliberate — do not remove it as a bug").toContain(
         "Polyline"
       );
+      // The half that must never come back: a straight two-pointer between the
+      // plant and the destination claims a path nobody computed. Only geometry
+      // that actually came from RouteLeg may be drawn.
+      expect(src, "no straight-line stand-in").not.toMatch(/\[\s*PLANT_ORIGIN\s*,\s*dest\s*\]/);
     });
   }
 
-  it("the PRE-TRIP map keeps the line, because there he really is at the plant", () => {
+    it("the PRE-TRIP map keeps the line, because there he really is at the plant", () => {
     // The other half of the ruling. Losing this silently would be the same
     // failure in reverse: the shape of the run is genuinely useful before
     // departure, and it is the only place the geometry is honest.
