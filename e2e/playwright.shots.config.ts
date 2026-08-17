@@ -15,7 +15,7 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./tests",
-  testMatch: /driverHomeShots\.spec\.ts/,
+  testMatch: /(driverHomeShots|overlaySweepShots)\.spec\.ts/,
   timeout: 90_000,
   expect: { timeout: 20_000 },
   fullyParallel: false,
