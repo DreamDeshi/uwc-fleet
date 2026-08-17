@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 /**
  * BIOMETRIC ENROLMENT — what is stored, where, and who it belongs to.
@@ -32,7 +33,16 @@ import { Platform } from "react-native";
  * the danger is never the current user, it is the previous one.
  */
 
-/** Which user this device is enrolled for. Unscoped BY DESIGN — see below. */
+/**
+ * Which user this device is enrolled for.
+ *
+ * ⚠ UNSCOPED, AND IT MUST BE. `scopedStorage` keys everything by the ACTIVE
+ * user, and this pointer is read at bootstrap to decide whether to lock —
+ * before any user is active, and specifically to protect the app from the
+ * PREVIOUS user. Keying it by the person it names would make it unreadable at
+ * exactly the moment it is needed. It holds one user id and nothing else: no
+ * trip, consignee or POD data ever passes through this module.
+ */
 const ENROLLED_USER_KEY = "uwc.bio.enrolledUserId";
 /** The SecureStore entry holding that user's refresh token. */
 const REFRESH_ITEM = "uwc.bio.refreshToken";
@@ -73,11 +83,9 @@ export async function biometricAvailable(): Promise<boolean> {
 }
 
 /** The user id this device is enrolled for, or null. */
-export async function enrolledUserId(
-  getItem: (k: string) => Promise<string | null>
-): Promise<string | null> {
+export async function enrolledUserId(): Promise<string | null> {
   try {
-    return await getItem(ENROLLED_USER_KEY);
+    return await AsyncStorage.getItem(ENROLLED_USER_KEY);
   } catch {
     return null;
   }
@@ -93,7 +101,6 @@ export async function enrolledUserId(
 export async function enrolDevice(params: {
   userId: string;
   refreshToken: string;
-  setItem: (k: string, v: string) => Promise<void>;
 }): Promise<boolean> {
   const mods = nativeModules();
   if (!mods) return false;
@@ -104,7 +111,7 @@ export async function enrolDevice(params: {
       requireAuthentication: true,
       keychainAccessible: mods.store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     });
-    await params.setItem(ENROLLED_USER_KEY, params.userId);
+    await AsyncStorage.setItem(ENROLLED_USER_KEY, params.userId);
     return true;
   } catch {
     return false;
@@ -117,7 +124,7 @@ export async function enrolDevice(params: {
  * Called on: explicit opt-out, a password login by a DIFFERENT user, and a
  * server rejection at unlock. Never on a cancelled prompt or a dead network.
  */
-export async function clearEnrolment(removeItem: (k: string) => Promise<void>): Promise<void> {
+export async function clearEnrolment(): Promise<void> {
   const mods = nativeModules();
   try {
     await mods?.store.deleteItemAsync(REFRESH_ITEM, { requireAuthentication: true });
@@ -126,7 +133,7 @@ export async function clearEnrolment(removeItem: (k: string) => Promise<void>): 
     // Losing the POINTER below is what actually un-enrols the device.
   }
   try {
-    await removeItem(ENROLLED_USER_KEY);
+    await AsyncStorage.removeItem(ENROLLED_USER_KEY);
   } catch {
     /* best effort */
   }

@@ -11,6 +11,8 @@ import {
   savePushToken,
   setAuthFailureHandler,
   setTokens,
+  currentAccessToken,
+  currentRefreshToken,
 } from "../services/api";
 import { registerForPushNotificationsAsync } from "../lib/notifications";
 import { bootstrapActionForError } from "../lib/sessionGate";
@@ -26,8 +28,29 @@ import { flushPodOutbox, getPodOutbox } from "../lib/podOutbox";
 import { realApi as realPodOutboxApi } from "../hooks/usePodOutbox";
 import { Me, AppLanguage, SUPPORTED_LANGUAGES } from "../types";
 import i18n from "../i18n";
+import { biometricUnlockEnabled } from "../lib/featureFlags";
+import {
+  biometricAvailable,
+  clearEnrolment,
+  enrolDevice,
+  enrolledUserId,
+  unlockRefreshToken,
+} from "../lib/biometricEnrolment";
+import {
+  passwordLoginClearsEnrolment,
+  shouldClearEnrolment,
+  unlockDecision,
+  type UnlockFailure,
+} from "../lib/biometricUnlock";
+import NetInfo from "@react-native-community/netinfo";
 
-type AuthStatus = "loading" | "authed" | "guest";
+/**
+ * `locked` is the biometric gate: tokens exist and this device is enrolled, so
+ * the app is NOT signed in until a fingerprint has been presented. It sits
+ * between loading and authed rather than inside guest, because the session is
+ * real — it is the person holding the phone that has not been established.
+ */
+type AuthStatus = "loading" | "authed" | "guest" | "locked";
 
 interface AuthContextValue {
   status: AuthStatus;
@@ -40,6 +63,19 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
   setLanguage: (lang: AppLanguage) => Promise<void>;
+  /** Biometric unlock — see lib/biometricUnlock for the rules these obey. */
+  biometric: {
+    /** Is this device enrolled for the signed-in user? */
+    enrolled: boolean;
+    /** Can this build/device offer it at all (flag + native modules + hardware)? */
+    offerable: boolean;
+    enrol: () => Promise<boolean>;
+    disable: () => Promise<void>;
+    /** Run the gate. Resolves to null on success, or why it failed. */
+    unlock: () => Promise<UnlockFailure | null>;
+    /** Leave the gate for the password screen (keeps the enrolment). */
+    usePassword: () => Promise<void>;
+  };
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -50,6 +86,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // True when the session came from the CACHED identity (bootstrap fetchMe
   // failed with a connectivity error). The re-validation effect below heals it.
   const [degraded, setDegraded] = useState(false);
+  // Enrolment state, read once at bootstrap and kept in sync by enrol/disable.
+  const [bioEnrolled, setBioEnrolled] = useState(false);
+  const [bioOfferable, setBioOfferable] = useState(false);
 
   const fetchMe = async () => {
     const res = await api.get<Me>("/users/me");
@@ -64,6 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Cache the confirmed identity so a later offline cold start can still route
     // into the app (see the bootstrap effect + lib/sessionCache).
     saveCachedMe(res.data);
+    return res.data;
     if ((SUPPORTED_LANGUAGES as readonly string[]).includes(res.data.language_pref)) {
       i18n.changeLanguage(res.data.language_pref);
     }
@@ -80,6 +120,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       /* ignore — notifications are non-critical */
     }
   };
+
+  // Can this build even OFFER the toggle? Flag + native modules + hardware with
+  // an OS enrolment. Checked once; none of it changes while the app is open.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!biometricUnlockEnabled()) return;
+      const ok = await biometricAvailable();
+      if (alive) setBioOfferable(ok);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Bootstrap: load saved tokens and resolve the session on app launch.
   useEffect(() => {
@@ -101,6 +155,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (mounted) setStatus("guest");
         return;
       }
+      // ── THE BIOMETRIC GATE ─────────────────────────────────────────────
+      // Tokens exist. If this device is enrolled, nobody gets in on those
+      // tokens until the OS says who is holding the phone. This runs BEFORE
+      // fetchMe on purpose: fetching the identity first would render the app's
+      // own data behind the lock screen, and a lock you can read past is
+      // decoration.
+      //
+      // Everything here fails OPEN — a missing module, absent hardware, a
+      // storage error — because a device that cannot ask for a fingerprint must
+      // still be able to work. The lock is a convenience over the password, not
+      // a second factor.
+      if (await gateIsArmed()) {
+        if (mounted) {
+          setBioEnrolled(true);
+          setStatus("locked");
+        }
+        return;
+      }
+
       try {
         await fetchMe();
         if (mounted) setStatus("authed");
@@ -197,10 +270,121 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  /**
+   * Is the biometric gate armed for this launch?
+   *
+   * All four have to hold: the flag, a build that HAS the native modules,
+   * hardware with an OS enrolment, and an enrolment of ours. Any of them
+   * missing means the app opens as it always did.
+   */
+  const gateIsArmed = async (): Promise<boolean> => {
+    if (!biometricUnlockEnabled()) return false;
+    try {
+      if (!(await biometricAvailable())) return false;
+      return (await enrolledUserId()) !== null;
+    } catch {
+      return false; // fail OPEN — never lock someone out by accident
+    }
+  };
+
+  /** Enrol this device for the signed-in user. Prompts immediately. */
+  const enrolBiometric = async (): Promise<boolean> => {
+    const refresh = currentRefreshToken();
+    if (!user || !refresh) return false;
+    const ok = await enrolDevice({ userId: user.id, refreshToken: refresh });
+    setBioEnrolled(ok);
+    return ok;
+  };
+
+  const disableBiometric = async (): Promise<void> => {
+    await clearEnrolment();
+    setBioEnrolled(false);
+  };
+
+  /**
+   * The unlock itself, exactly as ruled:
+   *   ONLINE                        → prompt, then let the SERVER decide.
+   *   OFFLINE + unexpired access    → enter, validated at the first request.
+   *   OFFLINE + expired access      → refuse.
+   * Only a SERVER rejection un-enrols the device.
+   */
+  const unlock = async (): Promise<UnlockFailure | null> => {
+    if (!(await biometricAvailable())) return fail("unavailable");
+
+    const refresh = await unlockRefreshToken();
+    if (!refresh) return "biometric_failed"; // cancelled, or no stored credential
+
+    const online = (await NetInfo.fetch().catch(() => null))?.isConnected !== false;
+    const decision = unlockDecision({ online, accessToken: currentAccessToken() });
+
+    if (decision.action === "refuse") return "offline_expired";
+
+    if (decision.action === "enter") {
+      // Offline: run on what is already stored, like today's resume. The first
+      // request that reaches the server is what actually validates this.
+      const cached = await loadCachedMe();
+      if (!cached) return "offline_expired"; // nothing to route with
+      await setActiveUser(cached.id);
+      setUser(cached);
+      setDegraded(true);
+      setStatus("authed");
+      return null;
+    }
+
+    // Online: the fingerprint bought us a refresh token, nothing more.
+    try {
+      const { data } = await api.post("/auth/refresh", { refreshToken: refresh });
+      await setTokens(data.accessToken, data.refreshToken);
+      await fetchMe();
+      setDegraded(false);
+      setStatus("authed");
+      syncPushToken();
+      return null;
+    } catch {
+      // The server refused the stored credential — in practice this driver
+      // signed in on another phone (refresh tokens rotate) or was disabled.
+      return fail("session_rejected");
+    }
+  };
+
+  /** Record a failure and, only where the rule says so, un-enrol the device. */
+  const fail = (reason: UnlockFailure): UnlockFailure => {
+    if (shouldClearEnrolment(reason)) {
+      void clearEnrolment();
+      setBioEnrolled(false);
+    }
+    return reason;
+  };
+
+  /** Leave the lock screen for the password form, KEEPING the enrolment. */
+  const usePassword = async (): Promise<void> => {
+    await clearTokens();
+    setUser(null);
+    setStatus("guest");
+  };
+
   const login = async (phone: string, password: string) => {
     const data = await loginRequest(phone, password);
     await setTokens(data.accessToken, data.refreshToken);
-    await fetchMe();
+    const me = await fetchMe();
+
+    // ⚠ THE SHARED-HANDSET RULE (DG-D4's reasoning at a new door). Drivers pass
+    // phones around. If THIS device is enrolled for someone else and that
+    // someone else is not who just signed in, their session must stop being one
+    // thumb away from whoever is now holding it.
+    try {
+      const enrolledFor = await enrolledUserId();
+      const meId = me?.id ?? null;
+      if (meId && passwordLoginClearsEnrolment(enrolledFor, meId)) {
+        await clearEnrolment();
+        setBioEnrolled(false);
+      } else {
+        setBioEnrolled(enrolledFor !== null && enrolledFor === meId);
+      }
+    } catch {
+      /* enrolment bookkeeping must never block a successful sign-in */
+    }
+
     setDegraded(false);
     setStatus("authed");
     syncPushToken();
@@ -304,7 +488,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ status, user, degraded, login, register, logout, refreshMe, setLanguage }}
+      value={{
+        status,
+        user,
+        degraded,
+        login,
+        register,
+        logout,
+        refreshMe,
+        setLanguage,
+        biometric: {
+          enrolled: bioEnrolled,
+          offerable: bioOfferable,
+          enrol: enrolBiometric,
+          disable: disableBiometric,
+          unlock,
+          usePassword,
+        },
+      }}
     >
       {children}
     </AuthContext.Provider>

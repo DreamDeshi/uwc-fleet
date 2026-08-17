@@ -6,6 +6,7 @@ import { usePushNotificationListeners } from "../hooks/usePushNotifications";
 import { LoadingState } from "../components/States";
 import { colors } from "../theme";
 import { AuthStack } from "./AuthStack";
+import { UnlockScreen } from "../screens/auth/UnlockScreen";
 import { DriverTabs } from "./DriverTabs";
 import { RequestorStack } from "./RequestorStack";
 import { AdminNavigator } from "../admin/navigation/AdminNavigator";
@@ -20,6 +21,10 @@ export function RootNavigator() {
         <View style={styles.fill}>
           <LoadingState />
         </View>
+      ) : status === "locked" ? (
+        // Tokens exist and this device is enrolled: nobody sees the app — not
+        // even the tab bar — until the OS says who is holding the phone.
+        <UnlockScreen />
       ) : status === "guest" || !user ? (
         <AuthStack />
       ) : user.role === "driver" ? (
