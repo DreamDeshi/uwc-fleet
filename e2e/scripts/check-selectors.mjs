@@ -121,9 +121,40 @@ const liveEntries = entries.filter(([k]) => isLive(k));
 const deadEntries = entries.filter(([k]) => !isLive(k));
 
 const exactLive = new Set(liveEntries.map(([, v]) => v));
+/**
+ * ⚠ AN INTERPOLATED PATTERN MUST STILL BE ABLE TO SAY NO.
+ *
+ * Every `{{placeholder}}` becomes `.+`, so a value that is MOSTLY placeholder
+ * compiles to a regex matching almost anything. This guard shipped with exactly
+ * that hole: `admin.sustainability.heroMonth` is "{{month}} {{year}}", which
+ * becomes `^.+ .+$` — ANY TWO WORDS. From then on virtually every multi-word
+ * selector in the suite was "live copy" whatever the app actually rendered, and
+ * the guard reported "no selector drift" while specs pointed at strings that no
+ * longer existed.
+ *
+ * It surfaced on 17 Aug 2026 the only way it could: a copy pass renamed
+ * "Booking Submitted!" to "Booking submitted", THIS GUARD PASSED, and the
+ * browser suite then failed on the very selector it had just approved. A guard
+ * that cannot go red is not a guard — the same family as the vacuous scan and
+ * the tautological pin in AGENTS.md.
+ *
+ * So a pattern may only VOUCH for a literal if what remains after the
+ * placeholders is a real anchor: at least MIN_ANCHOR non-space characters.
+ * "{{month}} {{year}}" leaves one space and is dropped; "{{count}} pallets"
+ * keeps "pallets" and is kept. Dropping a pattern is not a failure — it stops
+ * being evidence, and any selector relying on it must match exact copy instead.
+ */
+const MIN_ANCHOR = 4;
+const anchorLength = (v) => v.replace(/\{\{.*?\}\}/g, "").replace(/\s+/g, "").length;
+
 const interpolatedLive = liveEntries
-  .filter(([, v]) => v.includes("{{"))
+  .filter(([, v]) => v.includes("{{") && anchorLength(v) >= MIN_ANCHOR)
   .map(([, v]) => new RegExp("^" + escapeRx(v).replace(/\\\{\\\{.*?\\\}\\\}/g, ".+") + "$"));
+
+const droppedPatterns = liveEntries.filter(
+  ([, v]) => v.includes("{{") && anchorLength(v) < MIN_ANCHOR
+);
+
 const isLiveCopy = (lit) => exactLive.has(lit) || interpolatedLive.some((r) => r.test(lit));
 
 // A selector pointing at DEAD copy is the highest-signal case — name the key.

@@ -147,7 +147,7 @@ test.describe("Structured cargo & templates (requestor, mobile web)", () => {
 
   async function submitAndReadTicket(page: Page): Promise<string> {
     await page.getByText("Submit Booking", { exact: true }).click();
-    await expect(page.getByText("Booking Submitted!")).toBeVisible();
+    await expect(page.getByText("Booking submitted")).toBeVisible();
     // The modal's ticket is a BARE text node; inactive scenes underneath keep
     // "TKT-… · <date>" composites of OLDER tickets in the DOM, so the regex is
     // anchored to the whole text and .last() prefers the just-mounted modal.
