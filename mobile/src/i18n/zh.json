@@ -835,7 +835,7 @@
       "tempPasswordHint": "新临时密码",
       "locked": "已锁定",
       "sectionSignIn": "登录锁定",
-      "lockedBody": "登录失败次数过多。锁定将在稍后自动解除，您也可以立即解除。",
+      "lockedBody": "登录失败次数过多。锁定会自动解除，也可以立即解除。",
       "notLocked": "此账户未被锁定。",
       "unlock": "立即解锁",
       "unlockDone": "已解除登录锁定。"
@@ -903,7 +903,7 @@
       "distMonth": "里程（月）",
       "workload": "工作量",
       "workloadHint": "每位司机本月完成的行程 — 一眼看出超负荷或空闲的司机。",
-      "workloadNone": "本月尚未完成任何行程 — 无需平衡。",
+      "workloadNone": "本月尚未完成任何行程。无需平衡。",
       "workloadEven": "工作分配均匀 — 每位司机本月完成 {{count}} 趟行程。",
       "workloadImbalance": "{{most}} 本月承担最多（{{mostCount}} 趟），而 {{least}} 最少（{{leastCount}} 趟）。请考虑重新平衡。"
     },
@@ -916,8 +916,8 @@
       "headerSummary": "{{date}} · {{trips}} 趟行程，{{trucks}} 辆车在跑",
       "greetingLine": "你好，{{name}} 👋",
       "rolePill": "管理员",
-      "stripDispatchFailed_one": "{{count}} 趟行程需要处理 — 没有合适的车",
-      "stripDispatchFailed_other": "{{count}} 趟行程需要处理 — 没有合适的车",
+      "stripDispatchFailed_one": "{{count}} 趟行程需要处理。没有合适的车",
+      "stripDispatchFailed_other": "{{count}} 趟行程需要处理。没有合适的车",
       "stripAwaitingManual_one": "{{count}} 单预订等待派车",
       "stripAwaitingManual_other": "{{count}} 单预订等待派车",
       "mapCoverageNote": "只有正在发送实时 GPS 的车辆会出现在地图上 — 其余车辆无论是否在线都列在这里。"
@@ -1496,7 +1496,7 @@
       "bulkRejecting": "正在拒绝…",
       "bulkRejectPartial": "{{count}} 个无法拒绝（可能已被分配）。",
       "reassignTitle": "更换司机 — {{ticket}}",
-      "reassignIntro": "当前分配给 {{name}}{{plate}}。选择新司机——相同的调度检查适用。",
+      "reassignIntro": "当前分配给 {{name}}{{plate}}。请选择新司机。相同的调度检查依然适用。",
       "needsOverride": "需要强制",
       "overrideFallback": "此分配需要强制执行。",
       "reassignFailed": "无法重新分配此行程。",

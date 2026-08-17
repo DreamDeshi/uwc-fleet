@@ -835,7 +835,7 @@
       "tempPasswordHint": "Password sementara baharu",
       "locked": "Dikunci",
       "sectionSignIn": "Kunci Log Masuk",
-      "lockedBody": "Terlalu banyak percubaan log masuk yang gagal. Kunci akan terbuka sendiri sebentar lagi, atau anda boleh membukanya sekarang.",
+      "lockedBody": "Terlalu banyak percubaan log masuk yang gagal. Kunci akan terbuka sendiri, atau buka sekarang.",
       "notLocked": "Akaun ini tidak dikunci.",
       "unlock": "Buka Sekarang",
       "unlockDone": "Kunci log masuk telah dibuang."
@@ -903,7 +903,7 @@
       "distMonth": "Jarak (bln)",
       "workload": "Beban Kerja",
       "workloadHint": "Trip siap bulan ini bagi setiap pemandu — kesan pemandu terlebih beban atau terbiar sekali pandang.",
-      "workloadNone": "Belum ada trip siap bulan ini — tiada apa untuk diimbangkan.",
+      "workloadNone": "Belum ada trip siap bulan ini. Tiada apa untuk diimbangkan.",
       "workloadEven": "Kerja tersebar sama rata — setiap pemandu menyiapkan {{count}} trip bulan ini.",
       "workloadImbalance": "{{most}} membawa paling banyak bulan ini ({{mostCount}} trip), manakala {{least}} paling sedikit ({{leastCount}}). Pertimbangkan pengimbangan semula."
     },
@@ -916,8 +916,8 @@
       "headerSummary": "{{date}} · {{trips}} perjalanan, {{trucks}} lori aktif",
       "greetingLine": "Hai, {{name}} 👋",
       "rolePill": "Admin",
-      "stripDispatchFailed_one": "{{count}} perjalanan perlu perhatian — tiada lori yang muat",
-      "stripDispatchFailed_other": "{{count}} perjalanan perlu perhatian — tiada lori yang muat",
+      "stripDispatchFailed_one": "{{count}} perjalanan perlu perhatian. Tiada lori yang muat",
+      "stripDispatchFailed_other": "{{count}} perjalanan perlu perhatian. Tiada lori yang muat",
       "stripAwaitingManual_one": "{{count}} tempahan menunggu penghantaran",
       "stripAwaitingManual_other": "{{count}} tempahan menunggu penghantaran",
       "mapCoverageNote": "Hanya lori yang menghantar isyarat GPS langsung muncul pada peta — yang lain disenaraikan di sini."
@@ -1496,7 +1496,7 @@
       "bulkRejecting": "Menolak…",
       "bulkRejectPartial": "{{count}} tidak dapat ditolak (mungkin sudah ditugaskan).",
       "reassignTitle": "Tukar pemandu — {{ticket}}",
-      "reassignIntro": "Kini ditugaskan kepada {{name}}{{plate}}. Pilih pemandu baharu — semakan penghantaran sama terpakai.",
+      "reassignIntro": "Ditugaskan kepada {{name}}{{plate}}. Pilih pemandu baharu. Semakan penghantaran yang sama terpakai.",
       "needsOverride": "Perlukan penindihan",
       "overrideFallback": "Tugasan ini memerlukan penindihan.",
       "reassignFailed": "Tidak dapat menugaskan semula trip ini.",

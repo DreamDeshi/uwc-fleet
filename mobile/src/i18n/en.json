@@ -835,7 +835,7 @@
       "tempPasswordHint": "New temporary password",
       "locked": "Locked",
       "sectionSignIn": "Sign-in Lock",
-      "lockedBody": "Too many failed sign-ins. The lock clears by itself shortly, or you can remove it now.",
+      "lockedBody": "Too many failed sign-ins. The lock clears on its own, or remove it now.",
       "notLocked": "This account is not locked.",
       "unlock": "Unlock Now",
       "unlockDone": "Sign-in lock removed."
@@ -903,7 +903,7 @@
       "distMonth": "Dist (mo.)",
       "workload": "Workload",
       "workloadHint": "Trips completed this month per driver — spot an overloaded or idle driver at a glance.",
-      "workloadNone": "No trips have been completed yet this month — nothing to balance.",
+      "workloadNone": "No trips completed this month yet. Nothing to balance.",
       "workloadEven": "Work is evenly spread — every driver completed {{count}} trip(s) this month.",
       "workloadImbalance": "{{most}} is carrying the most this month ({{mostCount}} trips), while {{least}} has the fewest ({{leastCount}}). Consider rebalancing."
     },
@@ -916,8 +916,8 @@
       "headerSummary": "{{date}} · {{trips}} trips, {{trucks}} trucks active",
       "greetingLine": "Hi, {{name}} 👋",
       "rolePill": "Admin",
-      "stripDispatchFailed_one": "{{count}} trip needs attention — no truck fits it",
-      "stripDispatchFailed_other": "{{count}} trips need attention — no truck fits them",
+      "stripDispatchFailed_one": "{{count}} trip needs attention. No truck fits it",
+      "stripDispatchFailed_other": "{{count}} trips need attention. No truck fits them",
       "stripAwaitingManual_one": "{{count}} booking awaiting dispatch",
       "stripAwaitingManual_other": "{{count}} bookings awaiting dispatch",
       "mapCoverageNote": "Only trucks sending a live GPS fix appear on the map — everything else, online or not, is listed here."
@@ -1496,7 +1496,7 @@
       "bulkRejecting": "Rejecting…",
       "bulkRejectPartial": "{{count}} could not be rejected (they may have already been assigned).",
       "reassignTitle": "Change driver — {{ticket}}",
-      "reassignIntro": "Currently assigned to {{name}}{{plate}}. Pick the new driver — the same dispatch checks apply.",
+      "reassignIntro": "Assigned to {{name}}{{plate}}. Pick the new driver. The same dispatch checks apply.",
       "needsOverride": "Needs override",
       "overrideFallback": "This assignment needs an override.",
       "reassignFailed": "Could not reassign this trip.",
