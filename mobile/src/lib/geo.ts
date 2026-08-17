@@ -1,8 +1,21 @@
-// Map + navigation geometry. Consignees ARE geocoded now (offline, by
-// scripts/geocode-google.ts), so a destination is the consignee's own building
-// coordinate where one exists — see `consigneeDestination`. The zone centroids
-// below remain the fallback for rows the precision gate rejected, and still
-// frame the map. Distances here stay straight-line and are labelled approximate.
+// Map + navigation geometry. Consignees ARE geocoded (offline, by
+// scripts/geocode-google.ts), so a destination is the consignee's own stored
+// coordinate where one exists — see `consigneeDestination`. 1,160 of 1,564 had
+// one at the last production read (18 Aug 2026). The zone centroids below are
+// the fallback for the rest, and still frame the map. Distances here stay
+// straight-line and are labelled approximate.
+//
+// ⚠ A STORED COORDINATE IS NO LONGER ALWAYS A BUILDING. This comment used to
+// say "building coordinate", which was true while the write gate kept ROOFTOP
+// and RANGE_INTERPOLATED only. It now also stores a street centre, a postcode
+// centre and a shared pin, because the alternative was a zone centroid a median
+// of 7.3 km away. HOW GOOD a pin is travels with the row and is read through
+// `api/src/lib/geocodePrecision.ts` — building / road / area / unknown.
+//
+// For NAVIGATION the grade does not change what we do: any pin beats the
+// centroid. It matters for what we CLAIM — `Destination.precise` below is still
+// a two-state flag and is therefore coarser than the data, which is the
+// outstanding wording work, not a defect in the position itself.
 
 export interface LatLng {
   latitude: number;
