@@ -874,6 +874,26 @@ Platform:
 &#x20;    that is a bare word is indistinguishable from copy; make it something no
 &#x20;    real template could contain.
 
+\- ⚠ **A COMMENT THAT STATES A REASON IS A CLAIM TO DISPROVE, NOT CONTEXT TO
+&#x20; WEIGH.** On 17 Aug 2026 the trips toolbar's date range was collapsed behind
+&#x20; a pill as part of a design pack. The comment being replaced said, in as many
+&#x20; words: the range stays OUT of the disclosure, it defaults to today so it is
+&#x20; the one filter that is ALWAYS active, widening it is the common move, and
+&#x20; **two e2e specs drive it directly**. That was read, reasoned past ("the board
+&#x20; defaults to today, so editing is rare"), and the opposite claim written into
+&#x20; the new comment. Those exact two specs went red in CI.
+&#x20; The rule: when you are about to contradict a comment that gives a REASON,
+&#x20; treat the reason as a claim you must disprove. Check whatever it names FIRST
+&#x20; — here one `grep -rn "input\[value" e2e/` would have ended it — and if you
+&#x20; still disagree, say so in the commit so the next reader sees a decision
+&#x20; rather than a silent reversal.
+&#x20; ⚠ This is the FROZEN-LIST failure in reverse, and the pair is the lesson.
+&#x20; There (see "THIS LIST WAS WRONG ABOUT INTERPLANT SCORING") the record was
+&#x20; STALE and was trusted too long; here it was CORRECT and was trusted too
+&#x20; little. Both are the same omission: nobody checked the record against the
+&#x20; code before acting. A record is evidence, not an authority and not noise —
+&#x20; verify it, then act on what you find.
+
 \- Do NOT add `react-native-svg` (repeatedly rejected; crashes our build).
 &#x20; Icons come from `@expo/vector-icons` (Ionicons).
 \- Do NOT touch native dependency pins (`expo-font` is deliberately pinned;
