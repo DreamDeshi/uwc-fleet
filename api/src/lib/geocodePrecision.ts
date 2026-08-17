@@ -78,6 +78,31 @@ const PRECISION_BY_MATCH_TYPE: Readonly<Record<string, GeocodePrecision>> = {
   match_by_street: "road",
   match_by_postcode: "area",
   match_by_city: "area",
+  // ── The duplicate-pin backstop (scripts/downgrade-shared-pins.ts) ─────────
+  //
+  // A BUILDING-grade coordinate shared with a DIFFERENT address is not a
+  // building coordinate: the geocoder gave up and returned something coarser
+  // for both. The backstop used to answer that by deleting the position, which
+  // sent the driver to a zone centroid a MEDIAN OF 7.3 KM AWAY (70% of them
+  // over 5 km, one at 46 km). That trade was never the intent — it was the
+  // only option before precision was a value.
+  //
+  // SHARED_PIN            the members are provably the same place (identical
+  //                       address, or the same street). The pin is right to
+  //                       within a gate, so it is kept at ROAD grade: good to
+  //                       drive to, never good enough to judge a driver by.
+  // SHARED_PIN_AMBIGUOUS  the members are NOT provably the same place —
+  //                       different streets, or an address we cannot parse at
+  //                       all (a C/O line names a company, not a place). The
+  //                       position stays NULL, exactly as before.
+  //
+  // ⚠ THE TWO ARE SEPARATE ON PURPOSE. A pin covering two units on one street
+  // and a pin covering two different streets are different failures, and a
+  // later bulk fix over "demoted duplicates" must find the reason attached
+  // rather than one uniform-looking set.
+  SHARED_PIN: "road",
+  SHARED_PIN_AMBIGUOUS: "unknown",
+
   // ── A human ───────────────────────────────────────────────────────────────
   // A driver stood at the gate and corrected the pin. That outranks anything a
   // provider says, so it is building-grade and IS judgeable.
