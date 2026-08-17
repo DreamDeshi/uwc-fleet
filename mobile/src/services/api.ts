@@ -61,6 +61,23 @@ export async function setTokens(access: string, refresh: string) {
   ]);
 }
 
+/**
+ * The in-memory tokens, for the two callers that legitimately need the raw
+ * values: biometric ENROLMENT (which hands the refresh token to the OS keystore)
+ * and the offline unlock DECISION (which reads the access token's expiry).
+ *
+ * ⚠ Not a general accessor. Every request already attaches the access token
+ * through the interceptor above; a screen that reads a token is doing something
+ * the interceptor should be doing for it.
+ */
+export function currentAccessToken(): string | null {
+  return accessToken;
+}
+
+export function currentRefreshToken(): string | null {
+  return refreshToken;
+}
+
 export async function clearTokens() {
   accessToken = null;
   refreshToken = null;

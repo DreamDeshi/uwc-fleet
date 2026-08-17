@@ -16,6 +16,7 @@ import { FeedbackModal } from "../../components/FeedbackModal";
 import { AppUpdatesCard } from "../../components/AppUpdatesCard";
 import { OutdoorModeRow } from "../../components/OutdoorModeRow";
 import { formatPalletSpaces } from "../../lib/pallets";
+import { BiometricUnlockRow } from "../../components/BiometricUnlockRow";
 
 // Profile, rebuilt to the approved design (frame 37).
 //
@@ -160,6 +161,9 @@ export function ProfileScreen() {
             the phone's environment rather than the person (see
             lib/outdoorMode). Renders for drivers only. */}
         <OutdoorModeRow style={{ marginTop: 20 }} />
+        {/* Opt-in biometric unlock. Renders nothing on a build or device that
+            cannot do it, so no platform check is needed here. */}
+        <BiometricUnlockRow style={{ marginTop: 20 }} />
 
         <Text style={styles.sectionLabel}>{t("profile.language")}</Text>
         <View style={styles.segment}>
