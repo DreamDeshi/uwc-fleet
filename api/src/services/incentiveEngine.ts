@@ -112,6 +112,24 @@ export function getTripDayStart(date: Date): Date {
   // The MYT calendar day this trip belongs to; if the trip's MYT hour is
   // before the reset hour, it belongs to the previous MYT day.
   let { year, month, day } = p;
+  // ⚠ THIS BRANCH IS INERT AT THE CURRENT CONSTANT, AND HAS NEVER RUN.
+  //
+  // DAILY_RESET_HOUR is 0, so `p.hour < 0` is false for every instant — this
+  // function is a plain MYT calendar-day binner today, and no test exercises
+  // the shift-day behaviour the code appears to implement. It reads like a
+  // shift-day feature and is not one; the next reader will assume it does
+  // something, which is why this note is here rather than in a commit message.
+  //
+  // WHAT WOULD MAKE IT LIVE: setting DAILY_RESET_HOUR to a non-zero hour in the
+  // API's environment — nothing else. It is env-tunable and needs no deploy of
+  // code. `DAILY_RESET_HOUR === 0` is PINNED by a test for exactly that reason,
+  // so a change is a deliberate act that turns something red first.
+  //
+  // WHAT IT WOULD MEAN IF IT DID: the incentive day would stop being midnight
+  // MYT — which Mr. Teh confirmed in writing (Q1, 3 Jul 2026: "after 12am
+  // points refresh for next day") — so the pin guards a CLIENT RULE, not a
+  // preference. Every daily-first-drop, per-zone-per-day point and per-day
+  // deduction rebins, i.e. it is a change to PAY, not to a display.
   if (p.hour < DAILY_RESET_HOUR) {
     day -= 1; // Date.UTC normalises day=0 / negatives into the prior month/year
   }

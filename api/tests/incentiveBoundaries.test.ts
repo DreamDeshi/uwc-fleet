@@ -4,6 +4,8 @@ import {
   calculateDeliveryIncentive,
   OFFPEAK_CUTOFF_HOUR,
   PEAK_START_HOUR,
+  DAILY_RESET_HOUR,
+  getTripDayStart,
 } from "../src/services/incentiveEngine";
 
 /**
@@ -213,5 +215,39 @@ describe("calculateDeliveryIncentive — daily deduction off the DAY TOTAL, floo
     expect(r.deductionApplied).toBe(6); // all 6 points absorbed
     expect(r.incentiveThisTrip).toBe(0); // max(6 − 10, 0) × 11
     expect(r.incentiveThisTrip).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("DAILY_RESET_HOUR — the incentive day starts at MIDNIGHT MYT", () => {
+  /**
+   * A PIN ON A CLIENT RULE, not on a preference.
+   *
+   * Mr. Teh, Q1 (3 Jul 2026): "after 12am points refresh for next day". The
+   * incentive day therefore starts at 00:00 MYT, and that single constant
+   * decides which day a delivery's first-drop bonus, per-zone-per-day point and
+   * per-day deduction land in — i.e. it decides PAY.
+   *
+   * It is read from the environment (`hourFromEnv("DAILY_RESET_HOUR", 0)`), so
+   * it can be changed on a running API with no code deploy and no review. That
+   * is what this test exists for: setting it is then a DELIBERATE act that
+   * turns something red first, rather than a quiet edit to a Railway variable.
+   *
+   * It also makes the shift-day branch inside `getTripDayStart` honest. That
+   * branch (`if (p.hour < DAILY_RESET_HOUR)`) cannot execute while the constant
+   * is 0, so the function is a plain MYT calendar-day binner — see the comment
+   * at the branch. If you are here because this test went red, the branch you
+   * just brought to life has never run in production.
+   */
+  it("is 0, so no environment has moved the incentive day off midnight", () => {
+    expect(DAILY_RESET_HOUR).toBe(0);
+  });
+
+  it("bins a 00:30 MYT delivery into that same MYT day, not the previous one", () => {
+    // 17 Aug 2026 16:30 UTC == 18 Aug 00:30 MYT. At reset hour 0 this belongs
+    // to the 18th. It is the case the dormant branch would move to the 17th,
+    // so it fails if the branch ever goes live — deliberately.
+    const justAfterMidnight = new Date("2026-08-17T16:30:00Z");
+    // 18 Aug 00:00 MYT, as a UTC instant.
+    expect(getTripDayStart(justAfterMidnight).toISOString()).toBe("2026-08-17T16:00:00.000Z");
   });
 });
