@@ -8,7 +8,13 @@ import { useToast } from "./Toast";
 import { capturePodPhoto } from "../lib/photo";
 import { uuidv4 } from "../lib/uuid";
 import { formatTime } from "../lib/format";
-import { exceptionStateLabelKey, canDriverAddEvidence, isOpenState } from "../lib/exceptionForm";
+import {
+  exceptionStateLabelKey,
+  canDriverAddEvidence,
+  isOpenState,
+  isClosedOutcome,
+  latestOfficeNote,
+} from "../lib/exceptionForm";
 import { useTripException, useAddExceptionEvidence, useContinueTrip } from "../hooks/useExceptions";
 import type { ExceptionFull } from "../services/exceptions";
 import { apiErrorMessage } from "../services/api";
@@ -56,7 +62,14 @@ export function ExceptionStatusCard({ tripId }: { tripId: string }) {
   const continueTrip = useContinueTrip();
 
   const exc = data as ExceptionFull | null;
-  if (!exc || !exc.category || !isOpenState(exc.current_state)) return null;
+  // ⚠ A CLOSED EXCEPTION STILL HAS TO BE TOLD TO HIM. This used to return null
+  // the moment the office closed the report, so a REJECTION — terminal, no undo
+  // path, and the stop does not pay — reached the driver as a card quietly
+  // vanishing, and the first he knew of it was his pay. Open states keep their
+  // behaviour; closed ones now render an outcome that persists for the life of
+  // the trip.
+  if (!exc || !exc.category) return null;
+  if (!isOpenState(exc.current_state) && !isClosedOutcome(exc.current_state)) return null;
 
   const onAddEvidence = async () => {
     const res = await capturePodPhoto();
@@ -101,6 +114,8 @@ export function ExceptionStatusCard({ tripId }: { tripId: string }) {
   const tone = STATE_TONE[exc.current_state] ?? { bg: colors.grey, fg: colors.white };
   const needsEvidence = canDriverAddEvidence(exc.current_state);
   const reportedAt = exc.reported_at ? formatTime(exc.reported_at) : null;
+  const officeNote = latestOfficeNote(exc.actions);
+  const closed = isClosedOutcome(exc.current_state);
 
   return (
     <View style={[styles.card, { borderLeftColor: tone.bg }]}>
@@ -115,7 +130,36 @@ export function ExceptionStatusCard({ tripId }: { tripId: string }) {
       <Text style={styles.category}>{t(`exception.category.${exc.category}`)}</Text>
       {exc.reason ? <Text style={styles.reason}>{exc.reason}</Text> : null}
 
-      {needsEvidence ? (
+      {/* WHAT THE OFFICE SAID. Already on the device in every payload and
+          rendered nowhere until now — a dispatcher typing "customer says try
+          the side gate" had it delivered and thrown away. */}
+      {officeNote ? (
+        <View style={styles.officeNote}>
+          <View style={styles.officeNoteHead}>
+            <Ionicons name="chatbubble-ellipses" size={14} color={colors.blue} />
+            <Text style={styles.officeNoteLabel}>{t("exception.officeSays")}</Text>
+          </View>
+          <Text style={styles.officeNoteText}>{officeNote.note}</Text>
+        </View>
+      ) : null}
+
+      {closed ? (
+        /* THE OUTCOME, and it stays on screen. Rejected carries its pay
+           consequence because the engine is unambiguous about it ("a rejected
+           stop is ADJUDICATED — it just does not pay") and because a driver who
+           is not told here finds out from his payslip. */
+        <View style={styles.action}>
+          <Text style={styles.outcomeTitle}>
+            {t(exc.current_state === "rejected" ? "exception.outcome.rejectedTitle" : "exception.outcome.resolvedTitle")}
+          </Text>
+          <Text style={styles.prompt}>
+            {t(exc.current_state === "rejected" ? "exception.outcome.rejectedBody" : "exception.outcome.resolvedBody")}
+          </Text>
+          {exc.current_state === "rejected" && !officeNote ? (
+            <Text style={styles.prompt}>{t("exception.outcome.noReasonGiven")}</Text>
+          ) : null}
+        </View>
+      ) : needsEvidence ? (
         <View style={styles.action}>
           <Text style={styles.prompt}>{t("exception.moreEvidencePrompt")}</Text>
           <Button title={t("exception.addEvidence")} onPress={onAddEvidence} loading={busy} />
@@ -152,6 +196,24 @@ export function ExceptionStatusCard({ tripId }: { tripId: string }) {
 }
 
 const styles = StyleSheet.create({
+  officeNote: {
+    marginTop: 10,
+    backgroundColor: colors.tintBlue,
+    borderRadius: radius.sm,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    gap: 4,
+  },
+  officeNoteHead: { flexDirection: "row", alignItems: "center", gap: 6 },
+  officeNoteLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: colors.blue,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  officeNoteText: { fontSize: 14, color: colors.navy, lineHeight: 20 },
+  outcomeTitle: { fontSize: 15, fontWeight: "800", color: colors.navy },
   card: {
     backgroundColor: colors.white,
     borderRadius: radius.md,

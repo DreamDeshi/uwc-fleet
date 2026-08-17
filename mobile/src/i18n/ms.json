@@ -1698,6 +1698,14 @@
       "reasonRequired": "Sila terangkan apa yang berlaku.",
       "reasonTooLong": "Sebab terlalu panjang.",
       "photoRequired": "Foto diperlukan."
+    },
+    "officeSays": "Daripada pejabat",
+    "outcome": {
+      "rejectedTitle": "Pejabat menolak laporan ini",
+      "rejectedBody": "Hentian ini tidak akan dibayar. Penolakan adalah muktamad dan tidak boleh dibatalkan di sini. Jika anda rasa ia silap, hubungi pejabat.",
+      "resolvedTitle": "Pejabat telah menutup laporan ini",
+      "resolvedBody": "Tiada apa-apa lagi untuk anda pada hentian ini.",
+      "noReasonGiven": "Tiada sebab diberikan. Hubungi pejabat jika anda perlukan."
     }
   },
   "changeRequest": {

@@ -1698,6 +1698,14 @@
       "reasonRequired": "Please describe what happened.",
       "reasonTooLong": "The reason is too long.",
       "photoRequired": "A photo is required."
+    },
+    "officeSays": "From the office",
+    "outcome": {
+      "rejectedTitle": "The office rejected this report",
+      "rejectedBody": "This stop will not be paid. A rejection is final and cannot be undone here. If you think it is wrong, call the office.",
+      "resolvedTitle": "The office closed this report",
+      "resolvedBody": "Nothing further for you on this stop.",
+      "noReasonGiven": "No reason was given. Call the office if you need one."
     }
   },
   "changeRequest": {
