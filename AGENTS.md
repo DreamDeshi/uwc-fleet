@@ -685,6 +685,63 @@ Both proven by DEGRADING THE DATA, not the logic: empty the corpus, point the
 walk at a directory with no source. If your break does not turn the guard red,
 check the break applied at all before concluding the guard works.
 
+\#### ABSENCE LOOKS EXACTLY LIKE SUCCESS — FIVE INSTANCES IN ONE WEEK
+
+⚠ **THIS IS THE MOST COMMON DEFECT IN THIS REPOSITORY.** It is not a family of
+related mistakes; it is one mistake wearing five costumes, and it has been found
+five times in seven days. Read the list before writing any code that can produce
+an empty result.
+
+**The shape.** A surface, a query, a guard or a lane produces NOTHING. Two very
+different causes produce that identical nothing:
+
+    "nothing happened"   — the thing ran, and there was genuinely nothing
+    "nothing was read"   — the thing never ran, or ran against the wrong data
+
+No test distinguishes them, because both produce an empty set and assertions are
+written against the empty set. The result is a green suite, a calm screen, and a
+feature that is silently dark.
+
+**The five, in the order they were found:**
+
+1. **THE EMPTY DRIVER LANE** — the one-tap demo driver had no trip. An empty
+   state is a VALID RENDER, so every check passed; only walking the lane found
+   it.
+2. **THE QUARANTINE BRANCH** (`scopedStorage`) — correct, unit-tested, and
+   called by nothing, because every call site ran after a user was set. Dead
+   code that tested green.
+3. **THE VACUOUS DRIFT GUARD** — `"{{month}} {{year}}"` compiled to `^.+ .+$`,
+   so the selector guard accepted any two words. A matcher WIDENED BY ITS OWN
+   DATA until it accepted everything, and it reported that as success.
+4. **THE TAUTOLOGICAL RATE PIN** — the interplant fallback expected the same
+   number by three separate routes, so 1254/1254 passed with the truck's own
+   rate ignored entirely.
+5. **THE EARLY-TAP REPORT** (18 Aug 2026) — the query selected `latitude` and
+   `longitude` but not `geocode_match_type`, which the new gate reads. Every row
+   would have arrived ungraded, every call returned null, and the whole admin
+   review list gone empty. **An empty review list is indistinguishable from a
+   clean week.**
+
+**THE RULE. When a surface can legitimately show nothing, it must be able to
+tell you WHICH nothing it is.** One of these two, always:
+
+- **ASSERT THE QUERY TOUCHED WHAT IT SHOULD.** Not that the output is empty —
+  that the input was reached. Name the columns the select must carry, the files
+  the walk must visit, the call site that must invoke the branch. Prove it by
+  REMOVING THE REACH (drop the column, empty the corpus, delete the call), never
+  by breaking the logic: breaking the logic proves the test can see the
+  function; removing the reach proves the function is in the program.
+- **OR MAKE THE EMPTY STATE SAY WHICH IT IS.** "No deliveries flagged this week"
+  and "Nothing to check — no consignee has a building-grade pin" are different
+  sentences, and a human reading the second one knows to ask a question.
+
+**The tell**, when you are looking for this in your own work: you cannot name
+the line that would turn the suite red. If the answer is "the test would pass on
+an empty database", you have not written a test yet.
+
+⚠ A rule with one example gets forgotten. This one has five — add the sixth here
+when you find it, rather than starting a new section.
+
 \#### WHEN A JOB FAILS ON YOUR BRANCH, PROVE IT AGAINST MAIN BEFORE TOUCHING THE TEST
 
 An empty commit on a branch cut from unmodified `main`, pushed as a draft pull
