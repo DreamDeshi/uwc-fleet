@@ -135,6 +135,9 @@ export function TripsScreen() {
   const [dateFrom, setDateFrom] = useState(() => mytDateKey(new Date()));
   const [dateTo, setDateTo] = useState(() => mytDateKey(new Date()));
   const [needsAttentionOnly, setNeedsAttentionOnly] = useState(false);
+  // The date range is a single control on the wide toolbar; this opens its
+  // two fields. Closed by default because the board already defaults to today.
+  const [datesOpen, setDatesOpen] = useState(false);
   const [driverPickerOpen, setDriverPickerOpen] = useState(false);
   const [zonePickerOpen, setZonePickerOpen] = useState(false);
 
@@ -408,14 +411,18 @@ export function TripsScreen() {
                 was silently limiting the board and put an everyday control
                 behind an extra click. Driver and zone are genuinely secondary;
                 these are not. */}
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.from")}</Text>
-              <DateInputInline value={dateFrom} onChange={setDateFrom} />
-            </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.to")}</Text>
-              <DateInputInline value={dateTo} onChange={setDateTo} />
-            </View>
+            {/* ONE control, not four (design handoff, 17 Aug 2026). The row
+                used to spend ~330px on "From [YYYY-MM-DD] To [YYYY-MM-DD]" —
+                two captions and two boxes for what an admin reads as a single
+                filter. It now reads as its own answer ("Aug 17 – Aug 17") and
+                opens the two fields beneath when you need to change it, which
+                is the rare case: the board defaults to today. */}
+            <DateRangeToggle
+              from={dateFrom}
+              to={dateTo}
+              open={datesOpen}
+              onPress={() => setDatesOpen((v) => !v)}
+            />
             <MoreFiltersToggle
               open={filtersOpen}
               count={secondaryCountWide}
@@ -438,6 +445,30 @@ export function TripsScreen() {
             {attentionChip}
             <View style={{ marginLeft: "auto" }}>{resultsLabel}</View>
           </View>
+          {datesOpen ? (
+            <View style={{ flexDirection: "row", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.from")}</Text>
+                <DateInputInline value={dateFrom} onChange={setDateFrom} />
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.to")}</Text>
+                <DateInputInline value={dateTo} onChange={setDateTo} />
+              </View>
+              {(dateFrom || dateTo) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => {
+                    setDateFrom("");
+                    setDateTo("");
+                  }}
+                >
+                  {t("admin.trips.dateRangeAny")}
+                </Button>
+              )}
+            </View>
+          ) : null}
           {filtersOpen ? (
             <View style={{ flexDirection: "row", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <FilterSelect
@@ -475,11 +506,15 @@ export function TripsScreen() {
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={trips.isRefetching} onRefresh={() => trips.refetch()} />}
         >
-          <Card pad={12}>
-            <DispatchToggle compact />
-          </Card>
-
+          {/* ONE card, not two (design handoff, 17 Aug 2026). Dispatch mode had
+              a card of its own directly above the filter card — two panels, one
+              toolbar, and the seam read as a section break that isn't there. It
+              keeps the hairline BELOW it, because dispatch mode is still not a
+              filter: it changes what the server does to new bookings, where
+              everything under the line only changes what you are looking at. */}
           <Card pad={12} style={{ gap: 10 }}>
+            <DispatchToggle compact />
+            <View style={{ height: 1, backgroundColor: colors.border, marginHorizontal: -12 }} />
             {/* THREE rows, none of them orphaned (owner, 9 Aug: "it looks
                 messy"). It was four: the status dropdown had a full-width box
                 to itself for one word, and "Save view" sat alone on its own
@@ -738,6 +773,76 @@ function MoreFiltersToggle({ open, count, onPress }: { open: boolean; count: num
     body
   );
 }
+
+/**
+ * The date range as ONE control (design handoff, 17 Aug 2026).
+ *
+ * Reads as its own answer — "Aug 17 – Aug 17", or "Any dates" when unbounded —
+ * and opens the two YYYY-MM-DD fields beneath the toolbar when pressed. The
+ * board defaults to today, so the common act is READING this filter, not
+ * editing it; the old layout gave two captions and two boxes permanent room for
+ * the rare case.
+ *
+ * ⚠ Still shows blue-active styling whenever a bound is set, because this
+ * filter is silently limiting the board the whole time it is closed — the same
+ * reason it was kept out of the "more filters" disclosure in the first place.
+ */
+function DateRangeToggle({
+  from,
+  to,
+  open,
+  onPress,
+}: {
+  from: string;
+  to: string;
+  open: boolean;
+  onPress: () => void;
+}) {
+  const { t } = useTranslation();
+  const active = !!(from || to);
+  const fg = active ? colors.blue : colors.textMuted;
+
+  // "2026-08-17" → "Aug 17". Parsed as PARTS, never `new Date(str)`: that
+  // parses a bare YYYY-MM-DD as UTC midnight, which renders as the previous day
+  // for every admin west of Greenwich and, more to the point here, is a date
+  // this app deliberately keeps in MYT wall-clock terms.
+  const short = (key: string) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+    if (!m) return key;
+    const month = MONTHS_SHORT[Number(m[2]) - 1] ?? m[2];
+    return `${month} ${Number(m[3])}`;
+  };
+
+  const label = !active
+    ? t("admin.trips.dateRangeAny")
+    : from && to
+      ? `${short(from)} – ${short(to)}`
+      : short(from || to);
+
+  return (
+    <Pressable onPress={onPress} style={{ borderRadius: radius.pill }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 6,
+          borderRadius: radius.pill,
+          paddingVertical: 5,
+          paddingHorizontal: 11,
+          borderWidth: 1,
+          borderColor: active ? colors.blue : colors.border,
+          backgroundColor: active ? colors.blueTint : colors.card,
+        }}
+      >
+        <Ionicons name="calendar-outline" size={13} color={fg} />
+        <Text style={{ fontSize: font.sm, fontWeight: "700", color: fg }}>{label}</Text>
+        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={12} color={fg} />
+      </View>
+    </Pressable>
+  );
+}
+
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // Compact inline YYYY-MM-DD filter input (the old admin's native date input;
 // real picker arrives with the mobile pass).

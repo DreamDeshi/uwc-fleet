@@ -989,7 +989,9 @@
       "viewAll": "View All →",
       "focusPlant": "Focus the map on the UWC plant",
       "focusPlantShort": "Plant",
-      "driversCount": "{{count}} drivers"
+      "driversCount": "{{count}} drivers",
+      "manualShort": "Manual",
+      "autoShort": "Automatic"
     },
     "drivers": {
       "loadError": "Could not load drivers.",
@@ -1262,7 +1264,10 @@
       "colExternalShort": "Ext",
       "footTotalTrips": "Total Trips",
       "footTotalIncentive": "Total Incentive",
-      "footExternal": "External Trips"
+      "footExternal": "External Trips",
+      "tabOverview": "Overview",
+      "tabPayroll": "Payroll",
+      "tabMonthly": "Monthly"
     },
     "titles": {
       "dashboard": "Dashboard",
@@ -1512,7 +1517,8 @@
       "deductionApplied": "daily deduction −{{count}} pt(s)",
       "deductionApplied_one": "daily deduction −{{count}} pt",
       "deductionApplied_other": "daily deduction −{{count}} pts",
-      "noBreakdown": "Breakdown not recorded (trip completed before per-drop pay history was kept)."
+      "noBreakdown": "Breakdown not recorded (trip completed before per-drop pay history was kept).",
+      "dateRangeAny": "Any dates"
     },
     "timeline": {
       "title": "Status timeline",

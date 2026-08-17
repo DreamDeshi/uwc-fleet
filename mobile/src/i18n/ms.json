@@ -989,7 +989,9 @@
       "viewAll": "Lihat Semua →",
       "focusPlant": "Fokus peta pada kilang UWC",
       "focusPlantShort": "Kilang",
-      "driversCount": "{{count}} pemandu"
+      "driversCount": "{{count}} pemandu",
+      "manualShort": "Manual",
+      "autoShort": "Automatik"
     },
     "drivers": {
       "loadError": "Tidak dapat memuatkan pemandu.",
@@ -1262,7 +1264,10 @@
       "colExternalShort": "Luar",
       "footTotalTrips": "Jumlah Trip",
       "footTotalIncentive": "Jumlah Insentif",
-      "footExternal": "Trip Luar"
+      "footExternal": "Trip Luar",
+      "tabOverview": "Ringkasan",
+      "tabPayroll": "Payroll",
+      "tabMonthly": "Bulanan"
     },
     "titles": {
       "dashboard": "Dashboard",
@@ -1512,7 +1517,8 @@
       "deductionApplied": "potongan harian −{{count}} mata",
       "deductionApplied_one": "potongan harian −{{count}} mata",
       "deductionApplied_other": "potongan harian −{{count}} mata",
-      "noBreakdown": "Pecahan tidak direkod (trip selesai sebelum sejarah bayaran per-hantaran disimpan)."
+      "noBreakdown": "Pecahan tidak direkod (trip selesai sebelum sejarah bayaran per-hantaran disimpan).",
+      "dateRangeAny": "Semua tarikh"
     },
     "timeline": {
       "title": "Garis masa status",

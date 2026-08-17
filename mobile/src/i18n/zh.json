@@ -989,7 +989,9 @@
       "viewAll": "查看全部 →",
       "focusPlant": "将地图对准 UWC 工厂",
       "focusPlantShort": "工厂",
-      "driversCount": "{{count}} 位司机"
+      "driversCount": "{{count}} 位司机",
+      "manualShort": "手动",
+      "autoShort": "自动"
     },
     "drivers": {
       "loadError": "无法加载司机。",
@@ -1262,7 +1264,10 @@
       "colExternalShort": "外包",
       "footTotalTrips": "总行程",
       "footTotalIncentive": "总激励",
-      "footExternal": "外包行程"
+      "footExternal": "外包行程",
+      "tabOverview": "总览",
+      "tabPayroll": "薪酬",
+      "tabMonthly": "月度"
     },
     "titles": {
       "dashboard": "Dashboard",
@@ -1512,7 +1517,8 @@
       "deductionApplied": "每日扣减 −{{count}} 分",
       "deductionApplied_one": "每日扣减 −{{count}} 分",
       "deductionApplied_other": "每日扣减 −{{count}} 分",
-      "noBreakdown": "未记录明细（行程在按站报酬历史保存之前完成）。"
+      "noBreakdown": "未记录明细（行程在按站报酬历史保存之前完成）。",
+      "dateRangeAny": "不限日期"
     },
     "timeline": {
       "title": "状态时间线",

@@ -6,7 +6,7 @@ import React, { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
-import { colors, font, radius } from "../theme";
+import { colors, font, radius, status } from "../theme";
 import { Card } from "./ui";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import type { DriverLeaveEntry, PublicHoliday } from "../types";
@@ -111,9 +111,15 @@ export function MonthCalendar({
       </View>
 
       {/* Grid */}
-      <View style={{ borderTopWidth: 1, borderLeftWidth: 1, borderColor: colors.divider, borderRadius: radius.sm, overflow: "hidden" }}>
+      {/* WIDE: each day is its own CARD with a gap around it (design handoff,
+          17 Aug 2026) — the continuous ruled grid read as a spreadsheet, and a
+          holiday could only be shown by washing a whole cell yellow. Separate
+          cells give a holiday somewhere to put an accent bar and today
+          somewhere to put a ring, without either fighting the rules.
+          NARROW is unchanged: the phone grid is deliberately clean (frame 15). */}
+      <View style={narrow ? { borderTopWidth: 1, borderLeftWidth: 1, borderColor: colors.divider, borderRadius: radius.sm, overflow: "hidden" } : { gap: 6 }}>
         {Array.from({ length: 6 }, (_, row) => (
-          <View key={row} style={{ flexDirection: "row" }}>
+          <View key={row} style={{ flexDirection: "row", gap: narrow ? 0 : 6 }}>
             {cells.slice(row * 7, row * 7 + 7).map((c) => {
               const holiday = holidayByKey.get(c.key);
               const leaveNames = leaveByKey.get(c.key) ?? [];
@@ -135,10 +141,22 @@ export function MonthCalendar({
                   style={{
                     flex: 1,
                     height: cellH,
-                    padding: 4,
-                    borderRightWidth: narrow ? 0 : 1,
-                    borderBottomWidth: narrow ? 0 : 1,
-                    borderColor: colors.divider,
+                    padding: narrow ? 4 : 7,
+                    // Narrow keeps the ruled grid; wide is a field of cards.
+                    borderRightWidth: narrow ? 0 : undefined,
+                    borderBottomWidth: narrow ? 0 : undefined,
+                    borderWidth: narrow ? 0 : 1,
+                    borderRadius: narrow ? 0 : radius.sm,
+                    borderColor: narrow
+                      ? colors.divider
+                      : isToday
+                        ? colors.blue
+                        : holiday
+                          ? status.external.solid
+                          : colors.border,
+                    // The holiday's accent is a LEFT BAR, not a full wash: the
+                    // cell still has to carry a readable date and name.
+                    borderLeftWidth: !narrow && holiday ? 3 : narrow ? 0 : 1,
                     backgroundColor: isSel
                       ? colors.blueTint
                       : holiday && !narrow
@@ -173,11 +191,11 @@ export function MonthCalendar({
                   </View>
                   )}
                   {holiday && !narrow ? (
-                    <Text numberOfLines={2} style={{ fontSize: 10, fontWeight: "700", color: colors.amber, marginTop: 2, lineHeight: 12 }}>
+                    <Text numberOfLines={2} style={{ fontSize: 10, fontWeight: "700", color: status.external.text, marginTop: 2, lineHeight: 12 }}>
                       {holiday}
                     </Text>
                   ) : holiday && narrow && c.inMonth ? (
-                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.amber, marginTop: 3, marginLeft: 2 }} />
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: status.external.solid, marginTop: 3, marginLeft: 2 }} />
                   ) : null}
                 </Pressable>
               );
@@ -198,7 +216,7 @@ export function MonthCalendar({
           <Text style={{ fontSize: font.sm, fontWeight: "800", color: colors.text, marginBottom: 6 }}>{selected}</Text>
           {selHolidays ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: selLeave.length ? 6 : 0 }}>
-              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.amber }} />
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: status.external.solid }} />
               <Text style={{ fontSize: font.sm, color: colors.text }}>{selHolidays}</Text>
             </View>
           ) : null}
