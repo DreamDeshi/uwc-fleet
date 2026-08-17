@@ -9,12 +9,13 @@ import path from "node:path";
  * that they are different. These pin the difference so a later change cannot
  * quietly collapse them back into one.
  *
- * ⚠ WHY A RENDER TEST AND NOT A SCREENSHOT. The WIDE shape was verified at 1440
- * with a screenshot (e2e/screenshots/overlay-sweep). The NARROW shape could not
- * be driven end-to-end in the harness — on the phone layout the entry point to
- * the booking form is intercepted by an overlaid element — so it is pinned here
- * instead. Said plainly rather than implied: nobody has looked at the phone
- * sheet since this change; these assertions are what stand in for that.
+ * ⚠ BOTH SHAPES HAVE NOW BEEN WALKED BY HAND at their own widths, and these
+ * assertions exist so a later change cannot collapse them without going red.
+ * WIDE at 1440 and NARROW at 390 are both captured under
+ * e2e/screenshots/overlay-sweep. On the phone the sheet still opens over its
+ * dimmed backdrop, advances calendar -> hour -> minute, and writes the chosen
+ * slot back to the form (verified by picking a different day and watching the
+ * field change).
  */
 const read = (rel: string) => fs.readFileSync(path.resolve(__dirname, rel), "utf-8");
 const codeOnly = (s: string) =>
