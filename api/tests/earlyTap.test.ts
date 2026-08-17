@@ -6,7 +6,11 @@ const T0 = new Date("2026-07-27T10:00:00Z");
 const at = (minOffset: number) => new Date(T0.getTime() + minOffset * 60 * 1000);
 
 // ~5.35N 100.4E is the Penang mainland; 0.001° lat ≈ 111 m.
-const CONSIGNEE = { latitude: 5.35, longitude: 100.4 };
+// ROOFTOP because these cases are about the DISTANCE ARITHMETIC, and the
+// module now declines to measure anything coarser than a building — see
+// geocodePrecision.test.ts for the grading itself. An ungraded fixture here
+// would make every case below pass for the wrong reason (null, not a number).
+const CONSIGNEE = { latitude: 5.35, longitude: 100.4, geocode_match_type: "ROOFTOP" };
 const NEAR = { latitude: 5.3502, longitude: 100.4 }; // ≈ 22 m
 const FAR = { latitude: 5.36, longitude: 100.4 }; // ≈ 1.1 km
 

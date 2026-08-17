@@ -38,7 +38,18 @@ function tomorrowAt(h: number, m = 0): string {
   return d.toISOString();
 }
 
-type StopSpec = { name: string; area: string; zone: string; delivered?: string };
+type StopSpec = {
+  name: string;
+  area: string;
+  zone: string;
+  delivered?: string;
+  /** A real geocoded position. Null on most fixtures — that IS the common case
+   *  in production (574 of 1,564 consignees), and it makes the map draw the
+   *  zone centroid. The first run stop carries one so the map shots show a
+   *  destination pin at a place rather than a shared zone dot. */
+  lat?: number;
+  lng?: number;
+};
 
 let stopSeq = 0;
 function stop(tripId: string, i: number, s: StopSpec) {
@@ -62,8 +73,9 @@ function stop(tripId: string, i: number, s: StopSpec) {
       state: "Pulau Pinang",
       zone_code: s.zone,
       zone: { code: s.zone, name: s.area },
-      latitude: null,
-      longitude: null,
+      latitude: s.lat ?? null,
+      longitude: s.lng ?? null,
+      geocode_match_type: s.lat == null ? null : "ROOFTOP",
     },
   };
 }
@@ -107,7 +119,7 @@ function trip(opts: {
 
 // The five drops of the design's first trip, one of them in a K2 zone.
 const RUN_STOPS: StopSpec[] = [
-  { name: "Perai Plastics Sdn Bhd", area: "Perai", zone: "P2" },
+  { name: "Perai Plastics Sdn Bhd", area: "Perai", zone: "P2", lat: 5.3814, lng: 100.3915 },
   { name: "Northern Cable Works", area: "Perai", zone: "P2" },
   { name: "Sunrise Foods", area: "Sg. Petani", zone: "K2" },
   { name: "Kulim Hi-Tech Assembly", area: "Kulim", zone: "K1" },
@@ -235,6 +247,17 @@ async function mockApi(page: Page, state: string) {
       return json({ accessToken: "fixture-access", refreshToken: "fixture-refresh", user: ME });
     }
     if (url.includes("/users/me")) return json(ME);
+    // The truck's last posted fix — what LiveTripMap draws as the DRIVER
+    // marker. Without this the tracking maps render two pins and no driver,
+    // and the marker that is second in the size order goes unreviewed.
+    if (/\/trips\/[^/]+\/location/.test(url)) {
+      return json({
+        latitude: 5.3421,
+        longitude: 100.4102,
+        recorded_at: new Date().toISOString(),
+        stale: false,
+      });
+    }
     if (url.includes("/fuel/history")) return json(fuelHistory());
     if (url.includes("/holidays")) return json([]);
     if (/\/departments(\?|$)/.test(url)) return json(DEPARTMENTS);
@@ -409,4 +432,66 @@ test("trips list", async ({ page }) => {
   await page.getByText("My Trips").first().waitFor({ timeout: 15_000 });
   await page.waitForTimeout(1500);
   await page.screenshot({ path: path.join(SHOTS, "06-trips-list.png"), fullPage: true });
+});
+
+// ── The map band (owner review, 18 Aug 2026) ───────────────────────────────
+// The Active Trip map is the one surface a diff cannot review: pin weight,
+// connector lines and band height are only visible in an image. Captured at
+// 390 — the design width, and the width the driver actually holds.
+//
+// ⚠ NOT fullPage. RN-Web scrolls an inner container, so fullPage silently
+// returns the viewport anyway; asking for it just misleads the next reader.
+// Set SHOT_TAG=before / after to keep two sets side by side.
+const MAP_TAG = process.env.SHOT_TAG ?? "shot";
+
+test("active trip · map band", async ({ page }) => {
+  await mockApi(page, "running");
+  await intoActiveTrip(page);
+  await page.screenshot({ path: path.join(SHOTS, `20-active-trip-map-${MAP_TAG}.png`) });
+});
+
+test("trip details · tracking map", async ({ page }) => {
+  // The second map surface, and the only one that draws the DRIVER marker from
+  // a server fix. Requestor tracking renders the same component.
+  await mockApi(page, "running");
+  await page.goto(APP);
+  await page.getByPlaceholder("12-345 6789").fill("100000901");
+  await page.getByPlaceholder("Enter your password").fill("fixture");
+  await page.getByText("Sign In", { exact: true }).click();
+  await page.getByText(/Hi, Ahmad Faizal/).first().waitFor({ timeout: 30_000 });
+  await page.getByText("Trips", { exact: true }).last().click();
+  await page.getByText("My Trips").first().waitFor({ timeout: 15_000 });
+  // ⚠ .last(), not .first(): RN-Web renders a 0×0 duplicate of every Text node,
+  // and Playwright resolves the invisible one first — it never becomes
+  // "visible and stable", so the click times out on an element that is on
+  // screen. Known harness quirk, not a UI defect.
+  // selector-ok: a fixture ticket number, not i18n copy
+  await page.getByText("TKT-20260729-021").last().click();
+  await page.waitForTimeout(4000); // Leaflet tiles
+  await page.screenshot({ path: path.join(SHOTS, `21-trip-details-map-${MAP_TAG}.png`) });
+});
+
+test("active trip · map band, with the driver's own position", async ({ page, context }) => {
+  // The DRIVER marker is drawn from this device's GPS, not from the server, so
+  // it cannot be faked with a route mock — the trip-details map passes
+  // live={false} on purpose ("route preview before the trip starts"). Granting
+  // geolocation is the only way to actually SEE the marker that is second in
+  // the size order, and reporting on a pin I had not looked at would be
+  // exactly the mistake this capture exists to prevent.
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: 5.3421, longitude: 100.4102 }); // Juru, on the way
+  await mockApi(page, "running");
+  await intoActiveTrip(page);
+  const enable = page.getByText(/Tap to enable/).last();
+  if (await enable.isVisible().catch(() => false)) {
+    await enable.click();
+    // Tapping the pill re-opens the GPS consent explainer that intoActiveTrip
+    // dismissed with "Not now". Accept it this time — that is what actually
+    // starts tracking and draws the marker.
+    const accept = page.getByText("Enable Location", { exact: true }).last();
+    await accept.waitFor({ timeout: 10_000 }).catch(() => {});
+    if (await accept.isVisible().catch(() => false)) await accept.click();
+    await page.waitForTimeout(4500);
+  }
+  await page.screenshot({ path: path.join(SHOTS, `22-active-trip-map-live-${MAP_TAG}.png`) });
 });

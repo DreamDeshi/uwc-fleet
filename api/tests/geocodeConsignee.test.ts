@@ -53,8 +53,23 @@ describe("geocodeStoreFields — the write-time precision gate", () => {
     }
   });
 
-  it("stores NULL coords (never a bad guess) for coarse or failed results, keeping the verbatim type", () => {
-    for (const t of ["GEOMETRIC_CENTER", "APPROXIMATE", "ZERO_RESULTS", "RETRY_EXHAUSTED", "ERROR"]) {
+  /**
+   * ⚠ THIS CASE WAS DELIBERATELY NARROWED, 18 Aug 2026 — it is not a test that
+   * was "fixed until it passed".
+   *
+   * It used to list GEOMETRIC_CENTER and APPROXIMATE alongside the failures,
+   * because the gate discarded everything below building grade. That is
+   * precisely what left 349 production consignees navigating to a zone
+   * centroid up to 26.94 km away, so the gate now STORES those two and records
+   * the grade instead. Their new expectation lives in geocodePrecision.test.ts
+   * ("stores road-level and area-level coordinates that used to be discarded"),
+   * and the grade is what keeps them out of the early-tap judgement.
+   *
+   * What survives here is the part that did not change: a NON-ANSWER stores no
+   * position. Inventing one would be the bad guess this always refused.
+   */
+  it("stores NULL coords (never a bad guess) for a NON-ANSWER, keeping the verbatim type", () => {
+    for (const t of ["ZERO_RESULTS", "RETRY_EXHAUSTED", "ERROR"]) {
       expect(geocodeStoreFields({ lat: 5.35, lng: 100.4, locationType: t })).toEqual({
         latitude: null,
         longitude: null,

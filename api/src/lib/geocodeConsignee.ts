@@ -4,13 +4,15 @@
  * WRITE-TIME PRECISION GATE can never drift between the batch script and
  * creation-time geocoding:
  *
- *   ROOFTOP / RANGE_INTERPOLATED  → store coordinates (a real position)
- *   anything coarser / failure    → store NULL coords — the zone-centroid
- *                                   fallback, never a bad guess
+ *   any answer with a POSITION   → store coordinates (building, road or area)
+ *   a non-answer / failure       → store NULL coords — the zone-centroid
+ *                                  fallback, never a bad guess
  *
- * `geocode_match_type` records the verbatim location_type either way, but is
- * NEVER a read gate (it carries three provider vocabularies — Geoapify,
- * Google, driver_fix). Presence of coordinates is the only gate.
+ * `geocode_match_type` records the verbatim location_type either way. It is
+ * read in exactly ONE place, `lib/geocodePrecision.ts`, which maps all four
+ * provider vocabularies; read that file before matching on this column
+ * anywhere else, because ad-hoc matching on one vocabulary is a defect this
+ * repo has already had.
  *
  * geocodeNewConsignee() deliberately supersedes the "populated offline,
  * never at request time" note frozen into schema.prisma (owner request,
@@ -20,6 +22,7 @@
  * never make consignee creation fail or block.
  */
 import { prisma } from "./prisma";
+import { geocodePrecision } from "./geocodePrecision";
 
 const nz = (s: string | null | undefined) => (s ?? "").trim();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -43,10 +46,36 @@ export function buildQuery(c: {
   return parts.filter(Boolean).join(", ");
 }
 
-/** location_types that represent a REAL position. Anything else is not a geocode. */
+/**
+ * location_types that represent a BUILDING position — the grade that may be
+ * used to judge where a driver was (`isJudgeablePin`).
+ *
+ * ⚠ THIS IS NO LONGER THE STORE GATE. It was, and that is why 349 production
+ * consignees have no coordinate at all: everything coarser was discarded, so
+ * they navigate to a zone centroid up to 27 km away. `isStorable` below is now
+ * what decides whether coordinates are written. Keep this export — the batch
+ * script and the precision model both mean BUILDING by it.
+ */
 export const USABLE_TYPES = ["ROOFTOP", "RANGE_INTERPOLATED"];
 export function isUsable(locationType: string | null | undefined): boolean {
   return USABLE_TYPES.includes(nz(locationType));
+}
+
+/**
+ * THE STORE GATE: is this answer a POSITION at all?
+ *
+ * Anything the geocoder could actually place — building, road or area — is
+ * stored, because every one of them is nearer than the zone centroid that is
+ * the alternative. What is NOT stored is a non-answer: ZERO_RESULTS, an error,
+ * a retry exhaustion. Those carry no position, and inventing one would be the
+ * "bad guess" the old gate rightly refused.
+ *
+ * The grade travels with the row in `geocode_match_type` and is read through
+ * `geocodePrecision`, so a coarse pin can be drawn and labelled honestly
+ * without being mistaken for a building.
+ */
+export function isStorable(locationType: string | null | undefined): boolean {
+  return geocodePrecision(nz(locationType)) !== "unknown";
 }
 
 export interface GeoResult {
@@ -81,15 +110,23 @@ export async function googleGeocode(q: string, key: string, attempts = 6): Promi
 }
 
 /**
- * THE write-time precision gate, as pure data: what a geocode result stores.
- * Coordinates only for usable types; the verbatim location_type always.
+ * THE write-time gate, as pure data: what a geocode result stores.
+ *
+ * Coordinates for any answer that carries a POSITION — building, road or area
+ * — and the verbatim location_type always, which is what lets a reader tell
+ * those three apart afterwards. A non-answer (ZERO_RESULTS, an error) stores
+ * NULL coordinates and falls back to the zone centroid, exactly as before.
+ *
+ * ⚠ This used to keep BUILDING grades only. Widening it is the whole point of
+ * the road-level work: it is why `earlyTap` now asks `isJudgeablePin` instead
+ * of trusting null-ness, and the two changes must not be separated.
  */
 export function geocodeStoreFields(g: GeoResult): {
   latitude: number | null;
   longitude: number | null;
   geocode_match_type: string;
 } {
-  const keep = isUsable(g.locationType) && g.lat != null && g.lng != null;
+  const keep = isStorable(g.locationType) && g.lat != null && g.lng != null;
   return {
     latitude: keep ? g.lat : null,
     longitude: keep ? g.lng : null,
