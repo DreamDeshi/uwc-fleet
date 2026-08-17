@@ -294,6 +294,13 @@ describe("only the storage layer may touch AsyncStorage", () => {
       "Holds the session tokens. They must be readable BEFORE the user id is " +
       "known (bootstrap reads them to discover who is signed in), so they cannot " +
       "live under a per-user key. Cleared on logout, step 4.",
+    "lib/outdoorMode.ts":
+      "Holds ONE boolean — whether this PHONE is in outdoor high-contrast mode. " +
+      "Unscoped by owner ruling (17 Aug 2026): 'language follows the person, " +
+      "glare follows the place'. A driver handing a handset to the next man in " +
+      "the same yard is handing over a setting he probably wants, so it " +
+      "describes the device's environment rather than the person holding it. " +
+      "No trip, consignee or POD data.",
     "lib/sessionCache.ts":
       "Holds the signed-in user's OWN profile (id, name, role, assigned truck) " +
       "and nothing else — no consignee or trip data. It is what RESOLVES the " +

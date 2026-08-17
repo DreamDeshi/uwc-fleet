@@ -1715,5 +1715,10 @@
     "rejectBody": "Tempahan kekal seperti sedia ada. Beritahu pemohon sebabnya supaya mereka boleh hantar permintaan lain.",
     "rejectPlaceholder": "Sebab (pemohon akan lihat ini)",
     "actionFailed": "Tidak dapat menyelesaikan keputusan"
+  },
+  "outdoor": {
+    "title": "Mod luar",
+    "on": "Aktif untuk telefon ini. Kontras lebih tinggi untuk dibaca di bawah matahari.",
+    "off": "Tidak aktif. Hidupkan jika skrin susah dibaca di luar."
   }
 }

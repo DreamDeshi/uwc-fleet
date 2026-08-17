@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { colors, statusColors } from "./theme";
 import { colors as admin, status } from "./admin/theme";
+import { outdoor, outdoorFillFor } from "./lib/outdoorMode";
 
 /**
  * CONTRAST FLOOR for every colour pair a user actually reads.
@@ -254,5 +255,93 @@ describe("status family — the text variant is what makes it readable", () => {
     expect(failing.length, "no solid fails as text — the `text` variants may be unnecessary now").toBeGreaterThan(0);
     expect(failing).toContain("success");
     expect(failing).toContain("warning");
+  });
+});
+
+/**
+ * ── DRIVER OUTDOOR MODE — A SECOND FLOOR, NOT A REPLACEMENT ────────────────
+ *
+ * Pinned SEPARATELY from the indoor set on purpose (owner ruling, 17 Aug 2026).
+ * Raising the numbers in the block above would make the indoor palette inherit
+ * a standard it was never designed against, and the first thing that fails is
+ * something a requestor reads at a desk — a regression invented by a driver's
+ * sunlight preference.
+ *
+ * OUTDOOR FLOOR: 7:1 for text (WCAG AAA), 4.5:1 for non-text components — up
+ * from AA's 3:1, because a border is the first thing glare erases.
+ *
+ * ⚠ THE NUMBER IS A FLOOR, NOT A FIX. No standard says "outdoors = X:1"; what
+ * is true is that reflected light adds the SAME luminance to both sides of the
+ * pair, which drives any ratio toward 1. The veiling-glare test below is the
+ * evidence for choosing 7 over 4.5, and it also shows why weight and solid
+ * fills carry more of the work than hue does.
+ */
+const AAA_TEXT = 7;
+const AA_NON_TEXT = 4.5;
+
+/** Contrast with a constant veiling luminance added to both sides. */
+function veiled(a: string, b: string, veil: number): number {
+  const la = relativeLuminance(a) + veil;
+  const lb = relativeLuminance(b) + veil;
+  const [hi, lo] = [la, lb].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+describe("driver outdoor mode", () => {
+  it("every status fill carries WHITE text at the AAA floor", () => {
+    for (const [name, fill] of Object.entries(outdoor.fill)) {
+      const ratio = contrastRatio(colors.white, fill);
+      expect(ratio, `white on ${name} ${fill} = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AAA_TEXT);
+    }
+  });
+
+  it("the outdoor text tokens clear AAA on the outdoor ground", () => {
+    // The ground is WHITE outdoors, not the app background: #f4f6fb costs about
+    // half a point against dark text, and it is also what makes the indoor tint
+    // family readable — outdoors the tints go and the ground goes with them.
+    for (const [name, value] of [
+      ["text", outdoor.text],
+      ["textMuted", outdoor.textMuted],
+      ["textFaint", outdoor.textFaint],
+    ] as const) {
+      const ratio = contrastRatio(value, outdoor.ground);
+      expect(ratio, `${name} ${value} on ${outdoor.ground} = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AAA_TEXT);
+    }
+  });
+
+  it("outdoor is MEASURABLY better than indoor under glare, which is the whole point", () => {
+    // If this ever stops being true the mode is decoration. Compared at a veil
+    // of 0.25 — moderate glare, not direct sun.
+    const veil = 0.25;
+    const indoorMuted = veiled(colors.textMuted, colors.white, veil);
+    const outdoorMuted = veiled(outdoor.textMuted, outdoor.ground, veil);
+    expect(outdoorMuted).toBeGreaterThan(indoorMuted);
+
+    // And the honest half: NOTHING survives strong sun on ratio alone, which is
+    // why the mode also changes weight and uses solid fills. Recorded so the
+    // next person does not chase a number that cannot be reached.
+    expect(veiled("#000000", "#ffffff", 1)).toBeLessThan(AA_NON_TEXT);
+  });
+
+  it("no status maps to the EXTERNAL fill — orange is offline/queued only", () => {
+    // Owner ruling, 7 Jul: orange means offline/queued and nothing else. The
+    // external family is one hue away, so a solid orange status pill outdoors
+    // would read as "queued" at a glance. This is the collision the plan
+    // flagged, pinned so a later status cannot quietly acquire it.
+    const statuses = [
+      "pending", "approved", "assigned", "in_progress",
+      "pending_approval", "completed", "cancelled", "rejected",
+    ] as const;
+    for (const s of statuses) {
+      expect(outdoorFillFor(s), `${s} must not take the external/orange fill`).not.toBe("external");
+    }
+  });
+
+  it("keeps the INDOOR palette untouched — a second floor, not a raised one", () => {
+    // The guard against fixing outdoors by breaking indoors: these are the
+    // indoor values, still at their own floor, still not 7:1, and that is
+    // correct for a screen read at a desk.
+    expect(contrastRatio(colors.textMuted, colors.white)).toBeGreaterThanOrEqual(AA_NORMAL);
+    expect(contrastRatio(colors.textMuted, colors.white)).toBeLessThan(AAA_TEXT);
   });
 });

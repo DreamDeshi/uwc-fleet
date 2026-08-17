@@ -4,6 +4,8 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { greetingFontSize } from "../../lib/greetingName";
+import { useOutdoor } from "../../context/OutdoorContext";
+import { outdoor as outdoorTokens } from "../../lib/outdoorMode";
 import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { DriverTabParamList } from "../../navigation/types";
@@ -37,6 +39,7 @@ type Nav = BottomTabNavigationProp<DriverTabParamList>;
 // shows its whole stop ladder, and it offers exactly one action.
 export function DriverDashboardScreen() {
   const { t } = useTranslation();
+  const { outdoorOn } = useOutdoor();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
   const { user } = useAuth();
@@ -170,6 +173,7 @@ function HomeHeader({
   name: string;
 }) {
   const { t } = useTranslation();
+  const { outdoorOn } = useOutdoor();
 
   const summary =
     day.state === "no_trips"
@@ -226,18 +230,29 @@ function HomeHeader({
             <Text style={[styles.greeting, { fontSize: greetingFontSize(name, 20) }]} numberOfLines={2}>
               {t("driver.greeting", { name })} 👋
             </Text>
-            <Text style={styles.headerSub} numberOfLines={1}>{summary}</Text>
+            {/* ⚠ A FACT INSIDE THE BLUE HEADER. Blue chrome stays blue (owner,
+                17 Aug) — but anything factual inside it must earn its contrast
+                there or move out, and this is the day's trip/stop count. The
+                indoor style is white at 70% alpha, which composites to roughly
+                4:1 on the brand blue; outdoors it goes solid white (11.85:1)
+                and one weight heavier rather than moving. */}
+            <Text
+              style={[styles.headerSub, outdoorOn && styles.headerSubOutdoor]}
+              numberOfLines={1}
+            >
+              {summary}
+            </Text>
           </View>
           {plate ? (
             <View style={styles.plateChip}>
               <Ionicons name="car-outline" size={15} color={colors.white} />
-              <Text style={styles.plateText}>{plate}</Text>
+              <Text style={[styles.plateText, outdoorOn && styles.plateTextOutdoor]}>{plate}</Text>
             </View>
           ) : null}
         </View>
         <View style={styles.band}>
           <Ionicons name={band.icon} size={17} color={band.tint} />
-          <Text style={styles.bandText} numberOfLines={2}>{band.text}</Text>
+          <Text style={[styles.bandText, outdoorOn && styles.bandTextOutdoor]} numberOfLines={2}>{band.text}</Text>
         </View>
       </View>
     </View>
@@ -261,6 +276,7 @@ function PrimaryTripCard({
   busy: boolean;
 }) {
   const { t } = useTranslation();
+  const { outdoorOn } = useOutdoor();
   const progress = stopProgress(trip);
   const relative = relativeStart(trip.pickup_datetime);
   const left = progress.total - progress.delivered;
@@ -272,7 +288,7 @@ function PrimaryTripCard({
           <View style={[styles.labelPill, running && styles.labelPillRunning]}>
             <Text style={[styles.labelPillText, running && styles.labelPillTextRunning]}>{label}</Text>
           </View>
-          <Text style={styles.primaryTicket}>{trip.ticket_number}</Text>
+          <Text style={[styles.primaryTicket, outdoorOn && od.muted, outdoorOn && od.muted]}>{trip.ticket_number}</Text>
         </View>
 
         <View style={styles.primaryHead}>
@@ -298,7 +314,7 @@ function PrimaryTripCard({
 
         {/* The booking's sequence is REFERENCE ONLY — Mr. Teh, 28 Jul 2026:
             "he can choose his own stop … driver no need follow route order". */}
-        <Text style={styles.orderHint}>{t("trip.stopOrderHint")}</Text>
+        <Text style={[styles.orderHint, outdoorOn && od.muted, outdoorOn && od.muted]}>{t("trip.stopOrderHint")}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -336,6 +352,7 @@ function FuelBand({
   onPress: () => void;
 }) {
   const { t } = useTranslation();
+  const { outdoorOn } = useOutdoor();
   const sub = !plate
     ? t("fuel.noTruck")
     : nudge && days !== null
@@ -366,7 +383,7 @@ function FuelBand({
         {/* Same reason as the title: the Malay nudge
             ("belum ada isian direkodkan — log minyak?") lost its call to action
             to the ellipsis, leaving a statement with no prompt. */}
-        <Text style={[styles.fuelSub, nudge && styles.fuelSubNudge]} numberOfLines={2}>
+        <Text style={[styles.fuelSub, outdoorOn && od.muted, nudge && styles.fuelSubNudge]} numberOfLines={2}>
           {sub}
         </Text>
       </View>
@@ -383,6 +400,7 @@ function FuelBand({
 // (offline only) and not green (green means paid).
 function Receipt({ trip, onPress }: { trip: Trip; onPress: () => void }) {
   const { t } = useTranslation();
+  const { outdoorOn } = useOutdoor();
   const stops = stopsOf(trip);
   const finished = stops
     .map((s) => s.delivered_at)
@@ -403,7 +421,7 @@ function Receipt({ trip, onPress }: { trip: Trip; onPress: () => void }) {
           {t("driver.receiptDelivered", { ticket: trip.ticket_number })}
         </Text>
         <View style={styles.receiptMetaRow}>
-          <Text style={styles.receiptSub} numberOfLines={1}>
+          <Text style={[styles.receiptSub, outdoorOn && od.muted, outdoorOn && od.muted]} numberOfLines={1}>
             {[
               t("driver.stopCount", { n: stops.length }),
               finished ? t("driver.finishedAt", { time: formatTime(finished) }) : null,
@@ -413,7 +431,7 @@ function Receipt({ trip, onPress }: { trip: Trip; onPress: () => void }) {
           </Text>
           {trip.status === "pending_approval" ? (
             <View style={styles.awaitChip}>
-              <Text style={styles.awaitChipText}>{t("trip.awaitingApproval")}</Text>
+              <Text style={[styles.awaitChipText, outdoorOn && od.muted, outdoorOn && od.muted]}>{t("trip.awaitingApproval")}</Text>
             </View>
           ) : null}
         </View>
@@ -424,40 +442,43 @@ function Receipt({ trip, onPress }: { trip: Trip; onPress: () => void }) {
 
 function DayFinished({ day }: { day: DriverDay }) {
   const { t } = useTranslation();
+  const { outdoorOn } = useOutdoor();
   return (
     <View style={styles.doneCard}>
       <Ionicons name="checkmark-circle" size={34} color={colors.greenText} />
       <Text style={styles.doneTitle}>{t("driver.allStopsDelivered", { n: day.deliveredStops })}</Text>
-      <Text style={styles.doneBody}>{t("driver.runFinished")}</Text>
+      <Text style={[styles.doneBody, outdoorOn && od.muted, outdoorOn && od.muted]}>{t("driver.runFinished")}</Text>
     </View>
   );
 }
 
 function NoTrips() {
   const { t } = useTranslation();
+  const { outdoorOn } = useOutdoor();
   return (
     <View style={styles.doneCard}>
       <Ionicons name="cafe-outline" size={32} color={colors.textFaint} />
       <Text style={styles.doneTitle}>{t("driver.noTripsToday")}</Text>
-      <Text style={styles.doneBody}>{t("driver.noTripsBody")}</Text>
+      <Text style={[styles.doneBody, outdoorOn && od.muted, outdoorOn && od.muted]}>{t("driver.noTripsBody")}</Text>
     </View>
   );
 }
 
 function UpcomingRow({ trip, onPress }: { trip: Trip; onPress: () => void }) {
   const { t } = useTranslation();
+  const { outdoorOn } = useOutdoor();
   const stops = stopsOf(trip);
   return (
     <TouchableOpacity style={styles.upcoming} onPress={onPress} activeOpacity={0.85}>
       <View style={styles.upcomingTime}>
         <Text style={styles.upcomingHour}>{formatTime(trip.pickup_datetime)}</Text>
-        <Text style={styles.upcomingZone}>{stops[0]?.consignee?.zone_code ?? ""}</Text>
+        <Text style={[styles.upcomingZone, outdoorOn && od.muted, outdoorOn && od.muted]}>{stops[0]?.consignee?.zone_code ?? ""}</Text>
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={styles.upcomingName} numberOfLines={1}>
           {stops[0]?.consignee?.company_name ?? "—"}
         </Text>
-        <Text style={styles.upcomingMeta} numberOfLines={1}>
+        <Text style={[styles.upcomingMeta, outdoorOn && od.muted, outdoorOn && od.muted]} numberOfLines={1}>
           {trip.ticket_number} · {t("driver.stopCount", { n: stops.length })}
         </Text>
       </View>
@@ -470,10 +491,11 @@ function UpcomingRow({ trip, onPress }: { trip: Trip; onPress: () => void }) {
 // this week" to a driver who was simply not rostered until tomorrow.
 function NextLater({ trip, onPress }: { trip: Trip; onPress: () => void }) {
   const { t } = useTranslation();
+  const { outdoorOn } = useOutdoor();
   const stops = stopsOf(trip);
   return (
     <View style={styles.nextLater}>
-      <Text style={styles.nextLaterLabel}>{t("driver.nextAssignedTrip")}</Text>
+      <Text style={[styles.nextLaterLabel, outdoorOn && od.muted, outdoorOn && od.muted]}>{t("driver.nextAssignedTrip")}</Text>
       <TouchableOpacity style={styles.nextLaterRow} onPress={onPress} activeOpacity={0.85}>
         <Text style={styles.nextLaterText} numberOfLines={1}>
           {formatDate(trip.pickup_datetime)} · {formatTime(trip.pickup_datetime)} ·{" "}
@@ -485,6 +507,18 @@ function NextLater({ trip, onPress }: { trip: Trip; onPress: () => void }) {
   );
 }
 
+/**
+ * OUTDOOR OVERRIDES for this screen's factual text.
+ *
+ * One sheet, applied on top of the indoor style rather than replacing it, so
+ * the diff at each render site is a single conditional and the indoor design is
+ * still the thing being read in the file. Colour and WEIGHT together: a heavier
+ * glyph survives glare that a darker thin one does not.
+ */
+const od = StyleSheet.create({
+  muted: { color: outdoorTokens.textMuted, fontWeight: "600" },
+});
+
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
   centerCol: { width: "100%", maxWidth: layout.content, alignSelf: "center" },
@@ -494,6 +528,11 @@ const styles = StyleSheet.create({
   headerTop: { flexDirection: "row", alignItems: "center", gap: 12 },
   greeting: { color: colors.white, fontSize: 20, fontWeight: "800", lineHeight: 25 },
   headerSub: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: "600", marginTop: 2 },
+  // Outdoor: the alpha is what fails here, not the hue. Solid white on the
+  // brand blue is 11.85:1; the same text at 70% is roughly 4:1.
+  headerSubOutdoor: { color: colors.white, fontWeight: "700" },
+  bandTextOutdoor: { fontWeight: "800" },
+  plateTextOutdoor: { fontSize: 13, fontWeight: "800" },
   plateChip: {
     flexDirection: "row",
     alignItems: "center",

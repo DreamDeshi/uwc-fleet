@@ -1715,5 +1715,10 @@
     "rejectBody": "The booking stays exactly as it is. Tell the requestor why, so they can send a different request.",
     "rejectPlaceholder": "Reason (the requestor sees this)",
     "actionFailed": "Could not complete the decision"
+  },
+  "outdoor": {
+    "title": "Outdoor mode",
+    "on": "On for this phone. Higher contrast for reading in sun.",
+    "off": "Off. Turn this on if the screen is hard to read outside."
   }
 }

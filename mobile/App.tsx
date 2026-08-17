@@ -9,6 +9,7 @@ import "./src/i18n"; // initialise i18next before any screen renders
 import { queryClient } from "./src/lib/queryClient";
 import { AuthProvider } from "./src/context/AuthContext";
 import { ToastProvider } from "./src/components/Toast";
+import { OutdoorProvider } from "./src/context/OutdoorContext";
 import { RootNavigator } from "./src/navigation/RootNavigator";
 import { ReconnectingBanner } from "./src/components/ReconnectingBanner";
 import { UpdateReadyBanner } from "./src/components/UpdateReadyBanner";
@@ -30,6 +31,7 @@ export default function App() {
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
+            <OutdoorProvider>
             <ToastProvider>
               <StatusBar style="light" />
               <RootNavigator />
@@ -39,6 +41,7 @@ export default function App() {
                   offer survives screen changes. */}
               <UpdateReadyBanner />
             </ToastProvider>
+            </OutdoorProvider>
           </AuthProvider>
         </QueryClientProvider>
       </SafeAreaProvider>
