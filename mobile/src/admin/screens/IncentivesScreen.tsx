@@ -555,7 +555,14 @@ function EditPointsModal({ rate, onClose }: { rate: DestinationRate; onClose: ()
 //     holiday UWC does not observe, and paying it off-peak would be a money
 //     error, not a wording one.
 //   · "normal operating window 07:00–02:00" — that is the PICKUP window, not a
-//     rate band, and B6 moved it to midnight. It has no business here.
+//     rate band, and it has no business on a rates panel either way.
+//     ⚠ The first version of this comment added "and B6 moved it to midnight",
+//     which overstates what is true. B6 is an owner RULING (11 Aug 2026: the
+//     window becomes 07:00–00:00, midnight being when the lorry must be BACK)
+//     that has NOT been implemented — `PICKUP_WINDOW_END_HOUR` is still 2 here
+//     and `DEFAULT_WINDOW_END` is still "02:00" on the server. The ruling is
+//     real; the code has not moved. Do not "correct" copy to say midnight
+//     until it has, or the app will describe a window it does not offer.
 //
 // Wording that describes behaviour (rather than a number) is pinned by
 // `incentiveFormulaCopy.test.ts`, which fails on the retired phrasings in all
