@@ -10,10 +10,27 @@
  * Query = address_1 (+ address_2 for a leading C/O row) + area + postcode +
  * state + "Malaysia". company_name is NEVER sent (multi-site, ambiguous).
  *
- * Gate on `location_type`, which is stored verbatim in `geocode_match_type`:
- *   ROOFTOP, RANGE_INTERPOLATED  -> USABLE (a real coordinate)
- *   GEOMETRIC_CENTER, APPROXIMATE, ZERO_RESULTS/errors -> NULL (zone fallback,
- *   honest coarse — never pretend a road/postcode centroid is a building)
+ * Two gates on `location_type`, stored verbatim in `geocode_match_type`:
+ *   STORABLE (isStorable)  ROOFTOP, RANGE_INTERPOLATED, GEOMETRIC_CENTER,
+ *                          APPROXIMATE -> store the coordinate. Any position
+ *                          the geocoder could place beats the zone centroid,
+ *                          which is one shared dot per zone and up to 26.94 km
+ *                          out. The GRADE travels with the row and readers ask
+ *                          lib/geocodePrecision, so a street centre is drawn
+ *                          and labelled as a street centre, never as a building.
+ *   BUILDING (isUsable)    ROOFTOP, RANGE_INTERPOLATED only — the grade that
+ *                          may be used to JUDGE a driver (lib/earlyTap), and
+ *                          what the duplicate backstop below acts on.
+ *   ZERO_RESULTS / errors  -> NULL. A non-answer carries no position, and
+ *                          inventing one was always the thing to avoid.
+ *
+ * ⚠ THIS SCRIPT KEPT THE OLD SINGLE GATE UNTIL 18 Aug 2026, hours after the
+ * rest of the codebase moved. `geocodeStoreFields` (creation-time) and this
+ * write loop are two implementations of the same decision, and only the first
+ * was widened — so a re-run would have silently discarded exactly the coarse
+ * answers the change existed to keep, and reported success while doing it. The
+ * shared helpers in src/lib exist to stop that, and this file wrote its own
+ * `keep` expression instead of calling one.
  *
  * Duplicate-coordinate backstop: any USABLE row sharing a ~1 m pin with a
  * DIFFERENT address is demoted to NULL (a shared pin is a lie the gate can't
@@ -30,7 +47,8 @@ import { dbHostOf, isLocalDbHost, isProdDbHost } from "../src/lib/dbGuard";
 // batch script and creation-time geocoding (routes/consignees.ts) can never
 // drift apart. This script keeps what is batch-only: pacing, --out/--from
 // dumps, the duplicate-coordinate demotion backstop, and the summary.
-import { buildQuery, googleGeocode, isCareOf, isUsable } from "../src/lib/geocodeConsignee";
+import { buildQuery, googleGeocode, isCareOf, isUsable, isStorable } from "../src/lib/geocodeConsignee";
+import { geocodePrecision } from "../src/lib/geocodePrecision";
 
 const KEY = process.env.GOOGLE_MAPS_KEY ?? process.env.GOOGLE_MAPS_API_KEY ?? "";
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -86,9 +104,20 @@ async function main() {
       const g = await googleGeocode(q, KEY);
       await sleep(GAP_MS);
       const usable = isUsable(g.locationType);
+      // ⚠ CAPTURE THE COORDINATE THE PROVIDER GAVE, UNGATED.
+      //
+      // This line used to read `lat: usable ? g.lat : null`, which threw the
+      // road-level and area-level coordinates away HERE, before any gate could
+      // choose to keep them — so widening the write gate below changed nothing
+      // and the --out dump was already lossy. That is the same decision
+      // implemented in a THIRD place, and it silently outranked the other two.
+      //
+      // The gate belongs at the WRITE (`keep`, below) and nowhere else. `usable`
+      // is still recorded, because the duplicate backstop and the summary need
+      // to know which rows are building grade.
       perRow.push({
         id: c.id, name: c.company_name, zone: c.zone_code, address_1: c.address_1, query: q,
-        lat: usable ? g.lat : null, lng: usable ? g.lng : null, location_type: g.locationType, usable,
+        lat: g.lat, lng: g.lng, location_type: g.locationType, usable,
       });
       if ((i + 1) % 100 === 0 || i === rows.length - 1) console.log(`  ${String(i + 1).padStart(4)}/${rows.length} processed`);
     }
@@ -108,14 +137,25 @@ async function main() {
   const keys = [...new Set([...order.filter((k) => k in tally), ...Object.keys(tally)])];
   for (const k of keys) {
     const n = tally[k] ?? 0; if (!n) continue;
-    console.log(`  ${k.padEnd(20)} ${String(n).padStart(5)}  ${((n / N) * 100).toFixed(1)}%  ${isUsable(k) ? "USABLE" : "-> zone fallback"}`);
+    const fate = isUsable(k) ? "BUILDING" : isStorable(k) ? `stored as ${geocodePrecision(k)}` : "-> zone fallback";
+    console.log(`  ${k.padEnd(20)} ${String(n).padStart(5)}  ${((n / N) * 100).toFixed(1)}%  ${fate}`);
   }
   const usableTotal = perRow.filter((r) => isUsable(r.location_type)).length;
-  console.log(`  ${"USABLE (gate)".padEnd(20)} ${String(usableTotal).padStart(5)}  ${((usableTotal / N) * 100).toFixed(1)}%`);
+  // Counted on the COORDINATE, not on the verdict: a storable location_type
+  // with a null lat stores nothing, and counting verdicts overstated this by 16
+  // on the first A1 dry run — a summary that promised coordinates the write
+  // could not deliver.
+  const storableTotal = perRow.filter((r) => isStorable(r.location_type) && r.lat != null).length;
+  console.log(`  ${"BUILDING grade".padEnd(20)} ${String(usableTotal).padStart(5)}  ${((usableTotal / N) * 100).toFixed(1)}%`);
+  console.log(`  ${"STORABLE (any pin)".padEnd(20)} ${String(storableTotal).padStart(5)}  ${((storableTotal / N) * 100).toFixed(1)}%`);
 
   // ── Duplicate-coordinate audit ─────────────────────────────────────────────
+  // BUILDING rows only — deliberately unchanged in meaning now that coarse
+  // coordinates survive capture. Two identical ROOFTOP pins mean the geocoder
+  // gave up; two identical street centres just mean one street, which is not a
+  // defect and must not demote anything.
   const byCoord = new Map<string, typeof perRow>();
-  for (const r of perRow) { if (r.lat == null) continue; const k = `${r.lat.toFixed(5)},${r.lng.toFixed(5)}`; (byCoord.get(k) ?? byCoord.set(k, []).get(k)!).push(r); }
+  for (const r of perRow) { if (r.lat == null || !isUsable(r.location_type)) continue; const k = `${r.lat.toFixed(5)},${r.lng.toFixed(5)}`; (byCoord.get(k) ?? byCoord.set(k, []).get(k)!).push(r); }
   const norm = (s: string) => nz(s).toUpperCase().replace(/[^A-Z0-9]/g, "");
   const clusters = [...byCoord.entries()]
     .map(([coord, members]) => ({ coord, members, distinctAddresses: new Set(members.map((m) => norm(m.address_1))).size }))
@@ -130,13 +170,19 @@ async function main() {
 
   // ── Write ──────────────────────────────────────────────────────────────────
   console.log(`\n=== FINAL ===`);
-  console.log(`  gate-usable            : ${usableTotal}`);
-  console.log(`  duplicate-demoted      : ${demotedIds.size}`);
-  console.log(`  real coordinates       : ${usableTotal - demotedIds.size}`);
+  console.log(`  building grade         : ${usableTotal}`);
+  console.log(`  duplicate-demoted      : ${demotedIds.size}  (building rows sharing one pin)`);
+  console.log(`  storable (any position): ${storableTotal}`);
+  console.log(`  will hold coordinates  : ${storableTotal - demotedIds.size}`);
   if (!DRY_RUN) {
     let updated = 0, withCoords = 0, nulled = 0;
     for (const r of perRow) {
-      const keep = isUsable(r.location_type) && r.lat != null && !demotedIds.has(r.id);
+      // STORABLE, not building-only: a street or postcode centre is kept and
+      // labelled by its grade. The duplicate demotion still applies — a shared
+      // pin is a lie at any grade — and it is computed from BUILDING rows,
+      // because that backstop exists for coordinates precise enough that two
+      // identical ones mean the geocoder gave up, not that two places are near.
+      const keep = isStorable(r.location_type) && r.lat != null && !demotedIds.has(r.id);
       await prisma.consignee.update({
         where: { id: r.id },
         data: { latitude: keep ? r.lat : null, longitude: keep ? r.lng : null, geocode_match_type: r.location_type },
