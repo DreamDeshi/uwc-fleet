@@ -17,6 +17,7 @@ import type {
   ConsolidationSavings,
   GlobalSearchResults,
   DashboardKpis,
+  IncentiveRules,
   Department,
   DestinationRate,
   DriverLeaveEntry,
@@ -368,6 +369,17 @@ export function useDestinationRates() {
   return useQuery({
     queryKey: ["rates", "destinations"],
     queryFn: async () => (await api.get<DestinationRate[]>("/rates/destinations")).data,
+  });
+}
+
+// The pay rules, read out of the incentive engine (GET /incentives/rules) so
+// the Formula & Examples panel never restates them by hand. Constants only —
+// `staleTime: Infinity` because they change with a deploy, not with data.
+export function useIncentiveRules() {
+  return useQuery({
+    queryKey: ["incentives", "rules"],
+    queryFn: async () => (await api.get<IncentiveRules>("/incentives/rules")).data,
+    staleTime: Infinity,
   });
 }
 

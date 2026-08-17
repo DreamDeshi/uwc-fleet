@@ -552,6 +552,30 @@ export interface DestinationRate {
   zone: { code: string; name: string } | null;
 }
 
+// The pay rules as the ENGINE states them (GET /incentives/rules). The
+// Formula & Examples panel renders from this rather than restating the rules in
+// the locale files, where they drifted: it said the daily deduction came off
+// "the first trip of the day" (it comes off the day TOTAL, once, floored at
+// zero) and called off-peak "Weekend / Holiday", which hid the evening case.
+export interface IncentiveRules {
+  /** Peak band start hour, MYT (inclusive). */
+  peak_start_hour: number;
+  /** Peak band end hour, MYT (exclusive) — at/after this is off-peak. */
+  offpeak_cutoff_hour: number;
+  /** Hour the incentive day rolls over, MYT. */
+  daily_reset_hour: number;
+  /** Which instant decides the band and the day. */
+  rate_anchor: "delivery_confirm" | "pickup";
+  /** Where the daily deduction lands. */
+  deduction_scope: "day_total" | "first_trip";
+  /** Points a repeat drop into the same zone earns that day. */
+  repeat_zone_points: number;
+  /** Where holidays come from — UWC's own calendar, not a national list. */
+  holiday_source: "admin_calendar" | "national";
+  /** Interplant pays in whole round trips (legs halved, rounded down). */
+  interplant_round_trip_halving: boolean;
+}
+
 // Admin-managed public-holiday calendar (GET /holidays) — dates are MYT
 // "YYYY-MM-DD" keys; a listed date pays the off-peak rate all day.
 export interface PublicHoliday {

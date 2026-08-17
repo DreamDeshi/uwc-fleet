@@ -7,6 +7,11 @@ import { currentMytMonthBounds, inMytMonth, mytMonthKey, mytMonthParts, mytMonth
 import { firstEarningInstant, payAttributionInstant, payableIncentive } from "../services/tripCompletion";
 import { EARNING_STOP_SELECT, earnedInWindow } from "../services/undeliveredPay";
 import { countFromEnv } from "../lib/envNumbers";
+import {
+  DAILY_RESET_HOUR,
+  OFFPEAK_CUTOFF_HOUR,
+  PEAK_START_HOUR,
+} from "../services/incentiveEngine";
 
 const router = Router();
 router.use(requireAuth);
@@ -70,6 +75,47 @@ const EARNINGS_WINDOW_MONTHS = 6;
 function earningsListLimit(): number {
   return countFromEnv("EARNINGS_LIST_LIMIT", 200);
 }
+
+// ── GET /incentives/rules — the pay rules, READ OUT OF THE ENGINE ──────────
+//
+// The admin Incentives screen has a "Formula & Examples" panel that explains
+// what the system pays. Until now that explanation was hand-written copy in the
+// locale files, and it drifted: it still said the daily deduction came off "the
+// first trip of the day" (pre-aa8d081 — it comes off the DAY TOTAL, once,
+// floored at zero), called the off-peak band "Weekend / Holiday" (hiding the
+// evening case, which is most of what off-peak actually pays for), claimed
+// "Malaysian public holidays" (R1 Q5 was explicit — the UWC Batu Kawan list,
+// which is why the Perak Sultan's birthday is NOT entitled), and quoted the
+// 07:00–02:00 PICKUP window as if it were a rate band.
+//
+// So the numbers are no longer restated by hand. This endpoint returns the
+// engine's OWN exported constants — change PEAK_START_HOUR and the screen
+// changes with it, including an env override, which a generated file could not
+// show. The prose that surrounds them is pinned by tests on both sides.
+//
+// Read-only, admin-only, no DB. It describes the rules; it computes no money.
+router.get("/rules", requireRole("admin"), (_req, res) => {
+  res.json({
+    // Rate bands. Peak is [peak_start_hour, offpeak_cutoff_hour) on Mon–Fri;
+    // the two bands partition the day, so everything else is off-peak.
+    peak_start_hour: PEAK_START_HOUR,
+    offpeak_cutoff_hour: OFFPEAK_CUTOFF_HOUR,
+    // The incentive day rolls at this MYT hour (Mr. Teh, 3 Jul 2026).
+    daily_reset_hour: DAILY_RESET_HOUR,
+    // Which instant decides the band and the day: the delivery confirm, not
+    // the pickup. Named so the copy cannot quietly say "pickup" again.
+    rate_anchor: "delivery_confirm" as const,
+    // Where the deduction lands. "day_total" is the post-aa8d081 behaviour.
+    deduction_scope: "day_total" as const,
+    // Points for a repeat drop into a zone already delivered to that day.
+    repeat_zone_points: 1,
+    // Holidays come from the admin-managed calendar (UWC's own list), never a
+    // national holiday library.
+    holiday_source: "admin_calendar" as const,
+    // Interplant pays in whole round trips (R5 A2) — live since PR #142.
+    interplant_round_trip_halving: true,
+  });
+});
 
 router.get("/mine", requireRole("driver"), async (req, res, next) => {
   try {

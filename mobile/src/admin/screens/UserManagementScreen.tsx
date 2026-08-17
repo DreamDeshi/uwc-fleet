@@ -3,11 +3,12 @@
 // segment toggle (same pattern as FleetScreen). Approvals is the FIRST tab so
 // existing behaviour/muscle-memory is preserved, just re-homed.
 //
-// PERFORMANCE joined as a THIRD segment (owner, 15 Aug 2026), off the admin
-// home grid. It sits here because the question it answers — "how is this driver
-// doing" — is a question about a person, and the people are already on this
-// screen; it was never a top-level destination. `AdminPerformance` remains a
-// registered route in both shells, so every existing link still resolves.
+// PERFORMANCE is NOT here. It was a third segment on this screen for two days
+// (15–17 Aug 2026) and moved to DRIVER MANAGEMENT on the owner's correction: it
+// is a per-driver metric, and this screen covers all three roles, so it was the
+// only role-specific view in a role-agnostic place. See
+// `DriverManagementScreen.tsx` — the conditions (route stays registered, off
+// the home grid, not in the sidebar) travelled with it unchanged.
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useTranslation } from "react-i18next";
@@ -17,9 +18,8 @@ import { SegmentedFilter } from "../components/ui";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { ApprovalsScreen } from "./ApprovalsScreen";
 import { AllUsersScreen } from "./AllUsersScreen";
-import { PerformanceScreen } from "./PerformanceScreen";
 
-type Tab = "approvals" | "all" | "performance";
+type Tab = "approvals" | "all";
 
 export function UserManagementScreen() {
   const { t } = useTranslation();
@@ -37,11 +37,10 @@ export function UserManagementScreen() {
           options={[
             { value: "approvals", label: t("admin.users.tabApprovals"), count: pending.data?.length },
             { value: "all", label: t("admin.users.tabAll") },
-            { value: "performance", label: t("admin.users.tabPerformance") },
           ]}
         />
       </View>
-      {tab === "approvals" ? <ApprovalsScreen /> : tab === "all" ? <AllUsersScreen /> : <PerformanceScreen />}
+      {tab === "approvals" ? <ApprovalsScreen /> : <AllUsersScreen />}
     </View>
   );
 }
