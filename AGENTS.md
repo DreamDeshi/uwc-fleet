@@ -796,7 +796,7 @@ working". Stop and ask what would go red when someone does X. If the answer is
 "nothing, but the comment says not to", you are writing a prediction, and
 predictions do not get read at the moment they matter.
 
-\#### ABSENCE LOOKS EXACTLY LIKE SUCCESS — SEVEN INSTANCES IN ONE WEEK
+\#### ABSENCE LOOKS EXACTLY LIKE SUCCESS — NINE INSTANCES IN ONE WEEK
 
 ⚠ **THIS IS THE MOST COMMON DEFECT IN THIS REPOSITORY.** It is not a family of
 related mistakes; it is one mistake wearing five costumes, and it has been found
@@ -859,6 +859,40 @@ feature that is silently dark.
    deletes something from a `.web.tsx` file, check its native twin still renders
    the same set afterwards. A divergence created by a deletion has no diff of
    its own to review.
+8. **THE SEAM THAT HAD NEVER RUN** (18 Aug 2026) — `geocodeNewConsignee` with a
+   key. `buildQuery` was tested. `geocodeStoreFields` was tested. The ASSEMBLED
+   behaviour — call the provider, then write what came back, fill-only — was
+   covered nowhere, because CI has no API key and so only ever exercised the
+   no-key branch.
+
+   **Every unit passing while the seam between them has never run is the one
+   that hides best, because the coverage looks thorough.** A file list, a test
+   count and a green tick all read as "well tested". Ask instead which test
+   would fail if the pieces were wired together wrongly; if the answer is none,
+   the wiring is untested however many units are green.
+9. **THE REPORT THAT INVENTED A CAUSE FOR ITS OWN INACTION** (18 Aug 2026) — a
+   different door from every other entry here, and the worst-behaved.
+
+   `downgrade-shared-pins` keyed its updates on ids taken from a geocode dump.
+   The dump predated a production wipe and re-import, so every id was stale and
+   the update matched ZERO rows. It then printed:
+
+       skipped (already had a position): 222
+
+   Nothing else on this list is a report. The others are guards that could not
+   fail; this is a **SUMMARY THAT SUPPLIED A PLAUSIBLE EXPLANATION FOR A RESULT
+   IT HAD NOT DIAGNOSED.** The script could not distinguish "the row already had
+   a coordinate" from "there is no such row", and printed the harmless one.
+
+   ⚠ **That is worse than silence, because it stops the reader looking.** An
+   unexplained zero invites a question; a zero with a reasonable cause beside it
+   closes the matter. It happened inside the script written specifically to be
+   careful, on the day a rule about exactly this was written.
+
+   So: **a summary may only state a cause it has actually established.** Where
+   two causes produce the same count and the code cannot tell them apart, print
+   both and name the check that would separate them — never quietly pick the
+   benign one.
 
 **THE RULE. When a surface can legitimately show nothing, it must be able to
 tell you WHICH nothing it is.** One of these two, always:
@@ -877,10 +911,11 @@ tell you WHICH nothing it is.** One of these two, always:
 the line that would turn the suite red. If the answer is "the test would pass on
 an empty database", you have not written a test yet.
 
-⚠ A rule with one example gets forgotten. This one has seven — add the eighth
-here when you find it, rather than starting a new section. It grew twice on the
-day it was written, which is the best evidence available that this is a category
-and not a run of bad luck.
+⚠ A rule with one example gets forgotten. This one has NINE — add the tenth
+here when you find it, rather than starting a new section. It grew four times
+on the day it was written, twice inside work done specifically to avoid it,
+which is the best evidence available that this is a category and not a run of
+bad luck.
 
 \#### WHEN A JOB FAILS ON YOUR BRANCH, PROVE IT AGAINST MAIN BEFORE TOUCHING THE TEST
 
