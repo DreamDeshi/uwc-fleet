@@ -854,6 +854,26 @@ Platform:
 &#x20; you asked for.** To capture below the fold, scroll the container
 &#x20; (`page.mouse.wheel`) and take successive shots. Found 15 Aug 2026 capturing
 &#x20; the admin Performance screen at 1440.
+\- ⚠ **A JSX TEXT NODE ACCEPTS ANY STRING, SO A PLACEHOLDER TYPE-CHECKS AND
+&#x20; THEN RENDERS.** On 17 Aug 2026 a scripted restructure of the admin Settings
+&#x20; screen left four marker tokens behind in the tree — lines that read
+&#x20; `ACCOUNT_BLOCK              </View>`. `tsc --noEmit` passed, 680 tests
+&#x20; passed, and the build succeeded, because to TypeScript and to React that is
+&#x20; simply text and text is what JSX is for. The page then rendered the words
+&#x20; ACCOUNT_BLOCK, LANG_BLOCK and UPDATES_BLOCK where three cards should have
+&#x20; been. **Only the screenshot caught it.**
+&#x20; Same family as `fullPage: true` above, and the same tell: every automated
+&#x20; check answered confidently about something OTHER than what was on screen. A
+&#x20; type check proves a tree is well-formed, never that it is the tree you meant.
+&#x20; Two rules follow:
+&#x20; 1. LOOK AT THE RENDERED SCREEN before proposing any layout change — not the
+&#x20;    diff, not the test count, the image. This is now the second UI defect here
+&#x20;    that was invisible to every check and obvious in a PNG.
+&#x20; 2. If you generate or splice JSX with a script, GREP FOR YOUR OWN MARKERS
+&#x20;    before building (`grep -c "_BLOCK"`) — nothing downstream will. A marker
+&#x20;    that is a bare word is indistinguishable from copy; make it something no
+&#x20;    real template could contain.
+
 \- Do NOT add `react-native-svg` (repeatedly rejected; crashes our build).
 &#x20; Icons come from `@expo/vector-icons` (Ionicons).
 \- Do NOT touch native dependency pins (`expo-font` is deliberately pinned;
