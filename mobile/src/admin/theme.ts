@@ -7,20 +7,63 @@
 import type { ViewStyle } from "react-native";
 import type { TripStatus } from "./types";
 
+/**
+ * ── THE SEMANTIC STATUS FAMILY (design handoff, 17 Aug 2026) ───────────────
+ *
+ * One meaning, one token. The handoff found the same meaning rendering in
+ * different shades on different screens — green as #2E7D32, #2A7F24 AND
+ * #16A34A; amber as #d97706 and #B45309; the warning tint as both #FFF3E0 and
+ * #FFF8E1 — because call sites reached for a hex instead of a token. Every one
+ * of those is now an alias of the family below.
+ *
+ * ⚠ THREE VALUES PER MEANING, AND THEY ARE NOT INTERCHANGEABLE.
+ *
+ *   solid  fills, dots, borders, icon glyphs — the handoff's own hex
+ *   tint   the surface a pill or banner sits on — the handoff's own hex
+ *   text   SMALL TEXT on that tint, or on white
+ *
+ * The `text` variant is an addition, not a deviation. The handoff lists one
+ * solid per meaning, and several of those solids fail WCAG AA as small text on
+ * their own tint (#16A34A on #F0FDF4 is 2.8:1; #D97706 on #FFFBEB is 3.1:1) —
+ * which is the exact defect the 4 Aug 2026 accessibility audit fixed and
+ * `theme.contrast.test.ts` pins. Adopting the solids as text would have
+ * silently reverted that audit while looking like a tidy-up. So the family
+ * carries the handoff's colours for everything it named them for, and a
+ * darker sibling for the one job it did not: reading.
+ *
+ * Every pair below is MEASURED in theme.contrast.test.ts, not eyeballed.
+ */
+export const status = {
+  /** Needs attention, alerts, delete. */
+  danger: { solid: "#DC2626", tint: "#FEF2F2", text: "#B91C1C" },
+  /** Completed, delivered, positive amounts. */
+  success: { solid: "#16A34A", tint: "#F0FDF4", text: "#15803D" },
+  /** Pending, fuel nudge, K2 customs tag. */
+  warning: { solid: "#D97706", tint: "#FFFBEB", text: "#B45309" },
+  /** External trips, holidays, route-split "other". */
+  external: { solid: "#EA580C", tint: "#FFF7ED", text: "#C2410C" },
+  /** Active / in-progress trip badges. */
+  progress: { solid: "#7C3AED", tint: "#F5F3FF", text: "#6D28D9" },
+  /** Consolidation savings / eco stats. */
+  eco: { solid: "#0D9488", tint: "#F0FDFA", text: "#0F766E" },
+} as const;
+
+export type StatusFamily = keyof typeof status;
+
 export const colors = {
   blue: "#003087", // Corporate Blue
   yellow: "#FFCC00", // Corporate Yellow
   navy: "#1A1F5E", // sidebar / dark surfaces
   navyDeep: "#10143F", // sidebar gradient tail
-  green: "#3DAA35",
+  green: status.success.solid,
   // Dark green SURFACE (frame 11's sustainability hero). Not a text colour and
   // not interchangeable with `green`: this is a ground that white type sits on
   // (#fff on #14532D ≈ 10.5:1), where `green` is a 3.00:1 accent that must
   // never carry small text. See theme.contrast.test.ts.
   greenDeep: "#14532D",
-  red: "#E53935",
-  orange: "#F97316",
-  amber: "#d97706",
+  red: status.danger.solid,
+  orange: status.external.solid,
+  amber: status.warning.solid,
   // ── TEXT-SAFE variants. Mirrors the driver/requestor palette, which was
   // audited on 4 Aug 2026 and gained exactly this split. `amber`, `red` and
   // `orange` above are FILLS, BORDERS AND GLYPHS; none of them clears WCAG AA
@@ -39,10 +82,10 @@ export const colors = {
   // audit is weaker here — but "needs attention" text that is hard to read is
   // a poor joke either way, and the pairs are pinned in theme.contrast.test.ts
   // so this cannot quietly regress.
-  amberText: "#B45309",
-  redText: "#C62828",
-  violet: "#6D28D9", // in-progress (live) status family
-  teal: "#0F766E", // approved status family
+  amberText: status.warning.text,
+  redText: status.danger.text,
+  violet: status.progress.text, // in-progress (live) status family
+  teal: status.eco.text, // approved status family
 
   bg: "#f5f7fb", // app background
   panel: "#f8f9fc", // table header / muted panel
@@ -50,18 +93,21 @@ export const colors = {
   border: "#e6eaf2",
   divider: "#f0f4f8",
 
-  text: "#1a1a2e",
+  // Handoff 17 Aug 2026: headline/body text was #1a1a2e here and #1A1F5E in
+  // src/theme.ts — "pick one". This is the driver/requestor value, so the two
+  // palettes now agree rather than being a shade apart on every screen.
+  text: "#1A1F5E",
   textMuted: "#667085",
   textFaint: "#98a2b3",
 
   // tints
   blueTint: "#EBF3FB",
-  greenTint: "#E8F5E9",
-  yellowTint: "#FFF8E1",
-  orangeTint: "#FFF3E0",
-  redTint: "#FFEBEE",
-  violetTint: "#EDE9FE",
-  tealTint: "#E0F5F2",
+  greenTint: status.success.tint,
+  yellowTint: status.warning.tint,
+  orangeTint: status.external.tint,
+  redTint: status.danger.tint,
+  violetTint: status.progress.tint,
+  tealTint: status.eco.tint,
   // Neutral pill family — the "deactivated / retired / not applicable" state,
   // which is deliberately colourless. These were loose hexes repeated across
   // screens; a state that means "no state" still needs ONE definition.
@@ -143,19 +189,19 @@ export const kpiShadow: Record<"blue" | "yellow" | "green" | "red", ViewStyle> =
 // awaiting admin review. Keying on the union makes a missing status a compile
 // error instead.
 export const tripStatusColor: Record<TripStatus, { bg: string; fg: string; border: string; dot: string }> = {
-  pending: { bg: "#FFF3D6", fg: "#A16207", border: "#F0D98A", dot: "#F59E0B" },
+  pending: { bg: status.warning.tint, fg: status.warning.text, border: "#F0D98A", dot: status.warning.solid },
   approved: { bg: colors.tealTint, fg: colors.teal, border: "#A7DED6", dot: "#14B8A6" },
   assigned: { bg: "#E8F0FE", fg: "#1D4ED8", border: "#BBD2F5", dot: "#2563EB" },
-  in_progress: { bg: colors.violetTint, fg: colors.violet, border: "#D5C8F7", dot: "#8B5CF6" },
+  in_progress: { bg: status.progress.tint, fg: status.progress.text, border: "#D5C8F7", dot: status.progress.solid },
   // Delivered; incentive proposed, awaiting POD approval. The GREEN family —
   // the goods arrived — with a deeper dot than `completed` so the two are
   // distinguishable at a glance on the board without implying a failure. Not
   // orange (the 7 Jul ruling reserves it for offline/queued) and not grey (that
   // is `cancelled`). The label carries the real distinction.
-  pending_approval: { bg: colors.greenTint, fg: "#2E7D32", border: "#CCE7C9", dot: "#2A7F24" },
-  completed: { bg: colors.greenTint, fg: "#2E7D32", border: "#CCE7C9", dot: colors.green },
+  pending_approval: { bg: status.success.tint, fg: status.success.text, border: "#CCE7C9", dot: status.success.solid },
+  completed: { bg: status.success.tint, fg: status.success.text, border: "#CCE7C9", dot: status.success.solid },
   cancelled: { bg: "#F3F4F6", fg: "#4B5563", border: "#E5E7EB", dot: "#9CA3AF" },
-  rejected: { bg: colors.redTint, fg: "#C62828", border: "#F3C2C0", dot: colors.red },
+  rejected: { bg: status.danger.tint, fg: status.danger.text, border: "#F3C2C0", dot: status.danger.solid },
 };
 
 // Status labels are i18n'd in the in-app admin (admin.status.*) — unlike the

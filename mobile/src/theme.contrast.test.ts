@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { colors, statusColors } from "./theme";
-import { colors as admin } from "./admin/theme";
+import { colors as admin, status } from "./admin/theme";
 
 /**
  * CONTRAST FLOOR for every colour pair a user actually reads.
@@ -156,8 +156,20 @@ describe("palette contrast (WCAG AA, normal text)", () => {
   it("admin: the trips-board group accent clears the 3:1 non-text floor", () => {
     const ratio = contrastRatio(admin.amber, "#ffffff");
     expect(ratio, `${admin.amber} on white = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_NON_TEXT);
+
     // And the colour it replaced did not — this is why the swap happened.
-    expect(contrastRatio(admin.orange, "#ffffff")).toBeLessThan(AA_NON_TEXT);
+    //
+    // ⚠ Asserted against the LITERAL historical hex, not `admin.orange`. It
+    // used to read the token, which made a fixed historical fact depend on a
+    // live value: when the 17 Aug handoff re-pointed `orange` from #F97316 to
+    // the external family's #EA580C (3.56:1), this line failed — reporting a
+    // palette IMPROVEMENT as a regression. A note about the past should be
+    // written in the past's own values.
+    expect(contrastRatio("#F97316", "#ffffff")).toBeLessThan(AA_NON_TEXT);
+
+    // The colour that now carries `orange` clears the non-text floor as well,
+    // so the swap did not quietly reintroduce the problem one hue over.
+    expect(contrastRatio(admin.orange, "#ffffff")).toBeGreaterThanOrEqual(AA_NON_TEXT);
   });
 
   // The split is the point: `amber`/`red`/`orange` stay as FILLS and borders,
@@ -178,5 +190,69 @@ describe("palette contrast (WCAG AA, normal text)", () => {
     const primary = contrastRatio(colors.text, colors.white);
     expect(faint).toBeLessThan(muted);
     expect(muted).toBeLessThan(primary);
+  });
+});
+
+/**
+ * THE SEMANTIC STATUS FAMILY (design handoff, 17 Aug 2026).
+ *
+ * The handoff gives one solid per meaning. Several of those solids are NOT
+ * readable as small text on their own tint, which is why the family carries a
+ * separate `text` variant — and why that claim is measured here rather than
+ * asserted in a comment.
+ *
+ * The first test proves the DISTINCTION IS REAL: if a `text` variant were ever
+ * "simplified" back to its solid, the pair drops below the floor and this file
+ * goes red. Without it the family would look tidy and read badly, which is
+ * exactly how the 4 Aug palette got into the state it was in.
+ */
+describe("status family — the text variant is what makes it readable", () => {
+  for (const [name, fam] of Object.entries(status)) {
+    it(`${name}: text on its own tint clears AA`, () => {
+      const ratio = contrastRatio(fam.text, fam.tint);
+      expect(ratio, `${name} text ${fam.text} on ${fam.tint} = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_NORMAL);
+    });
+
+    it(`${name}: text on a white card clears AA`, () => {
+      const ratio = contrastRatio(fam.text, colors.white);
+      expect(ratio, `${name} text ${fam.text} on white = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_NORMAL);
+    });
+
+    it(`${name}: white on the TEXT variant clears AA — that is what a filled pill uses`, () => {
+      // Contrast is symmetric, so the darker sibling doubles as the fill under
+      // white text. This is the same two-jobs-one-token shape the driver
+      // palette's `greenText` already documents.
+      const ratio = contrastRatio(colors.white, fam.text);
+      expect(ratio, `white on ${name} text ${fam.text} = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_NORMAL);
+    });
+  }
+
+  it("pins WHITE-ON-SOLID as unsafe — solids are dots, borders and glyphs only", () => {
+    // Measured, 17 Aug 2026: four of the six handoff solids sit at 3.19-3.74:1
+    // under white text. That is not a reason to reject the palette — they were
+    // given as fills, dots and borders, and they are fine for that — but a
+    // filled pill with a white label must take the `text` variant instead.
+    // Recorded as a test so the next person reaches for the right one.
+    const unsafe = Object.entries(status)
+      .map(([name, fam]) => [name, contrastRatio(colors.white, fam.solid)] as const)
+      .filter(([, ratio]) => ratio < AA_NORMAL)
+      .map(([name]) => name);
+
+    expect(unsafe.sort()).toEqual(["eco", "external", "success", "warning"]);
+  });
+
+  it("proves the solids would NOT have done as text — the reason `text` exists", () => {
+    // Not a style preference: adopting the handoff's solid as small text is a
+    // measurable regression, and this records by how much. If a future palette
+    // makes a solid readable on its own tint, this test fails and the extra
+    // variant can be retired deliberately rather than by accident.
+    const failing = Object.entries(status)
+      .map(([name, fam]) => [name, contrastRatio(fam.solid, fam.tint)] as const)
+      .filter(([, ratio]) => ratio < AA_NORMAL)
+      .map(([name]) => name);
+
+    expect(failing.length, "no solid fails as text — the `text` variants may be unnecessary now").toBeGreaterThan(0);
+    expect(failing).toContain("success");
+    expect(failing).toContain("warning");
   });
 });

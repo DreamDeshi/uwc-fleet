@@ -22,7 +22,7 @@ import {
   useTrip,
   useTripBoard,
 } from "../hooks/queries";
-import { colors, font, radius } from "../theme";
+import { colors, font, radius, status } from "../theme";
 import {
   Avatar,
   Button,
@@ -70,7 +70,7 @@ const GROUP_ORDER = ["pending", "active", "completed", "cancelled"] as const;
 const GROUP_META: Record<string, { labelKey: string; dot: string; tint: string; fg: string }> = {
   pending: { labelKey: "admin.trips.groupPending", dot: colors.orange, tint: colors.orangeTint, fg: "#B45309" },
   active: { labelKey: "admin.trips.groupActive", dot: colors.blue, tint: colors.blueTint, fg: colors.blue },
-  completed: { labelKey: "admin.trips.groupCompleted", dot: colors.green, tint: colors.greenTint, fg: "#2E7D32" },
+  completed: { labelKey: "admin.trips.groupCompleted", dot: colors.green, tint: colors.greenTint, fg: status.success.text },
   cancelled: { labelKey: "admin.trips.groupCancelled", dot: "#9ca3af", tint: "#F3F4F6", fg: "#4B5563" },
 };
 

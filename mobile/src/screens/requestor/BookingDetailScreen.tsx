@@ -239,7 +239,7 @@ export function BookingDetailScreen() {
             const co2 = estimateTripCo2(stops);
             return co2 ? (
               <View style={[styles.factRow, styles.factDivider]}>
-                <Ionicons name="leaf-outline" size={18} color="#16A34A" />
+                <Ionicons name="leaf-outline" size={18} color={colors.greenText} />
                 <Text style={styles.factKey}>{t("bookingDetail.co2Label")}</Text>
                 <Text style={styles.factVal} numberOfLines={1}>
                   {t("trip.co2Estimate", { km: co2.km, kg: co2.co2Kg })}

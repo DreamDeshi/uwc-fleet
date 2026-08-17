@@ -90,7 +90,7 @@ const PENDING_AMBER_TEXT = "#8a6d00";
 
 // Darker green than colors.green for AA-contrast text on the tintGreen POD
 // line (same hue the theme already uses for actionShadow.green).
-const POD_GREEN_TEXT = "#2A7F24";
+const POD_GREEN_TEXT = colors.greenText;
 const POD_GREEN_BORDER = "#b7dcb9";
 
 // Error codes that mean the server is ALREADY in (or past) the state the tap

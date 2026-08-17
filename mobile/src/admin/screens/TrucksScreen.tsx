@@ -16,7 +16,7 @@ import {
   useUpdateTruck,
   useUpdateTruckDocuments,
 } from "../hooks/queries";
-import { colors, font, radius } from "../theme";
+import { colors, font, radius, status } from "../theme";
 import { Avatar, Button, Card, ConfirmDialog, EmptyState, ErrorState, FilterHeader, Input, Loading, Modal, Pill, SearchInput, SegmentedFilter } from "../components/ui";
 import { LoadCapacityBar } from "../components/LoadCapacityBar";
 import { DateField } from "../platform/datePicker";
@@ -27,7 +27,7 @@ import { useLayoutMode } from "../hooks/useLayoutMode";
 import type { DocExpiry, ExpiryStatus, Truck, TruckAlert, TruckExpiryAlert, TruckLoading } from "../types";
 
 const STATUS_META: Record<string, { labelKey: string; bg: string; fg: string; dot: string }> = {
-  active: { labelKey: "admin.trucks.statusActive", bg: colors.greenTint, fg: "#2E7D32", dot: colors.green },
+  active: { labelKey: "admin.trucks.statusActive", bg: colors.greenTint, fg: status.success.text, dot: colors.green },
   idle: { labelKey: "admin.trucks.statusIdle", bg: colors.blueTint, fg: colors.blue, dot: "#2563EB" },
   maintenance: { labelKey: "admin.trucks.statusMaintenance", bg: colors.orangeTint, fg: "#B45309", dot: colors.orange },
   retired: { labelKey: "admin.trucks.statusRetired", bg: "#f3f4f6", fg: "#4B5563", dot: "#9CA3AF" },
@@ -102,7 +102,7 @@ export function TrucksScreen() {
           hitSlop={8}
           style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
         >
-          <Ionicons name="leaf-outline" size={15} color="#16A34A" />
+          <Ionicons name="leaf-outline" size={15} color={status.success.solid} />
           <Text style={{ fontSize: font.sm, fontWeight: "600", color: colors.blue }}>{t("admin.trucks.fuelMovedLink")}</Text>
           <Ionicons name="chevron-forward" size={13} color={colors.blue} />
         </Pressable>

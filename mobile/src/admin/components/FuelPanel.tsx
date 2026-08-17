@@ -7,7 +7,7 @@ import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { useFuelSummary, useLogFuel, useTruckFuel, useTrucks } from "../hooks/queries";
-import { colors, font, radius } from "../theme";
+import { colors, font, radius, status } from "../theme";
 import { Button, Card, EmptyState, ErrorState, Input, Loading, Modal, TableCell, TableHeader, TableRow } from "../components/ui";
 import { DateField } from "../platform/datePicker";
 import { apiErrorMessage } from "../services/api";
@@ -85,7 +85,7 @@ export function FuelPanel() {
                       {formatNumber(r.total_litres)} L · {formatMoney(r.total_cost_rm)}
                       {r.cost_per_km != null ? ` · ${formatMoney(r.cost_per_km)}/km` : ""}
                     </Text>
-                    <Text style={{ fontSize: font.sm, color: "#16A34A", marginTop: 1 }}>
+                    <Text style={{ fontSize: font.sm, color: status.success.text, marginTop: 1 }}>
                       {`${formatNumber(r.co2e_kg)} kg CO₂e`}
                       {r.litres_per_100km != null ? ` · ${formatNumber(r.litres_per_100km)} L/100km` : ""}
                     </Text>

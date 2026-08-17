@@ -393,7 +393,7 @@ function Receipt({ trip, onPress }: { trip: Trip; onPress: () => void }) {
   return (
     <TouchableOpacity style={styles.receipt} onPress={onPress} activeOpacity={0.85}>
       <View style={styles.receiptIcon}>
-        <Ionicons name="checkmark-circle" size={20} color="#2E7D32" />
+        <Ionicons name="checkmark-circle" size={20} color={colors.greenText} />
       </View>
       {/* The chip sits on the SECOND line, not beside the title: sharing the
           row cost the ticket ~150px and truncated it to "TKT-20260729-02…" —
@@ -426,7 +426,7 @@ function DayFinished({ day }: { day: DriverDay }) {
   const { t } = useTranslation();
   return (
     <View style={styles.doneCard}>
-      <Ionicons name="checkmark-circle" size={34} color="#2E7D32" />
+      <Ionicons name="checkmark-circle" size={34} color={colors.greenText} />
       <Text style={styles.doneTitle}>{t("driver.allStopsDelivered", { n: day.deliveredStops })}</Text>
       <Text style={styles.doneBody}>{t("driver.runFinished")}</Text>
     </View>

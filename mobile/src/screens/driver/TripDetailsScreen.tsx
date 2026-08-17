@@ -400,7 +400,7 @@ export function TripDetailsScreen() {
             if (!co2) return null;
             return (
               <View style={styles.co2Row}>
-                <Ionicons name="leaf-outline" size={14} color="#16A34A" />
+                <Ionicons name="leaf-outline" size={14} color={colors.greenText} />
                 <Text style={styles.co2Text}>
                   {t("trip.co2Estimate", { km: co2.km, kg: co2.co2Kg })}
                 </Text>
