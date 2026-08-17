@@ -84,6 +84,18 @@ export function DemoRoleSwitcher({ style }: { style?: ViewStyle }) {
         ))}
       </View>
 
+      {/* ⚠ THE DISCLOSURE, and it belongs BELOW the buttons on purpose.
+          Judges reach this screen by QR from a public poster with no context,
+          and the next thing they do is read delivery records and pay figures.
+          Nothing else on the screen says those are invented. It sits under the
+          buttons rather than above them because it explains what they are about
+          to see, not what they are about to press.
+
+          It needs no gate of its own: `accounts.length === 0` returns null
+          above, so the whole panel — this line included — cannot render on a
+          build without the demo env. Production never reaches here. */}
+      <Text style={styles.sampleData}>{t("login.demo.sampleData")}</Text>
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <View style={styles.dividerRow}>
@@ -114,6 +126,7 @@ const styles = StyleSheet.create({
   },
   subtitle: { fontSize: 13, color: colors.textMuted, marginTop: 4, lineHeight: 18 },
   buttons: { marginTop: 12, gap: 8 },
+  sampleData: { fontSize: 12, color: colors.textMuted, marginTop: 10, lineHeight: 16, textAlign: "center" },
   button: {
     flexDirection: "row",
     alignItems: "center",
