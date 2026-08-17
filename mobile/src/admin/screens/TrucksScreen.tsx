@@ -523,8 +523,8 @@ function TruckCard({ truck: tr, onManage }: { truck: Truck; onManage: () => void
 
       {/* Claim rates — display only; edits live on the Incentives screen. */}
       <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-        <RatePill label={t("admin.trucks.rateWeekday")} value={formatMoney(tr.entitled_claim_weekday)} color={colors.blue} bg={colors.blueTint} />
-        <RatePill label={t("admin.trucks.rateWeekend")} value={formatMoney(tr.entitled_claim_offpeak)} color={ACCENT_AMBER} bg={colors.yellowTint} />
+        <RatePill label={t("admin.trucks.ratePeak")} value={formatMoney(tr.entitled_claim_weekday)} color={colors.blue} bg={colors.blueTint} />
+        <RatePill label={t("admin.trucks.rateOffPeak")} value={formatMoney(tr.entitled_claim_offpeak)} color={ACCENT_AMBER} bg={colors.yellowTint} />
         <RatePill label={t("admin.trucks.rateDeduction")} value={t("admin.trucks.pts", { count: tr.daily_deduction_points })} color={colors.red} bg={colors.redTint} />
       </View>
 

@@ -26,7 +26,7 @@ import { AdminHomeScreen } from "../screens/AdminHomeScreen";
 import { UserManagementScreen } from "../screens/UserManagementScreen";
 import { ConsigneesScreen } from "../screens/ConsigneesScreen";
 import { PerformanceScreen } from "../screens/PerformanceScreen";
-import { DriversScreen } from "../screens/DriversScreen";
+import { DriverManagementScreen } from "../screens/DriverManagementScreen";
 import { TrucksScreen } from "../screens/TrucksScreen";
 import { ReportsScreen } from "../screens/ReportsScreen";
 import { SustainabilityScreen } from "../screens/SustainabilityScreen";
@@ -78,13 +78,15 @@ const NAV_GROUPS: { headingKey: string; items: NavItem[] }[] = [
         : []),
       { route: "AdminDrivers", labelKey: "admin.nav.drivers", icon: "person-outline" },
       { route: "AdminTrucks", labelKey: "admin.nav.trucks", icon: "bus-outline" },
-      // ⚠ NO PERFORMANCE ENTRY. It lives inside User Management as a third
-      // segment (owner, 15 Aug 2026) — "how is this driver doing" is a question
-      // about a person, asked where the people already are. `AdminPerformance`
-      // stays a REGISTERED screen below so every existing link still resolves
-      // (DashboardWide's on-time KPI card, the DriversScreen row), but keeping
-      // a sidebar entry as well gave one screen two doors in the same
-      // navigation, which is the clutter this change set out to remove.
+      // ⚠ NO PERFORMANCE ENTRY. It lives inside DRIVER MANAGEMENT as a second
+      // segment (owner, 17 Aug 2026) — it is a PER-DRIVER metric and this is
+      // the driver surface. (It spent 15–17 Aug inside User Management, which
+      // covers all three roles; that was the owner's own correction.)
+      // `AdminPerformance` stays a REGISTERED screen below so every existing
+      // link still resolves (DashboardWide's on-time KPI card, the
+      // DriversScreen row), but keeping a sidebar entry as well gave one screen
+      // two doors in the same navigation, which is the clutter this set out to
+      // remove.
       { route: "AdminCalendar", labelKey: "admin.nav.calendar", icon: "calendar-outline" },
     ],
   },
@@ -441,9 +443,12 @@ function AdminDrawerWide() {
         component={PerformanceScreen}
         options={{ title: t("admin.titles.performance") }}
       />
+      {/* Driver Management = the driver board + Performance behind a segment
+          (owner, 17 Aug 2026). `AdminPerformance` above stays registered and
+          rendered on its own, so every existing deep link still resolves. */}
       <Drawer.Screen
         name="AdminDrivers"
-        component={DriversScreen}
+        component={DriverManagementScreen}
         options={{ title: t("admin.titles.drivers") }}
       />
       <Drawer.Screen

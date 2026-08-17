@@ -14,9 +14,16 @@ import { useDrivers, useTrucks } from "../hooks/queries";
 import { colors } from "../theme";
 import { SegmentedFilter } from "../components/ui";
 import { DriversScreen } from "./DriversScreen";
+import { PerformanceScreen } from "./PerformanceScreen";
 import { TrucksScreen } from "./TrucksScreen";
 
-type Segment = "drivers" | "trucks";
+// PERFORMANCE rides on THIS row on the phone (owner, 17 Aug 2026). The wide
+// shell puts it inside Driver Management (`DriverManagementScreen`), but on a
+// phone the driver board is already inside this tab's segment — nesting a
+// second toggle would stack three control rows above the list, so it sits next
+// to Drivers here instead. Same place in the information architecture, one row
+// instead of three. It is NOT on the home grid and NOT in the sidebar.
+type Segment = "drivers" | "performance" | "trucks";
 
 export function FleetScreen() {
   const { t } = useTranslation();
@@ -33,11 +40,12 @@ export function FleetScreen() {
           onChange={setSegment}
           options={[
             { value: "drivers", label: t("admin.fleet.drivers"), count: drivers.data?.length },
+            { value: "performance", label: t("admin.fleet.performance") },
             { value: "trucks", label: t("admin.fleet.trucks"), count: trucks.data?.length },
           ]}
         />
       </View>
-      {segment === "drivers" ? <DriversScreen /> : <TrucksScreen />}
+      {segment === "drivers" ? <DriversScreen /> : segment === "performance" ? <PerformanceScreen /> : <TrucksScreen />}
     </View>
   );
 }

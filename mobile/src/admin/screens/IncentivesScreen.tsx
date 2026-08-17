@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import { LinearGradient } from "expo-linear-gradient";
 import {
   useDestinationRates,
+  useIncentiveRules,
   useRateAudit,
   useResetTruckRates,
   useTrucks,
@@ -43,9 +44,9 @@ function PendingRatesNote({ pending }: { pending: Truck["pending_rates"] }) {
   if (!pending) return null;
   const parts: string[] = [];
   if (pending.entitled_claim_weekday !== null)
-    parts.push(t("admin.incentives.pendingWeekday", { value: formatMoney(pending.entitled_claim_weekday) }));
+    parts.push(t("admin.incentives.pendingPeak", { value: formatMoney(pending.entitled_claim_weekday) }));
   if (pending.entitled_claim_offpeak !== null)
-    parts.push(t("admin.incentives.pendingWeekend", { value: formatMoney(pending.entitled_claim_offpeak) }));
+    parts.push(t("admin.incentives.pendingOffPeak", { value: formatMoney(pending.entitled_claim_offpeak) }));
   if (pending.daily_deduction_points !== null)
     parts.push(t("admin.incentives.pendingDeduction", { value: pending.daily_deduction_points }));
   return (
@@ -180,8 +181,8 @@ function TruckRatesTab() {
               </View>
               <View style={{ padding: 12, gap: 10 }}>
               <View style={{ flexDirection: "row", gap: 8 }}>
-                <RateBox label={t("admin.trucks.rateWeekday")} value={formatMoney(tr.entitled_claim_weekday)} fg={colors.blue} bg={colors.blueTint} />
-                <RateBox label={t("admin.trucks.rateWeekend")} value={formatMoney(tr.entitled_claim_offpeak)} fg={colors.amber} bg={colors.yellowTint} />
+                <RateBox label={t("admin.trucks.ratePeak")} value={formatMoney(tr.entitled_claim_weekday)} fg={colors.blue} bg={colors.blueTint} />
+                <RateBox label={t("admin.trucks.rateOffPeak")} value={formatMoney(tr.entitled_claim_offpeak)} fg={colors.amber} bg={colors.yellowTint} />
                 <RateBox label={t("admin.trucks.rateDeduction")} value={t("admin.trucks.pts", { count: tr.daily_deduction_points })} fg={colors.red} bg={colors.redTint} />
               </View>
               <UpdatedNote entry={auditByPlate.get(tr.plate)} />
@@ -196,8 +197,8 @@ function TruckRatesTab() {
             <TableCell flex={1.6} header>{t("admin.trucks.colTruck")}</TableCell>
             <TableCell flex={1} header>{t("admin.trucks.colType")}</TableCell>
             <TableCell flex={0.9} header>{t("admin.incentives.colMaxLoad")}</TableCell>
-            <TableCell flex={1} header>{t("admin.incentives.colWeekdayRate")}</TableCell>
-            <TableCell flex={1} header>{t("admin.incentives.colWeekendRate")}</TableCell>
+            <TableCell flex={1} header>{t("admin.incentives.colPeakRate")}</TableCell>
+            <TableCell flex={1} header>{t("admin.incentives.colOffPeakRate")}</TableCell>
             <TableCell flex={1} header>{t("admin.incentives.colDeduction")}</TableCell>
             <TableCell flex={0.7} header>{""}</TableCell>
           </TableHeader>
@@ -353,8 +354,8 @@ function EditTruckModal({ truck, onClose }: { truck: Truck; onClose: () => void 
       <View style={{ backgroundColor: colors.yellowTint, borderRadius: radius.md, paddingVertical: 9, paddingHorizontal: 12, marginBottom: 12 }}>
         <Text style={{ color: colors.amber, fontSize: font.sm, fontWeight: "500" }}>{t("admin.incentives.stagingWarning")}</Text>
       </View>
-      <Input label={t("admin.incentives.weekdayRateRm")} value={weekday} onChange={setWeekday} type="number" />
-      <Input label={t("admin.incentives.weekendRateRm")} value={weekend} onChange={setWeekend} type="number" />
+      <Input label={t("admin.incentives.peakRateRm")} value={weekday} onChange={setWeekday} type="number" />
+      <Input label={t("admin.incentives.offPeakRateRm")} value={weekend} onChange={setWeekend} type="number" />
       <Input label={t("admin.incentives.deductionPoints")} value={deduction} onChange={setDeduction} type="number" />
       <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
         <Button variant="ghost" onPress={onClose} style={{ flex: 1 }}>
@@ -538,11 +539,58 @@ function EditPointsModal({ rate, onClose }: { rate: DestinationRate; onClose: ()
 }
 
 // ── Formula explainer ─────────────────────────────────────────────────
-function FormulaTab() {
+//
+// This panel is what an admin reads to understand what the system pays, so its
+// numbers come from GET /incentives/rules — the incentive engine's own exported
+// constants — and not from a hand-written sentence. The previous copy had
+// drifted into four separate money errors while every test stayed green:
+//
+//   · "subtract Daily Deduction Points on the first trip of the day" — the
+//     pre-aa8d081 rule. It comes off the day TOTAL, once, floored at zero.
+//   · "WEEKEND / HOLIDAY — HIGHER RATE" — not the rule. The bands are peak and
+//     off-peak; off-peak includes every weekday evening and early morning,
+//     which is most of what it actually pays for.
+//   · "Malaysian public holidays" — R1 Q5 was explicit that the entitled list is
+//     UWC's own Batu Kawan calendar. The Perak Sultan's birthday is a national
+//     holiday UWC does not observe, and paying it off-peak would be a money
+//     error, not a wording one.
+//   · "normal operating window 07:00–02:00" — that is the PICKUP window, not a
+//     rate band, and B6 moved it to midnight. It has no business here.
+//
+// Wording that describes behaviour (rather than a number) is pinned by
+// `incentiveFormulaCopy.test.ts`, which fails on the retired phrasings in all
+// three locales. Numbers that come from the engine cannot drift by definition.
+// Exported for `incentiveFormulaCopy.test.ts`, which renders it against two
+// different sets of engine constants — the only way to tell "reads the rules
+// from the server" from "prints 08:00 because someone typed 08:00".
+export function FormulaTab() {
   const { t } = useTranslation();
   const mode = useLayoutMode();
   const wide = mode === "wide";
-  const rules: string[] = t("admin.incentives.rules", { returnObjects: true }) as unknown as string[];
+  const rulesQuery = useIncentiveRules();
+
+  if (rulesQuery.isLoading) return <Loading />;
+  if (rulesQuery.isError || !rulesQuery.data)
+    return <ErrorState message={t("admin.incentives.rulesLoadError")} onRetry={() => rulesQuery.refetch()} />;
+
+  const r = rulesQuery.data;
+  const hh = (hour: number) => `${String(hour).padStart(2, "0")}:00`;
+  const peakStart = hh(r.peak_start_hour);
+  const peakEnd = hh(r.offpeak_cutoff_hour);
+
+  // The rule list is assembled here, from the engine's values, rather than
+  // being a static array in the locale files — that array is what silently
+  // emptied the card (`admin.incentives.rules` never existed, so `t()` returned
+  // the key, `Array.isArray` was false, and the card rendered blank).
+  const rules: string[] = [
+    t("admin.incentives.ruleZonePoints", { repeat: r.repeat_zone_points }),
+    t("admin.incentives.ruleDeduction"),
+    t("admin.incentives.rulePay"),
+    t("admin.incentives.ruleAnchor"),
+    t("admin.incentives.ruleReset", { hour: hh(r.daily_reset_hour) }),
+    ...(r.interplant_round_trip_halving ? [t("admin.incentives.ruleInterplant")] : []),
+  ];
+
   return (
     <View style={{ gap: 16 }}>
       <LinearGradient
@@ -554,13 +602,18 @@ function FormulaTab() {
         <Text style={{ fontSize: font.sm, letterSpacing: 1, color: "rgba(255,255,255,0.7)", textTransform: "uppercase", marginBottom: 10 }}>
           {t("admin.incentives.formulaTitle")}
         </Text>
+        {/* ( day's points − daily deduction ) × the truck's rate. The deduction
+            sits INSIDE the bracket because that is where it acts — on the day
+            total, not on a trip. */}
         <Text style={{ fontSize: 19, fontWeight: "700", color: "#fff", textAlign: "center" }}>
-          {t("admin.incentives.formulaLine1")} <Text style={{ color: colors.yellow }}>{t("admin.incentives.formulaPoints")}</Text>
+          {t("admin.incentives.formulaOpen")}
+          <Text style={{ color: colors.yellow }}>{t("admin.incentives.formulaDayPoints")}</Text>
+          {t("admin.incentives.formulaMinus")}
+          <Text style={{ color: colors.yellow }}>{t("admin.incentives.formulaDeduction")}</Text>
+          {t("admin.incentives.formulaClose")}
         </Text>
         <Text style={{ fontSize: font.md, marginTop: 8, color: "rgba(255,255,255,0.85)", textAlign: "center" }}>
-          {t("admin.incentives.formulaLine2Pre")}{" "}
-          <Text style={{ color: colors.yellow, fontWeight: "700" }}>{t("admin.incentives.formulaDeduction")}</Text>{" "}
-          {t("admin.incentives.formulaLine2Post")}
+          {t("admin.incentives.formulaNote")}
         </Text>
       </LinearGradient>
 
@@ -585,16 +638,26 @@ function FormulaTab() {
             <View style={{ gap: 10 }}>
               <View style={{ backgroundColor: colors.blueTint, borderRadius: radius.md, padding: 14 }}>
                 <Text style={{ fontSize: font.sm, color: colors.blue, fontWeight: "700", textTransform: "uppercase" }}>
-                  {t("admin.incentives.weekdayCardTitle")}
+                  {t("admin.incentives.peakCardTitle")}
                 </Text>
-                <Text style={{ fontSize: font.md, color: colors.textMuted, marginTop: 4 }}>{t("admin.incentives.weekdayCardBody")}</Text>
+                <Text style={{ fontSize: font.md, color: colors.textMuted, marginTop: 4 }}>
+                  {t("admin.incentives.peakCardBody", { start: peakStart, end: peakEnd })}
+                </Text>
               </View>
               <View style={{ backgroundColor: colors.yellowTint, borderRadius: radius.md, padding: 14 }}>
                 <Text style={{ fontSize: font.sm, color: colors.amber, fontWeight: "700", textTransform: "uppercase" }}>
-                  {t("admin.incentives.weekendCardTitle")}
+                  {t("admin.incentives.offPeakCardTitle")}
                 </Text>
-                <Text style={{ fontSize: font.md, color: colors.textMuted, marginTop: 4 }}>{t("admin.incentives.weekendCardBody")}</Text>
+                <Text style={{ fontSize: font.md, color: colors.textMuted, marginTop: 4 }}>
+                  {t("admin.incentives.offPeakCardBody", { start: peakStart, end: peakEnd })}
+                </Text>
               </View>
+              {/* Which of the two is HIGHER is per-truck (off-peak usually, but
+                  not universally), so the panel points at the rate table
+                  instead of asserting it. */}
+              <Text style={{ fontSize: font.sm, color: colors.textFaint, marginTop: 2 }}>
+                {t("admin.incentives.ratesPerTruckNote")}
+              </Text>
             </View>
           </Card>
         </View>
