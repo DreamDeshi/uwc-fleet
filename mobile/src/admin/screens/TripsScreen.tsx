@@ -135,9 +135,6 @@ export function TripsScreen() {
   const [dateFrom, setDateFrom] = useState(() => mytDateKey(new Date()));
   const [dateTo, setDateTo] = useState(() => mytDateKey(new Date()));
   const [needsAttentionOnly, setNeedsAttentionOnly] = useState(false);
-  // The date range is a single control on the wide toolbar; this opens its
-  // two fields. Closed by default because the board already defaults to today.
-  const [datesOpen, setDatesOpen] = useState(false);
   const [driverPickerOpen, setDriverPickerOpen] = useState(false);
   const [zonePickerOpen, setZonePickerOpen] = useState(false);
 
@@ -411,18 +408,23 @@ export function TripsScreen() {
                 was silently limiting the board and put an everyday control
                 behind an extra click. Driver and zone are genuinely secondary;
                 these are not. */}
-            {/* ONE control, not four (design handoff, 17 Aug 2026). The row
-                used to spend ~330px on "From [YYYY-MM-DD] To [YYYY-MM-DD]" —
-                two captions and two boxes for what an admin reads as a single
-                filter. It now reads as its own answer ("Aug 17 – Aug 17") and
-                opens the two fields beneath when you need to change it, which
-                is the rare case: the board defaults to today. */}
-            <DateRangeToggle
-              from={dateFrom}
-              to={dateTo}
-              open={datesOpen}
-              onPress={() => setDatesOpen((v) => !v)}
-            />
+            {/* ONE control, not four (design handoff, 17 Aug 2026) — but still
+                DIRECTLY EDITABLE, which is the part the handoff could not know.
+                The row used to spend ~330px on "From [YYYY-MM-DD] To
+                [YYYY-MM-DD]": two captions and two boxes for what an admin
+                reads as a single filter. This is one bordered field holding
+                both dates with a dash between them, ~200px, no captions.
+
+                ⚠ IT IS NOT A DISCLOSURE, AND THAT WAS TRIED. Collapsing these
+                behind a pill is the obvious way to make the row shorter, and
+                the comment this replaces already warned against it: the range
+                defaults to TODAY, so it is the one filter that is always
+                active, and WIDENING IT IS AN EVERYDAY ACT — two e2e specs
+                drive it directly. The first attempt at this redesign did
+                collapse it, and those two specs went red in CI, which is
+                exactly what they are for. Compact the control; do not hide
+                it. */}
+            <DateRangeField from={dateFrom} to={dateTo} onFrom={setDateFrom} onTo={setDateTo} />
             <MoreFiltersToggle
               open={filtersOpen}
               count={secondaryCountWide}
@@ -445,30 +447,6 @@ export function TripsScreen() {
             {attentionChip}
             <View style={{ marginLeft: "auto" }}>{resultsLabel}</View>
           </View>
-          {datesOpen ? (
-            <View style={{ flexDirection: "row", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.from")}</Text>
-                <DateInputInline value={dateFrom} onChange={setDateFrom} />
-              </View>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.to")}</Text>
-                <DateInputInline value={dateTo} onChange={setDateTo} />
-              </View>
-              {(dateFrom || dateTo) && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onPress={() => {
-                    setDateFrom("");
-                    setDateTo("");
-                  }}
-                >
-                  {t("admin.trips.dateRangeAny")}
-                </Button>
-              )}
-            </View>
-          ) : null}
           {filtersOpen ? (
             <View style={{ flexDirection: "row", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <FilterSelect
@@ -775,74 +753,89 @@ function MoreFiltersToggle({ open, count, onPress }: { open: boolean; count: num
 }
 
 /**
- * The date range as ONE control (design handoff, 17 Aug 2026).
+ * The date range as ONE FIELD (design handoff, 17 Aug 2026).
  *
- * Reads as its own answer — "Aug 17 – Aug 17", or "Any dates" when unbounded —
- * and opens the two YYYY-MM-DD fields beneath the toolbar when pressed. The
- * board defaults to today, so the common act is READING this filter, not
- * editing it; the old layout gave two captions and two boxes permanent room for
- * the rare case.
- *
- * ⚠ Still shows blue-active styling whenever a bound is set, because this
- * filter is silently limiting the board the whole time it is closed — the same
- * reason it was kept out of the "more filters" disclosure in the first place.
+ * Both dates live inside a single bordered control with a dash between them and
+ * no "From"/"To" captions — the handoff's de-cluttering — while staying typed
+ * into directly, because widening the board is an everyday act and this filter
+ * is silently limiting it the whole time. Wears the blue active ring whenever a
+ * bound is set, for the same reason.
  */
-function DateRangeToggle({
+function DateRangeField({
   from,
   to,
-  open,
-  onPress,
+  onFrom,
+  onTo,
 }: {
   from: string;
   to: string;
-  open: boolean;
-  onPress: () => void;
+  onFrom: (v: string) => void;
+  onTo: (v: string) => void;
 }) {
   const { t } = useTranslation();
   const active = !!(from || to);
-  const fg = active ? colors.blue : colors.textMuted;
-
-  // "2026-08-17" → "Aug 17". Parsed as PARTS, never `new Date(str)`: that
-  // parses a bare YYYY-MM-DD as UTC midnight, which renders as the previous day
-  // for every admin west of Greenwich and, more to the point here, is a date
-  // this app deliberately keeps in MYT wall-clock terms.
-  const short = (key: string) => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
-    if (!m) return key;
-    const month = MONTHS_SHORT[Number(m[2]) - 1] ?? m[2];
-    return `${month} ${Number(m[3])}`;
-  };
-
-  const label = !active
-    ? t("admin.trips.dateRangeAny")
-    : from && to
-      ? `${short(from)} – ${short(to)}`
-      : short(from || to);
-
   return (
-    <Pressable onPress={onPress} style={{ borderRadius: radius.pill }}>
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 6,
-          borderRadius: radius.pill,
-          paddingVertical: 5,
-          paddingHorizontal: 11,
-          borderWidth: 1,
-          borderColor: active ? colors.blue : colors.border,
-          backgroundColor: active ? colors.blueTint : colors.card,
-        }}
-      >
-        <Ionicons name="calendar-outline" size={13} color={fg} />
-        <Text style={{ fontSize: font.sm, fontWeight: "700", color: fg }}>{label}</Text>
-        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={12} color={fg} />
-      </View>
-    </Pressable>
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 2,
+        borderRadius: radius.md,
+        borderWidth: 1,
+        borderColor: active ? colors.blue : colors.border,
+        backgroundColor: active ? colors.blueTint : colors.card,
+        paddingLeft: 10,
+        paddingRight: 4,
+      }}
+    >
+      <Ionicons name="calendar-outline" size={14} color={active ? colors.blue : colors.textMuted} />
+      <DateInputBare value={from} onChange={onFrom} placeholder={t("admin.trips.from")} />
+      <Text style={{ fontSize: font.sm, color: colors.textMuted }}>–</Text>
+      <DateInputBare value={to} onChange={onTo} placeholder={t("admin.trips.to")} />
+      {active ? (
+        <Pressable
+          onPress={() => {
+            onFrom("");
+            onTo("");
+          }}
+          hitSlop={6}
+          accessibilityLabel={t("admin.trips.dateRangeAny")}
+          style={{ paddingHorizontal: 4 }}
+        >
+          <Ionicons name="close-circle" size={15} color={colors.textFaint} />
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
-const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** A date input with no chrome of its own — the field around it draws that. */
+function DateInputBare({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <TextInput
+      value={value}
+      onChangeText={onChange}
+      placeholder={placeholder}
+      placeholderTextColor={colors.textFaint}
+      style={{
+        paddingVertical: 8,
+        paddingHorizontal: 6,
+        fontSize: font.sm,
+        color: colors.text,
+        width: 96,
+        backgroundColor: "transparent",
+      }}
+    />
+  );
+}
 
 // Compact inline YYYY-MM-DD filter input (the old admin's native date input;
 // real picker arrives with the mobile pass).
