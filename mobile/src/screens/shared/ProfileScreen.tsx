@@ -14,6 +14,7 @@ import { AppLanguage } from "../../types";
 import { EditProfileModal, ChangePasswordModal } from "../../components/AccountModals";
 import { FeedbackModal } from "../../components/FeedbackModal";
 import { AppUpdatesCard } from "../../components/AppUpdatesCard";
+import { OutdoorModeRow } from "../../components/OutdoorModeRow";
 
 // Profile, rebuilt to the approved design (frame 37).
 //
@@ -153,6 +154,12 @@ export function ProfileScreen() {
         </View>
 
         {/* One inline segmented control, not three stacked full-width buttons. */}
+        {/* Beside the language picker, by owner instruction — the two are the
+            same kind of setting from the driver's side, and this one describes
+            the phone's environment rather than the person (see
+            lib/outdoorMode). Renders for drivers only. */}
+        <OutdoorModeRow style={{ marginTop: 20 }} />
+
         <Text style={styles.sectionLabel}>{t("profile.language")}</Text>
         <View style={styles.segment}>
           {(["en", "ms", "zh"] as const).map((l) => {
