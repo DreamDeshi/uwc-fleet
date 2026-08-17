@@ -226,6 +226,58 @@ Nothing on that workbook change is unbuilt now.
 
 
 
+\#### RULED BUT UNIMPLEMENTED — THE THIRD FAILURE MODE, AND THE UNWATCHED ONE
+
+Two ways the record and the code disagree are already written down here: a
+STALE record trusted too long (interplant scoring, below) and a CORRECT record
+trusted too little (the trips date range, under UI). **B6 is the third: a
+ruling that was recorded and never built.** Nobody was looking for it, because
+both other failures announce themselves — one blocks work that is already done,
+the other turns CI red. This one is silent. The app simply keeps doing the old
+thing while the answer file says otherwise.
+
+**B6, as it stands on 17 Aug 2026.** Mr. Teh asked US a question on 11 Aug:
+*"what is your suggestion if 2am is not convenience? Can we set to 12am?
+Because we have one driver working shift is 2pm to 12am"*. The OWNER answered
+the same day: **12am, and 12am is when the lorry must be BACK** — the operating
+window becomes 07:00–00:00. `CLIENT_ANSWERS.md` records the answer and notes
+the fleet is "(seeded 07:00–02:00)".
+
+It still is, in every place that states it:
+
+```
+mobile/src/lib/bookingEdit.ts        PICKUP_WINDOW_END_HOUR = 2
+api/src/services/operatingWindow.ts  DEFAULT_WINDOW_END = "02:00"
+the Truck rows themselves            07:00–02:00
+```
+
+**Six days live with a ruling that was recorded and never built**, and it was
+found only because a copy pass went looking at whether one hint string was
+stale. It was not: `booking.fleetHoursHint` ("Fleet hours 7 AM – 2 AM")
+correctly describes what the app DOES. The app is what is wrong.
+
+⚠ **DO NOT "CORRECT" THE COPY TO MIDNIGHT.** That would make a true sentence
+false while the picker still offers 23:00, 00:00, 01:00 and 02:00 underneath
+it. Fix the window, and the copy follows.
+
+**When it is built** (it is a DISPATCH change — the window decides which
+pickups can be assigned at all — so it needs explicit approval and boundary
+tests):
+
+- move both constants together, client and server, or the picker and the
+  assignment check disagree about the same booking;
+- **MOVE THE SEEDED TRUCK ROWS WITH IT.** The per-truck window is data, not a
+  constant; changing the default alone leaves nine trucks still open to 02:00;
+- 02:00–00:00 shortens the day, so a pickup that was legal yesterday is refused
+  today. Check nothing in flight sits in the removed two hours before applying;
+- the window WRAPS midnight today (07:00 → 02:00). At 07:00 → 00:00 it stops
+  wrapping, and any code that assumes a wrap becomes reachable-dead. Read
+  `operatingWindow.ts` for the wrap arithmetic before changing the bound.
+
+**The rule this leaves behind:** when a written answer changes a NUMBER the code
+holds, grep for that number the same day and either change it or record why not.
+An answer file is not an implementation, and nothing in CI compares the two.
+
 \#### THIS LIST WAS WRONG ABOUT INTERPLANT SCORING FOR FIVE DAYS
 
 
@@ -924,6 +976,52 @@ Text and layout:
 \- EVERY user-visible string goes through i18n. A new string must be added to
 &#x20; ALL THREE files: `mobile/src/i18n/en.json`, `ms.json`, `zh.json`.
 &#x20; Hard-coded literals in JSX are a defect.
+\- **THE VOICE RULE — WRITE LIKE A COLLEAGUE, NOT LIKE A SYSTEM.** Adapted from
+&#x20; `github.com/blader/humanizer` (Wikipedia's "Signs of AI writing"), which is
+&#x20; written for PROSE. Product copy is not prose: it is read mid-task, one-handed,
+&#x20; in a lorry cab in sunlight. Take the judgement, not the substitutions.
+&#x20; **What transfers, and what it means here:**
+&#x20; 1. ONE IDEA PER STRING. If it needs a semicolon or a second clause, it is
+&#x20;    two strings or one shorter thought.
+&#x20; 2. EM DASHES ARE TWO SENTENCES PRETENDING TO BE ONE. 107 strings currently
+&#x20;    carry one. In prose it is a style choice; in a 13px banner it is a place
+&#x20;    the eye trips. Default to a full stop.
+&#x20; 3. AN ERROR NAMES WHAT HAPPENED AND WHAT TO DO. "Something went wrong" is
+&#x20;    half an error. If there is nothing to do, say who to tell.
+&#x20; 4. NO APOLOGIES, NO "OOPS", NO EXCLAMATION MARKS. The app is not sorry; it
+&#x20;    is a tool. Say the fact.
+&#x20; 5. THE ACTOR IS NAMED. "A document failed to upload" hides who failed at
+&#x20;    what. "The document did not upload."
+&#x20; 6. NO HEDGING. "May", "might", "could potentially" — either state the
+&#x20;    condition or state the fact.
+&#x20; 7. NO WORDS NOBODY AT BATU KAWAN WOULD SAY: seamless, robust, leverage,
+&#x20;    utilise, streamline, ensure, kindly.
+&#x20; 8. DO NOT ANNOUNCE. "Note that", "Please be aware", "In order to".
+&#x20; 9. A BUTTON SAYS WHAT HAPPENS, and the confirmation says it happened in the
+&#x20;    same words. Book → "Booked", not "Success".
+&#x20; **What does NOT transfer, and why — check before applying a rule from it:**
+&#x20; - CURLY QUOTES. Humanizer bans them as an AI tell in plain text. In UI they
+&#x20;   are correct typography; keep “ ” and ’ in copy, and keep the locale's own
+&#x20;   marks in zh. This is a rule about prose files, not about rendered type.
+&#x20; - EMOJI. Banned there, but the greeting wave on the three Home screens and
+&#x20;   the 🇲🇾 flag on the phone field are approved design. Do not add new ones;
+&#x20;   do not strip those.
+&#x20; - "PLEASE". Dropping it sharpens ENGLISH. It does not transfer: Malay "Sila
+&#x20;   masukkan…" and Chinese "请输入…" are ordinary politeness, and removing them
+&#x20;   reads as rude rather than direct. **Decide per language, never by mirroring
+&#x20;   the English edit** — see the register rule below.
+&#x20; **⚠ WHAT THIS PASS MUST NOT TOUCH** (owner constraint, 17 Aug 2026): any
+&#x20; string that states a MONEY RULE or a legal-ish fact — incentives, rates,
+&#x20; deductions, zone points, the POD/K2 gate, incentive approval, the B7
+&#x20; cut-offs, holiday entitlement, GPS consent, audit wording. Those are precise
+&#x20; on purpose, they are the ones read back to the client, and the plain-language
+&#x20; pass on the pay panel is already done and DERIVED FROM THE ENGINE. Shortening
+&#x20; a rule changes what it promises. When a money string reads badly, raise it;
+&#x20; do not rewrite it in a style pass.
+&#x20; ⚠ Work in BATCHES BY SURFACE with the before/after shown, never a 1,500-string
+&#x20; sweep: this repo has 1,593 English strings and a copy regression is invisible
+&#x20; to every test in it.
+
 \- **THE REGISTER RULE — WORKPLACE MALAY, NOT TEXTBOOK MALAY** (owner ruling,
 &#x20; 15 Aug 2026). UWC's office and drivers speak Malay with English loanwords
 &#x20; for role and system terms. "Pentadbir Armada" is a dictionary translation

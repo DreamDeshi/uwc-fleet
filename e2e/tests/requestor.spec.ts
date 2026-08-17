@@ -137,7 +137,7 @@ test.describe("Requestor (mobile web)", () => {
     // Success modal with the new ticket number. Anchored: hidden inactive
     // scenes can hold "TKT-… · <date>" composites of OLDER tickets, and an
     // unanchored .first() can read one of those instead of the modal's.
-    await expect(page.getByText("Booking Submitted!")).toBeVisible();
+    await expect(page.getByText("Booking submitted")).toBeVisible();
     const ticket = await page.getByText(/^TKT-\d{8}-\d{3}$/).last().textContent();
     expect(ticket, "a ticket number should be shown on the success modal").toBeTruthy();
     const ticketNo = ticket!.trim();
