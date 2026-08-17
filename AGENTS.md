@@ -734,7 +734,7 @@ working". Stop and ask what would go red when someone does X. If the answer is
 "nothing, but the comment says not to", you are writing a prediction, and
 predictions do not get read at the moment they matter.
 
-\#### ABSENCE LOOKS EXACTLY LIKE SUCCESS — FIVE INSTANCES IN ONE WEEK
+\#### ABSENCE LOOKS EXACTLY LIKE SUCCESS — SEVEN INSTANCES IN ONE WEEK
 
 ⚠ **THIS IS THE MOST COMMON DEFECT IN THIS REPOSITORY.** It is not a family of
 related mistakes; it is one mistake wearing five costumes, and it has been found
@@ -770,6 +770,33 @@ feature that is silently dark.
    would have arrived ungraded, every call returned null, and the whole admin
    review list gone empty. **An empty review list is indistinguishable from a
    clean week.**
+6. **THE SCREENSHOT THAT SHOWED NO ROUTE LINE** (18 Aug 2026) — the worst of
+   them, because **the VERIFICATION TOOL was the thing showing the false
+   clean.** A capture taken to check a thinned route stroke came back a
+   complete, correct-looking map with no line on it: the shots fixture served no
+   road geometry, so the map correctly drew nothing. "The stroke is now subtle"
+   and "there is no stroke" produce the same image, and the image is what this
+   repo treats as ground truth.
+
+   Everywhere else on this list a test or a query was lying and the screenshot
+   was the appeal of last resort (the ACCOUNT_BLOCK placeholders, the empty
+   driver lane, and `fullPage: true` returning the viewport under UI). **When
+   the appeal of last resort is the thing that is empty, nothing catches it.**
+   So: before reading a capture as evidence FOR a change, confirm the FIXTURE
+   renders the thing you changed at all. Absent and subtle look identical, and
+   only one of them is the work.
+7. **THE PRE-TRIP LINE THAT LEFT WITH THE CONNECTOR** (18 Aug 2026) — the
+   quietest one, and it survived THREE pull requests. Removing the dashed
+   plant→destination two-pointer from the web trip-details map also removed the
+   only `Polyline` there, so the REAL routed geometry stopped being drawn on web
+   while native kept it. Nobody saw it, because a map with no line looks exactly
+   like a map whose line was removed on purpose — **absence reading as INTENT**,
+   inside a change whose entire subject was removing a line.
+
+   The tell was there and unread: the two builds disagreed. When a change
+   deletes something from a `.web.tsx` file, check its native twin still renders
+   the same set afterwards. A divergence created by a deletion has no diff of
+   its own to review.
 
 **THE RULE. When a surface can legitimately show nothing, it must be able to
 tell you WHICH nothing it is.** One of these two, always:
@@ -788,8 +815,10 @@ tell you WHICH nothing it is.** One of these two, always:
 the line that would turn the suite red. If the answer is "the test would pass on
 an empty database", you have not written a test yet.
 
-⚠ A rule with one example gets forgotten. This one has five — add the sixth here
-when you find it, rather than starting a new section.
+⚠ A rule with one example gets forgotten. This one has seven — add the eighth
+here when you find it, rather than starting a new section. It grew twice on the
+day it was written, which is the best evidence available that this is a category
+and not a run of bad luck.
 
 \#### WHEN A JOB FAILS ON YOUR BRANCH, PROVE IT AGAINST MAIN BEFORE TOUCHING THE TEST
 
