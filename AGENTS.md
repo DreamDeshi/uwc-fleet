@@ -854,6 +854,46 @@ Platform:
 &#x20; you asked for.** To capture below the fold, scroll the container
 &#x20; (`page.mouse.wheel`) and take successive shots. Found 15 Aug 2026 capturing
 &#x20; the admin Performance screen at 1440.
+\- ⚠ **A JSX TEXT NODE ACCEPTS ANY STRING, SO A PLACEHOLDER TYPE-CHECKS AND
+&#x20; THEN RENDERS.** On 17 Aug 2026 a scripted restructure of the admin Settings
+&#x20; screen left four marker tokens behind in the tree — lines that read
+&#x20; `ACCOUNT_BLOCK              </View>`. `tsc --noEmit` passed, 680 tests
+&#x20; passed, and the build succeeded, because to TypeScript and to React that is
+&#x20; simply text and text is what JSX is for. The page then rendered the words
+&#x20; ACCOUNT_BLOCK, LANG_BLOCK and UPDATES_BLOCK where three cards should have
+&#x20; been. **Only the screenshot caught it.**
+&#x20; Same family as `fullPage: true` above, and the same tell: every automated
+&#x20; check answered confidently about something OTHER than what was on screen. A
+&#x20; type check proves a tree is well-formed, never that it is the tree you meant.
+&#x20; Two rules follow:
+&#x20; 1. LOOK AT THE RENDERED SCREEN before proposing any layout change — not the
+&#x20;    diff, not the test count, the image. This is now the second UI defect here
+&#x20;    that was invisible to every check and obvious in a PNG.
+&#x20; 2. If you generate or splice JSX with a script, GREP FOR YOUR OWN MARKERS
+&#x20;    before building (`grep -c "_BLOCK"`) — nothing downstream will. A marker
+&#x20;    that is a bare word is indistinguishable from copy; make it something no
+&#x20;    real template could contain.
+
+\- ⚠ **A COMMENT THAT STATES A REASON IS A CLAIM TO DISPROVE, NOT CONTEXT TO
+&#x20; WEIGH.** On 17 Aug 2026 the trips toolbar's date range was collapsed behind
+&#x20; a pill as part of a design pack. The comment being replaced said, in as many
+&#x20; words: the range stays OUT of the disclosure, it defaults to today so it is
+&#x20; the one filter that is ALWAYS active, widening it is the common move, and
+&#x20; **two e2e specs drive it directly**. That was read, reasoned past ("the board
+&#x20; defaults to today, so editing is rare"), and the opposite claim written into
+&#x20; the new comment. Those exact two specs went red in CI.
+&#x20; The rule: when you are about to contradict a comment that gives a REASON,
+&#x20; treat the reason as a claim you must disprove. Check whatever it names FIRST
+&#x20; — here one `grep -rn "input\[value" e2e/` would have ended it — and if you
+&#x20; still disagree, say so in the commit so the next reader sees a decision
+&#x20; rather than a silent reversal.
+&#x20; ⚠ This is the FROZEN-LIST failure in reverse, and the pair is the lesson.
+&#x20; There (see "THIS LIST WAS WRONG ABOUT INTERPLANT SCORING") the record was
+&#x20; STALE and was trusted too long; here it was CORRECT and was trusted too
+&#x20; little. Both are the same omission: nobody checked the record against the
+&#x20; code before acting. A record is evidence, not an authority and not noise —
+&#x20; verify it, then act on what you find.
+
 \- Do NOT add `react-native-svg` (repeatedly rejected; crashes our build).
 &#x20; Icons come from `@expo/vector-icons` (Ionicons).
 \- Do NOT touch native dependency pins (`expo-font` is deliberately pinned;
