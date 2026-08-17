@@ -44,6 +44,7 @@
       "admin": "Try as Admin",
       "driver": "Try as Driver",
       "requestor": "Try as Requestor",
+      "sampleData": "Everything here is sample data, not real deliveries or pay.",
       "or": "or sign in"
     }
   },

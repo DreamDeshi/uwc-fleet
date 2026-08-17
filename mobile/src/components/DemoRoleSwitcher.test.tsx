@@ -160,6 +160,15 @@ describe("demo one-tap login — what the LOGIN SCREEN actually renders", () => 
     for (const label of [...DEMO_LABELS, en.login.demo.title]) {
       expect(html, `production login must not offer "${label}"`).not.toContain(label);
     }
+
+    // ⚠ The sample-data disclosure has NO gate of its own — it lives inside the
+    // panel, which returns null when the account list is empty. That is fine,
+    // and this is what proves it: a line telling real users their deliveries
+    // and pay are "sample data" would be worse than the thing it protects
+    // against.
+    expect(html, "the sample-data line must never reach production").not.toContain(
+      en.login.demo.sampleData
+    );
   });
 
   it("draws all three buttons when the demo build's flag and password are present", async () => {
@@ -171,6 +180,13 @@ describe("demo one-tap login — what the LOGIN SCREEN actually renders", () => 
       expect(html, `demo login must offer "${label}"`).toContain(label);
     }
     expect(html).toContain(en.login.demo.title);
+
+    // And the disclosure IS there on the demo build. Judges arrive by QR from a
+    // public poster with no context and go straight to delivery records and pay
+    // figures; nothing else on the screen says those are invented.
+    expect(html, "the demo build must disclose that the data is synthetic").toContain(
+      en.login.demo.sampleData
+    );
 
     // The normal form stays — the buttons are an addition, not a replacement.
     expect(html).toContain(en.login.signIn);
