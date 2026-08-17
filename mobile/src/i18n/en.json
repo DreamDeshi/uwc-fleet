@@ -146,8 +146,8 @@
     "stop": "Stop {{n}}",
     "arrivedAtPickup": "Arrived at Pickup",
     "markDelivered": "Delivered",
-    "approxLocation": "Approximate — zone centre, check the address",
-    "stopOrderHint": "Deliver in any order — the list order is just a suggestion.",
+    "approxLocation": "Approximate. Zone centre, check the address",
+    "stopOrderHint": "Deliver in any order. The list order is only a suggestion.",
     "multiDest": "{{name}} +{{n}} more",
     "k2Capture": "Upload customs document",
     "k2Uploaded": "Customs document uploaded",
@@ -198,7 +198,7 @@
     "lastStepForStop": "Last step for this stop",
     "stepNOfTotal": "Step {{n}} of {{total}}",
     "allStopsDelivered": "All {{count}} stops delivered",
-    "runFinished": "Your run is finished — nothing left to do today.",
+    "runFinished": "Run finished. Nothing left today.",
     "pendingApprovalChip": "PENDING APPROVAL",
     "statusPending": "Pending",
     "statusApproved": "Approved",
@@ -226,16 +226,16 @@
     "gpsEnable": "Enable Location",
     "gpsNotNow": "Not now",
     "toastArrived": "Marked as arrived.",
-    "alreadyRecorded": "Already recorded — screen updated.",
-    "cameraBlocked": "Camera and photo access are blocked — allow them in your phone's Settings for this app to upload the delivery photo.",
+    "alreadyRecorded": "Already recorded. Screen updated.",
+    "cameraBlocked": "Camera access is blocked. Turn it on in your phone Settings to upload the delivery photo.",
     "toastDelivered": "Stop delivered.",
-    "savedOffline": "Saved on this phone — will upload when you're back online.",
-    "podQueued": "Photo saved — uploads when online",
+    "savedOffline": "Saved on this phone. It uploads when you are back online.",
+    "podQueued": "Photo saved. Uploads when online",
     "outboxSynced": "Saved deliveries uploaded ({{count}})",
-    "outboxOrphaned_one": "A saved delivery could not be uploaded — that stop may need doing again. The photo is kept on this phone; tell the office.",
-    "outboxOrphaned_other": "{{count}} saved deliveries could not be uploaded — those stops may need doing again. The photos are kept on this phone; tell the office.",
-    "outboxDropped_one": "A saved delivery could not be uploaded. Tell the office — that stop may need doing again.",
-    "outboxDropped_other": "{{count}} saved deliveries could not be uploaded. Tell the office — those stops may need doing again."
+    "outboxOrphaned_one": "A saved delivery did not upload. The photo is still on this phone. Tell the office, because that stop may need doing again.",
+    "outboxOrphaned_other": "{{count}} saved deliveries did not upload. The photos are still on this phone. Tell the office, because those stops may need doing again.",
+    "outboxDropped_one": "A saved delivery did not upload. Tell the office, because that stop may need doing again.",
+    "outboxDropped_other": "{{count}} saved deliveries did not upload. Tell the office, because those stops may need doing again."
   },
   "myStats": {
     "title": "My Stats",
@@ -351,7 +351,7 @@
     "lastFillShort": "Last: {{when}} · {{litres}} L",
     "staleNudge_one": "{{count}} day since last fill — log fuel?",
     "staleNudge_other": "{{count}} days since last fill — log fuel?",
-    "neverLogged": "no fills logged yet — log fuel?"
+    "neverLogged": "no fills logged yet. Log fuel?"
   },
   "requestor": {
     "greeting": "Hi, {{name}}",

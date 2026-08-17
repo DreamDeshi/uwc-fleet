@@ -146,8 +146,8 @@
     "stop": "Hentian {{n}}",
     "arrivedAtPickup": "Tiba di Lokasi Ambil",
     "markDelivered": "Telah Dihantar",
-    "approxLocation": "Anggaran — pusat zon, semak alamat",
-    "stopOrderHint": "Hantar ikut sebarang urutan — susunan senarai hanya cadangan.",
+    "approxLocation": "Anggaran. Pusat zon, semak alamat",
+    "stopOrderHint": "Hantar ikut sebarang urutan. Susunan senarai hanya cadangan.",
     "multiDest": "{{name}} +{{n}} lagi",
     "payBreakdownTitle": "Pecahan Bayaran",
     "payBreakdownPts": "{{pts}} mata",
@@ -194,7 +194,7 @@
     "lastStepForStop": "Langkah terakhir untuk hentian ini",
     "stepNOfTotal": "Langkah {{n}} daripada {{total}}",
     "allStopsDelivered": "Semua {{count}} hentian telah dihantar",
-    "runFinished": "Perjalanan anda selesai — tiada apa-apa lagi hari ini.",
+    "runFinished": "Perjalanan selesai. Tiada apa-apa lagi hari ini.",
     "pendingApprovalChip": "MENUNGGU KELULUSAN",
     "k2Capture": "Muat naik dokumen kastam",
     "k2Uploaded": "Dokumen kastam dimuat naik",
@@ -226,16 +226,16 @@
     "gpsEnable": "Aktifkan Lokasi",
     "gpsNotNow": "Bukan sekarang",
     "toastArrived": "Ditanda sebagai tiba.",
-    "alreadyRecorded": "Sudah direkodkan — skrin dikemas kini.",
-    "cameraBlocked": "Akses kamera dan foto disekat — benarkan dalam Tetapan telefon untuk aplikasi ini bagi memuat naik foto penghantaran.",
+    "alreadyRecorded": "Sudah direkodkan. Skrin dikemas kini.",
+    "cameraBlocked": "Akses kamera disekat. Hidupkan dalam Tetapan telefon untuk memuat naik foto penghantaran.",
     "toastDelivered": "Hentian dihantar.",
-    "savedOffline": "Disimpan pada telefon ini — akan dimuat naik apabila talian kembali.",
-    "podQueued": "Foto disimpan — dimuat naik apabila dalam talian",
+    "savedOffline": "Disimpan pada telefon ini. Ia dimuat naik apabila talian kembali.",
+    "podQueued": "Foto disimpan. Dimuat naik apabila dalam talian",
     "outboxSynced": "Penghantaran tersimpan telah dimuat naik ({{count}})",
-    "outboxOrphaned_one": "Satu penghantaran tersimpan tidak dapat dimuat naik — hentian itu mungkin perlu diulang. Foto disimpan pada telefon ini; beritahu pejabat.",
-    "outboxOrphaned_other": "{{count}} penghantaran tersimpan tidak dapat dimuat naik — hentian itu mungkin perlu diulang. Foto disimpan pada telefon ini; beritahu pejabat.",
-    "outboxDropped_one": "Satu penghantaran yang disimpan gagal dimuat naik. Beritahu pejabat — hentian itu mungkin perlu diulang.",
-    "outboxDropped_other": "{{count}} penghantaran yang disimpan gagal dimuat naik. Beritahu pejabat — hentian tersebut mungkin perlu diulang."
+    "outboxOrphaned_one": "Satu penghantaran tersimpan tidak dapat dimuat naik. Foto masih ada pada telefon ini. Beritahu pejabat, kerana hentian itu mungkin perlu diulang.",
+    "outboxOrphaned_other": "{{count}} penghantaran tersimpan tidak dapat dimuat naik. Foto masih ada pada telefon ini. Beritahu pejabat, kerana hentian itu mungkin perlu diulang.",
+    "outboxDropped_one": "Satu penghantaran tersimpan tidak dapat dimuat naik. Beritahu pejabat, kerana hentian itu mungkin perlu diulang.",
+    "outboxDropped_other": "{{count}} penghantaran tersimpan tidak dapat dimuat naik. Beritahu pejabat, kerana hentian itu mungkin perlu diulang."
   },
   "myStats": {
     "title": "Statistik Saya",
@@ -351,7 +351,7 @@
     "lastFillShort": "Terakhir: {{when}} · {{litres}} L",
     "staleNudge_one": "{{count}} hari sejak isian terakhir — log minyak?",
     "staleNudge_other": "{{count}} hari sejak isian terakhir — log minyak?",
-    "neverLogged": "belum ada isian direkodkan — log minyak?"
+    "neverLogged": "belum ada isian direkodkan. Log minyak?"
   },
   "requestor": {
     "greeting": "Hai, {{name}}",
