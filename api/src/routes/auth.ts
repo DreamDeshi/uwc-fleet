@@ -9,6 +9,7 @@ import { accountStatusError, requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { sensitiveRateLimiter } from "../middleware/rateLimit";
 import { isStrongPassword, passwordProblemMessage } from "../lib/passwordPolicy";
+import { BCRYPT_COST, burnPasswordCompare } from "../lib/loginTiming";
 import {
   CLEARED_LOCKOUT_STATE,
   afterFailedAttempt,
@@ -27,7 +28,6 @@ import {
 
 const router = Router();
 
-const BCRYPT_COST = 10;
 
 // ── POST /auth/register ──────────────────────────────────────────────
 
@@ -115,6 +115,12 @@ router.post("/login", sensitiveRateLimiter, validateBody(loginSchema), async (re
     const phone = normalizePhone(req.body.phone);
     const user = await prisma.user.findUnique({ where: { phone } });
     if (!user) {
+      // ⚠ PAY THE BCRYPT COST ANYWAY. Returning here without hashing made an
+      // unknown phone answer ~100ms faster than a real one, which turned one
+      // request into a phone-number oracle while the response body said nothing.
+      // See lib/loginTiming for what this closes and what it deliberately does
+      // not. Do NOT "optimise" this call away.
+      await burnPasswordCompare(password);
       throw new ApiError(401, "INVALID_CREDENTIALS", "Phone number or password is incorrect.");
     }
 
