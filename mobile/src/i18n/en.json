@@ -1397,7 +1397,7 @@
       "statusAll": "All",
       "groupPending": "Pending Dispatch",
       "groupActive": "Active",
-      "groupCompleted": "Completed",
+      "groupDelivered": "Delivered",
       "groupCancelled": "Cancelled / Rejected",
       "noMatch": "No trips match these filters.",
       "noTrips": "No trips yet.",

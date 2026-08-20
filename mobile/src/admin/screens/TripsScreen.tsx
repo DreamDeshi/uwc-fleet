@@ -70,7 +70,17 @@ const GROUP_ORDER = ["pending", "active", "completed", "cancelled"] as const;
 const GROUP_META: Record<string, { labelKey: string; dot: string; tint: string; fg: string }> = {
   pending: { labelKey: "admin.trips.groupPending", dot: colors.orange, tint: colors.orangeTint, fg: "#B45309" },
   active: { labelKey: "admin.trips.groupActive", dot: colors.blue, tint: colors.blueTint, fg: colors.blue },
-  completed: { labelKey: "admin.trips.groupCompleted", dot: colors.green, tint: colors.greenTint, fg: status.success.text },
+  // ⚠ THE GROUP ID IS `completed`; THE LABEL SAYS "Delivered", ON PURPOSE.
+  // tripGroup() folds `pending_approval` in here — delivered work whose
+  // incentive is still waiting on an admin — and that grouping is right: it
+  // belongs with completed trips, not with failures. The WORD was the problem.
+  // "Completed 5" told an admin five trips were settled while two still needed
+  // approving, and approving is where the money moves. "Delivered" is true of
+  // all five and matches what every other surface already calls this state
+  // (trip.statusDelivered, bookingDetail.state_pending_approval).
+  // Renaming the group ID as well would touch tripGroup, GROUP_ORDER, their
+  // tests and tripPages for no gain — the id is internal, the label is read.
+  completed: { labelKey: "admin.trips.groupDelivered", dot: colors.green, tint: colors.greenTint, fg: status.success.text },
   cancelled: { labelKey: "admin.trips.groupCancelled", dot: "#9ca3af", tint: "#F3F4F6", fg: "#4B5563" },
 };
 

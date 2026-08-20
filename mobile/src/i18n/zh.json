@@ -1397,7 +1397,7 @@
       "statusAll": "全部",
       "groupPending": "待调度",
       "groupActive": "进行中",
-      "groupCompleted": "已完成",
+      "groupDelivered": "已送达",
       "groupCancelled": "已取消 / 已拒绝",
       "noMatch": "没有符合筛选的行程。",
       "noTrips": "暂无行程。",
