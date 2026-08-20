@@ -147,7 +147,7 @@
     "stop": "停靠点 {{n}}",
     "arrivedAtPickup": "已到达提货点",
     "markDelivered": "已送达",
-    "approxLocation": "大致位置 — {{zone}} 区域，非确切建筑。",
+    "approxLocation": "大致位置 — {{zone}} 区域，非确切建筑。请核对地址。",
     "stopOrderHint": "送货顺序可自行安排。列表顺序仅供参考。",
     "multiDest": "{{name}} 及另外 {{n}} 站",
     "payBreakdownTitle": "薪酬明细",

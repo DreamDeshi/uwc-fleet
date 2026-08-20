@@ -147,7 +147,7 @@
     "stop": "Hentian {{n}}",
     "arrivedAtPickup": "Tiba di Lokasi Ambil",
     "markDelivered": "Telah Dihantar",
-    "approxLocation": "Pin anggaran — kawasan {{zone}}, bukan bangunan tepat.",
+    "approxLocation": "Pin anggaran — kawasan {{zone}}, bukan bangunan tepat. Semak alamat.",
     "stopOrderHint": "Hantar ikut sebarang urutan. Susunan senarai hanya cadangan.",
     "multiDest": "{{name}} +{{n}} lagi",
     "payBreakdownTitle": "Pecahan Bayaran",

@@ -147,7 +147,7 @@
     "stop": "Stop {{n}}",
     "arrivedAtPickup": "Arrived at Pickup",
     "markDelivered": "Delivered",
-    "approxLocation": "Approximate pin — {{zone}} area, not the exact building.",
+    "approxLocation": "Approximate pin — {{zone}} area, not the exact building. Check the address.",
     "stopOrderHint": "Deliver in any order. The list order is only a suggestion.",
     "multiDest": "{{name}} +{{n}} more",
     "k2Capture": "Upload customs document",
