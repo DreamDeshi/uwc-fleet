@@ -146,6 +146,38 @@ Use anonymised or synthetic fixtures in public code and tests.
 
 
 
+\## Production is the client's trial record — DO NOT TEST ON IT
+
+⚠ **STANDING RULE, 20 Aug 2026. IT REVERSES the earlier instruction that work
+happens on production.** Production is in real client testing. From this point
+its data is the record the client is evaluating, and creating or deleting
+anything in it corrupts what they are judging.
+
+- **No test bookings, no test trips, no seeded demo rows, no exploratory
+  writes.** Not "just one to check", not a trip you intend to delete afterwards.
+- **Anything that needs trying goes on the DEMO instance** — project
+  `uwc-fleet-demo`, database `uwc_demo`, plates `UWC 1001`–`1009`.
+- **Reads stay allowed**, and still assert identity BEFORE reporting anything.
+  See "A PROD PROBE ASSERTS IDENTITY FIRST" below.
+- If a task appears to require a write to production, **STOP AND ASK.** A
+  written instruction from the owner is the only thing that lifts this, and it
+  lifts it once — for that task, not as a new default.
+
+**WHY THIS IS WRITTEN DOWN RATHER THAN REMEMBERED.** Production was wiped and
+re-staged repeatedly through Jul–Aug 2026, every time for a defensible same-day
+reason: a video, a poster, a demo rehearsal, a tidy-up. Each was harmless
+because nobody was reading the data. A client trial is exactly the moment that
+stops being true — and the *earlier* instruction, that work happens on
+production, is still sitting in this repository's history looking every bit as
+authoritative as this one. The later rule governs.
+
+⚠ The 20 Aug 2026 cleanup that preceded this rule found that **every trip then
+in production had been booked by a test account** ("Test Requestor"), including
+one completed trip carrying an approved `incentive_final` of RM 36 against a
+real driver — money no route can rewrite once approved. That is what casual
+testing on production leaves behind. Owner decision the same day: production
+stays EMPTY; the populated walkthrough is the demo's job.
+
 \## Frozen work
 
 
@@ -796,12 +828,12 @@ working". Stop and ask what would go red when someone does X. If the answer is
 "nothing, but the comment says not to", you are writing a prediction, and
 predictions do not get read at the moment they matter.
 
-\#### ABSENCE LOOKS EXACTLY LIKE SUCCESS — NINE INSTANCES IN ONE WEEK
+\#### ABSENCE LOOKS EXACTLY LIKE SUCCESS — TEN INSTANCES
 
 ⚠ **THIS IS THE MOST COMMON DEFECT IN THIS REPOSITORY.** It is not a family of
-related mistakes; it is one mistake wearing five costumes, and it has been found
-five times in seven days. Read the list before writing any code that can produce
-an empty result.
+related mistakes; it is one mistake wearing many costumes, and it has been found
+ten times in nine days - the last one in code running in PRODUCTION. Read the
+list before writing any code that can produce an empty result.
 
 **The shape.** A surface, a query, a guard or a lane produces NOTHING. Two very
 different causes produce that identical nothing:
@@ -893,6 +925,29 @@ feature that is silently dark.
    two causes produce the same count and the code cannot tell them apart, print
    both and name the check that would separate them — never quietly pick the
    benign one.
+
+10. **THE PUSH THAT WENT TO NOBODY** (20 Aug 2026) — the first instance found
+   in PRODUCTION rather than in a test, and it has been live the whole time.
+
+   `routes/exceptions.ts:536` and `routes/leaves.ts:102` both notify admins the
+   same way:
+
+       where: { role: "admin", status: "active", expo_push_token: { not: null } }
+
+   Production holds **zero** push tokens — 0 of 11 users, including both
+   admins. So the filter returns `[]`, `sendPushNotifications([])` resolves
+   cleanly, and both paths report success on every run while reaching nobody.
+   No error, no log line, no retry.
+
+   ⚠ **An empty recipient list and "everyone was notified" are the same
+   non-event.** The code is correct; the filter is right; there is simply
+   nothing on the other end, and nothing in the system is shaped to say so. It
+   surfaced only because someone asked whether push could carry a NEW alert and
+   checked the token count first — not because two shipped notification
+   features had been dark for weeks.
+
+   The fix is not the filter. It is that a send with zero recipients is a
+   FINDING, not a success: count them, and say which nothing it is.
 
 **THE RULE. When a surface can legitimately show nothing, it must be able to
 tell you WHICH nothing it is.** One of these two, always:
