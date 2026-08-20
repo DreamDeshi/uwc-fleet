@@ -467,7 +467,7 @@
     "legacyCargoLabel": "Legacy sizes (no longer selectable)",
     "legacyCargoRow": "{{size}} ft × {{qty}} (legacy)",
     "legacyCargoRemove": "Remove legacy {{size}} cargo",
-    "totalPallets": "Total: {{spaces}} pallet spaces",
+    "totalPallets": "Total pallet spaces: {{spaces}}",
     "numCartons": "Number of Cartons",
     "describeCargo": "Describe your cargo",
     "cargoPlaceholder": "Specify cargo size and type…",

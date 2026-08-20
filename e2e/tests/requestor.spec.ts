@@ -122,7 +122,7 @@ test.describe("Requestor (mobile web)", () => {
     await expect(page.getByText("Cargo Size & Quantity")).toBeVisible();
     // selector-ok: the quantity stepper glyph is not a translated string
     await page.getByText("+", { exact: true }).first().click();
-    await expect(page.getByText("Total: 1 pallets")).toBeVisible();
+    await expect(page.getByText("Total pallet spaces: 1")).toBeVisible();
     await page.getByText("Next", { exact: true }).click();
 
     // ── Step 3: When ── the pickup slot is pre-filled with the next bookable

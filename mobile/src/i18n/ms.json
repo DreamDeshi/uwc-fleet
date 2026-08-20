@@ -467,7 +467,7 @@
     "legacyCargoLabel": "Saiz lama (tidak lagi boleh dipilih)",
     "legacyCargoRow": "{{size}} kaki × {{qty}} (lama)",
     "legacyCargoRemove": "Buang kargo lama {{size}}",
-    "totalPallets": "Jumlah: {{spaces}} ruang palet",
+    "totalPallets": "Jumlah ruang palet: {{spaces}}",
     "numCartons": "Bilangan Kotak",
     "describeCargo": "Terangkan kargo anda",
     "cargoPlaceholder": "Nyatakan saiz dan jenis kargo…",

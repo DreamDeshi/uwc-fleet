@@ -467,7 +467,7 @@
     "legacyCargoLabel": "旧尺寸（不再可选）",
     "legacyCargoRow": "{{size}} 英尺 × {{qty}}（旧）",
     "legacyCargoRemove": "移除旧货物 {{size}}",
-    "totalPallets": "共 {{spaces}} 个托盘位",
+    "totalPallets": "总托盘位：{{spaces}}",
     "numCartons": "纸箱数量",
     "describeCargo": "描述您的货物",
     "cargoPlaceholder": "请注明货物尺寸和类型…",
