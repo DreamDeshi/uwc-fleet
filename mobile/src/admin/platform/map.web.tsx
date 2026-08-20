@@ -19,6 +19,7 @@ import { formatTime } from "../lib/format";
 import { groupFleet, type FleetGroup } from "../lib/fleetGroups";
 import { colors } from "../theme";
 import type { LivePosition, Truck } from "../types";
+import { formatPalletSpaces } from "../../lib/pallets";
 
 const truckColor: Record<string, string> = {
   active: colors.green,
@@ -225,7 +226,7 @@ export function AdminFleetMap({
                 <br />
                 {tr.driver?.name ?? t("admin.dashboard.mapNoDriver")}
                 <br />
-                {t("admin.dashboard.loadPallets", { load: tr.current_load, capacity: tr.max_pallets })}
+                {t("admin.dashboard.loadPallets", { load: formatPalletSpaces(tr.current_load), capacity: formatPalletSpaces(tr.max_pallets) })}
                 <br />
                 <span style={{ color: isLive ? colors.green : colors.textMuted, fontWeight: 700 }}>
                   {isLive

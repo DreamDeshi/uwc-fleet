@@ -23,6 +23,7 @@ import { shouldReconcileStart } from "../../lib/startTrip";
 import { buildDriverDay, currentStopNumber, stopProgress, stopsOf } from "../../lib/driverHome";
 import type { DriverDay } from "../../lib/driverHome";
 import { Trip } from "../../types";
+import { formatPalletSpaces } from "../../lib/pallets";
 
 type Nav = BottomTabNavigationProp<DriverTabParamList>;
 
@@ -303,7 +304,7 @@ function PrimaryTripCard({
               : [
                   relative,
                   t("driver.stopCount", { n: progress.total }),
-                  t("driver.palletCount", { n: totalPallets(trip) }),
+                  t("driver.palletCount", { spaces: formatPalletSpaces(totalPallets(trip)) }),
                 ]
                   .filter(Boolean)
                   .join(" · ")}

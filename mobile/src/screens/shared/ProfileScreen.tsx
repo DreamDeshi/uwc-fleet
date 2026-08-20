@@ -15,6 +15,7 @@ import { EditProfileModal, ChangePasswordModal } from "../../components/AccountM
 import { FeedbackModal } from "../../components/FeedbackModal";
 import { AppUpdatesCard } from "../../components/AppUpdatesCard";
 import { OutdoorModeRow } from "../../components/OutdoorModeRow";
+import { formatPalletSpaces } from "../../lib/pallets";
 
 // Profile, rebuilt to the approved design (frame 37).
 //
@@ -117,7 +118,7 @@ export function ProfileScreen() {
                 <Text style={styles.plateText}>{user.assigned_truck.plate}</Text>
               </View>
               <Text style={styles.truckMeta} numberOfLines={1}>
-                {user.assigned_truck.type} · {t("driver.palletCount", { n: user.assigned_truck.max_pallets })}
+                {user.assigned_truck.type} · {t("driver.palletCount", { spaces: formatPalletSpaces(user.assigned_truck.max_pallets) })}
               </Text>
             </View>
           ) : null}

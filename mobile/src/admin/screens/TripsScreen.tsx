@@ -63,6 +63,7 @@ import { FilterPresets } from "../components/FilterPresets";
 import { UndoBar, useUndoableAction, type UndoActionType, type UndoController } from "../components/UndoBar";
 import { OptionsModal } from "../../components/OptionsModal";
 import type { Trip, SchedulingConflictInfo } from "../types";
+import { formatPalletSpaces } from "../../lib/pallets";
 
 const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
 
@@ -942,7 +943,7 @@ function TripCard({
         </Text>
       </View>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-        <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.palletsShort", { count: totalPallets(trip) })}</Text>
+        <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.palletsShort", { spaces: formatPalletSpaces(totalPallets(trip)) })}</Text>
         <Text numberOfLines={1} style={{ fontSize: font.sm, color: colors.textMuted, flexShrink: 1 }}>
           {trip.driver?.name ?? ""}
         </Text>
@@ -1007,7 +1008,7 @@ function TripDetail({ trip, onDone, onSchedule }: { trip: Trip; onDone: () => vo
       {/* Info row */}
       <View style={{ flexDirection: wide ? "row" : "column", gap: 12, marginBottom: 18 }}>
         <InfoTile label={t("admin.trips.infoRequestor")} value={trip.requestor.name} sub={trip.requestor.phone} wide={wide} />
-        <InfoTile label={t("admin.trips.infoCargo")} value={t("admin.trips.palletsShort", { count: totalPallets(trip) })} sub={cargoSummary(trip)} wide={wide} />
+        <InfoTile label={t("admin.trips.infoCargo")} value={t("admin.trips.palletsShort", { spaces: formatPalletSpaces(totalPallets(trip)) })} sub={cargoSummary(trip)} wide={wide} />
         <InfoTile label={t("admin.trips.infoConsignee")} value={tripConsigneeName(trip)} sub={t("admin.trips.stopsCount", { count: trip.stops.length })} wide={wide} />
       </View>
 
@@ -1368,7 +1369,7 @@ function DispatchPanel({ trip, onDone }: { trip: Trip; onDone: () => void }) {
       {tab === "internal" ? (
         <View>
           <Text style={{ fontSize: font.sm, color: colors.textMuted, marginBottom: 10 }}>
-            {t("admin.trips.showingDrivers", { count: pallets })}
+            {t("admin.trips.showingDrivers", { spaces: formatPalletSpaces(pallets) })}
           </Text>
           <DriverGrid trip={trip} busy={approve.isPending} onPick={(driverId, plate) => assign(driverId, plate)} />
         </View>
@@ -1426,7 +1427,7 @@ function ExternalForm({ trip, onDone }: { trip: Trip; onDone: () => void }) {
   // yesterday for early-morning MYT pickups; audit 2026-07-05 #8).
   const [date, setDate] = useState(mytDateKey(trip.pickup_datetime));
   const [rate, setRate] = useState("");
-  const [cargo, setCargo] = useState(t("admin.trips.palletsShort", { count: totalPallets(trip) }));
+  const [cargo, setCargo] = useState(t("admin.trips.palletsShort", { spaces: formatPalletSpaces(totalPallets(trip)) }));
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const assign = useAssignExternal();

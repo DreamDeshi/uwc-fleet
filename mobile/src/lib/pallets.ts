@@ -217,3 +217,34 @@ export function palletEquivalents(cargo: CargoLine[]): number {
   }, 0);
   return Math.round(total * 10000) / 10000;
 }
+
+/**
+ * A pallet figure as a HUMAN reads it. Display only — never feed this back into
+ * arithmetic, and never round the stored value to match it.
+ *
+ * ⚠ WHY THIS EXISTS. Every factor is area ÷ 16, so any load mixing small
+ * footprints lands on a fraction: a 3×3 plus a 2×3 plus four 4×4 is exactly
+ * 5.9375, and the dispatch board rendered that as "5.875 pallets" (a real
+ * screenshot, 20 Aug 2026). The arithmetic was right and the sentence was
+ * unreadable — nobody stacks seven eighths of a pallet, so a true number read
+ * as a broken one.
+ *
+ * TWO decisions, both the owner's (20 Aug 2026):
+ *
+ *  1. ONE DECIMAL, and whole numbers bare. "6", not "6.0"; "5.9", not "5.9375".
+ *     Rounding happens to the DISPLAY, after the maths, so capacity checks keep
+ *     the full precision they need (`remaining >= pallets` must not be decided
+ *     on a rounded figure).
+ *  2. THE UNIT IS "PALLET SPACES", not "pallets" — see the i18n strings. It is a
+ *     measurement of lorry deck, which is what the number actually is, and it
+ *     is the half of the fix that makes the fraction read as a measurement
+ *     rather than as a fault.
+ *
+ * ⚠ ROUND FIRST, THEN DECIDE WHOLE. 5.95 must print "6", not "6.0" — testing
+ * `Number.isInteger(n)` on the RAW value gets that wrong.
+ */
+export function formatPalletSpaces(n: number): string {
+  if (!Number.isFinite(n)) return "0";
+  const rounded = Math.round(n * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
