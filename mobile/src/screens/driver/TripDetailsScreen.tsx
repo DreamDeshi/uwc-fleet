@@ -226,6 +226,14 @@ export function TripDetailsScreen() {
                         <Text style={styles.consigneeSub}>{s.consignee.contact_person}</Text>
                       ) : null}
                       {addr ? <Text style={styles.consigneeArea}>{addr}</Text> : null}
+                      {/* Only when the pin is NOT the building. Silence means
+                          building-level, so the line is information rather than
+                          decoration. Same verdict the map and Navigate use. */}
+                      {!consigneeDestination(s.consignee).precise ? (
+                        <Text style={styles.consigneeArea}>
+                          {t("trip.approxLocation", { zone: s.consignee?.zone_code ?? "—" })}
+                        </Text>
+                      ) : null}
                     </View>
                     {s.consignee?.phone ? (
                       <TouchableOpacity

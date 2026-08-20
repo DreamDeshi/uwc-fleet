@@ -63,6 +63,15 @@ export interface Consignee {
   postal_code?: string | null;
   zone_code: string;
   is_active?: boolean;
+  /**
+   * FALSE when this address falls back to the zone centre rather than a real
+   * building. Server-derived from coordinate presence (routes/consignees).
+   *
+   * Optional, and readers must test `=== false`: UNDEFINED means an older
+   * payload that never carried the field, which is NOT the same claim as
+   * "this one is area-level" and must not draw the chip.
+   */
+  has_position?: boolean;
 }
 
 // ── Payroll (GET /reports/payroll) ────────────────────────────────────

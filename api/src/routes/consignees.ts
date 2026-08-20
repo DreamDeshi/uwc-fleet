@@ -89,6 +89,21 @@ interface ConsigneeRow {
   zone_code: string;
   zone_name: string | null;
   is_active: boolean;
+  /**
+   * TRUE when this consignee has a real building position; FALSE when the map
+   * falls back to the zone centre.
+   *
+   * A BOOLEAN, NOT THE COORDINATES. The list needs the verdict, not the
+   * position, and a directory payload is a poor place to start shipping
+   * lat/lng.
+   *
+   * DERIVED FROM COORD PRESENCE, NEVER FROM geocode_match_type. That column
+   * holds two provider vocabularies (Geoapify's `full_match`, Google's
+   * `ROOFTOP`) depending on which script last wrote the row. The precision gate
+   * is applied at WRITE time and stores NULL for anything coarse, so a non-null
+   * pair IS the verdict. Same rule mobile/src/lib/geo.ts follows.
+   */
+  has_position: boolean;
 }
 
 router.get("/", async (req, res, next) => {
@@ -118,7 +133,8 @@ router.get("/", async (req, res, next) => {
       rows = await prisma.$queryRaw<ConsigneeRow[]>(Prisma.sql`
         SELECT c.id, c.company_name, c.vendor_code, c.contact_person, c.phone,
                c.area, c.state, c.address_1, c.address_2, c.postal_code,
-               c.zone_code, z.name AS zone_name, c.is_active
+               c.zone_code, z.name AS zone_name, c.is_active,
+               (c.latitude IS NOT NULL AND c.longitude IS NOT NULL) AS has_position
         FROM "Consignee" c
         LEFT JOIN "Zone" z ON z.code = c.zone_code
         WHERE ${includeInactive ? Prisma.sql`1 = 1` : Prisma.sql`c.is_active = true`}
@@ -157,12 +173,22 @@ router.get("/", async (req, res, next) => {
           postal_code: true,
           zone_code: true,
           is_active: true,
+          // Selected ONLY to derive has_position below; the coordinates
+          // themselves are never returned. Dropping either column silently
+          // turns every row into "area only", which is why
+          // tests/consigneeHasPosition asserts BOTH branches carry it.
+          latitude: true,
+          longitude: true,
           zone: { select: { name: true } },
         },
         orderBy: { company_name: "asc" },
         take: RESULT_LIMIT,
       });
-      rows = head.map((c) => ({ ...c, zone_name: c.zone?.name ?? null }));
+      rows = head.map((c) => ({
+        ...c,
+        zone_name: c.zone?.name ?? null,
+        has_position: c.latitude !== null && c.longitude !== null,
+      }));
     }
 
     // Strip the company suffix for display; keep the same response shape the
@@ -184,6 +210,7 @@ router.get("/", async (req, res, next) => {
         postal_code: r.postal_code,
         zone_code: r.zone_code,
         is_active: r.is_active,
+        has_position: r.has_position,
         zone: r.zone_name ? { code: r.zone_code, name: r.zone_name } : null,
       }))
     );

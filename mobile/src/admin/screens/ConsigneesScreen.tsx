@@ -153,6 +153,15 @@ export function ConsigneesScreen() {
                     <Text style={{ fontSize: font.md, fontWeight: "700", color: colors.text, flexShrink: 1 }}>
                       {c.company_name}
                     </Text>
+                    {/* Quiet by design: about one active consignee in four is
+                        area-level, so a warning colour here would be noise the
+                        admin learns to ignore. `=== false` because undefined
+                        means the payload never carried the field. */}
+                    {c.has_position === false && (
+                      <Pill bg={colors.greyTint} fg={colors.greyStrong} border={colors.greyBorder} dot={colors.textFaint}>
+                        {t("admin.consignees.areaOnly")}
+                      </Pill>
+                    )}
                     {c.is_active === false && (
                       <Pill bg={colors.greyTint} fg={colors.greyStrong} border={colors.greyBorder} dot={colors.textFaint}>
                         {t("admin.consignees.deactivated")}

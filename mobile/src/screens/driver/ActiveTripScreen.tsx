@@ -769,7 +769,7 @@ export function ActiveTripScreen() {
                 "—"}
             </Text>
             {!destination.precise ? (
-              <Text style={styles.approx}>{t("trip.approxLocation")}</Text>
+              <Text style={styles.approx}>{t("trip.approxLocation", { zone: activeStop.consignee?.zone_code ?? tripDestZone(trip) })}</Text>
             ) : null}
 
             {/* Before the POD: the full-width Maps CTA + Call / Problem.
