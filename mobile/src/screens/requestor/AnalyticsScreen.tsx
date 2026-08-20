@@ -11,6 +11,7 @@ import { LoadingState, ErrorState } from "../../components/States";
 import { WeeklyEarningsChart, WeekDatum } from "../../components/WeeklyEarningsChart";
 import { periodStats, weekSeries, type InsightsPeriod } from "../../lib/requestorInsights";
 import { monthYear, weekdayShortNames } from "../../lib/format";
+import { formatPalletSpaces } from "../../lib/pallets";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function monthShort(key: string): string {
@@ -139,7 +140,7 @@ export function AnalyticsScreen() {
     <View style={styles.tileRow}>
       <Tile
         icon="cube-outline"
-        value={stats.avgPallets === null ? "—" : String(stats.avgPallets)}
+        value={stats.avgPallets === null ? "—" : formatPalletSpaces(stats.avgPallets)}
         label={t("analytics.avgPallets")}
       />
       <Tile icon="checkmark-done-outline" value={String(stats.completed)} label={t("analytics.tripsDone")} />

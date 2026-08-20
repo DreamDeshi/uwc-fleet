@@ -25,6 +25,7 @@ import { apiErrorMessage } from "../services/api";
 import { formatDate, formatMoney, formatTime, mytDateKey } from "../lib/format";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import type { DocExpiry, ExpiryStatus, Truck, TruckAlert, TruckExpiryAlert, TruckLoading } from "../types";
+import { formatPalletSpaces } from "../../lib/pallets";
 
 const STATUS_META: Record<string, { labelKey: string; bg: string; fg: string; dot: string }> = {
   active: { labelKey: "admin.trucks.statusActive", bg: colors.greenTint, fg: status.success.text, dot: colors.green },
@@ -302,7 +303,7 @@ function CurrentLoading({ loading }: { loading: TruckLoading[] }) {
               {l.ticket_number}
             </Text>
             <Text style={{ fontSize: font.xs, color: colors.textMuted }}>
-              {t("admin.trucks.palletsCount", { count: l.pallets })}
+              {t("admin.trucks.palletsCount", { spaces: formatPalletSpaces(l.pallets) })}
             </Text>
           </View>
           {/* Destination company — the ask. A multi-drop run names its final
@@ -489,7 +490,7 @@ function TruckCard({ truck: tr, onManage }: { truck: Truck; onManage: () => void
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={truckStyles.idPlate}>{tr.plate}</Text>
           <Text style={truckStyles.idMeta}>
-            {tr.type} · {t("admin.trucks.palletsCount", { count: tr.max_pallets })}
+            {tr.type} · {t("admin.trucks.palletsCount", { spaces: formatPalletSpaces(tr.max_pallets) })}
           </Text>
         </View>
         {/* On the dark band the pill's light tint would vanish, so it wears a

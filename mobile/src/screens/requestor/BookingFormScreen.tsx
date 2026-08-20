@@ -81,6 +81,7 @@ import { formatDate, formatTime } from "../../lib/format";
 import { uuidv4 } from "../../lib/uuid";
 import { Consignee, RouteType, Trip } from "../../types";
 import { changeRequestsEnabled } from "../../lib/featureFlags";
+import { formatPalletSpaces } from "../../lib/pallets";
 
 type Nav = BottomTabNavigationProp<RequestorTabParamList>;
 
@@ -1461,7 +1462,7 @@ function StepWhat({
               whenever the load isn't all 4×4s. Both are labelled. */}
           <View style={styles.capacityCard}>
             <View style={styles.capacityHead}>
-              <Text style={styles.capacityCount}>{t("booking.totalPallets", { count: totalPallets })}</Text>
+              <Text style={styles.capacityCount}>{t("booking.totalPallets", { spaces: formatPalletSpaces(totalPallets) })}</Text>
               <Text style={styles.capacitySlots}>
                 {t("booking.truckSlots", {
                   used: Math.round(totalEquivalents * 10) / 10,
@@ -1486,7 +1487,7 @@ function StepWhat({
             <View style={styles.warnNote}>
               <Ionicons name="warning-outline" size={18} color="#b45309" />
               <Text style={styles.warnNoteText}>
-                {t("booking.largeLoadWarning", { count: totalEquivalents })}
+                {t("booking.largeLoadWarning", { spaces: formatPalletSpaces(totalEquivalents) })}
               </Text>
             </View>
           ) : null}

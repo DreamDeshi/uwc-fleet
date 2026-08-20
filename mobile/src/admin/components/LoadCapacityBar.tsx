@@ -6,6 +6,7 @@ import { Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { colors, font, radius } from "../theme";
+import { formatPalletSpaces } from "../../lib/pallets";
 
 export function LoadCapacityBar({
   load,
@@ -31,7 +32,7 @@ export function LoadCapacityBar({
           </Text>
         </View>
         <Text style={{ fontSize: font.sm, fontWeight: "700", color: fillColor }}>
-          {t("admin.dashboard.loadPallets", { load, capacity })}
+          {t("admin.dashboard.loadPallets", { load: formatPalletSpaces(load), capacity: formatPalletSpaces(capacity) })}
         </Text>
       </View>
 

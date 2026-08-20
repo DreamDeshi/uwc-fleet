@@ -1,6 +1,7 @@
 import type { Trip, TripStatus } from "../types";
-import { palletFactor } from "../../lib/pallets";
+import { palletFactor, formatPalletSpaces } from "../../lib/pallets";
 import { assertNever } from "../../lib/tripStatus";
+import i18n from "i18next";
 
 export const ORIGIN_LABEL = "UWC Batu Kawan";
 
@@ -43,10 +44,23 @@ export function totalPallets(trip: Trip): number {
   return Math.round(total * 10000) / 10000;
 }
 
+/**
+ * The dispatch board's one-line cargo summary.
+ *
+ * ⚠ IT USED TO BUILD ITS OWN ENGLISH: `${pallets} pallet${s} · ${n} types`.
+ * That was two defects in one line — a hard-coded literal in a trilingual app,
+ * and the RAW pallet total, so a mixed load printed "5.875 pallets" here while
+ * every other surface went through formatPalletSpaces. Localised via i18n.t
+ * directly, the same lib-level pattern lib/trip.ts already uses.
+ */
 export function cargoSummary(trip: Trip): string {
-  const pallets = totalPallets(trip);
+
   const types = trip.cargo_details.length;
-  return `${pallets} pallet${pallets === 1 ? "" : "s"}${types > 1 ? ` · ${types} types` : ""}`;
+  // Inline, not via a local: the guard in lib/palletSpaces.test.ts asserts
+  // the formatter appears AT the call, so a raw number cannot slip in behind
+  // a well-named variable.
+  const head = i18n.t("admin.trips.palletsShort", { spaces: formatPalletSpaces(totalPallets(trip)) });
+  return types > 1 ? `${head} · ${i18n.t("admin.trips.cargoTypes", { qty: types })}` : head;
 }
 
 // Delivery progress 0–100 from delivered stops.

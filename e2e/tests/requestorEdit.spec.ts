@@ -72,7 +72,7 @@ test.describe("Requestor booking edit (mobile web)", () => {
     await expect(page.getByText("Cargo Size & Quantity")).toBeVisible();
     // selector-ok: the quantity stepper glyph is not a translated string
     await page.getByText("+", { exact: true }).first().click();
-    await expect(page.getByText("Total: 2 pallets")).toBeVisible();
+    await expect(page.getByText("Total pallet spaces: 2")).toBeVisible();
     await page.getByText("Next", { exact: true }).click();
 
     // Remarks moved onto the "When" step with the pickup calendar and dial.

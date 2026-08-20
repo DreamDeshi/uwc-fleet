@@ -9,6 +9,7 @@ import { requiresCustomsDoc } from "../lib/activeTripStage";
 import { totalPallets, ORIGIN_LABEL } from "../lib/trip";
 import type { Trip, TripStop } from "../types";
 import { isStopAdjudicated } from "../lib/stopSettled";
+import { formatPalletSpaces } from "../lib/pallets";
 
 // The stop ladder on the driver's Home card: the pickup, then every drop, on a
 // single rail. Before the run it reads as a plan; during the run the same
@@ -47,8 +48,8 @@ export function TripStopLadder({ trip, running }: { trip: Trip; running: boolean
         nameStyle={running ? styles.namePast : styles.name}
         meta={
           running
-            ? t("driver.ladderLoaded", { n: pallets })
-            : t("driver.ladderPickup", { n: pallets })
+            ? t("driver.ladderLoaded", { spaces: formatPalletSpaces(pallets) })
+            : t("driver.ladderPickup", { spaces: formatPalletSpaces(pallets) })
         }
         last={false}
       />

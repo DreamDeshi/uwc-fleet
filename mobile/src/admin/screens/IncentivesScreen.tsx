@@ -25,6 +25,7 @@ import { formatDate, formatMoney } from "../lib/format";
 import { apiErrorMessage } from "../services/api";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import type { DestinationRate, RateAuditEntry, RateResetResult, Truck } from "../types";
+import { formatPalletSpaces } from "../../lib/pallets";
 
 // Small muted "last updated by X on DATE" line under a row (audit parity).
 function UpdatedNote({ entry }: { entry?: RateAuditEntry }) {
@@ -170,7 +171,7 @@ function TruckRatesTab() {
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={rateCard.idPlate}>{tr.plate}</Text>
                   <Text style={rateCard.idMeta}>
-                    {tr.type} · {t("admin.trucks.palletsCount", { count: tr.max_pallets })}
+                    {tr.type} · {t("admin.trucks.palletsCount", { spaces: formatPalletSpaces(tr.max_pallets) })}
                   </Text>
                 </View>
                 {/* On the dark band an outline button would disappear, so Edit
@@ -212,7 +213,7 @@ function TruckRatesTab() {
                 </View>
               </TableCell>
               <TableCell flex={1}>{tr.type}</TableCell>
-              <TableCell flex={0.9}>{t("admin.trucks.palletsCount", { count: tr.max_pallets })}</TableCell>
+              <TableCell flex={0.9}>{t("admin.trucks.palletsCount", { spaces: formatPalletSpaces(tr.max_pallets) })}</TableCell>
               <TableCell flex={1}><Pill bg={colors.blueTint} fg={colors.blue}>{formatMoney(tr.entitled_claim_weekday)}</Pill></TableCell>
               <TableCell flex={1}><Pill bg={colors.yellowTint} fg={colors.amber}>{formatMoney(tr.entitled_claim_offpeak)}</Pill></TableCell>
               <TableCell flex={1}><Pill bg={colors.redTint} fg={colors.red}>{t("admin.trucks.pts", { count: tr.daily_deduction_points })}</Pill></TableCell>

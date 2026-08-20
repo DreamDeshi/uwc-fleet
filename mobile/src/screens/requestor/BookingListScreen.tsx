@@ -16,6 +16,7 @@ import { dayMonth, formatDate } from "../../lib/format";
 import { tripConsigneeName, tripDestination, totalPallets, ORIGIN_LABEL } from "../../lib/trip";
 import { ACTIVE_STATUSES, DELIVERED_STATUSES } from "../../lib/tripStatus";
 import { Trip } from "../../types";
+import { formatPalletSpaces } from "../../lib/pallets";
 
 // Tab screen, but it can also push BookingDetail onto the parent requestor stack.
 type Nav = CompositeNavigationProp<
@@ -239,7 +240,7 @@ function BookingRow({ trip, onPress }: { trip: Trip; onPress: () => void }) {
           {[
             trip.ticket_number,
             stops > 0 ? t("history.stopCount", { count: stops }) : null,
-            pallets > 0 ? t("history.palletCount", { count: pallets }) : null,
+            pallets > 0 ? t("history.palletCount", { count: pallets, spaces: formatPalletSpaces(pallets) }) : null,
           ]
             .filter(Boolean)
             .join(" · ")}

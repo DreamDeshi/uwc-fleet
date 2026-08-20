@@ -32,6 +32,7 @@ import { DELIVERED_STATUSES } from "../../lib/tripStatus";
 import { shouldReconcileStart } from "../../lib/startTrip";
 import { estimateTripCo2 } from "../../lib/tripCo2";
 import { consigneeDestination } from "../../lib/geo";
+import { formatPalletSpaces } from "../../lib/pallets";
 import {
   tripDestination,
   tripDestZone,
@@ -189,7 +190,7 @@ export function TripDetailsScreen() {
           {/* 3 info cards */}
           <View style={styles.infoRow}>
             <InfoCard icon="calendar-outline" label={t("trip.pickup")} value={formatDate(trip.pickup_datetime)} sub={formatTime(trip.pickup_datetime)} />
-            <InfoCard icon="cube-outline" label={t("trip.cargo")} value={`${totalPallets(trip)}`} sub={t("booking.pallet")} />
+            <InfoCard icon="cube-outline" label={t("trip.cargo")} value={t("driver.palletCount", { spaces: formatPalletSpaces(totalPallets(trip)) })} />
             <InfoCard
               icon="cash-outline"
               label={t("trip.incentive")}

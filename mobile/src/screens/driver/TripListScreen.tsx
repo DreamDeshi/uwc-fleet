@@ -13,6 +13,7 @@ import { totalPallets } from "../../lib/trip";
 import { formatTime } from "../../lib/format";
 import { currentStopNumber, stopsOf } from "../../lib/driverHome";
 import { ACTIVE_STATUSES, DELIVERED_STATUSES } from "../../lib/tripStatus";
+import { formatPalletSpaces } from "../../lib/pallets";
 
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripList">;
 type Filter = "all" | "active" | "completed";
@@ -82,7 +83,7 @@ export function TripListScreen() {
               item.ticket_number,
               item.status === "assigned" ? formatTime(item.pickup_datetime) : null,
               t("driver.stopCount", { n: stops.length }),
-              t("driver.palletCount", { n: totalPallets(item) }),
+              t("driver.palletCount", { spaces: formatPalletSpaces(totalPallets(item)) }),
             ]
               .filter(Boolean)
               .join(" · ");
