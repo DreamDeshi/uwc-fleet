@@ -30,6 +30,7 @@ import { exceptionsEnabled } from "../../lib/featureFlags";
 import { RequestorExceptionBanner } from "../../components/RequestorExceptionBanner";
 import { LoadingState, ErrorState } from "../../components/States";
 import { tripDestination, tripConsigneeName, cargoSummary, tripDestZone, ORIGIN_LABEL } from "../../lib/trip";
+import { consigneeDestination } from "../../lib/geo";
 import { DELIVERED_STATUSES } from "../../lib/tripStatus";
 import { estimateTripCo2 } from "../../lib/tripCo2";
 import { bannerFor } from "../../lib/bookingBanner";
@@ -282,6 +283,11 @@ export function BookingDetailScreen() {
                     .filter(Boolean)
                     .join(" · ")}
                 </Text>
+                {!consigneeDestination(s.consignee).precise ? (
+                  <Text style={styles.stopMeta} numberOfLines={2}>
+                    {t("trip.approxLocation", { zone: s.consignee?.zone_code ?? "—" })}
+                  </Text>
+                ) : null}
               </View>
               {s.status === "delivered" ? (
                 <Ionicons name="checkmark-circle" size={18} color={colors.greenText} />
