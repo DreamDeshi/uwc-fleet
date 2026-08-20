@@ -1397,7 +1397,7 @@
       "statusAll": "Semua",
       "groupPending": "Menunggu Penghantaran",
       "groupActive": "Aktif",
-      "groupCompleted": "Selesai",
+      "groupDelivered": "Telah Dihantar",
       "groupCancelled": "Dibatalkan / Ditolak",
       "noMatch": "Tiada trip sepadan dengan penapis ini.",
       "noTrips": "Belum ada trip.",
