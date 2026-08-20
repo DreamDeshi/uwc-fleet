@@ -7,8 +7,8 @@ import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { sensitiveRateLimiter } from "../middleware/rateLimit";
 import { isStrongPassword, passwordProblemMessage } from "../lib/passwordPolicy";
+import { BCRYPT_COST } from "../lib/loginTiming";
 
-const BCRYPT_COST = 10;
 
 // Mounted at /api/v1/users BEFORE the admin-guarded users router, so that
 // GET /api/v1/users/me resolves here (the logged-in user's own profile)
