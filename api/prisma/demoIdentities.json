@@ -1,0 +1,40 @@
+{
+  "_why": [
+    "THE CANONICAL DISPLAY NAMES FOR THE DEMO INSTANCE. One source, so no seeder",
+    "invents its own. api/scripts/demo-apply-identities.ts applies these, and",
+    "api/tests/demoIdentitiesAnonymous.test.ts stops them drifting back toward",
+    "realistic people.",
+    "",
+    "WHY THEY ARE DELIBERATELY NOT REAL-LOOKING NAMES. The demo is the instance a",
+    "stranger can reach by scanning the poster QR. An invented name like",
+    "'Tan Wei Ming' is indistinguishable from a real UWC employee to anyone",
+    "reading the screen, so a demo that is anonymous only to people who already",
+    "know which names are fake is not anonymous at all.",
+    "",
+    "REVISITED 20 AUG 2026 AND UPHELD. The owner asked for real-looking names,",
+    "then withdrew it on the argument that settles it: PRODUCTION already carries",
+    "the real driver names, and the client only ever sees production. 'Driver N'",
+    "exists solely on the demo, which is the instance strangers can reach, and",
+    "the poster is still in circulation. Anonymity costs the client nothing.",
+    "",
+    "Drivers 1-8 mirror docs/uwc-spec.json's driver_assignments. Driver 9 is",
+    "demo-only: the active-trip seeder needs a driver for zone P2 and there is no",
+    "ninth in the spec. It was called 'Demo Driver P2' until 20 Aug 2026 - a",
+    "third naming convention in one list, and 'P2' is a ZONE code, not an index.",
+    "It is 9 because 'Driver 2' is already +60100000102."
+  ],
+  "drivers": {
+    "+60100000101": "Driver 1",
+    "+60100000102": "Driver 2",
+    "+60100000103": "Driver 3",
+    "+60100000104": "Driver 4",
+    "+60100000105": "Driver 5",
+    "+60100000106": "Driver 6",
+    "+60100000107": "Driver 7",
+    "+60100000108": "Driver 8",
+    "+60117822000": "Driver 9"
+  },
+  "requestors": {
+    "+60199990001": "Requestor 1"
+  }
+}

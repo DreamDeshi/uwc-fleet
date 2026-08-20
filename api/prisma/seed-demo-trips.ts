@@ -22,6 +22,10 @@
  */
 import { prisma } from "../src/lib/prisma";
 import { assertDestructiveAllowed } from "./destructive-guard";
+import demoIdentities from "./demoIdentities.json";
+
+/** From the one canonical source, so this seeder cannot invent a name. */
+const DEMO_REQUESTOR_NAME = Object.values(demoIdentities.requestors)[0];
 
 const DEMO_DRIVER_PHONE = "+60100000101"; // the PLX 2406 driver
 const TRUCK = "PLX 2406";
@@ -61,10 +65,24 @@ async function main() {
   // screen, which makes it unusable on an instance whose whole purpose is
   // being shown to outsiders (SDG poster/viva, Aug 2026). A demo that is
   // anonymous only to people who know which names are fake is not anonymous.
+  //
+  // ⚠ REVISITED 20 AUG 2026 AND UPHELD. "Driver 1" reads as unfinished, so this
+  // gets reopened — it was, and the request was to put real-looking names back.
+  // The argument that settles it is not the one above: PRODUCTION already
+  // carries the real driver names, and the CLIENT only ever sees production.
+  // "Driver N" exists solely on the demo, which is the instance a stranger can
+  // reach through the poster QR, and the poster is still in circulation. So
+  // anonymity here costs the client nothing, and it is the only thing
+  // protecting people who never agreed to appear on a poster.
+  //
+  // The names now live in prisma/demoIdentities.json — one source, so no seeder
+  // invents its own — and tests/demoIdentitiesAnonymous.test.ts fails if they
+  // drift back toward realistic people. A comment cannot go red; that test is
+  // what actually holds this decision.
   const warehouse = await prisma.department.findUnique({ where: { name: "Warehouse" } });
   requestor = await prisma.user.update({
     where: { id: requestor.id },
-    data: { name: "Requestor 1", department_id: warehouse?.id ?? undefined },
+    data: { name: DEMO_REQUESTOR_NAME, department_id: warehouse?.id ?? undefined },
   });
 
   const routeTypes = await prisma.routeType.findMany();
