@@ -417,6 +417,32 @@ export function useDispatchMode() {
   });
 }
 
+// ── Generic admin-editable settings (27 Aug 2026) ─────────────────────────
+// The read side (useSettingsList) lives in the SHARED hooks/queries.ts — the
+// requestor booking picker needs the live cut-off minutes too, not just this
+// admin screen. These two mutations are admin-only (the routes 403 anyone
+// else), so they live here, same reasoning as useSetDispatchMode above.
+// Both invalidate ["settings", "list"] — the exact query key useSettingsList
+// uses — so every screen holding a setting refetches, not just this one.
+export function useUpdateSetting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ key, value }: { key: string; value: number | string | boolean }) =>
+      (await api.patch<{ key: string; value: number | string | boolean }>(`/settings/${key}`, { value }))
+        .data,
+    onSettled: () => qc.invalidateQueries({ queryKey: ["settings", "list"] }),
+  });
+}
+
+export function useResetSetting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (key: string) =>
+      (await api.delete<{ key: string; value: number | string | boolean }>(`/settings/${key}`)).data,
+    onSettled: () => qc.invalidateQueries({ queryKey: ["settings", "list"] }),
+  });
+}
+
 export function useSetDispatchMode() {
   const qc = useQueryClient();
   return useMutation({

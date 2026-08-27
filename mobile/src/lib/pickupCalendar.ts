@@ -52,6 +52,13 @@ import {
 export interface CutoffOpts {
   isReturn?: boolean;
   isAdmin?: boolean;
+  /** Effective B7 cut-off minutes, if an admin has set one (27 Aug 2026 —
+   *  see useBookingCutoffSettings). Default to the mirrored constants below,
+   *  same as the server defaults to its own constants when no override is
+   *  passed — so a caller that omits these keeps today's exact behaviour. */
+  morningCutoffMin?: number;
+  afternoonCutoffMin?: number;
+  sessionSplitMin?: number;
 }
 
 /** Hours in CHRONOLOGICAL order (00…02, 07…23) rather than shift order. */
@@ -90,12 +97,18 @@ export function slotToDate(now: Date, slot: PickupSlot): Date {
 export function slotNeedsCutoffOverride(
   slot: PickupSlot,
   now: Date,
-  opts: { isReturn?: boolean } = {}
+  opts: Pick<CutoffOpts, "isReturn" | "morningCutoffMin" | "afternoonCutoffMin" | "sessionSplitMin"> = {}
 ): boolean {
   return cutoffClosedAt(
     slotInstant(dateForOffset(now, slot.dayOffset), slot.hour),
     now,
-    opts.isReturn === true
+    opts.isReturn === true,
+    false,
+    {
+      morningCutoffMin: opts.morningCutoffMin,
+      afternoonCutoffMin: opts.afternoonCutoffMin,
+      sessionSplitMin: opts.sessionSplitMin,
+    }
   );
 }
 
@@ -156,7 +169,8 @@ export function cutoffClosedAt(
   slotAt: Date,
   now: Date,
   isReturn = false,
-  isAdmin = false
+  isAdmin = false,
+  overrides: Pick<CutoffOpts, "morningCutoffMin" | "afternoonCutoffMin" | "sessionSplitMin"> = {}
 ): boolean {
   if (isReturn) return false; // "anytime before 12am" — his own exemption
   // ⚠ AN ADMIN IS NOT EXEMPT — they may OVERRIDE, which is a different thing.
@@ -169,7 +183,10 @@ export function cutoffClosedAt(
   const slotMyt = mytParts(slotAt);
   // Only the MYT day the server calls "today" is gated.
   if (slotMyt.key !== nowMyt.key) return false;
-  const cutoff = slotMyt.minutes < SESSION_SPLIT_MIN ? MORNING_CUTOFF_MIN : AFTERNOON_CUTOFF_MIN;
+  const sessionSplit = overrides.sessionSplitMin ?? SESSION_SPLIT_MIN;
+  const morningCutoff = overrides.morningCutoffMin ?? MORNING_CUTOFF_MIN;
+  const afternoonCutoff = overrides.afternoonCutoffMin ?? AFTERNOON_CUTOFF_MIN;
+  const cutoff = slotMyt.minutes < sessionSplit ? morningCutoff : afternoonCutoff;
   return nowMyt.minutes >= cutoff;
 }
 
@@ -196,7 +213,13 @@ export function bookableMinutes(
   const offset = dayOffsetOf(date, now);
   if (offset < 0 || offset > PICKUP_MAX_DAY_OFFSET) return [];
   if (offset > 0) return [...PICKUP_MINUTES];
-  if (cutoffClosedAt(slotInstant(date, hour), now, opts.isReturn === true, opts.isAdmin === true))
+  if (
+    cutoffClosedAt(slotInstant(date, hour), now, opts.isReturn === true, opts.isAdmin === true, {
+      morningCutoffMin: opts.morningCutoffMin,
+      afternoonCutoffMin: opts.afternoonCutoffMin,
+      sessionSplitMin: opts.sessionSplitMin,
+    })
+  )
     return [];
   if (hour > now.getHours()) return [...PICKUP_MINUTES];
   if (hour < now.getHours()) return [];

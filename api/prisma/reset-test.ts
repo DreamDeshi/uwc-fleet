@@ -55,6 +55,12 @@ export const TRANSACTIONAL_TABLES = [
   // the evidence self-destructs: a later test resets the row, so the value at
   // rest reads innocent once the run has finished.
   "AppSetting",
+  // Same failure shape as AppSetting above, same fix: a test that PATCHes
+  // e.g. booking.afternoon_cutoff_min and doesn't clean up would otherwise
+  // leak a non-default cut-off into every later test in the run. Absence of a
+  // row IS the real default (settingsRegistry.ts falls through to it), so
+  // truncating restores correct behaviour rather than destroying config.
+  "Setting",
 ] as const;
 
 /**

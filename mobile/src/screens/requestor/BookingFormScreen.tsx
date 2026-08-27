@@ -23,6 +23,7 @@ import {
   useTrip,
   useTrips,
   useUploadTripDocument,
+  useBookingCutoffSettings,
   CONSIGNEE_SEARCH_MIN,
 } from "../../hooks/queries";
 import { apiErrorMessage } from "../../services/api";
@@ -313,9 +314,20 @@ export function BookingFormScreen() {
   // refuses it without a stated reason, so the box below is not optional
   // decoration — it is the thing that makes the request succeed.
   const isAdminBooking = user?.role === "admin";
-  const cutoffOpts = { isReturn: isReturnBooking, isAdmin: isAdminBooking };
+  // 27 Aug 2026 — the cut-off minutes are admin-editable now; the reason box
+  // must key off the SAME effective values the server will actually enforce,
+  // or it can show/hide out of step with what the booking will need.
+  const { morningCutoffMin, afternoonCutoffMin } = useBookingCutoffSettings();
+  const cutoffOpts = {
+    isReturn: isReturnBooking,
+    isAdmin: isAdminBooking,
+    morningCutoffMin,
+    afternoonCutoffMin,
+  };
   const needsCutoffReason =
-    isAdminBooking && !isEdit && slotNeedsCutoffOverride(slot, new Date(), { isReturn: isReturnBooking });
+    isAdminBooking &&
+    !isEdit &&
+    slotNeedsCutoffOverride(slot, new Date(), { isReturn: isReturnBooking, morningCutoffMin, afternoonCutoffMin });
   const [cutoffReason, setCutoffReason] = useState("");
   // Held separately from the resolved id so the two controls stay independent:
   // picking a family before a direction is a legitimate half-made choice.

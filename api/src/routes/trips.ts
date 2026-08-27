@@ -31,6 +31,7 @@ import {
 import { otDemotionReason, resolveLastTripOt } from "../services/lastTripOt";
 import { isInterplantRouteType, isReturnRouteType } from "../lib/uwcSpec";
 import { bookingCutoffVerdict, cutoffMessage, cutoffOverrideNote } from "../lib/bookingCutoff";
+import { effectiveBookingCutoffs } from "../lib/bookingCutoffSettings";
 import {
   truckRateSnapshot,
   finalizationRateParams,
@@ -359,11 +360,14 @@ router.post(
       // as exempt rather than only the two he named.
       let cutoffOverride: string | null = null;
       {
+        const { morningCutoffMin, afternoonCutoffMin } = await effectiveBookingCutoffs();
         const verdict = bookingCutoffVerdict({
           now: new Date(),
           pickup: pickup_datetime,
           isReturn: isReturnRouteType(routeType.name),
           holidays: await loadHolidaySet(),
+          morningCutoffMin,
+          afternoonCutoffMin,
         });
         if (!verdict.allowed) {
           if (req.user!.role !== "admin") {
@@ -807,11 +811,14 @@ router.patch(
           where: { id: route_type_id },
           select: { name: true },
         });
+        const { morningCutoffMin, afternoonCutoffMin } = await effectiveBookingCutoffs();
         const verdict = bookingCutoffVerdict({
           now: new Date(),
           pickup: pickup_datetime,
           isReturn: isReturnRouteType(editedRouteType?.name),
           holidays: await loadHolidaySet(),
+          morningCutoffMin,
+          afternoonCutoffMin,
         });
         if (!verdict.allowed) {
           throw new ApiError(400, "PICKUP_AFTER_CUTOFF", cutoffMessage(verdict));

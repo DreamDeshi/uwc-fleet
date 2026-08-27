@@ -935,6 +935,19 @@ model AppSetting {
   updated_at    DateTime     @updatedAt
 }
 
+// Generic admin-editable settings store (one row per tunable), replacing an
+// env-var-only constant with something an admin can change without a deploy.
+// `value` is a plain string; `api/src/lib/settingsRegistry.ts` owns parsing,
+// validation and the DB → env → hardcoded-default fallback for each key, so a
+// new setting never needs a new column or a new migration — just a new
+// registry entry. Absence of a row means "use the default", not "unset" —
+// nothing here is nullable-as-a-state.
+model Setting {
+  key        String   @id
+  value      String
+  updated_at DateTime @updatedAt
+}
+
 // ── 16. FuelLog ───────────────────────────────────────────────────────
 // Fuel fills per truck + driver (FR-CT5) — powers the fuel cost report.
 model FuelLog {
