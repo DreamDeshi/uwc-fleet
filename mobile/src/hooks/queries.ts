@@ -319,7 +319,7 @@ export function useUpdateStopDocs() {
 }
 
 // ── Uploads (multipart/form-data) ────────────────────────────────────────
-import { PickedPhoto } from "../lib/photo";
+import type { PickedPhoto } from "../lib/photo";
 import { DocumentType } from "../types";
 
 // React Native and the browser build a multipart body differently:

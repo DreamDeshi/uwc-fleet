@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-query";
 import { changeRequestsEnabled } from "../../lib/featureFlags";
 import { api } from "../services/api";
+import type { EffectiveSettingDto } from "../../hooks/queries";
 import type {
   AdminUser,
   AttentionReport,
@@ -418,12 +419,26 @@ export function useDispatchMode() {
 }
 
 // ── Generic admin-editable settings (27 Aug 2026) ─────────────────────────
-// The read side (useSettingsList) lives in the SHARED hooks/queries.ts — the
-// requestor booking picker needs the live cut-off minutes too, not just this
-// admin screen. These two mutations are admin-only (the routes 403 anyone
-// else), so they live here, same reasoning as useSetDispatchMode above.
-// Both invalidate ["settings", "list"] — the exact query key useSettingsList
-// uses — so every screen holding a setting refetches, not just this one.
+// A SEPARATE definition of the read side also lives in the SHARED
+// hooks/queries.ts, for the requestor booking picker (PickupSheet /
+// BookingFormScreen), which cannot import from admin/ at all. Deliberately
+// duplicated rather than imported from there: admin's own tests mock
+// "../services/api" and "../hooks/queries" (this file, by its own relative
+// path) as the seam, and an import reaching into the shared file bypasses
+// both mocks — found 28 Aug 2026 when incentiveFormulaCopy.test.tsx started
+// pulling in the REAL expo-constants unmocked and crashing on
+// `ensureNativeModulesAreInstalled()`. Both definitions use the SAME query
+// key (["settings", "list"]) and hit the same route, so React Query treats
+// them as one shared cache entry regardless of which one fetched it.
+export function useSettingsList() {
+  return useQuery({
+    queryKey: ["settings", "list"],
+    queryFn: async () =>
+      (await api.get<{ settings: EffectiveSettingDto[] }>("/settings")).data.settings,
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useUpdateSetting() {
   const qc = useQueryClient();
   return useMutation({
