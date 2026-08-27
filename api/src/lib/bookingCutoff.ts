@@ -3,7 +3,7 @@ import { minutesFromEnv } from "./envNumbers";
 import { mytDayStart } from "./myt";
 
 /**
- * B7 — THE BOOKING CUT-OFFS. 08:30 for a morning pickup, 15:00 for an afternoon
+ * B7 — THE BOOKING CUT-OFFS. 10:00 for a morning pickup, 15:00 for an afternoon
  * one; after that the earliest selectable day is the next WORKING day.
  *
  * ── SOURCE, AND WHAT IS HIS AND WHAT IS OURS ─────────────────────────────────
@@ -29,13 +29,26 @@ import { mytDayStart } from "./myt";
  * If Mr. Teh ever describes a delivery session directly, this reading is the
  * thing to revisit — not the cut-off times, which are his.
  *
- * ⚠ THE AFTERNOON NUMBER MOVED, 27 Aug 2026. Teh hit the original 13:30
- * cut-off live in production at 13:43 (WhatsApp, same day) — "until now we
- * still have booking lol" — and asked to change it to 15:00 on the spot
- * ("can we change to 3pm?" / "yes"). This is the same authority as the
- * original number (his own written word, this time in chat rather than the
- * R5 doc), so it is still HIS number, just a later one. The morning cut-off
- * (08:30) is untouched — he asked about the afternoon only.
+ * ⚠ BOTH NUMBERS MOVED, 27 Aug 2026, AND ONE WAS NEVER ACTUALLY BUILT UNTIL
+ * NOW. Teh hit the original 13:30 cut-off live in production at 13:43
+ * (WhatsApp, same day) — "until now we still have booking lol" — and asked to
+ * change it to 15:00 on the spot ("can we change to 3pm?" / "yes"). While that
+ * fix was mid-deploy (2:18pm, "doing it right now, 5mins"), he sent the FULL
+ * spec at 2:19pm:
+ *
+ *   "like this, for 'customer delivery' 3pm pickup cut off, morning session
+ *    '10am', then 'interplant' no cut off time.."
+ *
+ * The reply at 2:20pm ("The update is live, it should be 3pm now") answered
+ * only the afternoon change already in flight and echoed the 2:19pm message
+ * back with a bare "Okay" — acknowledging receipt, not confirming it was
+ * built. It WASN'T: the morning number stayed 08:30 and interplant stayed
+ * ungated for six days, found only when the owner re-read this conversation
+ * in full on 28 Aug. Same shape as this file's own "admin-editable setting…
+ * agreed but not yet built" note used to be — a ruling stated in writing,
+ * never implemented, silently live-wrong. Both are now correct: 10:00 for the
+ * morning session, and interplant (either direction — see `isInterplant`
+ * below) exempt entirely, same as a return leg already was.
  *
  * Also agreed the same conversation: a proper admin-editable setting for both
  * times, so the next change doesn't need a deploy. BUILT — see
@@ -50,11 +63,12 @@ import { mytDayStart } from "./myt";
  *
  * ── THE RULE ─────────────────────────────────────────────────────────────────
  *
- *   booked before 08:30 MYT  → today's MORNING pickup is selectable
+ *   booked before 10:00 MYT  → today's MORNING pickup is selectable
  *   booked before 15:00 MYT  → today's AFTERNOON pickup is selectable
  *   booked after 15:00 MYT   → the earliest selectable pickup is the next
  *                              working day
  *   a RETURN booking         → exempt; any time before midnight
+ *   INTERPLANT, either way   → exempt entirely, same as a return
  *
  * Booking for a FUTURE day is never restricted — the cut-offs are about today's
  * dispatch, and a requestor booking Thursday on Tuesday costs dispatch nothing.
@@ -81,7 +95,7 @@ import { mytDayStart } from "./myt";
  * commit would have been, not less — the thing this comment always objected
  * to was an UNTRACKED env-var change, not a tracked admin one.
  */
-export const MORNING_CUTOFF_MIN = 8 * 60 + 30; // 08:30 — the default
+export const MORNING_CUTOFF_MIN = 10 * 60; // 10:00 — the default (was 08:30 until 28 Aug 2026)
 export const AFTERNOON_CUTOFF_MIN = 15 * 60; // 15:00 — the default (was 13:30 until 27 Aug 2026)
 
 /**
@@ -178,6 +192,13 @@ export function bookingCutoffVerdict(params: {
   pickup: Date;
   /** Return cargo from a supplier/customer — exempt, "anytime before 12am". */
   isReturn: boolean;
+  /** Interplant work, either direction — exempt entirely (Mr. Teh, WhatsApp,
+   *  27 Aug 2026 2:19pm: "then interplant no cut off time.."). Interplant
+   *  RETURN was already covered by `isReturn` above; this is what actually
+   *  adds coverage — interplant DELIVERY. Required, not optional, same
+   *  discipline as `isReturn`: a caller must decide, never silently default
+   *  to "not exempt" for a route type it forgot to check. */
+  isInterplant: boolean;
   holidays: ReadonlySet<string>;
   /** Effective cut-offs, resolved by the CALLER (see bookingCutoffSettings.ts)
    *  — this function stays pure and knows nothing of settings or the DB.
@@ -186,7 +207,7 @@ export function bookingCutoffVerdict(params: {
   morningCutoffMin?: number;
   afternoonCutoffMin?: number;
 }): CutoffVerdict {
-  if (params.isReturn) return { allowed: true };
+  if (params.isReturn || params.isInterplant) return { allowed: true };
 
   // ⚠ A PICKUP ALREADY IN THE PAST IS NOT THIS RULE'S BUSINESS. The route has
   // its own PICKUP_IN_PAST, and this must not become a second, differently

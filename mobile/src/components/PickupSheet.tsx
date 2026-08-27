@@ -52,6 +52,7 @@ export function PickupSheet({
   slot,
   now,
   isReturn,
+  isInterplant,
   isAdmin,
   onConfirm,
   onClose,
@@ -61,13 +62,17 @@ export function PickupSheet({
   /** Injectable for tests/screenshots; defaults to the device clock. */
   now?: Date;
   /**
-   * B7 — a RETURN booking is exempt from the 08:30 / 15:00 cut-offs ("for
+   * B7 — a RETURN booking is exempt from the 10:00 / 15:00 cut-offs ("for
    * return cargo from supplier / customer, they can choose pickup anytime
    * before 12am"). Defaults to false, i.e. RESTRICTED: forgetting it shows
    * fewer slots than the server would take, where the opposite default would
    * offer one the server refuses.
    */
   isReturn?: boolean;
+  /** B7 — INTERPLANT work is ALSO exempt entirely, either direction (Teh,
+   *  WhatsApp, 27 Aug 2026 2:19pm: "then 'interplant' no cut off time..").
+   *  Same default-false reasoning as `isReturn`. */
+  isInterplant?: boolean;
   /** B7 — an ADMIN is offered a closed slot (they may override on the server,
    *  with a stated reason). Not an exemption; see pickupCalendar's CutoffOpts. */
   isAdmin?: boolean;
@@ -82,11 +87,12 @@ export function PickupSheet({
   const cutoffOpts = useMemo(
     () => ({
       isReturn: isReturn === true,
+      isInterplant: isInterplant === true,
       isAdmin: isAdmin === true,
       morningCutoffMin,
       afternoonCutoffMin,
     }),
-    [isReturn, isAdmin, morningCutoffMin, afternoonCutoffMin]
+    [isReturn, isInterplant, isAdmin, morningCutoffMin, afternoonCutoffMin]
   );
   const { t } = useTranslation();
   const clock = useMemo(() => now ?? new Date(), [now, visible]);

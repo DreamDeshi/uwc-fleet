@@ -15,7 +15,7 @@ import {
   nextWorkingDay,
   sessionOf,
 } from "../src/lib/bookingCutoff";
-import { isReturnRouteType } from "../src/lib/uwcSpec";
+import { isInterplantRouteType, isReturnRouteType } from "../src/lib/uwcSpec";
 
 /**
  * B7 — THE BOOKING CUT-OFFS.
@@ -49,7 +49,7 @@ const at = (mytHour: number, mytMin = 0) => {
 describe("mytMinutes / sessionOf — the day's shape", () => {
   it("counts minutes from MYT midnight, not from UTC midnight", () => {
     expect(mytMinutes(at(0, 0))).toBe(0);
-    expect(mytMinutes(at(8, 30))).toBe(MORNING_CUTOFF_MIN);
+    expect(mytMinutes(at(10, 0))).toBe(MORNING_CUTOFF_MIN);
     expect(mytMinutes(at(15, 0))).toBe(AFTERNOON_CUTOFF_MIN);
     expect(mytMinutes(at(23, 59))).toBe(23 * 60 + 59);
     // The trap this avoids: 2026-08-10T00:00Z is 08:00 MYT, not midnight.
@@ -63,12 +63,12 @@ describe("mytMinutes / sessionOf — the day's shape", () => {
 
   it("the split is OURS and carries an override; the cut-offs are HIS and do not", () => {
     // Owner ruling 12 Aug 2026: an invented constant is env-tunable and named
-    // as ours (OPEN_ITEMS N11). "830am" and "3pm" (the afternoon number moved
-    // from "130pm" on 27 Aug 2026 — same authority, a later chat) are quoted
+    // as ours (OPEN_ITEMS N11). "10am" and "3pm" (both moved from "830am" and
+    // "130pm" on 27/28 Aug 2026 — same authority, a later chat) are quoted
     // client requirements, so moving one must take a commit and a reader, not a
     // variable — this asserts the asymmetry rather than trusting a comment.
     expect(SESSION_SPLIT_MIN).toBe(12 * 60); // the default, absent an override
-    expect(MORNING_CUTOFF_MIN).toBe(8 * 60 + 30);
+    expect(MORNING_CUTOFF_MIN).toBe(10 * 60);
     expect(AFTERNOON_CUTOFF_MIN).toBe(15 * 60);
     const raw = readFileSync(join(__dirname, "..", "src", "lib", "bookingCutoff.ts"), "utf8");
     expect(raw.length).toBeGreaterThan(500); // not a vacuous read
@@ -97,32 +97,36 @@ describe("mytMinutes / sessionOf — the day's shape", () => {
   });
 });
 
-describe("B7 — a MORNING pickup closes at 08:30", () => {
-  const morningToday = at(9, 0); // 09:00 MYT — a morning pickup
+describe("B7 — a MORNING pickup closes at 10:00", () => {
+  // 11:00 rather than 09:00: the pickup has to stay in the FUTURE relative to
+  // "now" at every boundary tested below, or the verdict short-circuits via
+  // "already in the past" instead of ever reaching the cut-off check.
+  const morningToday = at(11, 0); // 11:00 MYT — a morning pickup
 
-  it("is selectable at 08:29", () => {
+  it("is selectable at 09:59", () => {
     expect(
-      bookingCutoffVerdict({ now: at(8, 29), pickup: morningToday, isReturn: false, holidays: NO_HOLIDAYS })
+      bookingCutoffVerdict({ now: at(9, 59), pickup: morningToday, isReturn: false, isInterplant: false, holidays: NO_HOLIDAYS })
     ).toEqual({ allowed: true });
   });
 
-  it("is CLOSED at 08:30 exactly — the cut-off is inclusive", () => {
-    // The boundary minute belongs to the closed side: "cut of time … 830am"
-    // reads as "by 8:30", and a rule that admits 08:30:59 would be a rule
+  it("is CLOSED at 10:00 exactly — the cut-off is inclusive", () => {
+    // The boundary minute belongs to the closed side: "morning session 10am"
+    // reads as "by 10:00", and a rule that admits 10:00:59 would be a rule
     // nobody could state.
-    const v = bookingCutoffVerdict({ now: at(8, 30), pickup: morningToday, isReturn: false, holidays: NO_HOLIDAYS });
+    const v = bookingCutoffVerdict({ now: at(10, 0), pickup: morningToday, isReturn: false, isInterplant: false, holidays: NO_HOLIDAYS });
     expect(v.allowed).toBe(false);
     expect(v).toMatchObject({ session: "morning", earliest: "2026-08-11" });
   });
 
   it("names the cut-off AND the way forward", () => {
-    // 11:30 rather than 09:00: the pickup has to be in the FUTURE for the rule
-    // to reach the cut-off at all — a past pickup belongs to PICKUP_IN_PAST.
-    const v = bookingCutoffVerdict({ now: at(9, 0), pickup: at(11, 30), isReturn: false, holidays: NO_HOLIDAYS });
+    // now=10:30 rather than 09:00 (pre-28 Aug this cut-off was 08:30): the
+    // pickup has to be in the FUTURE for the rule to reach the cut-off at all
+    // — a past pickup belongs to PICKUP_IN_PAST.
+    const v = bookingCutoffVerdict({ now: at(10, 30), pickup: at(11, 30), isReturn: false, isInterplant: false, holidays: NO_HOLIDAYS });
     expect(v.allowed).toBe(false);
     if (v.allowed) return;
     expect(cutoffMessage(v)).toBe(
-      "Morning pickups close at 8:30am. The earliest pickup you can book now is 2026-08-11."
+      "Morning pickups close at 10:00am. The earliest pickup you can book now is 2026-08-11."
     );
   });
 });
@@ -133,12 +137,12 @@ describe("B7 — an AFTERNOON pickup closes at 15:00", () => {
   it("is still selectable at 14:59, well after the morning cut-off", () => {
     // The two cut-offs are independent: missing 08:30 does not close the day.
     expect(
-      bookingCutoffVerdict({ now: at(14, 59), pickup: afternoonToday, isReturn: false, holidays: NO_HOLIDAYS })
+      bookingCutoffVerdict({ now: at(14, 59), pickup: afternoonToday, isReturn: false, isInterplant: false, holidays: NO_HOLIDAYS })
     ).toEqual({ allowed: true });
   });
 
   it("is CLOSED at 15:00", () => {
-    const v = bookingCutoffVerdict({ now: at(15, 0), pickup: afternoonToday, isReturn: false, holidays: NO_HOLIDAYS });
+    const v = bookingCutoffVerdict({ now: at(15, 0), pickup: afternoonToday, isReturn: false, isInterplant: false, holidays: NO_HOLIDAYS });
     expect(v.allowed).toBe(false);
     expect(v).toMatchObject({ session: "afternoon", earliest: "2026-08-11" });
   });
@@ -147,11 +151,11 @@ describe("B7 — an AFTERNOON pickup closes at 15:00", () => {
     // Stated at 11:00 because that is the last hour where a FUTURE morning slot
     // still exists — after noon the morning is unreachable rather than closed,
     // which is a different thing and would make this case vacuous.
-    const morning = bookingCutoffVerdict({ now: at(11, 0), pickup: at(11, 30), isReturn: false, holidays: NO_HOLIDAYS });
+    const morning = bookingCutoffVerdict({ now: at(11, 0), pickup: at(11, 30), isReturn: false, isInterplant: false, holidays: NO_HOLIDAYS });
     expect(morning.allowed).toBe(false);
     expect(morning).toMatchObject({ session: "morning" });
 
-    const afternoon = bookingCutoffVerdict({ now: at(11, 0), pickup: at(15, 0), isReturn: false, holidays: NO_HOLIDAYS });
+    const afternoon = bookingCutoffVerdict({ now: at(11, 0), pickup: at(15, 0), isReturn: false, isInterplant: false, holidays: NO_HOLIDAYS });
     expect(afternoon).toEqual({ allowed: true });
   });
 });
@@ -167,13 +171,13 @@ describe("B7 — an admin-editable override changes which cut-off applies", () =
     const pickup = at(9, 0); // 09:00 MYT
     // At the DEFAULT 08:30, 08:15 is still open (before the default cut-off).
     expect(
-      bookingCutoffVerdict({ now: at(8, 15), pickup, isReturn: false, holidays: NO_HOLIDAYS })
+      bookingCutoffVerdict({ now: at(8, 15), pickup, isReturn: false, isInterplant: false, holidays: NO_HOLIDAYS })
     ).toEqual({ allowed: true });
     // An admin setting of 08:00 closes that same instant.
     const v = bookingCutoffVerdict({
       now: at(8, 15),
       pickup,
-      isReturn: false,
+      isReturn: false, isInterplant: false,
       holidays: NO_HOLIDAYS,
       morningCutoffMin: 8 * 60,
     });
@@ -184,14 +188,14 @@ describe("B7 — an admin-editable override changes which cut-off applies", () =
     const pickup = at(15, 30);
     // At the DEFAULT 15:00, 15:00 sharp is already closed (inclusive boundary).
     expect(
-      bookingCutoffVerdict({ now: at(15, 0), pickup, isReturn: false, holidays: NO_HOLIDAYS }).allowed
+      bookingCutoffVerdict({ now: at(15, 0), pickup, isReturn: false, isInterplant: false, holidays: NO_HOLIDAYS }).allowed
     ).toBe(false);
     // An admin setting of 16:00 keeps that same instant open.
     expect(
       bookingCutoffVerdict({
         now: at(15, 0),
         pickup,
-        isReturn: false,
+        isReturn: false, isInterplant: false,
         holidays: NO_HOLIDAYS,
         afternoonCutoffMin: 16 * 60,
       })
@@ -199,11 +203,11 @@ describe("B7 — an admin-editable override changes which cut-off applies", () =
   });
 
   it("omitting the override params behaves exactly as before — the default is unchanged", () => {
-    const withDefaults = bookingCutoffVerdict({ now: at(15, 0), pickup: at(15, 30), isReturn: false, holidays: NO_HOLIDAYS });
+    const withDefaults = bookingCutoffVerdict({ now: at(15, 0), pickup: at(15, 30), isReturn: false, isInterplant: false, holidays: NO_HOLIDAYS });
     const withExplicitDefaults = bookingCutoffVerdict({
       now: at(15, 0),
       pickup: at(15, 30),
-      isReturn: false,
+      isReturn: false, isInterplant: false,
       holidays: NO_HOLIDAYS,
       morningCutoffMin: MORNING_CUTOFF_MIN,
       afternoonCutoffMin: AFTERNOON_CUTOFF_MIN,
@@ -218,7 +222,7 @@ describe("B7 — an admin-editable override changes which cut-off applies", () =
     const v = bookingCutoffVerdict({
       now: at(16, 0),
       pickup: at(16, 30),
-      isReturn: false,
+      isReturn: false, isInterplant: false,
       holidays: NO_HOLIDAYS,
       afternoonCutoffMin: 16 * 60,
     });
@@ -241,7 +245,7 @@ describe("B7 — only TODAY is gated", () => {
       bookingCutoffVerdict({
         now: at(23, 0),
         pickup: new Date("2026-08-11T01:00:00Z"), // 09:00 MYT Tuesday
-        isReturn: false,
+        isReturn: false, isInterplant: false,
         holidays: NO_HOLIDAYS,
       })
     ).toEqual({ allowed: true });
@@ -255,7 +259,7 @@ describe("B7 — only TODAY is gated", () => {
       bookingCutoffVerdict({
         now: at(9, 0),
         pickup: new Date("2026-08-09T01:00:00Z"), // Sunday, yesterday
-        isReturn: false,
+        isReturn: false, isInterplant: false,
         holidays: NO_HOLIDAYS,
       })
     ).toEqual({ allowed: true });
@@ -268,14 +272,14 @@ describe("B7 — only TODAY is gated", () => {
     // the right answer (tests-integration/tripEdit.test.ts). A same-day past
     // pickup at every hour past both cut-offs:
     expect(
-      bookingCutoffVerdict({ now: at(15, 30), pickup: at(9, 0), isReturn: false, holidays: NO_HOLIDAYS })
+      bookingCutoffVerdict({ now: at(15, 30), pickup: at(9, 0), isReturn: false, isInterplant: false, holidays: NO_HOLIDAYS })
     ).toEqual({ allowed: true });
     expect(
-      bookingCutoffVerdict({ now: at(23, 0), pickup: at(15, 0), isReturn: false, holidays: NO_HOLIDAYS })
+      bookingCutoffVerdict({ now: at(23, 0), pickup: at(15, 0), isReturn: false, isInterplant: false, holidays: NO_HOLIDAYS })
     ).toEqual({ allowed: true });
     // …but the same instant one minute in the FUTURE is still gated.
     expect(
-      bookingCutoffVerdict({ now: at(15, 30), pickup: at(15, 31), isReturn: false, holidays: NO_HOLIDAYS }).allowed
+      bookingCutoffVerdict({ now: at(15, 30), pickup: at(15, 31), isReturn: false, isInterplant: false, holidays: NO_HOLIDAYS }).allowed
     ).toBe(false);
   });
 });
@@ -283,7 +287,7 @@ describe("B7 — only TODAY is gated", () => {
 describe("B7 — return cargo is exempt", () => {
   it("a return may be booked for this afternoon at 23:00", () => {
     expect(
-      bookingCutoffVerdict({ now: at(23, 0), pickup: at(15, 0), isReturn: true, holidays: NO_HOLIDAYS })
+      bookingCutoffVerdict({ now: at(23, 0), pickup: at(15, 0), isReturn: true, isInterplant: false, holidays: NO_HOLIDAYS })
     ).toEqual({ allowed: true });
   });
 
@@ -299,6 +303,47 @@ describe("B7 — return cargo is exempt", () => {
     expect(isReturnRouteType("Supplier Delivery")).toBe(false);
     expect(isReturnRouteType("Inter-Plant Delivery")).toBe(false);
     expect(isReturnRouteType(null)).toBe(false);
+  });
+});
+
+describe("B7 — interplant is exempt entirely, either direction", () => {
+  // Mr. Teh, WhatsApp, 27 Aug 2026 2:19pm: "then 'interplant' no cut off
+  // time..". Interplant RETURN was already covered by the return exemption
+  // above; this is what actually adds coverage — interplant DELIVERY. Both
+  // shipped together, 28 Aug 2026, six days after the message that asked for
+  // them (see bookingCutoff.ts's header for why).
+  it("an interplant DELIVERY may be booked for this morning at 23:00 — the case return exemption never covered", () => {
+    expect(
+      bookingCutoffVerdict({ now: at(23, 0), pickup: at(11, 0), isReturn: false, isInterplant: true, holidays: NO_HOLIDAYS })
+    ).toEqual({ allowed: true });
+  });
+
+  it("an interplant DELIVERY may be booked for this afternoon at 23:00", () => {
+    expect(
+      bookingCutoffVerdict({ now: at(23, 0), pickup: at(15, 0), isReturn: false, isInterplant: true, holidays: NO_HOLIDAYS })
+    ).toEqual({ allowed: true });
+  });
+
+  it("the exemption is keyed on the seeded INTERPLANT route types, both directions", () => {
+    expect(isInterplantRouteType("Inter-Plant Delivery")).toBe(true);
+    expect(isInterplantRouteType("Inter-Plant Return")).toBe(true);
+    // Customer/supplier work is gated either way.
+    expect(isInterplantRouteType("Customer Delivery")).toBe(false);
+    expect(isInterplantRouteType("Customer Return")).toBe(false);
+    expect(isInterplantRouteType("Supplier Delivery")).toBe(false);
+    expect(isInterplantRouteType("Supplier Return")).toBe(false);
+    expect(isInterplantRouteType(null)).toBe(false);
+  });
+
+  it("the SAME instant that exempts an interplant delivery still gates a customer one — not accidentally global", () => {
+    const now = at(10, 30);
+    const pickup = at(11, 0); // future relative to `now`, so the cut-off is actually reached
+    expect(
+      bookingCutoffVerdict({ now, pickup, isReturn: false, isInterplant: true, holidays: NO_HOLIDAYS })
+    ).toEqual({ allowed: true });
+    expect(
+      bookingCutoffVerdict({ now, pickup, isReturn: false, isInterplant: false, holidays: NO_HOLIDAYS }).allowed
+    ).toBe(false);
   });
 });
 
@@ -324,7 +369,7 @@ describe("B7 — the next WORKING day", () => {
     const v = bookingCutoffVerdict({
       now: new Date("2026-08-15T07:30:00Z"),
       pickup: new Date("2026-08-15T08:00:00Z"), // 16:00 MYT the same day
-      isReturn: false,
+      isReturn: false, isInterplant: false,
       holidays: NO_HOLIDAYS,
     });
     expect(v.allowed).toBe(false);
