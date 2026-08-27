@@ -43,8 +43,11 @@ describe("zodSchemaFor — bounds are enforced per setting type", () => {
     expect(zodSchemaFor(minutesDef).safeParse(510.5).success).toBe(false);
   });
 
-  it("rejects a string where a number is required", () => {
-    // @ts-expect-error — deliberately wrong type, proving the schema catches it
+  it("rejects a string where a number is required, at RUNTIME", () => {
+    // zodSchemaFor returns ZodTypeAny, whose static input type is `any` — a
+    // string is not a TYPE error here (nothing for `tsc` to catch), only a
+    // VALIDATION one. This is exactly why the route validates the request
+    // body through this schema rather than trusting the caller's TypeScript.
     expect(zodSchemaFor(minutesDef).safeParse("510").success).toBe(false);
   });
 });
