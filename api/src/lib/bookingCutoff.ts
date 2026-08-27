@@ -38,10 +38,15 @@ import { mytDayStart } from "./myt";
  * (08:30) is untouched — he asked about the afternoon only.
  *
  * Also agreed the same conversation: a proper admin-editable setting for both
- * times, so the next change doesn't need a deploy. NOT YET BUILT — that is
- * still a schema change (`AppSetting` has no free-form settings column) and
- * ships separately. Until then this constant is still the one source of truth,
- * and moving it again means editing this file, same as before.
+ * times, so the next change doesn't need a deploy. BUILT — see
+ * `lib/settingsRegistry.ts` (keys `booking.morning_cutoff_min` /
+ * `booking.afternoon_cutoff_min`) and `lib/bookingCutoffSettings.ts`. The
+ * constants below are now the DEFAULTS an admin's setting overrides, not the
+ * only source of truth — but they still ARE the source of truth for anyone
+ * who has never touched the setting, which is why they stay literal numbers
+ * here rather than becoming `minutesFromEnv` calls (see the note on the
+ * constants themselves, and the guard in bookingCutoff.test.ts that checks
+ * for exactly that).
  *
  * ── THE RULE ─────────────────────────────────────────────────────────────────
  *
@@ -62,14 +67,22 @@ import { mytDayStart } from "./myt";
  */
 
 /**
- * HIS NUMBERS — hardcoded on purpose. "830am" (11 Aug, R5) and "3pm" (27 Aug,
- * chat — superseding the original "130pm") are quoted client requirements, not
- * tunables; an operator quietly moving a cut-off would be changing what the
- * client asked for, and it should take a commit and a reader. An admin-editable
- * version of this is agreed but not yet built — see the note above.
+ * HIS NUMBERS — hardcoded on purpose, and NOT wrapped in `minutesFromEnv`: an
+ * operator quietly moving a cut-off via a Railway env var (no review, no
+ * record of who or why) would be changing what the client asked for with less
+ * ceremony than a commit. These two literals are the DEFAULTS.
+ *
+ * ⚠ That is a different thing from an ADMIN changing it through the app. Teh
+ * asked for exactly that (WhatsApp, 27 Aug 2026 — see the note above), and it
+ * is now built as a `Setting` row, resolved by `bookingCutoffSettings.ts` and
+ * threaded into `bookingCutoffVerdict` below as an explicit parameter — never
+ * by this file reaching into the DB itself. Every change is audited (who,
+ * when, old→new) in `routes/settings.ts`, which is more traceable than a
+ * commit would have been, not less — the thing this comment always objected
+ * to was an UNTRACKED env-var change, not a tracked admin one.
  */
-export const MORNING_CUTOFF_MIN = 8 * 60 + 30; // 08:30
-export const AFTERNOON_CUTOFF_MIN = 15 * 60; // 15:00 (was 13:30 until 27 Aug 2026)
+export const MORNING_CUTOFF_MIN = 8 * 60 + 30; // 08:30 — the default
+export const AFTERNOON_CUTOFF_MIN = 15 * 60; // 15:00 — the default (was 13:30 until 27 Aug 2026)
 
 /**
  * OUR NUMBER — an INVENTED CONSTANT, and therefore env-tunable (owner ruling,
@@ -146,6 +159,11 @@ export type CutoffVerdict =
       session: BookingSession;
       /** The earliest MYT day this booking may now select. */
       earliest: string;
+      /** The cut-off minute actually applied (default OR an admin's setting) —
+       *  `cutoffMessage`/`cutoffOverrideNote` format FROM this, never from a
+       *  string keyed on `session` alone, so the message stays correct once
+       *  the time is admin-editable and no longer always 8:30/15:00. */
+      cutoffMin: number;
     };
 
 /**
@@ -161,6 +179,12 @@ export function bookingCutoffVerdict(params: {
   /** Return cargo from a supplier/customer — exempt, "anytime before 12am". */
   isReturn: boolean;
   holidays: ReadonlySet<string>;
+  /** Effective cut-offs, resolved by the CALLER (see bookingCutoffSettings.ts)
+   *  — this function stays pure and knows nothing of settings or the DB.
+   *  Default to the constants above so every existing call/test that omits
+   *  these keeps today's exact behaviour. */
+  morningCutoffMin?: number;
+  afternoonCutoffMin?: number;
 }): CutoffVerdict {
   if (params.isReturn) return { allowed: true };
 
@@ -183,15 +207,31 @@ export function bookingCutoffVerdict(params: {
   if (pickupKey !== todayKey) return { allowed: true };
 
   const session = sessionOf(params.pickup);
-  const cutoff = session === "morning" ? MORNING_CUTOFF_MIN : AFTERNOON_CUTOFF_MIN;
+  const morningCutoff = params.morningCutoffMin ?? MORNING_CUTOFF_MIN;
+  const afternoonCutoff = params.afternoonCutoffMin ?? AFTERNOON_CUTOFF_MIN;
+  const cutoff = session === "morning" ? morningCutoff : afternoonCutoff;
   if (mytMinutes(params.now) < cutoff) return { allowed: true };
 
-  return { allowed: false, session, earliest: nextWorkingDay(todayKey, params.holidays) };
+  return {
+    allowed: false,
+    session,
+    earliest: nextWorkingDay(todayKey, params.holidays),
+    cutoffMin: cutoff,
+  };
+}
+
+/** "510" → "8:30am", "900" → "3:00pm", "0" → "12:00am", "720" → "12:00pm". */
+function formatClockMinutes(min: number): string {
+  const h24 = Math.floor(min / 60);
+  const m = min % 60;
+  const period = h24 < 12 ? "am" : "pm";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${String(m).padStart(2, "0")}${period}`;
 }
 
 /** The message the requestor sees — states the cut-off AND the way forward. */
 export function cutoffMessage(verdict: Extract<CutoffVerdict, { allowed: false }>): string {
-  const at = verdict.session === "morning" ? "8:30am" : "3:00pm";
+  const at = formatClockMinutes(verdict.cutoffMin);
   const label = verdict.session === "morning" ? "Morning" : "Afternoon";
   return `${label} pickups close at ${at}. The earliest pickup you can book now is ${verdict.earliest}.`;
 }
@@ -225,6 +265,6 @@ export function cutoffOverrideNote(
   verdict: Extract<CutoffVerdict, { allowed: false }>,
   reason: string
 ): string {
-  const at = verdict.session === "morning" ? "8:30am" : "3:00pm";
+  const at = formatClockMinutes(verdict.cutoffMin);
   return `Admin override: booked past the ${at} ${verdict.session} cut-off — ${reason.trim()}`;
 }

@@ -9,6 +9,7 @@ import {
   SESSION_SPLIT_MIN,
   bookingCutoffVerdict,
   cutoffMessage,
+  cutoffOverrideNote,
   isWorkingDay,
   mytMinutes,
   nextWorkingDay,
@@ -83,6 +84,14 @@ describe("mytMinutes / sessionOf — the day's shape", () => {
     const src = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     expect(src).toContain('minutesFromEnv("BOOKING_SESSION_SPLIT_MIN"');
     // His two are literals — no env name may appear against either.
+    //
+    // ⚠ This guards against an UNTRACKED env-var override, which is a
+    // different thing from the admin-editable setting built 27 Aug 2026 (see
+    // "an admin-editable override changes which cut-off applies" below). That
+    // layer lives entirely OUTSIDE this file — bookingCutoffSettings.ts
+    // resolves the effective value and the caller passes it into
+    // bookingCutoffVerdict as an explicit parameter — so it can exist without
+    // this file ever containing `minutesFromEnv` against either constant.
     expect(src).not.toContain("MORNING_CUTOFF_MIN = minutesFromEnv");
     expect(src).not.toContain("AFTERNOON_CUTOFF_MIN = minutesFromEnv");
   });
@@ -144,6 +153,83 @@ describe("B7 — an AFTERNOON pickup closes at 15:00", () => {
 
     const afternoon = bookingCutoffVerdict({ now: at(11, 0), pickup: at(15, 0), isReturn: false, holidays: NO_HOLIDAYS });
     expect(afternoon).toEqual({ allowed: true });
+  });
+});
+
+describe("B7 — an admin-editable override changes which cut-off applies", () => {
+  // 27 Aug 2026: Teh agreed an admin should be able to change these times
+  // without a deploy (see settingsRegistry.ts / bookingCutoffSettings.ts).
+  // The function under test stays PURE and knows nothing of the DB — the
+  // caller resolves the effective value and passes it in. These cases prove
+  // the override actually changes the verdict, not just that the parameter
+  // exists.
+  it("an explicit morningCutoffMin moves the morning boundary", () => {
+    const pickup = at(9, 0); // 09:00 MYT
+    // At the DEFAULT 08:30, 08:15 is still open (before the default cut-off).
+    expect(
+      bookingCutoffVerdict({ now: at(8, 15), pickup, isReturn: false, holidays: NO_HOLIDAYS })
+    ).toEqual({ allowed: true });
+    // An admin setting of 08:00 closes that same instant.
+    const v = bookingCutoffVerdict({
+      now: at(8, 15),
+      pickup,
+      isReturn: false,
+      holidays: NO_HOLIDAYS,
+      morningCutoffMin: 8 * 60,
+    });
+    expect(v.allowed).toBe(false);
+  });
+
+  it("an explicit afternoonCutoffMin moves the afternoon boundary", () => {
+    const pickup = at(15, 30);
+    // At the DEFAULT 15:00, 15:00 sharp is already closed (inclusive boundary).
+    expect(
+      bookingCutoffVerdict({ now: at(15, 0), pickup, isReturn: false, holidays: NO_HOLIDAYS }).allowed
+    ).toBe(false);
+    // An admin setting of 16:00 keeps that same instant open.
+    expect(
+      bookingCutoffVerdict({
+        now: at(15, 0),
+        pickup,
+        isReturn: false,
+        holidays: NO_HOLIDAYS,
+        afternoonCutoffMin: 16 * 60,
+      })
+    ).toEqual({ allowed: true });
+  });
+
+  it("omitting the override params behaves exactly as before — the default is unchanged", () => {
+    const withDefaults = bookingCutoffVerdict({ now: at(15, 0), pickup: at(15, 30), isReturn: false, holidays: NO_HOLIDAYS });
+    const withExplicitDefaults = bookingCutoffVerdict({
+      now: at(15, 0),
+      pickup: at(15, 30),
+      isReturn: false,
+      holidays: NO_HOLIDAYS,
+      morningCutoffMin: MORNING_CUTOFF_MIN,
+      afternoonCutoffMin: AFTERNOON_CUTOFF_MIN,
+    });
+    expect(withExplicitDefaults).toEqual(withDefaults);
+  });
+
+  // The bug this catches: cutoffMessage/cutoffOverrideNote used to derive
+  // "8:30am"/"3:00pm" from `session` alone, so an admin-edited cutoff would
+  // have produced a CORRECT verdict with a WRONG, stale message.
+  it("cutoffMessage reports the OVERRIDDEN time, not the hardcoded default text", () => {
+    const v = bookingCutoffVerdict({
+      now: at(16, 0),
+      pickup: at(16, 30),
+      isReturn: false,
+      holidays: NO_HOLIDAYS,
+      afternoonCutoffMin: 16 * 60,
+    });
+    expect(v.allowed).toBe(false);
+    if (v.allowed) return;
+    expect(cutoffMessage(v)).toBe(
+      "Afternoon pickups close at 4:00pm. The earliest pickup you can book now is 2026-08-11."
+    );
+    expect(cutoffOverrideNote(v, "office is closing early")).toBe(
+      "Admin override: booked past the 4:00pm afternoon cut-off — office is closing early"
+    );
   });
 });
 

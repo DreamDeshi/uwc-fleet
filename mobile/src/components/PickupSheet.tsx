@@ -23,6 +23,7 @@ import {
   slotToDate,
 } from "../lib/pickupCalendar";
 import { formatDate, weekdayShortNames } from "../lib/format";
+import { useBookingCutoffSettings } from "../hooks/queries";
 
 /**
  * The requestor's pickup picker: calendar → hour dial → minute dial, in one
@@ -73,9 +74,19 @@ export function PickupSheet({
   onConfirm: (slot: PickupSlot) => void;
   onClose: () => void;
 }) {
+  // 27 Aug 2026 — the B7 cut-off minutes are admin-editable now; fetch the
+  // live values so the picker never offers a slot the server would refuse
+  // (or hides one it would actually accept). Falls back to the mirrored
+  // constants while loading — see useBookingCutoffSettings.
+  const { morningCutoffMin, afternoonCutoffMin } = useBookingCutoffSettings();
   const cutoffOpts = useMemo(
-    () => ({ isReturn: isReturn === true, isAdmin: isAdmin === true }),
-    [isReturn, isAdmin]
+    () => ({
+      isReturn: isReturn === true,
+      isAdmin: isAdmin === true,
+      morningCutoffMin,
+      afternoonCutoffMin,
+    }),
+    [isReturn, isAdmin, morningCutoffMin, afternoonCutoffMin]
   );
   const { t } = useTranslation();
   const clock = useMemo(() => now ?? new Date(), [now, visible]);

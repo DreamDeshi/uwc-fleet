@@ -432,4 +432,24 @@ describe("cutoffClosedAt — judged in MYT, not on the device clock", () => {
     expect(cutoffClosedAt(slot, now, true, false)).toBe(false); // return: exempt
     expect(cutoffClosedAt(slot, now, false, true)).toBe(false); // admin: may override
   });
+
+  // 27 Aug 2026 — Teh agreed the cut-off minutes should be admin-editable;
+  // useBookingCutoffSettings fetches the live values and passes them in here.
+  // These prove the override actually moves the boundary, mirroring the
+  // server-side cases in api/tests/bookingCutoff.test.ts.
+  it("an explicit afternoonCutoffMin override moves the boundary", () => {
+    const now = at("2026-08-12T05:00:00Z"); // 13:00 MYT
+    const slot = at("2026-08-12T07:30:00Z"); // 15:30 MYT, same MYT day
+
+    // At the default (15:00), 13:00 is still open.
+    expect(cutoffClosedAt(slot, now)).toBe(false);
+    // An admin setting of 12:00 (720 min) closes that same instant.
+    expect(cutoffClosedAt(slot, now, false, false, { afternoonCutoffMin: 12 * 60 })).toBe(true);
+  });
+
+  it("omitting the overrides keeps today's exact default behaviour", () => {
+    const now = at("2026-08-12T07:06:00Z");
+    const slot = at("2026-08-12T08:00:00Z");
+    expect(cutoffClosedAt(slot, now, false, false, {})).toBe(cutoffClosedAt(slot, now));
+  });
 });

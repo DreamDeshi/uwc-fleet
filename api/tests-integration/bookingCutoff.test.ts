@@ -254,4 +254,82 @@ describe("B7 — booking cut-offs at the route", () => {
       });
     expect(edited.status).toBe(200);
   });
+
+  /**
+   * THE ADMIN-EDITABLE SETTING (Teh, WhatsApp, 27 Aug 2026 — "yes" to a
+   * flexible system for the admin to change the cut-off time). This proves
+   * the ROUTE actually reads the effective setting, not just that
+   * `bookingCutoffVerdict` accepts an override parameter in isolation — per
+   * AGENTS.md, a unit test calling the pure function directly cannot tell
+   * "wired in" from "dead code accepting an unused parameter".
+   */
+  it("PATCHing booking.afternoon_cutoff_min changes what the route actually accepts", async () => {
+    const admin = await loginAs(ADMIN);
+    const requestor = await loginAs(REQUESTOR);
+    const delivery = await routeTypeIdNamed(requestor, "Customer Delivery");
+
+    // At the DEFAULT (15:00), 14:30 is still open for a same-day afternoon pickup.
+    freeze(myt(14, 30));
+    expect((await book(requestor, delivery, myt(15, 0))).status).toBe(201);
+
+    // An admin moves the cut-off two hours earlier, to 13:00.
+    const patch = await api()
+      .patch("/api/v1/settings/booking.afternoon_cutoff_min")
+      .set(auth(admin))
+      .send({ value: 13 * 60 });
+    expect(patch.status).toBe(200);
+    expect(patch.body).toEqual({ key: "booking.afternoon_cutoff_min", value: 13 * 60 });
+
+    // The SAME wall-clock instant that was accepted a moment ago is now refused.
+    const res = await book(requestor, delivery, myt(15, 30));
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("PICKUP_AFTER_CUTOFF");
+    // The message reflects the NEW time, not the stale "3:00pm" default text.
+    expect(res.body.error.message).toContain("Afternoon pickups close at 1:00pm");
+
+    // Audited: who changed it, and the old→new value.
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: { contains: "setting.updated booking.afternoon_cutoff_min" } },
+    });
+    expect(audit?.action).toBe(`setting.updated booking.afternoon_cutoff_min ${15 * 60}→${13 * 60}`);
+    expect(audit?.table_name).toBe("Setting");
+
+    // Resetting it restores the default (15:00) behaviour.
+    const del = await api()
+      .delete("/api/v1/settings/booking.afternoon_cutoff_min")
+      .set(auth(admin));
+    expect(del.status).toBe(200);
+    expect(del.body).toEqual({ key: "booking.afternoon_cutoff_min", value: 15 * 60 });
+    expect((await book(requestor, delivery, myt(15, 0))).status).toBe(201);
+  });
+
+  it("a REQUESTOR cannot change a setting, only read it", async () => {
+    const requestor = await loginAs(REQUESTOR);
+    const patch = await api()
+      .patch("/api/v1/settings/booking.afternoon_cutoff_min")
+      .set(auth(requestor))
+      .send({ value: 12 * 60 });
+    expect(patch.status).toBe(403);
+
+    const list = await api().get("/api/v1/settings").set(auth(requestor));
+    expect(list.status).toBe(200);
+    expect(list.body.settings.find((s: { key: string }) => s.key === "booking.afternoon_cutoff_min")).toMatchObject(
+      { value: 15 * 60, source: "default" }
+    );
+  });
+
+  it("rejects an out-of-range value rather than silently clamping it", async () => {
+    const admin = await loginAs(ADMIN);
+    const res = await api()
+      .patch("/api/v1/settings/booking.morning_cutoff_min")
+      .set(auth(admin))
+      .send({ value: 1440 }); // one past 23:59
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("INVALID_SETTING_VALUE");
+    // Unchanged — the bad write must not have landed.
+    const list = await api().get("/api/v1/settings").set(auth(admin));
+    expect(
+      list.body.settings.find((s: { key: string }) => s.key === "booking.morning_cutoff_min")
+    ).toMatchObject({ value: 8 * 60 + 30, source: "default" });
+  });
 });
