@@ -13,7 +13,7 @@ describe("settingsRegistry — the booking cut-off entries", () => {
   it("both cut-off settings are registered with the same defaults bookingCutoff.ts exports", () => {
     const morning = getSettingDef("booking.morning_cutoff_min");
     const afternoon = getSettingDef("booking.afternoon_cutoff_min");
-    expect(morning?.default).toBe(8 * 60 + 30);
+    expect(morning?.default).toBe(10 * 60);
     expect(afternoon?.default).toBe(15 * 60);
     expect(morning?.type).toBe("minutes");
     expect(afternoon?.type).toBe("minutes");

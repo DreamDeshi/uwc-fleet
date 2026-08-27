@@ -42,15 +42,20 @@ import {
  *
  *  - `isReturn` — HIS exemption ("anytime before 12am"), so the cut-off does
  *    not apply at all;
+ *  - `isInterplant` — ALSO exempt entirely (Teh, WhatsApp, 27 Aug 2026 2:19pm:
+ *    "then 'interplant' no cut off time.."), same treatment as a return. An
+ *    interplant RETURN was already covered by `isReturn`; this is what covers
+ *    interplant DELIVERY;
  *  - `isAdmin`  — the OVERRIDE (owner ruling, 12 Aug 2026). The slot is
  *    offered, the server still demands a stated reason, and the reason is
  *    audited. Not an exemption.
  *
- * Both default to false — restricted — so a caller that forgets shows fewer
- * slots than the server would take rather than more.
+ * All three default to false — restricted — so a caller that forgets shows
+ * fewer slots than the server would take rather than more.
  */
 export interface CutoffOpts {
   isReturn?: boolean;
+  isInterplant?: boolean;
   isAdmin?: boolean;
   /** Effective B7 cut-off minutes, if an admin has set one (27 Aug 2026 —
    *  see useBookingCutoffSettings). Default to the mirrored constants below,
@@ -97,13 +102,14 @@ export function slotToDate(now: Date, slot: PickupSlot): Date {
 export function slotNeedsCutoffOverride(
   slot: PickupSlot,
   now: Date,
-  opts: Pick<CutoffOpts, "isReturn" | "morningCutoffMin" | "afternoonCutoffMin" | "sessionSplitMin"> = {}
+  opts: Pick<CutoffOpts, "isReturn" | "isInterplant" | "morningCutoffMin" | "afternoonCutoffMin" | "sessionSplitMin"> = {}
 ): boolean {
   return cutoffClosedAt(
     slotInstant(dateForOffset(now, slot.dayOffset), slot.hour),
     now,
     opts.isReturn === true,
     false,
+    opts.isInterplant === true,
     {
       morningCutoffMin: opts.morningCutoffMin,
       afternoonCutoffMin: opts.afternoonCutoffMin,
@@ -170,9 +176,10 @@ export function cutoffClosedAt(
   now: Date,
   isReturn = false,
   isAdmin = false,
+  isInterplant = false,
   overrides: Pick<CutoffOpts, "morningCutoffMin" | "afternoonCutoffMin" | "sessionSplitMin"> = {}
 ): boolean {
-  if (isReturn) return false; // "anytime before 12am" — his own exemption
+  if (isReturn || isInterplant) return false; // "anytime before 12am" / "no cut off time" — his own exemptions
   // ⚠ AN ADMIN IS NOT EXEMPT — they may OVERRIDE, which is a different thing.
   // The picker offers them the slot; the server still refuses it unless they
   // state a reason, and that reason is audited. Hiding the slot from the office
@@ -214,7 +221,7 @@ export function bookableMinutes(
   if (offset < 0 || offset > PICKUP_MAX_DAY_OFFSET) return [];
   if (offset > 0) return [...PICKUP_MINUTES];
   if (
-    cutoffClosedAt(slotInstant(date, hour), now, opts.isReturn === true, opts.isAdmin === true, {
+    cutoffClosedAt(slotInstant(date, hour), now, opts.isReturn === true, opts.isAdmin === true, opts.isInterplant === true, {
       morningCutoffMin: opts.morningCutoffMin,
       afternoonCutoffMin: opts.afternoonCutoffMin,
       sessionSplitMin: opts.sessionSplitMin,

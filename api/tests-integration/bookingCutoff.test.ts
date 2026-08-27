@@ -69,37 +69,54 @@ describe("B7 — booking cut-offs at the route", () => {
     await prisma.$disconnect();
   });
 
-  it("REFUSES a today-morning pickup booked after 08:30, and says what to do", async () => {
+  it("REFUSES a today-morning pickup booked after 10:00, and says what to do", async () => {
     const requestor = await loginAs(REQUESTOR);
     const delivery = await routeTypeIdNamed(requestor, "Customer Delivery");
 
-    freeze(myt(9, 0)); // 09:00 MYT — the morning cut-off has passed
+    freeze(myt(10, 30)); // 10:30 MYT — the morning cut-off has passed
     const res = await book(requestor, delivery, myt(11, 0)); // still a morning pickup
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("PICKUP_AFTER_CUTOFF");
     expect(res.body.error.message).toBe(
-      "Morning pickups close at 8:30am. The earliest pickup you can book now is 2026-08-11."
+      "Morning pickups close at 10:00am. The earliest pickup you can book now is 2026-08-11."
     );
     expect(await prisma.trip.count()).toBe(0); // nothing was written
   });
 
-  it("ACCEPTS the same booking made at 08:29", async () => {
+  it("ACCEPTS the same booking made at 09:59", async () => {
     // The discriminator for the whole rule: identical request, one minute
     // earlier. If this failed too, the route would be rejecting for some other
     // reason and the case above would prove nothing.
     const requestor = await loginAs(REQUESTOR);
     const delivery = await routeTypeIdNamed(requestor, "Customer Delivery");
 
-    freeze(myt(8, 29));
+    freeze(myt(9, 59));
     expect((await book(requestor, delivery, myt(11, 0))).status).toBe(201);
   });
 
-  it("ACCEPTS a today-AFTERNOON pickup at 09:00 — the sessions close separately", async () => {
+  it("ACCEPTS an INTERPLANT delivery at any hour — exempt entirely, same as a return (Teh, 27 Aug 2:19pm)", async () => {
+    const requestor = await loginAs(REQUESTOR);
+    const interplant = await routeTypeIdNamed(requestor, "Inter-Plant Delivery");
+
+    freeze(myt(15, 30)); // long past both cut-offs
+    expect((await book(requestor, interplant, myt(16, 0))).status).toBe(201);
+
+    // The exact instant/pickup pair the CUSTOMER delivery test above just
+    // proved is REFUSED — same clock, same pickup, only the route type
+    // differs, so this discriminates the exemption rather than coincidence.
+    freeze(myt(10, 30));
+    expect((await book(requestor, interplant, myt(11, 0))).status).toBe(201);
+  });
+
+  it("ACCEPTS a today-AFTERNOON pickup at 10:30 — the sessions close separately", async () => {
+    // 10:30 rather than 09:00: the morning cut-off (10:00) has to have ALREADY
+    // passed for this to prove anything — otherwise it would pass trivially
+    // regardless of whether sessions close independently.
     const requestor = await loginAs(REQUESTOR);
     const delivery = await routeTypeIdNamed(requestor, "Customer Delivery");
 
-    freeze(myt(9, 0));
+    freeze(myt(10, 30));
     expect((await book(requestor, delivery, myt(15, 0))).status).toBe(201);
   });
 
@@ -330,6 +347,6 @@ describe("B7 — booking cut-offs at the route", () => {
     const list = await api().get("/api/v1/settings").set(auth(admin));
     expect(
       list.body.settings.find((s: { key: string }) => s.key === "booking.morning_cutoff_min")
-    ).toMatchObject({ value: 8 * 60 + 30, source: "default" });
+    ).toMatchObject({ value: 10 * 60, source: "default" });
   });
 });

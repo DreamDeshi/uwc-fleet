@@ -26,9 +26,13 @@ export const PICKUP_WINDOW_END_HOUR = 2;
  * for return cargo from supplier / customer, they can choose pickup anytime
  * before 12am".
  *
- * ⚠ THE AFTERNOON NUMBER MOVED, 27 Aug 2026 — see the server file for the full
- * note. Teh hit the original 13:30 cut-off live and asked to move it to 15:00
- * the same conversation; the morning cut-off (08:30) is untouched.
+ * ⚠ BOTH NUMBERS MOVED, 27/28 Aug 2026 — see the server file's header for the
+ * full WhatsApp thread. Teh hit the original 13:30 cut-off live and asked to
+ * move it to 15:00 (27 Aug), then in the SAME conversation specified the
+ * morning session should be 10:00, not 08:30, and interplant work should be
+ * exempt from both entirely — a message that went unimplemented for six days
+ * until 28 Aug. `isInterplant` below covers interplant DELIVERY (return was
+ * already exempt).
  *
  * The SERVER is the authority and rejects a late booking outright. These exist
  * so the calendar never OFFERS a slot the server will refuse — a requestor
@@ -45,7 +49,7 @@ export const PICKUP_WINDOW_END_HOUR = 2;
  * anyone who is not — they would see a slot refused rather than a slot silently
  * accepted, which is the safe direction of that disagreement.
  */
-export const MORNING_CUTOFF_MIN = 8 * 60 + 30; // 08:30 — his
+export const MORNING_CUTOFF_MIN = 10 * 60; // 10:00 — his (was 08:30 until 28 Aug 2026)
 export const AFTERNOON_CUTOFF_MIN = 15 * 60; // 15:00 — his (was 13:30 until 27 Aug 2026)
 /** Noon. OURS, not his — see the server constant, which is env-tunable. */
 export const SESSION_SPLIT_MIN = 12 * 60;

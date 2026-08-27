@@ -333,7 +333,7 @@ describe("B7 — today's sessions close", () => {
     // The authority is api/src/lib/bookingCutoff.ts. There is no shared module
     // across the two packages, so the mirror is pinned by naming both sides
     // here: a change on the server has to walk past this test.
-    expect(MORNING_CUTOFF_MIN).toBe(8 * 60 + 30);
+    expect(MORNING_CUTOFF_MIN).toBe(10 * 60);
     expect(AFTERNOON_CUTOFF_MIN).toBe(15 * 60);
     expect(SESSION_SPLIT_MIN).toBe(12 * 60);
   });
@@ -414,8 +414,8 @@ describe("cutoffClosedAt — judged in MYT, not on the device clock", () => {
     expect(cutoffClosedAt(slot, now)).toBe(true);
   });
 
-  it("is OPEN at 00:20 UTC — 08:20 MYT, ten minutes before the morning closes", () => {
-    const now = at("2026-08-12T00:20:00Z"); // 08:20 MYT
+  it("is OPEN at 01:50 UTC — 09:50 MYT, ten minutes before the morning closes", () => {
+    const now = at("2026-08-12T01:50:00Z"); // 09:50 MYT
     expect(cutoffClosedAt(at("2026-08-12T03:00:00Z"), now)).toBe(false); // 11:00 MYT
   });
 
@@ -426,11 +426,14 @@ describe("cutoffClosedAt — judged in MYT, not on the device clock", () => {
     expect(cutoffClosedAt(at("2026-08-12T16:10:00Z"), now)).toBe(false);
   });
 
-  it("returns and admins are never closed out", () => {
+  it("returns, admins and interplant are never closed out", () => {
     const now = at("2026-08-12T05:36:00Z");
     const slot = at("2026-08-12T07:00:00Z");
     expect(cutoffClosedAt(slot, now, true, false)).toBe(false); // return: exempt
     expect(cutoffClosedAt(slot, now, false, true)).toBe(false); // admin: may override
+    // interplant: exempt entirely (Teh, WhatsApp, 27 Aug 2026 2:19pm) — same
+    // shape as return, added 28 Aug 2026.
+    expect(cutoffClosedAt(slot, now, false, false, true)).toBe(false);
   });
 
   // 27 Aug 2026 — Teh agreed the cut-off minutes should be admin-editable;
@@ -444,12 +447,12 @@ describe("cutoffClosedAt — judged in MYT, not on the device clock", () => {
     // At the default (15:00), 13:00 is still open.
     expect(cutoffClosedAt(slot, now)).toBe(false);
     // An admin setting of 12:00 (720 min) closes that same instant.
-    expect(cutoffClosedAt(slot, now, false, false, { afternoonCutoffMin: 12 * 60 })).toBe(true);
+    expect(cutoffClosedAt(slot, now, false, false, false, { afternoonCutoffMin: 12 * 60 })).toBe(true);
   });
 
   it("omitting the overrides keeps today's exact default behaviour", () => {
     const now = at("2026-08-12T07:06:00Z");
     const slot = at("2026-08-12T08:00:00Z");
-    expect(cutoffClosedAt(slot, now, false, false, {})).toBe(cutoffClosedAt(slot, now));
+    expect(cutoffClosedAt(slot, now, false, false, false, {})).toBe(cutoffClosedAt(slot, now));
   });
 });

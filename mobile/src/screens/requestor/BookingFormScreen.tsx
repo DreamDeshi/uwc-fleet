@@ -304,11 +304,14 @@ export function BookingFormScreen() {
   const routeMatrix = useMemo(() => buildRouteMatrix(routeTypes as RouteType[]), [routeTypes]);
   const { user } = useAuth();
   const selectedChoice = choiceForId(routeMatrix, routeTypeId);
-  // B7 — a RETURN booking is exempt from the 08:30 / 15:00 cut-offs. Read from
+  // B7 — a RETURN booking is exempt from the 10:00 / 15:00 cut-offs. Read from
   // the SELECTED route type rather than the `direction` toggle: the toggle can
   // sit on a pair that resolves to no route type, and the server decides on the
   // route type actually submitted.
   const isReturnBooking = selectedChoice?.direction === "return";
+  // B7 — INTERPLANT work is ALSO exempt entirely, either direction (Teh,
+  // WhatsApp, 27 Aug 2026 2:19pm: "then 'interplant' no cut off time..").
+  const isInterplantBooking = selectedChoice?.family === "interplant";
   // B7 — an ADMIN booking through this form may place a same-day job past the
   // cut-offs, on the record. The picker offers them the slot; the server still
   // refuses it without a stated reason, so the box below is not optional
@@ -320,6 +323,7 @@ export function BookingFormScreen() {
   const { morningCutoffMin, afternoonCutoffMin } = useBookingCutoffSettings();
   const cutoffOpts = {
     isReturn: isReturnBooking,
+    isInterplant: isInterplantBooking,
     isAdmin: isAdminBooking,
     morningCutoffMin,
     afternoonCutoffMin,
@@ -327,7 +331,12 @@ export function BookingFormScreen() {
   const needsCutoffReason =
     isAdminBooking &&
     !isEdit &&
-    slotNeedsCutoffOverride(slot, new Date(), { isReturn: isReturnBooking, morningCutoffMin, afternoonCutoffMin });
+    slotNeedsCutoffOverride(slot, new Date(), {
+      isReturn: isReturnBooking,
+      isInterplant: isInterplantBooking,
+      morningCutoffMin,
+      afternoonCutoffMin,
+    });
   const [cutoffReason, setCutoffReason] = useState("");
   // Held separately from the resolved id so the two controls stay independent:
   // picking a family before a direction is a legitimate half-made choice.
@@ -350,7 +359,7 @@ export function BookingFormScreen() {
   useEffect(() => {
     if (isEdit) return; // an edit prefills a stored pickup; never move it silently
     setSlot((current) => clampSlotToDay(current, new Date(), cutoffOpts));
-  }, [isReturnBooking, isAdminBooking, isEdit]);
+  }, [isReturnBooking, isInterplantBooking, isAdminBooking, isEdit]);
 
   const chooseRoute = (nextFamily: RouteFamily, preferred: RouteDirection) => {
     setFamily(nextFamily);
@@ -944,6 +953,7 @@ export function BookingFormScreen() {
         visible={pickupOpen}
         slot={slot}
         isReturn={isReturnBooking}
+        isInterplant={isInterplantBooking}
         isAdmin={isAdminBooking}
         onConfirm={(next) => {
           slotTouched.current = true; // user's explicit choice — never auto-refresh over it
