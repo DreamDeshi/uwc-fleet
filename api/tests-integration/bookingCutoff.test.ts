@@ -347,6 +347,6 @@ describe("B7 — booking cut-offs at the route", () => {
     const list = await api().get("/api/v1/settings").set(auth(admin));
     expect(
       list.body.settings.find((s: { key: string }) => s.key === "booking.morning_cutoff_min")
-    ).toMatchObject({ value: 8 * 60 + 30, source: "default" });
+    ).toMatchObject({ value: 10 * 60, source: "default" });
   });
 });
