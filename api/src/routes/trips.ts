@@ -345,7 +345,7 @@ router.post(
         throw new ApiError(400, "ROUTE_TYPE_NOT_FOUND", "Route type does not exist.");
       }
 
-      // ── B7 — the booking cut-offs (08:30 morning / 13:30 afternoon) ─────────
+      // ── B7 — the booking cut-offs (08:30 morning / 15:00 afternoon) ─────────
       //
       // REQUESTORS ONLY. An admin booking is the office booking, and the office
       // is the dispatcher this cut-off exists to protect — the same reasoning

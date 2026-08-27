@@ -60,7 +60,7 @@ export function PickupSheet({
   /** Injectable for tests/screenshots; defaults to the device clock. */
   now?: Date;
   /**
-   * B7 — a RETURN booking is exempt from the 08:30 / 13:30 cut-offs ("for
+   * B7 — a RETURN booking is exempt from the 08:30 / 15:00 cut-offs ("for
    * return cargo from supplier / customer, they can choose pickup anytime
    * before 12am"). Defaults to false, i.e. RESTRICTED: forgetting it shows
    * fewer slots than the server would take, where the opposite default would

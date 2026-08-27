@@ -103,14 +103,14 @@ describe("B7 — booking cut-offs at the route", () => {
     expect((await book(requestor, delivery, myt(15, 0))).status).toBe(201);
   });
 
-  it("REFUSES that afternoon pickup once 13:30 has passed", async () => {
+  it("REFUSES that afternoon pickup once 15:00 has passed", async () => {
     const requestor = await loginAs(REQUESTOR);
     const delivery = await routeTypeIdNamed(requestor, "Customer Delivery");
 
-    freeze(myt(14, 0));
-    const res = await book(requestor, delivery, myt(15, 0));
+    freeze(myt(15, 30));
+    const res = await book(requestor, delivery, myt(16, 0));
     expect(res.status).toBe(400);
-    expect(res.body.error.message).toContain("Afternoon pickups close at 1:30pm");
+    expect(res.body.error.message).toContain("Afternoon pickups close at 3:00pm");
   });
 
   it("ACCEPTS tomorrow morning at 23:00 tonight — only today is gated", async () => {
@@ -133,9 +133,10 @@ describe("B7 — booking cut-offs at the route", () => {
   /**
    * THE ADMIN OVERRIDE (owner ruling, 12 Aug 2026).
    *
-   * Read literally, B7 removes ALL same-day booking after 13:30 while the
-   * working day runs to midnight — about ten hours of capacity the office could
-   * not use, and urgent same-day work exists (Mr. Teh's own Sheet1: "CONQUEST
+   * Read literally, B7 removes ALL same-day booking after the afternoon cut-off
+   * (15:00 since 27 Aug 2026, was 13:30) while the working day runs to
+   * midnight — several hours of capacity the office could not use, and urgent
+   * same-day work exists (Mr. Teh's own Sheet1: "CONQUEST
    * (est 2 pallet P7 URGENT"). The rule binds the REQUESTOR; the admin steps
    * outside it on the record. Same shape as email pt 6 (admin authorises
    * cross-class swaps), R3 A7 (admin decides when the fleet is full) and A19
@@ -147,8 +148,8 @@ describe("B7 — booking cut-offs at the route", () => {
     const admin = await loginAs(ADMIN);
     const delivery = await routeTypeIdNamed(admin, "Customer Delivery");
 
-    freeze(myt(14, 0));
-    const res = await book(admin, delivery, myt(15, 0));
+    freeze(myt(15, 30));
+    const res = await book(admin, delivery, myt(16, 0));
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("CUTOFF_OVERRIDE_REASON_REQUIRED");
     expect(res.body.error.message).toContain("give a reason");
@@ -159,8 +160,8 @@ describe("B7 — booking cut-offs at the route", () => {
     const admin = await loginAs(ADMIN);
     const delivery = await routeTypeIdNamed(admin, "Customer Delivery");
 
-    freeze(myt(14, 0));
-    const res = await book(admin, delivery, myt(15, 0), "CONQUEST urgent, 2 pallets to P7");
+    freeze(myt(15, 30));
+    const res = await book(admin, delivery, myt(16, 0), "CONQUEST urgent, 2 pallets to P7");
     expect(res.status).toBe(201);
 
     // WHO: an audit row under its own action, so this is a query rather than a
@@ -177,7 +178,7 @@ describe("B7 — booking cut-offs at the route", () => {
     const events = await prisma.tripStatusHistory.findMany({ where: { trip_id: res.body.id } });
     expect(events).toHaveLength(1);
     expect(events[0].note).toBe(
-      "Admin override: booked past the 1:30pm afternoon cut-off — CONQUEST urgent, 2 pallets to P7"
+      "Admin override: booked past the 3:00pm afternoon cut-off — CONQUEST urgent, 2 pallets to P7"
     );
   });
 
@@ -201,15 +202,15 @@ describe("B7 — booking cut-offs at the route", () => {
     const requestor = await loginAs(REQUESTOR);
     const delivery = await routeTypeIdNamed(requestor, "Customer Delivery");
 
-    freeze(myt(14, 0));
-    const res = await book(requestor, delivery, myt(15, 0), "please, it is urgent");
+    freeze(myt(15, 30));
+    const res = await book(requestor, delivery, myt(16, 0), "please, it is urgent");
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("PICKUP_AFTER_CUTOFF"); // not the override path
     expect(await prisma.trip.count()).toBe(0);
   });
 
   it("binds an EDIT that MOVES the pickup, so the rule cannot be walked around", async () => {
-    // Book tomorrow at 09:00 (allowed), then at 14:00 try to pull it back to
+    // Book tomorrow at 09:00 (allowed), then at 15:30 try to pull it back to
     // this afternoon. Without this the whole rule is one edit away from
     // useless.
     const requestor = await loginAs(REQUESTOR);
@@ -219,13 +220,13 @@ describe("B7 — booking cut-offs at the route", () => {
     const created = await book(requestor, delivery, mytTue(9, 0));
     expect(created.status).toBe(201);
 
-    freeze(myt(14, 0));
+    freeze(myt(15, 30));
     const moved = await api()
       .patch(`/api/v1/trips/${created.body.id}`)
       .set(auth(requestor))
       .send({
         route_type_id: delivery,
-        pickup_datetime: myt(15, 0).toISOString(),
+        pickup_datetime: myt(16, 0).toISOString(),
         stops: created.body.stops.map((s: { consignee_id: string }) => ({ consignee_id: s.consignee_id })),
       });
     expect(moved.status).toBe(400);

@@ -108,8 +108,9 @@ export function isInterplantRouteType(name: string | null | undefined): boolean 
  * is collection-driven in every case — it moves when the other site says the
  * cargo is ready, not when our dispatcher would prefer — which is the whole
  * reason he exempted returns at all. For INTERPLANT it matters more, not less:
- * pay is per completed ROUND TRIP (R5 A2), so refusing a return leg after 13:30
- * would not merely delay a booking, it would strand the outbound leg's point
+ * pay is per completed ROUND TRIP (R5 A2), so refusing a return leg after the
+ * afternoon cut-off would not merely delay a booking, it would strand the
+ * outbound leg's point
  * unpaid until the next day and, if the return then lands on the following
  * calendar day, lose it entirely (IM11). Erring toward ALLOWED is the direction
  * that cannot take money off a driver for a rule whose boundary we chose.

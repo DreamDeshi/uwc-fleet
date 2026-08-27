@@ -28,7 +28,7 @@ import {
  * so the dial's disabled ring is stable rather than mysteriously changing when
  * you pick a different day.
  *
- *  3. B7'S CUT-OFFS — 08:30 for a morning pickup, 13:30 for an afternoon one,
+ *  3. B7'S CUT-OFFS — 08:30 for a morning pickup, 15:00 for an afternoon one,
  *     TODAY ONLY, and never for a return leg. The server refuses a booking made
  *     after them; this is what stops the app OFFERING one first.
  *
@@ -141,7 +141,7 @@ function mytParts(d: Date): { key: string; minutes: number } {
 }
 
 /**
- * B7's third rule: TODAY'S SESSIONS CLOSE (08:30 morning, 13:30 afternoon).
+ * B7's third rule: TODAY'S SESSIONS CLOSE (08:30 morning, 15:00 afternoon).
  *
  * Applies to TODAY IN MYT only, so a future date's dial is unaffected and stays
  * stable — and "today" means the same day the server means.
