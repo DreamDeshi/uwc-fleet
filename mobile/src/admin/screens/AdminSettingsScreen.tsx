@@ -17,8 +17,8 @@
 // useAuth().setLanguage → i18n.changeLanguage (live re-render across every
 // screen via react-i18next) + PATCH /users/me (persisted per account,
 // re-applied on next login by AuthContext.fetchMe). No parallel i18n.
-import React, { useEffect, useState } from "react";
-import { Image, Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React, { useState } from "react";
+import { Image, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
@@ -35,39 +35,6 @@ import { AppLanguage } from "../../types";
 import { EditProfileModal, ChangePasswordModal } from "../../components/AccountModals";
 import { FeedbackModal } from "../../components/FeedbackModal";
 import { AppUpdatesCard } from "../../components/AppUpdatesCard";
-import { TextField } from "../../components/Field";
-import { useSettingsList, type EffectiveSettingDto } from "../../hooks/queries";
-import { useUpdateSetting, useResetSetting } from "../hooks/queries";
-
-// ── System settings (27 Aug 2026) ─────────────────────────────────────────
-// Client-side copy per setting key: the server's `label`/`description` are
-// plain English for non-mobile consumers, so the app looks up its OWN i18n
-// keys instead of rendering the API's raw string — every user-visible
-// string still goes through en/ms/zh, per AGENTS.md's i18n rule. A key with
-// no entry here falls back to the server's English string rather than
-// rendering nothing, so a future setting added to the registry without a
-// translation yet is still visible (in English) instead of silently absent.
-const SETTING_COPY: Record<string, { labelKey: string; descKey: string }> = {
-  "booking.morning_cutoff_min": {
-    labelKey: "admin.settings.cutoffMorningLabel",
-    descKey: "admin.settings.cutoffMorningDesc",
-  },
-  "booking.afternoon_cutoff_min": {
-    labelKey: "admin.settings.cutoffAfternoonLabel",
-    descKey: "admin.settings.cutoffAfternoonDesc",
-  },
-};
-
-function formatMinutesHm(min: number): string {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
-function parseMinutesHm(hhmm: string): number | null {
-  const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(hhmm.trim());
-  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
-}
 
 // Language display names are the native endonyms (English / Bahasa Malaysia /
 // 简体中文) — identical in every locale — so they reuse the existing
@@ -88,9 +55,6 @@ export function AdminSettingsScreen() {
   const [pwOpen, setPwOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [confirmOut, setConfirmOut] = useState(false);
-  const [editingSetting, setEditingSetting] = useState<EffectiveSettingDto | null>(null);
-  const { data: settings } = useSettingsList();
-  const bookingCutoffSettings = (settings ?? []).filter((s) => s.key.startsWith("booking."));
   const narrow = mode !== "wide";
 
   const current: AppLanguage = (["en", "ms", "zh"] as const).includes(i18n.language as AppLanguage)
@@ -211,49 +175,6 @@ export function AdminSettingsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* System settings (27 Aug 2026) — Teh agreed to a flexible B7
-            cut-off time (WhatsApp, 27 Aug), so it no longer needs a deploy to
-            change. Registry-driven: a future setting just needs an entry in
-            SETTING_COPY above, not a new screen. */}
-        {bookingCutoffSettings.length > 0 ? (
-          <>
-            <Text style={styles.sectionLabel}>{t("admin.settings.systemSettingsTitle")}</Text>
-            <View style={styles.card}>
-              <Text style={styles.settingCategoryLabel}>
-                {t("admin.settings.systemSettingsCategoryBookingCutoffs")}
-              </Text>
-              {bookingCutoffSettings.map((s, i) => {
-                const copy = SETTING_COPY[s.key];
-                const label = copy ? t(copy.labelKey) : s.label;
-                const desc = copy ? t(copy.descKey) : s.description;
-                return (
-                  <TouchableOpacity
-                    key={s.key}
-                    onPress={() => setEditingSetting(s as EffectiveSettingDto)}
-                    style={[styles.row, i > 0 && styles.rowDivider]}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.actionLabel}>{label}</Text>
-                      <Text style={styles.actionSub}>{desc}</Text>
-                    </View>
-                    <Text style={styles.settingValue}>
-                      {s.type === "minutes" ? formatMinutesHm(s.value as number) : String(s.value)}
-                    </Text>
-                    {s.source === "db" ? (
-                      <View style={styles.settingBadge}>
-                        <Text style={styles.settingBadgeText}>{t("admin.settings.settingCustomBadge")}</Text>
-                      </View>
-                    ) : null}
-                    <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </>
-        ) : null}
-
         {/* One inline segmented control, not three stacked radio rows — the
             shared Profile's control, and the reason this screen used to look
             like a different app. See ProfileScreen for why the buttons size
@@ -347,49 +268,6 @@ export function AdminSettingsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* System settings (27 Aug 2026) — Teh agreed to a flexible B7
-            cut-off time (WhatsApp, 27 Aug), so it no longer needs a deploy to
-            change. Registry-driven: a future setting just needs an entry in
-            SETTING_COPY above, not a new screen. */}
-        {bookingCutoffSettings.length > 0 ? (
-          <>
-            <Text style={styles.sectionLabel}>{t("admin.settings.systemSettingsTitle")}</Text>
-            <View style={styles.card}>
-              <Text style={styles.settingCategoryLabel}>
-                {t("admin.settings.systemSettingsCategoryBookingCutoffs")}
-              </Text>
-              {bookingCutoffSettings.map((s, i) => {
-                const copy = SETTING_COPY[s.key];
-                const label = copy ? t(copy.labelKey) : s.label;
-                const desc = copy ? t(copy.descKey) : s.description;
-                return (
-                  <TouchableOpacity
-                    key={s.key}
-                    onPress={() => setEditingSetting(s as EffectiveSettingDto)}
-                    style={[styles.row, i > 0 && styles.rowDivider]}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.actionLabel}>{label}</Text>
-                      <Text style={styles.actionSub}>{desc}</Text>
-                    </View>
-                    <Text style={styles.settingValue}>
-                      {s.type === "minutes" ? formatMinutesHm(s.value as number) : String(s.value)}
-                    </Text>
-                    {s.source === "db" ? (
-                      <View style={styles.settingBadge}>
-                        <Text style={styles.settingBadgeText}>{t("admin.settings.settingCustomBadge")}</Text>
-                      </View>
-                    ) : null}
-                    <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </>
-        ) : null}
-
         {/* One inline segmented control, not three stacked radio rows — the
             shared Profile's control, and the reason this screen used to look
             like a different app. See ProfileScreen for why the buttons size
@@ -448,7 +326,6 @@ export function AdminSettingsScreen() {
     <EditProfileModal visible={editOpen} onClose={() => setEditOpen(false)} />
     <ChangePasswordModal visible={pwOpen} onClose={() => setPwOpen(false)} />
     <FeedbackModal visible={feedbackOpen} screen="admin-settings" onClose={() => setFeedbackOpen(false)} />
-    <SettingEditModal setting={editingSetting} onClose={() => setEditingSetting(null)} />
     {confirmOut ? (
       <ConfirmDialog
         title={t("admin.signOut")}
@@ -461,101 +338,6 @@ export function AdminSettingsScreen() {
     </>
   );
 }
-
-/**
- * Editor for ONE setting at a time. Only "minutes" is wired below — the only
- * type any registry entry uses yet — but the modal is keyed on `setting.type`
- * so a future "integer"/"boolean"/"time" entry gets a clear place to add its
- * own input rather than silently falling through to the minutes parser.
- */
-function SettingEditModal({
-  setting,
-  onClose,
-}: {
-  setting: EffectiveSettingDto | null;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation();
-  const update = useUpdateSetting();
-  const reset = useResetSetting();
-  const [text, setText] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (setting && setting.type === "minutes") {
-      setText(formatMinutesHm(setting.value as number));
-      setError(null);
-    }
-  }, [setting]);
-
-  if (!setting) return null;
-  const copy = SETTING_COPY[setting.key];
-  const label = copy ? t(copy.labelKey) : setting.label;
-
-  const save = () => {
-    setError(null);
-    if (setting.type !== "minutes") return; // no other type is wired yet
-    const parsed = parseMinutesHm(text);
-    if (parsed === null) {
-      setError(t("admin.settings.settingTimeInvalid"));
-      return;
-    }
-    update.mutate(
-      { key: setting.key, value: parsed },
-      { onSuccess: onClose, onError: () => setError(t("admin.settings.settingSaveFailed")) }
-    );
-  };
-
-  const resetToDefault = () => {
-    setError(null);
-    reset.mutate(setting.key, {
-      onSuccess: onClose,
-      onError: () => setError(t("admin.settings.settingResetFailed")),
-    });
-  };
-
-  return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View style={editStyles.backdrop}>
-        <View style={editStyles.modal}>
-          <Text style={editStyles.title}>{t("admin.settings.settingEditTitle", { label })}</Text>
-          {setting.type === "minutes" ? (
-            <TextField
-              value={text}
-              onChangeText={setText}
-              placeholder={t("admin.settings.settingTimePlaceholder")}
-              keyboardType="numbers-and-punctuation"
-              maxLength={5}
-              autoCapitalize="none"
-            />
-          ) : null}
-          {error ? <Text style={editStyles.error}>{error}</Text> : null}
-          <TouchableOpacity onPress={resetToDefault} disabled={reset.isPending} style={editStyles.resetRow}>
-            <Text style={editStyles.resetLink}>{t("admin.settings.settingResetToDefault")}</Text>
-          </TouchableOpacity>
-          <View style={editStyles.actions}>
-            <Button variant="outline" onPress={onClose} style={{ flex: 1 }}>
-              {t("common.cancel")}
-            </Button>
-            <Button onPress={save} disabled={update.isPending} style={{ flex: 1 }}>
-              {t("common.save")}
-            </Button>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-const editStyles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center", padding: 24 },
-  modal: { backgroundColor: colors.card, borderRadius: 20, padding: 24, width: "100%", maxWidth: 440 },
-  title: { fontSize: 17, fontWeight: "800", color: colors.navy, textAlign: "center", marginBottom: 16 },
-  error: { color: colors.red, fontSize: font.sm, marginTop: 8 },
-  resetRow: { marginTop: 14, alignItems: "center" },
-  resetLink: { color: colors.blue, fontSize: font.sm, fontWeight: "700" },
-  actions: { flexDirection: "row", gap: 10, marginTop: 20 },
-});
 
 // Mirrors screens/shared/ProfileScreen's stylesheet so the two screens read as
 // one family. Values are the ADMIN theme's tokens — navy, blue and yellow are
@@ -616,18 +398,6 @@ const styles = StyleSheet.create({
   rowValue: { marginLeft: "auto", fontSize: font.md, fontWeight: "700", color: colors.text, flexShrink: 1 },
   actionLabel: { flex: 1, fontSize: 15, fontWeight: "700", color: colors.text },
   actionSub: { fontSize: font.xs, color: colors.textMuted, marginTop: 2 },
-  settingCategoryLabel: {
-    fontSize: font.xs,
-    fontWeight: "700",
-    color: colors.textFaint,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-    paddingHorizontal: 14,
-    paddingTop: 12,
-  },
-  settingValue: { fontSize: font.md, fontWeight: "700", color: colors.blue },
-  settingBadge: { backgroundColor: colors.panel, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
-  settingBadgeText: { fontSize: 10, fontWeight: "700", color: colors.textMuted },
 
   sectionLabel: {
     fontSize: font.xs,
