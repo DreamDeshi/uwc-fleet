@@ -210,7 +210,7 @@ router.get("/drivers", async (_req, res, next) => {
             incentive_earned: true,
             incentive_final: true,
             pickup_datetime: true,
-            cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } },
+            cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true, width_ft: true, length_ft: true } },
             // All stops (not take:1): the pay instants across the whole trip
             // feed the month bucket; stops[0] still carries the route label.
             // EARNING_STOP_SELECT, because this drives "Earned (mo.)" and it

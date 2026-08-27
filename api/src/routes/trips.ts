@@ -1209,7 +1209,7 @@ async function assignTripInTx(
 
   const orderCargo = await tx.cargoDetail.findMany({
               where: { trip_id: id },
-              select: { pallet_type: true, quantity: true, estimated_pallets: true },
+              select: { pallet_type: true, quantity: true, estimated_pallets: true, width_ft: true, length_ft: true },
             });
             // Capacity is scoped to THIS trip's pickup MYT day (16 Jul 2026 trial
             // fix): in_progress cargo is physically aboard and always counts, but
@@ -1230,7 +1230,7 @@ async function assignTripInTx(
                       },
                     ],
                   },
-                  select: { cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } } },
+                  select: { cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true, width_ft: true, length_ft: true } } },
                 },
               },
             });
@@ -2473,7 +2473,7 @@ router.post(
                     { status: "assigned", pickup_datetime: { gte: pickupDay.start, lt: pickupDay.end } },
                   ],
                 },
-                select: { cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } } },
+                select: { cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true, width_ft: true, length_ft: true } } },
               },
             },
           });

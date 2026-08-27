@@ -28,13 +28,46 @@ describe("stepIssue — one step at a time", () => {
     expect(stepIssue(complete, STEP_WHERE)).toBeNull();
   });
 
-  it("What needs cargo, per type", () => {
-    expect(stepIssue({ ...complete, totalPallets: 0 }, STEP_WHAT)?.key).toBe("booking.addCargo");
-    expect(stepIssue({ ...complete, cargoType: "box", boxQty: 0 }, STEP_WHAT)?.key).toBe("booking.addCargo");
+  it("What needs SOME cargo — nothing set anywhere is the only failure", () => {
+    const empty = { ...complete, totalPallets: 0 };
+    expect(stepIssue(empty, STEP_WHAT)?.key).toBe("booking.addCargo");
+    expect(stepIssue({ ...empty, cargoType: "box" }, STEP_WHAT)?.key).toBe("booking.addCargo");
     for (const cargoType of ["crate", "rack", "custom"]) {
-      expect(stepIssue({ ...complete, cargoType, dimsOk: false }, STEP_WHAT)?.key).toBe("booking.addCargoDims");
-      expect(stepIssue({ ...complete, cargoType, dimsOk: true }, STEP_WHAT)).toBeNull();
+      // Nothing set anywhere, viewing a dims tab: the specific message.
+      expect(stepIssue({ ...empty, cargoType, dimsOk: false }, STEP_WHAT)?.key).toBe("booking.addCargoDims");
+      expect(stepIssue({ ...empty, cargoType, dimsOk: true }, STEP_WHAT)).toBeNull();
     }
+  });
+
+  /**
+   * ⚠ CARGO IS A UNION, NOT AN EITHER/OR (27 Aug 2026 — the bug this pins).
+   * `complete` already carries 4 pallets; each case here only changes ONE of
+   * the other two cargo fields and must still see the pallets. The bug this
+   * replaces: a requestor with 11 pallets entered who switched to the Box tab
+   * had those pallets silently vanish, because the OLD check only looked at
+   * whichever tab `cargoType` currently pointed at.
+   */
+  it("pallets already set is enough — an empty or incomplete OTHER tab does not block", () => {
+    // Viewing Box with nothing typed in it, pallets already set: fine.
+    expect(stepIssue({ ...complete, cargoType: "box", boxQty: 0 }, STEP_WHAT)).toBeNull();
+    // Viewing a dims tab with incomplete dims, pallets already set: the
+    // incomplete extra is just not added — it does not block the step that
+    // pallets alone already satisfy.
+    for (const cargoType of ["crate", "rack", "custom"]) {
+      expect(stepIssue({ ...complete, cargoType, dimsOk: false }, STEP_WHAT)).toBeNull();
+    }
+  });
+
+  it("box alone is enough, even with zero pallets and no dims", () => {
+    expect(
+      stepIssue({ ...complete, cargoType: "box", totalPallets: 0, boxQty: 3, dimsOk: false }, STEP_WHAT)
+    ).toBeNull();
+  });
+
+  it("a valid dimensioned extra alone is enough, even with zero pallets and no box", () => {
+    expect(
+      stepIssue({ ...complete, cargoType: "rack", totalPallets: 0, boxQty: 0, dimsOk: true }, STEP_WHAT)
+    ).toBeNull();
   });
 
   it("Confirm owns no requirement of its own", () => {
@@ -175,5 +208,65 @@ describe("a legacy template that can no longer be submitted", () => {
   it("boxQty prefers the NEW field over the legacy one", () => {
     const both = tpl({ cargoType: "box", boxQty: 4, cartonQty: 99 });
     expect(templateToForm(both, SIZES).boxQty).toBe(4);
+  });
+});
+
+/**
+ * ⚠ CARGO IS A UNION, NOT AN EITHER/OR (27 Aug 2026). A saved template can
+ * now carry pallets AND a box AND a dimensioned extra together — the exact
+ * combination ("11 pallet + 1 box") that Mr. Teh's own bug report used.
+ */
+describe("templateToForm — a template can carry pallets + box + a dimensioned extra together", () => {
+  const SIZES = ["4×4", "3×4", "2×2"] as unknown as PalletSize[];
+  const tpl = (over: Partial<BookingTemplate>): BookingTemplate => ({
+    name: "Mixed load",
+    routeTypeId: "rt1",
+    stops: [],
+    cargoType: "pallet",
+    pallets: {},
+    remarks: "",
+    ...over,
+  });
+
+  it("restores pallets and box together, regardless of which tab cargoType lands on", () => {
+    const saved = tpl({
+      cargoType: "box", // whichever tab was active when saved
+      pallets: { "4×4": 11 } as BookingTemplate["pallets"],
+      boxQty: 1,
+    });
+    const form = templateToForm(saved, SIZES);
+    expect(form.palletQtys).toEqual([11, 0, 0]);
+    expect(form.boxQty).toBe(1);
+    const draft: BookingDraft = {
+      routeTypeId: form.routeTypeId,
+      stopCount: 0,
+      cargoType: form.cargoType,
+      totalPallets: form.palletQtys.reduce((a, b) => a + b, 0),
+      boxQty: form.boxQty,
+      dimsOk: false,
+    };
+    expect(stepIssue(draft, STEP_WHAT)).toBeNull(); // both present, nothing missing
+  });
+
+  it("dimType is preserved independently of cargoType, so a Rack extra survives landing on Pallet", () => {
+    const saved = tpl({
+      cargoType: "pallet", // the tab it was left on
+      pallets: { "4×4": 2 } as BookingTemplate["pallets"],
+      dimType: "rack",
+      dimW: "4",
+      dimL: "4",
+      dimQty: 1,
+    });
+    expect(templateToForm(saved, SIZES).dimType).toBe("rack");
+  });
+
+  it("a template saved before dimType existed falls back to cargoType when it IS a dimensioned type", () => {
+    const legacy = tpl({ cargoType: "crate", dimW: "3", dimL: "3", dimQty: 1 });
+    expect(templateToForm(legacy, SIZES).dimType).toBe("crate");
+  });
+
+  it("a template with no dimensioned extra at all defaults dimType to crate (harmless — dimsOk stays false)", () => {
+    const plain = tpl({ pallets: { "4×4": 1 } as BookingTemplate["pallets"] });
+    expect(templateToForm(plain, SIZES).dimType).toBe("crate");
   });
 });

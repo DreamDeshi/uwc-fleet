@@ -33,14 +33,25 @@ export const PALLET_SIZES = [
 export type PalletSize = (typeof PALLET_SIZES)[number];
 
 /**
- * Non-pallet cargo types — no pallet footprint by conversion (factor 0):
+ * Non-pallet cargo types — no PALLET-TABLE footprint (factor 0 in
+ * `PALLET_FACTORS`; rack is sized separately, see below):
  *   • carton  — LEGACY box (kept for backward compat + edit); count + optional
  *               `estimated_pallets` (its estimate may still size auto-dispatch).
- *   • box     — Q10 first-class Box: count only, NO dimensions, ALWAYS manual
- *               assignment (an estimate must never let it auto-dispatch).
+ *   • box     — Q10 first-class Box: count only, NO dimensions, and NO truck
+ *               space (owner ruling, 27 Aug 2026 — "the box can be put in
+ *               driver seat"). Never blocks auto-dispatch and never adds to
+ *               the load; see `isUnsizedForDispatch`.
  *   • crate   — Q10 first-class Crate: dimensions in feet (width_ft × length_ft)
  *               + count; ALWAYS manual (no authoritative auto-dispatch rule).
- *   • rack    — Q10 first-class Rack: like Crate.
+ *   • rack    — Q10 first-class Rack: dimensions in feet + count. UNLIKE
+ *               crate/custom, rack IS sized (owner ruling, 27 Aug 2026 —
+ *               "auto assign work with those have dimension pallet or rack"):
+ *               its width_ft × length_ft converts via the same area÷16 rule as
+ *               a pallet, so a pallet+rack order can auto-dispatch. Scoped to
+ *               rack ONLY — crate and custom are unchanged and still force
+ *               manual assignment; extending them needs its own instruction,
+ *               not an inferred generalisation (owner: "idk" when asked
+ *               whether to extend this to crate/custom, 27 Aug 2026).
  *   • custom  — "Others": structured width_ft × length_ft (legacy rows may carry
  *               a free-text `custom_size`); ALWAYS manual.
  * `UNSIZED_CARGO_TYPES` is kept (carton/custom) as the historical name some
@@ -49,19 +60,52 @@ export type PalletSize = (typeof PALLET_SIZES)[number];
 export const UNSIZED_CARGO_TYPES = ["carton", "custom"] as const;
 export const NONPALLET_CARGO_TYPES = ["carton", "custom", "box", "crate", "rack"] as const;
 
-/** Q10: cargo types that carry structured dimensions (width_ft × length_ft, feet). */
+/** Q10: cargo types that carry structured dimensions (width_ft × length_ft, feet).
+ *  Rack's dims now feed the capacity calculation (see DIMENSION_SIZED_TYPES);
+ *  crate/custom's dims remain display-only. */
 export const DIMENSIONED_CARGO_TYPES = ["crate", "rack", "custom"] as const;
 
 /**
- * Q10: cargo types that ALWAYS route to manual admin assignment — box has no
- * dimensions, and crate/rack/custom have no authoritative auto-dispatch capacity
- * rule (we do NOT invent area-summing/packing for them). Any order containing one
- * of these is flagged for manual assignment regardless of an estimate. `carton`
- * is deliberately EXCLUDED — its legacy estimate-sized auto-dispatch is preserved.
+ * Rack-only (owner ruling, 27 Aug 2026): the ONE dimensioned type whose
+ * width_ft × length_ft is treated as a real capacity number, area ÷ 16 exactly
+ * like a pallet footprint — see `dimensionedEquivalent`. Crate and custom stay
+ * OUT of this set on purpose: he asked for rack specifically, and a "no
+ * authoritative capacity rule" type does not get one invented for it by
+ * generalising his example. If he later says the same for crate/custom, add
+ * them here — do not infer it.
  */
-export const ALWAYS_MANUAL_TYPES = ["box", "crate", "rack", "custom"] as const;
+export const DIMENSION_SIZED_TYPES = ["rack"] as const;
+
+/**
+ * Q10: cargo types that ALWAYS route to manual admin assignment regardless of
+ * dimensions or an estimate — crate and custom have no authoritative
+ * auto-dispatch capacity rule (we do NOT invent area-summing/packing for
+ * them). `box` and `rack` are deliberately EXCLUDED as of 27 Aug 2026: box
+ * needs no truck space at all, and rack is now sized via
+ * `DIMENSION_SIZED_TYPES` — see `isUnsizedForDispatch`, which is where their
+ * actual (non-membership) treatment lives. `carton` is also excluded — its
+ * legacy estimate-sized auto-dispatch is preserved.
+ */
+export const ALWAYS_MANUAL_TYPES = ["crate", "custom"] as const;
 export function isAlwaysManualType(palletType: string): boolean {
   return (ALWAYS_MANUAL_TYPES as readonly string[]).includes(palletType);
+}
+
+/**
+ * A dimensioned line's 4×4-equivalent, for the types in DIMENSION_SIZED_TYPES
+ * (today: rack only) — same AREA ÷ 16 rule as a pallet footprint, computed
+ * from width_ft × length_ft rather than looked up by name. `null` when the
+ * type isn't in the sized set, or its dims are missing/invalid — the caller
+ * falls back to the ordinary unsized handling (never a guessed number).
+ */
+export function dimensionedEquivalent(c: {
+  pallet_type: string;
+  width_ft?: number | null;
+  length_ft?: number | null;
+}): number | null {
+  if (!(DIMENSION_SIZED_TYPES as readonly string[]).includes(c.pallet_type)) return null;
+  if (!isValidDimension(c.width_ft) || !isValidDimension(c.length_ft)) return null;
+  return (c.width_ft * c.length_ft) / 16;
 }
 
 /**
@@ -214,7 +258,10 @@ export interface CargoLine {
  * Total 4×4-pallet-equivalent load for a set of cargo lines. For a
  * carton/custom line the requestor's estimate (if given) IS the line's
  * equivalent; without one the line contributes 0 (and the order counts as
- * unsized for dispatch — see isUnsizedForDispatch).
+ * unsized for dispatch — see isUnsizedForDispatch). A DIMENSION_SIZED_TYPES
+ * line (rack) contributes its own area÷16 equivalent, exactly like a pallet —
+ * checked FIRST, so it never falls into the estimate-based branch below even
+ * though rack is also (historically) an "unsized-by-name" type.
  *
  * Rounded to 4 dp, not 3. Every factor is area ÷ 16, so the finest is
  * 1/16 = 0.0625 and every reachable total is some m/16 — which needs exactly
@@ -225,6 +272,8 @@ export interface CargoLine {
  */
 export function palletEquivalents(cargo: CargoLine[]): number {
   const total = cargo.reduce((sum, c) => {
+    const dimEquiv = dimensionedEquivalent(c);
+    if (dimEquiv != null) return sum + dimEquiv * c.quantity;
     if (isUnsizedType(c.pallet_type)) return sum + (c.estimated_pallets ?? 0);
     return sum + palletFactor(c.pallet_type) * c.quantity;
   }, 0);
@@ -238,16 +287,29 @@ export function palletEquivalents(cargo: CargoLine[]): number {
  * 0-equivalent "fits everything") — it routes to manual assignment via the
  * needs-attention flag so an admin sizes it. A line whose pallet size IS
  * recognised never makes an order unsized (its type always gives a footprint).
+ *
+ * TWO exceptions to "flag and go manual", both owner rulings, 27 Aug 2026:
+ *   • `box` never blocks — it needs no truck space at all ("the box can be put
+ *     in driver seat"), so its presence says nothing about whether the REST of
+ *     the order is sizeable.
+ *   • a DIMENSION_SIZED_TYPES line (rack) WITH valid dims is sized by
+ *     `dimensionedEquivalent` just like a pallet, so it doesn't force manual
+ *     either. A rack with missing/invalid dims falls through to the ordinary
+ *     `isAlwaysManualType` check below and still forces manual — the schema
+ *     requires dims for a new rack line, so this only catches a legacy/
+ *     malformed row.
  */
 export function isUnsizedForDispatch(cargo: CargoLine[]): boolean {
-  return cargo.some(
-    (c) =>
-      // Q10: box/crate/rack/custom ALWAYS force manual assignment — an estimate
-      // must never let them auto-dispatch (box has no dimensions; crate/rack/
-      // custom have no authoritative capacity rule).
+  return cargo.some((c) => {
+    if (c.pallet_type === "box") return false;
+    if (dimensionedEquivalent(c) != null) return false;
+    return (
+      // Q10: crate/custom ALWAYS force manual assignment — no authoritative
+      // capacity rule for them, and an estimate must never substitute for one.
       isAlwaysManualType(c.pallet_type) ||
       // Legacy unsized (carton / unrecognised) still auto-dispatch only when the
       // requestor supplied a usable estimate.
       (isUnsizedType(c.pallet_type) && !(c.estimated_pallets != null && c.estimated_pallets > 0))
-  );
+    );
+  });
 }

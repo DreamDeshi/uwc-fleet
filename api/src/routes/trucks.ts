@@ -351,6 +351,12 @@ router.get("/", async (req, res, next) => {
                 quantity: true,
                 estimated_pallets: true,
                 remark: true,
+                // Rack's capacity number comes from its dims (27 Aug 2026) —
+                // palletEquivalents below silently under-counts a rack line
+                // without these, the exact "select missing a column" shape
+                // this codebase has been bitten by before.
+                width_ft: true,
+                length_ft: true,
               },
             },
             stops: {
