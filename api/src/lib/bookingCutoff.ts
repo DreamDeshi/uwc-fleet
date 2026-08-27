@@ -3,7 +3,7 @@ import { minutesFromEnv } from "./envNumbers";
 import { mytDayStart } from "./myt";
 
 /**
- * B7 — THE BOOKING CUT-OFFS. 08:30 for a morning pickup, 13:30 for an afternoon
+ * B7 — THE BOOKING CUT-OFFS. 08:30 for a morning pickup, 15:00 for an afternoon
  * one; after that the earliest selectable day is the next WORKING day.
  *
  * ── SOURCE, AND WHAT IS HIS AND WHAT IS OURS ─────────────────────────────────
@@ -29,11 +29,25 @@ import { mytDayStart } from "./myt";
  * If Mr. Teh ever describes a delivery session directly, this reading is the
  * thing to revisit — not the cut-off times, which are his.
  *
+ * ⚠ THE AFTERNOON NUMBER MOVED, 27 Aug 2026. Teh hit the original 13:30
+ * cut-off live in production at 13:43 (WhatsApp, same day) — "until now we
+ * still have booking lol" — and asked to change it to 15:00 on the spot
+ * ("can we change to 3pm?" / "yes"). This is the same authority as the
+ * original number (his own written word, this time in chat rather than the
+ * R5 doc), so it is still HIS number, just a later one. The morning cut-off
+ * (08:30) is untouched — he asked about the afternoon only.
+ *
+ * Also agreed the same conversation: a proper admin-editable setting for both
+ * times, so the next change doesn't need a deploy. NOT YET BUILT — that is
+ * still a schema change (`AppSetting` has no free-form settings column) and
+ * ships separately. Until then this constant is still the one source of truth,
+ * and moving it again means editing this file, same as before.
+ *
  * ── THE RULE ─────────────────────────────────────────────────────────────────
  *
  *   booked before 08:30 MYT  → today's MORNING pickup is selectable
- *   booked before 13:30 MYT  → today's AFTERNOON pickup is selectable
- *   booked after 13:30 MYT   → the earliest selectable pickup is the next
+ *   booked before 15:00 MYT  → today's AFTERNOON pickup is selectable
+ *   booked after 15:00 MYT   → the earliest selectable pickup is the next
  *                              working day
  *   a RETURN booking         → exempt; any time before midnight
  *
@@ -48,12 +62,14 @@ import { mytDayStart } from "./myt";
  */
 
 /**
- * HIS NUMBERS — hardcoded on purpose. "830am" and "130pm" are quoted client
- * requirements, not tunables; an operator quietly moving a cut-off would be
- * changing what the client asked for, and it should take a commit and a reader.
+ * HIS NUMBERS — hardcoded on purpose. "830am" (11 Aug, R5) and "3pm" (27 Aug,
+ * chat — superseding the original "130pm") are quoted client requirements, not
+ * tunables; an operator quietly moving a cut-off would be changing what the
+ * client asked for, and it should take a commit and a reader. An admin-editable
+ * version of this is agreed but not yet built — see the note above.
  */
 export const MORNING_CUTOFF_MIN = 8 * 60 + 30; // 08:30
-export const AFTERNOON_CUTOFF_MIN = 13 * 60 + 30; // 13:30
+export const AFTERNOON_CUTOFF_MIN = 15 * 60; // 15:00 (was 13:30 until 27 Aug 2026)
 
 /**
  * OUR NUMBER — an INVENTED CONSTANT, and therefore env-tunable (owner ruling,
@@ -175,7 +191,7 @@ export function bookingCutoffVerdict(params: {
 
 /** The message the requestor sees — states the cut-off AND the way forward. */
 export function cutoffMessage(verdict: Extract<CutoffVerdict, { allowed: false }>): string {
-  const at = verdict.session === "morning" ? "8:30am" : "1:30pm";
+  const at = verdict.session === "morning" ? "8:30am" : "3:00pm";
   const label = verdict.session === "morning" ? "Morning" : "Afternoon";
   return `${label} pickups close at ${at}. The earliest pickup you can book now is ${verdict.earliest}.`;
 }
@@ -185,8 +201,9 @@ export function cutoffMessage(verdict: Extract<CutoffVerdict, { allowed: false }
  * outside it, on the record.
  *
  * Owner ruling, 12 Aug 2026. Read literally, B7 removes ALL same-day booking
- * after 13:30, and the working day runs to midnight — roughly ten hours of
- * capacity the office could no longer use. Urgent same-day work exists: Mr.
+ * after the afternoon cut-off (15:00 since 27 Aug 2026, was 13:30), and the
+ * working day runs to midnight — roughly nine hours of capacity the office
+ * could no longer use. Urgent same-day work exists: Mr.
  * Teh's own Sheet1 carries "CONQUEST (est 2 pallet P7 URGENT". The first time a
  * clerk cannot book that, they call it a broken system rather than a rule they
  * asked for.
@@ -208,6 +225,6 @@ export function cutoffOverrideNote(
   verdict: Extract<CutoffVerdict, { allowed: false }>,
   reason: string
 ): string {
-  const at = verdict.session === "morning" ? "8:30am" : "1:30pm";
+  const at = verdict.session === "morning" ? "8:30am" : "3:00pm";
   return `Admin override: booked past the ${at} ${verdict.session} cut-off — ${reason.trim()}`;
 }

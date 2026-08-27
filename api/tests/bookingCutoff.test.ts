@@ -38,7 +38,7 @@ import { isReturnRouteType } from "../src/lib/uwcSpec";
 const MON = (hhmmUtc: string) => new Date(`2026-08-10T${hhmmUtc}:00Z`);
 const NO_HOLIDAYS = new Set<string>();
 
-// 08:00 MYT Monday = 00:00Z. 12:00 MYT = 04:00Z. 13:30 MYT = 05:30Z.
+// 08:00 MYT Monday = 00:00Z. 12:00 MYT = 04:00Z. 15:00 MYT = 07:00Z.
 const at = (mytHour: number, mytMin = 0) => {
   const utcMinutes = mytHour * 60 + mytMin - 8 * 60;
   const d = new Date(Date.UTC(2026, 7, 10, 0, 0, 0));
@@ -49,7 +49,7 @@ describe("mytMinutes / sessionOf — the day's shape", () => {
   it("counts minutes from MYT midnight, not from UTC midnight", () => {
     expect(mytMinutes(at(0, 0))).toBe(0);
     expect(mytMinutes(at(8, 30))).toBe(MORNING_CUTOFF_MIN);
-    expect(mytMinutes(at(13, 30))).toBe(AFTERNOON_CUTOFF_MIN);
+    expect(mytMinutes(at(15, 0))).toBe(AFTERNOON_CUTOFF_MIN);
     expect(mytMinutes(at(23, 59))).toBe(23 * 60 + 59);
     // The trap this avoids: 2026-08-10T00:00Z is 08:00 MYT, not midnight.
     expect(mytMinutes(MON("00:00"))).toBe(8 * 60);
@@ -62,12 +62,13 @@ describe("mytMinutes / sessionOf — the day's shape", () => {
 
   it("the split is OURS and carries an override; the cut-offs are HIS and do not", () => {
     // Owner ruling 12 Aug 2026: an invented constant is env-tunable and named
-    // as ours (OPEN_ITEMS N11). "830am" and "130pm" are quoted client
-    // requirements, so moving one must take a commit and a reader, not a
+    // as ours (OPEN_ITEMS N11). "830am" and "3pm" (the afternoon number moved
+    // from "130pm" on 27 Aug 2026 — same authority, a later chat) are quoted
+    // client requirements, so moving one must take a commit and a reader, not a
     // variable — this asserts the asymmetry rather than trusting a comment.
     expect(SESSION_SPLIT_MIN).toBe(12 * 60); // the default, absent an override
     expect(MORNING_CUTOFF_MIN).toBe(8 * 60 + 30);
-    expect(AFTERNOON_CUTOFF_MIN).toBe(13 * 60 + 30);
+    expect(AFTERNOON_CUTOFF_MIN).toBe(15 * 60);
     const raw = readFileSync(join(__dirname, "..", "src", "lib", "bookingCutoff.ts"), "utf8");
     expect(raw.length).toBeGreaterThan(500); // not a vacuous read
     // ⚠ SCAN THE CODE, NOT THE COMMENTS. A source guard that reads comments is
@@ -117,18 +118,18 @@ describe("B7 — a MORNING pickup closes at 08:30", () => {
   });
 });
 
-describe("B7 — an AFTERNOON pickup closes at 13:30", () => {
-  const afternoonToday = at(15, 0); // 15:00 MYT
+describe("B7 — an AFTERNOON pickup closes at 15:00", () => {
+  const afternoonToday = at(15, 30); // 15:30 MYT — after the (now later) cut-off instant
 
-  it("is still selectable at 13:29, well after the morning cut-off", () => {
+  it("is still selectable at 14:59, well after the morning cut-off", () => {
     // The two cut-offs are independent: missing 08:30 does not close the day.
     expect(
-      bookingCutoffVerdict({ now: at(13, 29), pickup: afternoonToday, isReturn: false, holidays: NO_HOLIDAYS })
+      bookingCutoffVerdict({ now: at(14, 59), pickup: afternoonToday, isReturn: false, holidays: NO_HOLIDAYS })
     ).toEqual({ allowed: true });
   });
 
-  it("is CLOSED at 13:30", () => {
-    const v = bookingCutoffVerdict({ now: at(13, 30), pickup: afternoonToday, isReturn: false, holidays: NO_HOLIDAYS });
+  it("is CLOSED at 15:00", () => {
+    const v = bookingCutoffVerdict({ now: at(15, 0), pickup: afternoonToday, isReturn: false, holidays: NO_HOLIDAYS });
     expect(v.allowed).toBe(false);
     expect(v).toMatchObject({ session: "afternoon", earliest: "2026-08-11" });
   });
@@ -181,14 +182,14 @@ describe("B7 — only TODAY is gated", () => {
     // the right answer (tests-integration/tripEdit.test.ts). A same-day past
     // pickup at every hour past both cut-offs:
     expect(
-      bookingCutoffVerdict({ now: at(14, 0), pickup: at(9, 0), isReturn: false, holidays: NO_HOLIDAYS })
+      bookingCutoffVerdict({ now: at(15, 30), pickup: at(9, 0), isReturn: false, holidays: NO_HOLIDAYS })
     ).toEqual({ allowed: true });
     expect(
       bookingCutoffVerdict({ now: at(23, 0), pickup: at(15, 0), isReturn: false, holidays: NO_HOLIDAYS })
     ).toEqual({ allowed: true });
     // …but the same instant one minute in the FUTURE is still gated.
     expect(
-      bookingCutoffVerdict({ now: at(14, 0), pickup: at(14, 1), isReturn: false, holidays: NO_HOLIDAYS }).allowed
+      bookingCutoffVerdict({ now: at(15, 30), pickup: at(15, 31), isReturn: false, holidays: NO_HOLIDAYS }).allowed
     ).toBe(false);
   });
 });
@@ -233,10 +234,10 @@ describe("B7 — the next WORKING day", () => {
   });
 
   it("a booking closed on Saturday afternoon points at Monday", () => {
-    // 14:00 MYT Saturday 15 Aug = 06:00Z.
+    // 15:30 MYT Saturday 15 Aug = 07:30Z — past the (now later) afternoon cut-off.
     const v = bookingCutoffVerdict({
-      now: new Date("2026-08-15T06:00:00Z"),
-      pickup: new Date("2026-08-15T07:00:00Z"), // 15:00 MYT the same day
+      now: new Date("2026-08-15T07:30:00Z"),
+      pickup: new Date("2026-08-15T08:00:00Z"), // 16:00 MYT the same day
       isReturn: false,
       holidays: NO_HOLIDAYS,
     });

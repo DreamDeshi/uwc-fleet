@@ -294,7 +294,7 @@ export function BookingFormScreen() {
   const routeMatrix = useMemo(() => buildRouteMatrix(routeTypes as RouteType[]), [routeTypes]);
   const { user } = useAuth();
   const selectedChoice = choiceForId(routeMatrix, routeTypeId);
-  // B7 — a RETURN booking is exempt from the 08:30 / 13:30 cut-offs. Read from
+  // B7 — a RETURN booking is exempt from the 08:30 / 15:00 cut-offs. Read from
   // the SELECTED route type rather than the `direction` toggle: the toggle can
   // sit on a pair that resolves to no route type, and the server decides on the
   // route type actually submitted.

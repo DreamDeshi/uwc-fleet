@@ -259,7 +259,7 @@ describe("sameDay", () => {
  * B7 — THE CALENDAR MUST NOT OFFER WHAT THE SERVER WILL REFUSE.
  *
  * The server rejects a booking made after 08:30 for a morning pickup, or after
- * 13:30 for an afternoon one (api/src/lib/bookingCutoff.ts). Shipping that
+ * 15:00 for an afternoon one (api/src/lib/bookingCutoff.ts). Shipping that
  * without this half would mean a requestor picking a time the app showed them
  * and getting an error — on the main booking path, on the build the client is
  * looking at. Both halves ship together or neither does (owner, 12 Aug 2026).
@@ -281,8 +281,8 @@ describe("B7 — today's sessions close", () => {
     expect(bookableHours(TODAY, NOW)).toContain(15);
   });
 
-  it("shuts the afternoon too once 13:30 has passed, and today leaves the calendar", () => {
-    const afterBoth = at(14, 0);
+  it("shuts the afternoon too once 15:00 has passed, and today leaves the calendar", () => {
+    const afterBoth = at(15, 30);
     expect(bookableMinutes(TODAY, 15, afterBoth)).toEqual([]);
     expect(bookableHours(TODAY, afterBoth)).toEqual([]);
     // The whole point: the day is no longer selectable, rather than selectable
@@ -299,7 +299,7 @@ describe("B7 — today's sessions close", () => {
   });
 
   it("EXEMPTS a return booking — his own sentence, 'anytime before 12am'", () => {
-    const afterBoth = at(14, 0);
+    const afterBoth = at(15, 30);
     const ret = { isReturn: true };
     expect(bookableMinutes(TODAY, 15, afterBoth, ret).length).toBeGreaterThan(0);
     expect(isDayBookable(TODAY, afterBoth, ret)).toBe(true);
@@ -311,7 +311,7 @@ describe("B7 — today's sessions close", () => {
     // nextBookableSlot is what the form pre-fills. If it ignored the cut-off it
     // would pre-fill a slot the dial then renders as disabled — and the
     // requestor would submit it untouched.
-    const afterBoth = at(14, 0);
+    const afterBoth = at(15, 30);
     const slot = nextBookableSlot(afterBoth, 60);
     expect(slot.dayOffset).toBeGreaterThan(0); // pushed off today entirely
     // A return, same instant, may still be booked today.
@@ -320,9 +320,11 @@ describe("B7 — today's sessions close", () => {
 
   it("clamping moves a now-illegal slot forward instead of leaving it to fail", () => {
     // The requestor had this afternoon selected as a RETURN, then switched the
-    // booking to a delivery at 14:00.
-    const afterBoth = at(14, 0);
-    const held = { dayOffset: 0, hour: 15, minute: 0 };
+    // booking to a delivery, with the clock at 15:30 — past the cut-off but
+    // still ahead of the held 16:00 slot, so only the cut-off (not the clock)
+    // is what moves the delivery.
+    const afterBoth = at(15, 30);
+    const held = { dayOffset: 0, hour: 16, minute: 0 };
     expect(clampSlotToDay(held, afterBoth, { isReturn: true })).toEqual(held);
     expect(clampSlotToDay(held, afterBoth).dayOffset).toBeGreaterThan(0);
   });
@@ -332,7 +334,7 @@ describe("B7 — today's sessions close", () => {
     // across the two packages, so the mirror is pinned by naming both sides
     // here: a change on the server has to walk past this test.
     expect(MORNING_CUTOFF_MIN).toBe(8 * 60 + 30);
-    expect(AFTERNOON_CUTOFF_MIN).toBe(13 * 60 + 30);
+    expect(AFTERNOON_CUTOFF_MIN).toBe(15 * 60);
     expect(SESSION_SPLIT_MIN).toBe(12 * 60);
   });
 });
@@ -342,7 +344,7 @@ describe("B7 — today's sessions close", () => {
  *
  * The rule binds the REQUESTOR. The office can step outside it — so the picker
  * must OFFER an admin the closed slot, and the form must then collect the
- * reason the server will demand. Hiding it would remove roughly ten hours of
+ * reason the server will demand. Hiding it would remove several hours of
  * same-day capacity a day, on a system whose own Sheet1 carries urgent
  * same-day work.
  *
@@ -350,7 +352,7 @@ describe("B7 — today's sessions close", () => {
  * without a stated reason, and that reason is audited.
  */
 describe("B7 — an admin is offered the closed slot, and told a reason is needed", () => {
-  const afterBoth = at(14, 0);
+  const afterBoth = at(15, 30);
 
   it("offers today's afternoon to an ADMIN when a requestor is refused it", () => {
     expect(bookableMinutes(TODAY, 15, afterBoth)).toEqual([]);
@@ -360,7 +362,7 @@ describe("B7 — an admin is offered the closed slot, and told a reason is neede
 
   it("still hides what the CLOCK has taken, admin or not — the past is not overridable", () => {
     // B7 is a policy an admin may step outside. A pickup at 09:00 when it is
-    // 14:00 is not a policy, it is gone.
+    // 15:30 is not a policy, it is gone.
     expect(bookableMinutes(TODAY, 9, afterBoth, { isAdmin: true })).toEqual([]);
   });
 
@@ -375,7 +377,7 @@ describe("B7 — an admin is offered the closed slot, and told a reason is neede
     // Tomorrow: never gated.
     expect(slotNeedsCutoffOverride({ dayOffset: 1, hour: 15, minute: 0 }, afterBoth)).toBe(false);
     // Before the cut-off: nothing to override.
-    expect(slotNeedsCutoffOverride({ dayOffset: 0, hour: 15, minute: 0 }, at(13, 29))).toBe(false);
+    expect(slotNeedsCutoffOverride({ dayOffset: 0, hour: 15, minute: 0 }, at(14, 59))).toBe(false);
   });
 });
 
@@ -396,14 +398,18 @@ describe("B7 — an admin is offered the closed slot, and told a reason is neede
 describe("cutoffClosedAt — judged in MYT, not on the device clock", () => {
   const at = (iso: string) => new Date(iso);
 
-  it("the exact CI failure: 05:36 UTC is 13:36 MYT, so today's afternoon is SHUT", () => {
-    const now = at("2026-08-12T05:36:00Z"); // 13:36 MYT
-    const slot = at("2026-08-12T07:00:00Z"); // 15:00 MYT, same MYT day
+  it("the CI failure's shape: an afternoon instant past the cut-off is SHUT, on any device clock", () => {
+    // ⚠ The original CI failure used 05:36 UTC (13:36 MYT), which was past the
+    // 13:30 cut-off then in force. That number moved to 15:00 on 27 Aug 2026,
+    // so the illustrative instant moved with it — the MECHANISM this proves
+    // (an instant, not a device-local wall clock) is unchanged.
+    const now = at("2026-08-12T07:06:00Z"); // 15:06 MYT — past the cut-off
+    const slot = at("2026-08-12T08:00:00Z"); // 16:00 MYT, same MYT day
     expect(cutoffClosedAt(slot, now)).toBe(true);
   });
 
   it("…and the morning is shut too, though the device clock reads 05:36", () => {
-    const now = at("2026-08-12T05:36:00Z"); // 13:36 MYT — past BOTH cut-offs
+    const now = at("2026-08-12T05:36:00Z"); // 13:36 MYT — past the morning cut-off
     const slot = at("2026-08-12T03:00:00Z"); // 11:00 MYT, a morning pickup
     expect(cutoffClosedAt(slot, now)).toBe(true);
   });
