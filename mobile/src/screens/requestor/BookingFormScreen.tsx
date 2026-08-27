@@ -240,6 +240,15 @@ export function BookingFormScreen() {
   const [dimW, setDimW] = useState("");
   const [dimL, setDimL] = useState("");
   const [dimQty, setDimQty] = useState(1);
+  // ⚠ CARGO IS A UNION, NOT AN EITHER/OR (27 Aug 2026). Pallets, a box, and
+  // ONE dimensioned extra can all be in the same booking now — Mr. Teh's own
+  // complaint: "if i book 11 pallet + 1 box, system confirm booking only
+  // either one". `cargoType` still drives which PANEL is on screen; `dimType`
+  // separately remembers WHICH of crate/rack/custom the dims belong to, so
+  // navigating back to the Pallet or Box tab to review them does not forget
+  // it — the exact way pallets and box already survive tab switches, now
+  // extended to the one thing that didn't: which dimensioned type was chosen.
+  const [dimType, setDimType] = useState<"crate" | "rack" | "custom">("crate");
   const [remarks, setRemarks] = useState("");
 
   // Date/time chosen from the calendar + clock sheet (no native datepicker
@@ -344,12 +353,6 @@ export function BookingFormScreen() {
   // totalPallets counts the preserved legacy lines too, so a legacy-only edit is
   // "set" and the Confirm summary/count include them.
   const totalPallets = palletQtys.reduce((a, b) => a + b, 0) + legacyPallets;
-  // Capacity is judged in 4×4-equivalents (mirrors the server): 6× 5×10 is
-  // 18.75 slots (warn!), 16× 2×2 only 4 (don't).
-  const totalEquivalents = palletEquivalents([
-    ...PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] })),
-    ...legacyCargo, // legacy lines still occupy real slots on the server
-  ]);
 
   const isLastStep = step === STEPS.length - 1;
 
@@ -358,22 +361,38 @@ export function BookingFormScreen() {
   const dimLNum = Number(dimL);
   const dimsOk = isValidDimension(dimWNum) && isValidDimension(dimLNum) && dimQty > 0;
 
-  // Running cargo summary — shown on the Confirm step AND (on PC) in the
-  // always-visible summary rail. `cargoIsSet` gates the rail's placeholder.
-  const cargoIsSet =
-    cargoType === "pallet" ? totalPallets > 0 : cargoType === "box" ? boxQty > 0 : dimsOk;
+  // Capacity is judged in 4×4-equivalents (mirrors the server): 6× 5×10 is
+  // 18.75 slots (warn!), 16× 2×2 only 4 (don't). Includes the box/dim EXTRA
+  // (27 Aug 2026) alongside pallets — a Box always contributes 0 (no truck
+  // space), and Crate/Custom's dims contribute 0 too (no authoritative
+  // capacity rule); only a valid Rack extra actually adds to this number, via
+  // the same area÷16 rule as a pallet — see lib/pallets.dimensionedEquivalent.
+  const totalEquivalents = palletEquivalents([
+    ...PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] })),
+    ...legacyCargo, // legacy lines still occupy real slots on the server
+    ...(boxQty > 0 ? [{ pallet_type: "box", quantity: boxQty }] : []),
+    ...(dimsOk ? [{ pallet_type: dimType, quantity: dimQty, width_ft: dimWNum, length_ft: dimLNum }] : []),
+  ]);
+
+  // ⚠ CARGO IS A UNION, NOT AN EITHER/OR (27 Aug 2026 — see the `dimType` note
+  // above). Pallets, a box, and one dimensioned extra can all be present at
+  // once, so "is cargo set" is true whenever ANY of the three is — not just
+  // whichever tab is currently on screen. Shown on the Confirm step AND (on
+  // PC) in the always-visible summary rail; `cargoIsSet` gates the rail's
+  // placeholder.
+  const cargoIsSet = totalPallets > 0 || boxQty > 0 || dimsOk;
   // A template is only worth saving once it's a complete, submittable booking —
   // this guarantees a loaded template never drops the requestor onto Confirm
   // with empty cargo the server would reject.
   const canSaveTemplate = Boolean(routeTypeId) && stops.length > 0 && cargoIsSet;
-  const cargoSummaryText =
-    cargoType === "pallet"
-      ? `${totalPallets} ${t("booking.pallet")}`
-      : cargoType === "box"
-        ? `${boxQty} ${t("booking.box")}`
-        : dimsOk
-          ? `${dimQty} × ${canonicalCargoSize(dimWNum, dimLNum)}`
-          : t(`booking.${cargoType}`);
+  // One part per thing actually included, joined — "11 Pallet + 1 Box" reads
+  // as what it is instead of hiding whichever part isn't the current tab.
+  const cargoSummaryParts = [
+    totalPallets > 0 ? `${totalPallets} ${t("booking.pallet")}` : null,
+    boxQty > 0 ? `${boxQty} ${t("booking.box")}` : null,
+    dimsOk ? `${dimQty} × ${canonicalCargoSize(dimWNum, dimLNum)}` : null,
+  ].filter((p): p is string => p !== null);
+  const cargoSummaryText = cargoSummaryParts.length > 0 ? cargoSummaryParts.join(" + ") : t(`booking.${cargoType}`);
 
   const resetForm = () => {
     setStep(0);
@@ -386,6 +405,7 @@ export function BookingFormScreen() {
     setDimW("");
     setDimL("");
     setDimQty(1);
+    setDimType("crate");
     setRemarks("");
     slotTouched.current = false; // fresh form — the default may auto-refresh again
     setSlot(nextBookableSlot());
@@ -425,20 +445,31 @@ export function BookingFormScreen() {
     // structured crate/rack/custom; everything else is re-appended verbatim.
     const { bookable, legacy } = partitionEditableCargo(lines);
     setLegacyCargo(legacy.map(toOutgoingCargo));
+    // ⚠ CARGO IS A UNION (27 Aug 2026) — a rebooked/edited trip may carry
+    // pallets AND a box AND a dimensioned extra together now, so all three
+    // are restored independently rather than picking just one. `cargoType`
+    // only decides which tab the form LANDS on for display.
     const box = bookable.find((l) => l.pallet_type === "box");
     const dimLine = bookable.find((l) => l.pallet_type === "crate" || l.pallet_type === "rack" || l.pallet_type === "custom");
-    if (box) {
-      setCargoType("box");
-      setBoxQty(box.quantity ?? 0);
-    } else if (dimLine) {
-      setCargoType(dimLine.pallet_type as "crate" | "rack" | "custom");
+    const pallets = PALLET_SIZES.map((size) => bookable.find((l) => l.pallet_type === size)?.quantity ?? 0);
+
+    setPalletQtys(pallets);
+    setBoxQty(box?.quantity ?? 0);
+    if (dimLine) {
+      setDimType(dimLine.pallet_type as "crate" | "rack" | "custom");
       setDimW(dimLine.width_ft != null ? String(dimLine.width_ft) : "");
       setDimL(dimLine.length_ft != null ? String(dimLine.length_ft) : "");
       setDimQty(dimLine.quantity ?? 1);
     } else {
-      setCargoType("pallet");
-      setPalletQtys(PALLET_SIZES.map((size) => bookable.find((l) => l.pallet_type === size)?.quantity ?? 0));
+      setDimW("");
+      setDimL("");
+      setDimQty(1);
     }
+    // Land on whichever tab has the PRIMARY content, so the form doesn't open
+    // on an empty-looking panel — same preference order as before (box, then
+    // the dimensioned extra, then pallets). All three are restored above
+    // regardless of which tab this lands on.
+    setCargoType(box ? "box" : dimLine ? (dimLine.pallet_type as "crate" | "rack" | "custom") : "pallet");
     setStep(STEPS.length - 1); // jump to Confirm
   };
 
@@ -457,6 +488,7 @@ export function BookingFormScreen() {
     setDimW(form.dimW);
     setDimL(form.dimL);
     setDimQty(form.dimQty);
+    setDimType(form.dimType);
     setCargoType(form.cargoType);
     setRemarks(form.remarks);
 
@@ -493,6 +525,7 @@ export function BookingFormScreen() {
       dimW,
       dimL,
       dimQty,
+      dimType,
       remarks,
     };
     const next = upsertTemplate(templates, tpl);
@@ -562,26 +595,30 @@ export function BookingFormScreen() {
     return t(issue.key);
   };
 
+  // ⚠ CARGO IS A UNION, NOT AN EITHER/OR (27 Aug 2026). Pallets, a box, and
+  // ONE dimensioned extra (crate/rack/custom, via `dimType` — see its
+  // declaration above) can all be in the same booking — Mr. Teh's own
+  // complaint: "if i book 11 pallet + 1 box, system confirm booking only
+  // either one". Each is included independently of which tab is CURRENTLY on
+  // screen; `finalizeCargoPayload` is still the one shared step that appends
+  // the preserved legacy cargo, so an edit can never silently drop it.
   const buildCargo = () => {
-    // Each branch builds ONLY its current lines; finalizeCargoPayload is the one
-    // shared step that appends the preserved legacy cargo — so no cargo type can
-    // bypass it and silently drop legacy lines on an edit.
-    let current: OutgoingCargoLine[];
-    if (cargoType === "box") {
-      // Q10: Box is a count only — no dimensions, always manual assignment.
-      current = [{ pallet_type: "box", quantity: boxQty }];
-    } else if (cargoType === "crate" || cargoType === "rack" || cargoType === "custom") {
+    const current: OutgoingCargoLine[] = [
+      ...PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] })).filter((c) => c.quantity > 0),
+      // Q10: Box is a count only — no dimensions, and (27 Aug 2026) no truck
+      // space — it never blocks auto-dispatch on its own.
+      ...(boxQty > 0 ? [{ pallet_type: "box", quantity: boxQty }] : []),
       // Q10: structured dimensions in feet + a canonical stored size.
-      current = [{
-        pallet_type: cargoType,
-        quantity: dimQty,
-        width_ft: dimWNum,
-        length_ft: dimLNum,
-        custom_size: canonicalCargoSize(dimWNum, dimLNum),
-      }];
-    } else {
-      current = PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] })).filter((c) => c.quantity > 0);
-    }
+      ...(dimsOk
+        ? [{
+            pallet_type: dimType,
+            quantity: dimQty,
+            width_ft: dimWNum,
+            length_ft: dimLNum,
+            custom_size: canonicalCargoSize(dimWNum, dimLNum),
+          }]
+        : []),
+    ];
     return finalizeCargoPayload(current, legacyCargo, remarks || undefined);
   };
 
@@ -746,6 +783,8 @@ export function BookingFormScreen() {
         <StepWhat
           cargoType={cargoType}
           setCargoType={setCargoType}
+          dimType={dimType}
+          setDimType={setDimType}
           palletQtys={palletQtys}
           setPalletQtys={setPalletQtys}
           boxQty={boxQty}
@@ -760,6 +799,7 @@ export function BookingFormScreen() {
           setLegacyCargo={setLegacyCargo}
           totalPallets={totalPallets}
           totalEquivalents={totalEquivalents}
+          cargoSummaryParts={cargoSummaryParts}
         />
       )}
       {step === 2 && (
@@ -1342,6 +1382,8 @@ function StartFromModal({
 function StepWhat({
   cargoType,
   setCargoType,
+  dimType,
+  setDimType,
   palletQtys,
   setPalletQtys,
   boxQty,
@@ -1356,9 +1398,17 @@ function StepWhat({
   setLegacyCargo,
   totalPallets,
   totalEquivalents,
+  cargoSummaryParts,
 }: {
   cargoType: "pallet" | "box" | "crate" | "rack" | "custom";
   setCargoType: (v: "pallet" | "box" | "crate" | "rack" | "custom") => void;
+  /** WHICH of crate/rack/custom dimW/dimL/dimQty belong to — see its
+   *  declaration in the parent for why this is separate from `cargoType`. */
+  dimType: "crate" | "rack" | "custom";
+  setDimType: (v: "crate" | "rack" | "custom") => void;
+  /** One entry per kind of cargo actually included ("11 Pallet", "1 Box", …),
+   *  computed once in the parent — see cargoSummaryParts there. */
+  cargoSummaryParts: string[];
   palletQtys: number[];
   setPalletQtys: React.Dispatch<React.SetStateAction<number[]>>;
   boxQty: number;
@@ -1395,6 +1445,20 @@ function StepWhat({
   return (
     <View>
       <FieldLabel>{t("booking.cargoType")}</FieldLabel>
+      {/* ⚠ CARGO IS A UNION, NOT AN EITHER/OR (27 Aug 2026). Shown regardless
+          of which tab is active, whenever more than one kind of cargo is
+          entered, so switching tabs never LOOKS like it dropped whatever was
+          entered elsewhere — the exact confusion Mr. Teh hit ("system confirm
+          booking only either one"). `cargoSummaryParts` is the same list the
+          Confirm step reads, computed once in the parent. */}
+      {cargoSummaryParts.length > 1 && (
+        <View style={styles.cargoIncludedNote}>
+          <Ionicons name="checkmark-circle-outline" size={16} color={colors.blue} />
+          <Text style={styles.cargoIncludedText}>
+            {t("booking.includedSoFar", { list: cargoSummaryParts.join(", ") })}
+          </Text>
+        </View>
+      )}
       <View style={styles.cargoTabs}>
         {(["pallet", "box", "crate", "rack", "custom"] as const).map((type) => {
           const active = cargoType === type;
@@ -1402,7 +1466,13 @@ function StepWhat({
             <TouchableOpacity
               key={type}
               style={[styles.cargoTab, active && styles.cargoTabActive]}
-              onPress={() => setCargoType(type)}
+              onPress={() => {
+                setCargoType(type);
+                // Remember WHICH dimensioned type this is, independent of
+                // whatever tab is viewed next (pallet/box do not touch it) —
+                // see dimType's declaration in the parent.
+                if (type === "crate" || type === "rack" || type === "custom") setDimType(type);
+              }}
             >
               <Text style={[styles.cargoTabText, active && { color: colors.navy }]}>
                 {t(`booking.${type}`)}
@@ -1509,7 +1579,7 @@ function StepWhat({
               </TouchableOpacity>
             </View>
           </View>
-          <Text style={styles.estimateHint}>{t("booking.boxManualHint")}</Text>
+          <Text style={styles.estimateHint}>{t("booking.boxNoSpaceHint")}</Text>
         </>
       )}
 
@@ -1549,7 +1619,12 @@ function StepWhat({
               </TouchableOpacity>
             </View>
           </View>
-          <Text style={styles.estimateHint}>{t("booking.dimensionsManualHint")}</Text>
+          {/* Rack's dims now size the truck like a pallet (27 Aug 2026); crate
+              and custom still have no authoritative capacity rule and always
+              go to manual assignment. */}
+          <Text style={styles.estimateHint}>
+            {t(cargoType === "rack" ? "booking.rackSizedHint" : "booking.dimensionsManualHint")}
+          </Text>
         </>
       )}
 
@@ -2013,6 +2088,8 @@ const styles = StyleSheet.create({
   warnNoteText: { flex: 1, fontSize: 13, fontWeight: "600", color: "#92400e", lineHeight: 17 },
   cargoNote: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.tintBlue, borderRadius: radius.md, padding: 12, marginTop: 20 },
   cargoNoteText: { flex: 1, fontSize: 13, fontWeight: "600", color: colors.blue, lineHeight: 17 },
+  cargoIncludedNote: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.tintBlue, borderRadius: radius.md, padding: 10, marginBottom: 14 },
+  cargoIncludedText: { flex: 1, fontSize: 13, fontWeight: "600", color: colors.blue, lineHeight: 17 },
   textarea: { minHeight: 90, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, padding: 14, fontSize: 14, color: colors.navy, backgroundColor: colors.white, textAlignVertical: "top" },
   estimateInput: { borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.navy, backgroundColor: colors.white },
   estimateHint: { fontSize: 12, color: colors.textFaint, marginTop: 6 },

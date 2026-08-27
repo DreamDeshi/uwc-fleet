@@ -349,7 +349,7 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
     include: {
-      cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } },
+      cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true, width_ft: true, length_ft: true } },
       stops: { orderBy: { sequence: "asc" }, select: { consignee: { select: { zone_code: true } } } },
       // Selects WHICH of the truck's two rate pairs the assignment snapshot
       // freezes (see truckRateSnapshot) — interplant work is paid from the
@@ -452,7 +452,7 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
               // occupy the truck on THIS booking's pickup day count as load.
               where: { AND: [blockingTripWhere, { id: { not: tripId } }] },
               select: {
-                cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true } },
+                cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true, width_ft: true, length_ft: true } },
                 stops: {
                   orderBy: { sequence: "asc" },
                   take: 1,

@@ -33,34 +33,68 @@ describe("Q10 — Box / Crate / Rack / structured Custom cargo", () => {
   afterAll(async () => { await prisma.$disconnect(); });
   beforeEach(async () => { await resetDb(); });
 
-  it("Box: count only, no dimensions — an estimate can NOT let it auto-dispatch", async () => {
-    // Dimensions are rejected for a box.
+  it("Box: count only, no dimensions — NEVER blocks auto-dispatch (owner ruling, 27 Aug 2026)", async () => {
+    // Dimensions are still rejected for a box — that part is unchanged.
     expect((await bookRaw([{ pallet_type: "box", quantity: 3, width_ft: 2, length_ft: 2 }])).status).toBe(400);
 
-    // Box with an estimate still routes to MANUAL assignment (never auto-dispatch).
-    const trip = await book([{ pallet_type: "box", quantity: 5, estimated_pallets: 2 } as CargoLine]);
+    // A box needs no truck space ("the box can be put in driver seat"), so it
+    // auto-dispatches like any sized order — an estimate is irrelevant either
+    // way, since the box itself contributes 0 to the load regardless.
+    const trip = await book([{ pallet_type: "box", quantity: 5 } as CargoLine]);
     const res = await autoDispatch(admin, trip.id);
-    expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe("NO_TRUCK_AVAILABLE");
+    expect(res.status).toBe(200);
     const after = (await prisma.trip.findUnique({ where: { id: trip.id } }))!;
-    expect(after.status).toBe("pending");
-    expect(after.truck_plate).toBeNull();
-    expect(after.auto_dispatch_failed).toBe(true);
+    expect(after.status).toBe("assigned");
+    expect(after.truck_plate).not.toBeNull();
+    expect(after.auto_dispatch_failed).toBe(false);
   });
 
-  it("Crate/Rack: structured dimensions stored + canonical W × L ft; always manual", async () => {
+  it("a Box alongside sized pallets no longer drags the whole order to manual", async () => {
+    // Before 27 Aug 2026 this would have 409'd on the box alone, even though
+    // 2 pallets is trivially sized. Mr. Teh's own bug report: "if i book 11
+    // pallet + 1 box, system confirm booking only either one" — the box must
+    // not also silently cost the booking its auto-dispatch eligibility.
     const trip = await book([
-      { pallet_type: "crate", quantity: 1, width_ft: 4, length_ft: 3 },
-      { pallet_type: "rack", quantity: 2, width_ft: 5, length_ft: 5 },
+      { pallet_type: "4×4", quantity: 2 },
+      { pallet_type: "box", quantity: 1 },
     ]);
+    const res = await autoDispatch(admin, trip.id);
+    expect(res.status).toBe(200);
+    const after = (await prisma.trip.findUnique({ where: { id: trip.id } }))!;
+    expect(after.status).toBe("assigned");
+  });
+
+  it("Crate: structured dimensions stored + canonical W × L ft; ALWAYS manual (unchanged)", async () => {
+    const trip = await book([{ pallet_type: "crate", quantity: 1, width_ft: 4, length_ft: 3 }]);
     const rows = await cargoOf(trip.id);
     const crate = rows.find((r) => r.pallet_type === "crate")!;
-    const rack = rows.find((r) => r.pallet_type === "rack")!;
     expect(crate.width_ft).toBe(4);
     expect(crate.length_ft).toBe(3);
     expect(crate.custom_size).toBe("4 × 3 ft");
+    expect((await autoDispatch(admin, trip.id)).status).toBe(409);
+  });
+
+  it("Rack: structured dimensions stored + canonical W × L ft; SIZED and auto-dispatches (owner ruling, 27 Aug 2026)", async () => {
+    // Unlike crate, a rack's dims now convert to a real capacity number (area
+    // ÷ 16, same as a pallet) — "auto assign work with those have dimension
+    // pallet or rack" — so this no longer forces manual assignment.
+    const trip = await book([{ pallet_type: "rack", quantity: 2, width_ft: 5, length_ft: 5 }]);
+    const rows = await cargoOf(trip.id);
+    const rack = rows.find((r) => r.pallet_type === "rack")!;
+    expect(rack.width_ft).toBe(5);
+    expect(rack.length_ft).toBe(5);
     expect(rack.custom_size).toBe("5 × 5 ft");
-    // Always manual.
+    const res = await autoDispatch(admin, trip.id);
+    expect(res.status).toBe(200);
+    const after = (await prisma.trip.findUnique({ where: { id: trip.id } }))!;
+    expect(after.status).toBe("assigned");
+  });
+
+  it("a Crate mixed with a sized Rack still forces manual — one always-manual line is enough", async () => {
+    const trip = await book([
+      { pallet_type: "rack", quantity: 1, width_ft: 4, length_ft: 4 },
+      { pallet_type: "crate", quantity: 1, width_ft: 3, length_ft: 3 },
+    ]);
     expect((await autoDispatch(admin, trip.id)).status).toBe(409);
   });
 

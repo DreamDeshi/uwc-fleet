@@ -32,6 +32,12 @@ export interface BookingTemplate {
   dimW?: string;
   dimL?: string;
   dimQty?: number;
+  // ⚠ CARGO IS A UNION (27 Aug 2026) — pallets, box and a dimensioned extra
+  // may all be saved together now, so WHICH of crate/rack/custom the
+  // dims/dimQty belong to has to be its own field. Optional so an
+  // already-on-disk template (saved before this field existed) still loads —
+  // see templateToForm's fallback.
+  dimType?: "crate" | "rack" | "custom";
   // Legacy fields (optional) — old on-disk templates only.
   cartonQty?: number;
   othersText?: string;
@@ -95,6 +101,9 @@ export interface TemplateForm {
   dimW: string;
   dimL: string;
   dimQty: number;
+  /** WHICH of crate/rack/custom dimW/dimL/dimQty belong to — independent of
+   *  `cargoType`, which is only the tab the form lands on. See BookingTemplate. */
+  dimType: "crate" | "rack" | "custom";
   remarks: string;
 }
 
@@ -119,15 +128,26 @@ export function templateToForm(
   sizes: readonly PalletSize[]
 ): TemplateForm {
   const ct = tpl.cargoType;
+  const resolvedCargoType = ct === "carton" ? "box" : ct === "others" ? "custom" : ct;
   return {
     routeTypeId: tpl.routeTypeId,
     stops: tpl.stops ?? [],
-    cargoType: ct === "carton" ? "box" : ct === "others" ? "custom" : ct,
+    cargoType: resolvedCargoType,
     palletQtys: palletQtysFor(tpl, sizes),
     boxQty: tpl.boxQty ?? tpl.cartonQty ?? 0,
     dimW: tpl.dimW ?? "",
     dimL: tpl.dimL ?? "",
     dimQty: tpl.dimQty ?? 1,
+    // A template saved before `dimType` existed has no explicit record of
+    // which dimensioned type its dims belong to — fall back to `cargoType`
+    // when IT happens to be one (the only case the old, exclusive model could
+    // ever have saved dims under), else "crate" as a harmless default for a
+    // template that never had a dimensioned extra at all.
+    dimType:
+      tpl.dimType ??
+      (resolvedCargoType === "crate" || resolvedCargoType === "rack" || resolvedCargoType === "custom"
+        ? resolvedCargoType
+        : "crate"),
     remarks: tpl.remarks ?? "",
   };
 }

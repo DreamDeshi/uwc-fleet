@@ -69,21 +69,39 @@ export interface BookingIssue {
 
 const DIMENSIONED = ["crate", "rack", "custom"];
 
-/** Everything wrong with THIS step, or null. */
+/**
+ * Everything wrong with THIS step, or null.
+ *
+ * ⚠ CARGO IS A UNION, NOT AN EITHER/OR (27 Aug 2026). Pallets, a box, and one
+ * dimensioned extra (crate/rack/custom) can all be present in the SAME
+ * booking now — see BookingFormScreen's buildCargo. So "is cargo set" means
+ * ANY of the three has something in it, not "does the CURRENTLY VIEWED tab
+ * have something in it". The bug this replaces: a requestor who entered 11
+ * pallets, then switched to the Box tab and added 1 box, had the pallets
+ * silently vanish from the submission because the old check only looked at
+ * whichever tab `cargoType` currently pointed at.
+ *
+ * `draft.cargoType` is kept only to decide WHICH dims-required message applies
+ * when the requestor is actively viewing a dimensioned tab with bad dims — it
+ * no longer gates whether pallets/box count.
+ */
 export function stepIssue(draft: BookingDraft, step: number): BookingIssue | null {
   if (step === STEP_WHERE) {
     if (!draft.routeTypeId) return { step, key: "booking.selectRouteType" };
     if (draft.stopCount === 0) return { step, key: "booking.selectConsignee" };
   }
   if (step === STEP_WHAT) {
-    if (draft.cargoType === "pallet" && draft.totalPallets === 0) {
-      return { step, key: "booking.addCargo" };
-    }
-    if (draft.cargoType === "box" && draft.boxQty === 0) {
-      return { step, key: "booking.addCargo" };
-    }
-    if (DIMENSIONED.includes(draft.cargoType) && !draft.dimsOk) {
-      return { step, key: "booking.addCargoDims" };
+    const cargoSet = draft.totalPallets > 0 || draft.boxQty > 0 || draft.dimsOk;
+    if (!cargoSet) {
+      // Nothing at all is set. If the requestor is actively looking at a
+      // dimensioned tab, the specific "enter width/length" message is more
+      // useful than the generic "add cargo" — that's the field in front of
+      // them. Otherwise (viewing Pallet or Box with nothing entered) the
+      // generic message is the right one.
+      return {
+        step,
+        key: DIMENSIONED.includes(draft.cargoType) ? "booking.addCargoDims" : "booking.addCargo",
+      };
     }
   }
   return null;

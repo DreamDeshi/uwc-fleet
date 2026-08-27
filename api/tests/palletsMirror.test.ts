@@ -28,6 +28,7 @@ const SHARED_EXPORTS = [
   "UNSIZED_CARGO_TYPES",
   "NONPALLET_CARGO_TYPES",
   "DIMENSIONED_CARGO_TYPES",
+  "DIMENSION_SIZED_TYPES",
   "ALWAYS_MANUAL_TYPES",
   "CARGO_PALLET_TYPES",
   "DEPRECATED_PALLET_SIZES",
@@ -35,6 +36,7 @@ const SHARED_EXPORTS = [
   "BOOKABLE_CARGO_TYPES",
   "PALLET_FACTORS",
   "isAlwaysManualType",
+  "dimensionedEquivalent",
   "canonicalCargoSize",
   "isValidDimension",
   "isDeprecatedPalletSize",
@@ -82,6 +84,15 @@ const CARGO_SETS = [
     { pallet_type: "carton", quantity: 2, estimated_pallets: 1.5 },
     { pallet_type: "box", quantity: 3 },
   ],
+  // Rack now carries a real area÷16 capacity number (27 Aug 2026) — the case
+  // that would have silently diverged if only one side's file were edited.
+  [{ pallet_type: "rack", quantity: 2, width_ft: 5, length_ft: 5 }],
+  [{ pallet_type: "rack", quantity: 1 }], // no dims — falls back to 0, not a guess
+  [
+    { pallet_type: "4×4", quantity: 2 },
+    { pallet_type: "rack", quantity: 1, width_ft: 4, length_ft: 4 },
+    { pallet_type: "box", quantity: 1 },
+  ],
 ] as const;
 
 describe("pallets.ts api↔mobile drift guard", () => {
@@ -128,6 +139,21 @@ describe("pallets.ts api↔mobile drift guard", () => {
         expect(mobilePallets.canonicalCargoSize(w, l), `canonicalCargoSize(${w}, ${l})`)
           .toBe(apiPallets.canonicalCargoSize(w, l));
       }
+    }
+  });
+
+  it("dimensionedEquivalent agrees across rack/crate/custom and missing dims", () => {
+    const lines = [
+      { pallet_type: "rack", width_ft: 5, length_ft: 5 },
+      { pallet_type: "rack", width_ft: 0, length_ft: 5 },
+      { pallet_type: "rack" },
+      { pallet_type: "crate", width_ft: 5, length_ft: 5 },
+      { pallet_type: "custom", width_ft: 5, length_ft: 5 },
+    ];
+    for (const line of lines) {
+      expect(mobilePallets.dimensionedEquivalent(line), JSON.stringify(line)).toBe(
+        apiPallets.dimensionedEquivalent(line)
+      );
     }
   });
 

@@ -31,18 +31,42 @@ export type PalletSize = (typeof PALLET_SIZES)[number];
 export const UNSIZED_CARGO_TYPES = ["carton", "custom"] as const;
 export const NONPALLET_CARGO_TYPES = ["carton", "custom", "box", "crate", "rack"] as const;
 
-/** Q10: cargo types carrying structured dimensions (width_ft × length_ft, feet). */
+/** Q10: cargo types carrying structured dimensions (width_ft × length_ft, feet).
+ *  Rack's dims now feed the capacity calculation (see DIMENSION_SIZED_TYPES);
+ *  crate/custom's dims remain display-only. Mirrors the API. */
 export const DIMENSIONED_CARGO_TYPES = ["crate", "rack", "custom"] as const;
 
-/** Q10: cargo types that ALWAYS route to manual admin assignment — box has no
- *  dimensions; crate/rack/custom have no authoritative auto-dispatch rule. carton
- *  is excluded (legacy estimate-sized dispatch preserved). Mirrors the API. */
-export const ALWAYS_MANUAL_TYPES = ["box", "crate", "rack", "custom"] as const;
+/**
+ * Rack-only (owner ruling, 27 Aug 2026): the ONE dimensioned type whose
+ * width_ft × length_ft is a real capacity number, area ÷ 16 like a pallet —
+ * see `dimensionedEquivalent`. Crate/custom stay out on purpose; mirrors the API.
+ */
+export const DIMENSION_SIZED_TYPES = ["rack"] as const;
+
+/** Q10: cargo types that ALWAYS route to manual admin assignment regardless of
+ *  dimensions or an estimate — crate/custom have no authoritative auto-dispatch
+ *  rule. `box` and `rack` are excluded as of 27 Aug 2026: box needs no truck
+ *  space, rack is sized via DIMENSION_SIZED_TYPES. carton is excluded (legacy
+ *  estimate-sized dispatch preserved). Mirrors the API. */
+export const ALWAYS_MANUAL_TYPES = ["crate", "custom"] as const;
 export function isAlwaysManualType(palletType: string): boolean {
   return (ALWAYS_MANUAL_TYPES as readonly string[]).includes(palletType);
 }
 export function isDimensionedType(palletType: string): boolean {
   return (DIMENSIONED_CARGO_TYPES as readonly string[]).includes(palletType);
+}
+
+/** A dimensioned line's 4×4-equivalent for DIMENSION_SIZED_TYPES (rack only) —
+ *  area ÷ 16, from width_ft × length_ft rather than a name lookup. `null` when
+ *  the type isn't sized this way, or dims are missing/invalid. Mirrors the API. */
+export function dimensionedEquivalent(c: {
+  pallet_type: string;
+  width_ft?: number | null;
+  length_ft?: number | null;
+}): number | null {
+  if (!(DIMENSION_SIZED_TYPES as readonly string[]).includes(c.pallet_type)) return null;
+  if (!isValidDimension(c.width_ft) || !isValidDimension(c.length_ft)) return null;
+  return (c.width_ft * c.length_ft) / 16;
 }
 
 /** Canonical stored representation of a structured dimension (Q10): "W × L ft"
@@ -208,10 +232,13 @@ export interface CargoLine {
  * round it to 0.063. Must match the server's rounding exactly or the form's
  * warning disagrees with the server's capacity verdict. For a carton/custom
  * line the requestor's estimate (if given) IS the line's equivalent; without
- * one it contributes 0.
+ * one it contributes 0. A DIMENSION_SIZED_TYPES line (rack) contributes its own
+ * area÷16 equivalent, checked first — mirrors the API.
  */
 export function palletEquivalents(cargo: CargoLine[]): number {
   const total = cargo.reduce((sum, c) => {
+    const dimEquiv = dimensionedEquivalent(c);
+    if (dimEquiv != null) return sum + dimEquiv * c.quantity;
     if (isUnsizedType(c.pallet_type)) return sum + (c.estimated_pallets ?? 0);
     return sum + palletFactor(c.pallet_type) * c.quantity;
   }, 0);

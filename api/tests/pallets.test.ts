@@ -13,7 +13,9 @@ import {
   PALLET_SIZES,
   ALWAYS_MANUAL_TYPES,
   DIMENSIONED_CARGO_TYPES,
+  DIMENSION_SIZED_TYPES,
   isAlwaysManualType,
+  dimensionedEquivalent,
   canonicalCargoSize,
   isValidDimension,
 } from "../src/lib/pallets";
@@ -300,34 +302,91 @@ describe("isUnsizedForDispatch — unsized carton/Others route to manual assignm
   });
 });
 
-describe("Q10 — Box/Crate/Rack/Custom always route to manual assignment", () => {
-  it("ALWAYS_MANUAL_TYPES is box/crate/rack/custom (carton excluded — legacy)", () => {
-    expect([...ALWAYS_MANUAL_TYPES]).toEqual(["box", "crate", "rack", "custom"]);
+describe("Q10 — Crate/Custom always route to manual; Box and Rack changed 27 Aug 2026", () => {
+  it("ALWAYS_MANUAL_TYPES is crate/custom only (box and rack excluded 27 Aug 2026, carton excluded — legacy)", () => {
+    expect([...ALWAYS_MANUAL_TYPES]).toEqual(["crate", "custom"]);
     expect(isAlwaysManualType("carton")).toBe(false);
-    for (const t of ["box", "crate", "rack", "custom"]) expect(isAlwaysManualType(t)).toBe(true);
+    expect(isAlwaysManualType("box")).toBe(false);
+    expect(isAlwaysManualType("rack")).toBe(false);
+    for (const t of ["crate", "custom"]) expect(isAlwaysManualType(t)).toBe(true);
   });
 
-  it("Box ALWAYS forces manual assignment — even with an estimate", () => {
-    expect(isUnsizedForDispatch([{ pallet_type: "box", quantity: 5 }])).toBe(true);
-    expect(isUnsizedForDispatch([{ pallet_type: "box", quantity: 5, estimated_pallets: 4 }])).toBe(true);
+  it("Box NEVER forces manual assignment (owner ruling 27 Aug 2026 — no truck space needed)", () => {
+    expect(isUnsizedForDispatch([{ pallet_type: "box", quantity: 5 }])).toBe(false);
+    expect(isUnsizedForDispatch([{ pallet_type: "box", quantity: 5, estimated_pallets: 4 }])).toBe(false);
   });
 
-  it("Crate and Rack ALWAYS force manual assignment (dims are display-only, not packed)", () => {
+  it("Crate ALWAYS forces manual assignment (dims are display-only, not packed — unchanged)", () => {
     expect(isUnsizedForDispatch([{ pallet_type: "crate", quantity: 1, width_ft: 4, length_ft: 3 }])).toBe(true);
-    expect(isUnsizedForDispatch([{ pallet_type: "rack", quantity: 2, width_ft: 5, length_ft: 5, estimated_pallets: 2 }])).toBe(true);
   });
 
-  it("Box/Crate/Rack contribute 0 to the pallet-equivalent load (no invented area-summing)", () => {
+  it("Custom ALWAYS forces manual assignment (unchanged)", () => {
+    expect(isUnsizedForDispatch([{ pallet_type: "custom", quantity: 1, width_ft: 4, length_ft: 3 }])).toBe(true);
+  });
+
+  it("Rack WITH valid dims is SIZED and no longer forces manual (owner ruling 27 Aug 2026)", () => {
+    expect(isUnsizedForDispatch([{ pallet_type: "rack", quantity: 2, width_ft: 5, length_ft: 5 }])).toBe(false);
+    // An estimate is irrelevant either way now — the dims ARE the size.
+    expect(
+      isUnsizedForDispatch([{ pallet_type: "rack", quantity: 2, width_ft: 5, length_ft: 5, estimated_pallets: 999 }])
+    ).toBe(false);
+  });
+
+  it("Rack WITHOUT valid dims still forces manual (defensive — schema requires dims for a new line)", () => {
+    expect(isUnsizedForDispatch([{ pallet_type: "rack", quantity: 2 }])).toBe(true);
+    expect(isUnsizedForDispatch([{ pallet_type: "rack", quantity: 2, width_ft: 0, length_ft: 5 }])).toBe(true);
+  });
+
+  it("Box/Crate contribute 0 to the pallet-equivalent load (no invented area-summing)", () => {
     expect(palletEquivalents([{ pallet_type: "box", quantity: 9 }])).toBe(0);
     expect(palletEquivalents([{ pallet_type: "crate", quantity: 1, width_ft: 4, length_ft: 3 }])).toBe(0);
-    expect(palletEquivalents([{ pallet_type: "rack", quantity: 2, width_ft: 5, length_ft: 5 }])).toBe(0);
   });
 
-  it("a Box line makes a mixed pallet order need manual assignment", () => {
+  it("Rack contributes AREA ÷ 16 × quantity — the same rule as a pallet footprint", () => {
+    // 5×5 = 25/16 = 1.5625 per unit, × 2 = 3.125.
+    expect(palletEquivalents([{ pallet_type: "rack", quantity: 2, width_ft: 5, length_ft: 5 }])).toBe(3.125);
+    // A rack with no/invalid dims falls back to 0, never a guessed number.
+    expect(palletEquivalents([{ pallet_type: "rack", quantity: 2 }])).toBe(0);
+  });
+
+  it("DIMENSION_SIZED_TYPES is rack only — crate/custom deliberately excluded", () => {
+    expect([...DIMENSION_SIZED_TYPES]).toEqual(["rack"]);
+    expect(dimensionedEquivalent({ pallet_type: "crate", width_ft: 4, length_ft: 4 })).toBeNull();
+    expect(dimensionedEquivalent({ pallet_type: "custom", width_ft: 4, length_ft: 4 })).toBeNull();
+    expect(dimensionedEquivalent({ pallet_type: "rack", width_ft: 4, length_ft: 4 })).toBe(1);
+    expect(dimensionedEquivalent({ pallet_type: "rack" })).toBeNull();
+  });
+
+  it("a Box line no longer forces manual on an otherwise-sized pallet order", () => {
     expect(
       isUnsizedForDispatch([
         { pallet_type: "4×4", quantity: 2 },
         { pallet_type: "box", quantity: 3 },
+      ])
+    ).toBe(false);
+  });
+
+  it("a Rack line WITH dims lets a mixed pallet+rack order auto-dispatch", () => {
+    expect(
+      isUnsizedForDispatch([
+        { pallet_type: "4×4", quantity: 2 },
+        { pallet_type: "rack", quantity: 1, width_ft: 4, length_ft: 4 }, // +1 slot
+      ])
+    ).toBe(false);
+    expect(
+      palletEquivalents([
+        { pallet_type: "4×4", quantity: 2 }, // 2
+        { pallet_type: "rack", quantity: 1, width_ft: 4, length_ft: 4 }, // 1
+      ])
+    ).toBe(3);
+  });
+
+  it("a Crate line still forces manual even mixed with sized pallets/rack (unchanged)", () => {
+    expect(
+      isUnsizedForDispatch([
+        { pallet_type: "4×4", quantity: 2 },
+        { pallet_type: "rack", quantity: 1, width_ft: 4, length_ft: 4 },
+        { pallet_type: "crate", quantity: 1, width_ft: 3, length_ft: 3 },
       ])
     ).toBe(true);
   });

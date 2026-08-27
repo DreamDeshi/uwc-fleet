@@ -14,6 +14,8 @@ import {
   canonicalCargoSize,
   isValidDimension,
   isAlwaysManualType,
+  dimensionedEquivalent,
+  DIMENSION_SIZED_TYPES,
 } from "./pallets";
 
 // These factors MUST stay identical to api/src/lib/pallets.ts — the server
@@ -281,10 +283,19 @@ describe("Q10 — mirror of the API dimension helpers + always-manual set", () =
     }
   });
 
-  it("box/crate/rack/custom are always-manual; carton and pallets are not", () => {
-    for (const t of ["box", "crate", "rack", "custom"]) expect(isAlwaysManualType(t)).toBe(true);
-    expect(isAlwaysManualType("carton")).toBe(false);
-    expect(isAlwaysManualType("4×4")).toBe(false);
+  it("crate/custom are always-manual; box, rack, carton and pallets are not (owner ruling 27 Aug 2026)", () => {
+    for (const t of ["crate", "custom"]) expect(isAlwaysManualType(t)).toBe(true);
+    for (const t of ["box", "rack", "carton", "4×4"]) expect(isAlwaysManualType(t)).toBe(false);
+  });
+
+  it("rack's dims give a real capacity number (area÷16, like a pallet); crate/custom do not", () => {
+    expect([...DIMENSION_SIZED_TYPES]).toEqual(["rack"]);
+    expect(dimensionedEquivalent({ pallet_type: "rack", width_ft: 5, length_ft: 5 })).toBe(1.5625);
+    expect(dimensionedEquivalent({ pallet_type: "crate", width_ft: 5, length_ft: 5 })).toBeNull();
+    expect(dimensionedEquivalent({ pallet_type: "custom", width_ft: 5, length_ft: 5 })).toBeNull();
+    expect(dimensionedEquivalent({ pallet_type: "rack" })).toBeNull();
+    expect(palletEquivalents([{ pallet_type: "rack", quantity: 2, width_ft: 5, length_ft: 5 }])).toBe(3.125);
+    expect(palletEquivalents([{ pallet_type: "crate", quantity: 2, width_ft: 5, length_ft: 5 }])).toBe(0);
   });
 
   it("finalizeCargoPayload preserves a legacy line VERBATIM (custom_size + dims)", () => {
