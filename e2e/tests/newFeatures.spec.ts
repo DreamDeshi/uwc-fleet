@@ -164,16 +164,17 @@ test.describe("Structured cargo & templates (requestor, mobile web)", () => {
     return trip!;
   }
 
-  test("N1. books BOX cargo — count only, no dimensions, flagged for manual assignment", async ({
+  test("N1. books BOX cargo — count only, no dimensions, no truck space", async ({
     page,
   }) => {
     await toCargoStep(page);
 
     // Box tab: a single count stepper, no dimension inputs, and the
-    // manual-assignment hint (Q10: boxes always go to the dispatcher).
+    // no-truck-space hint (27 Aug 2026 ruling: a box must never block
+    // auto-dispatch, so it no longer forces manual assignment).
     await page.getByText("Box", { exact: true }).click();
     await expect(page.getByText("Number of Boxes")).toBeVisible();
-    await expect(page.getByText("Boxes go to the dispatcher for manual truck assignment.")).toBeVisible();
+    await expect(page.getByText("A box travels with the driver. It needs no truck space.")).toBeVisible();
     await expect(page.getByPlaceholder("Width")).toHaveCount(0);
     // selector-ok: the quantity stepper glyph is not a translated string
     await page.getByText("+", { exact: true }).first().click();
