@@ -24,6 +24,7 @@ import {
   useTrips,
   useUploadTripDocument,
   useBookingCutoffSettings,
+  usePlants,
   CONSIGNEE_SEARCH_MIN,
 } from "../../hooks/queries";
 import { apiErrorMessage } from "../../services/api";
@@ -185,6 +186,10 @@ export function BookingFormScreen() {
   } = useRouteTypes();
   const { data: trips = [] } = useTrips();
   const { data: editTrip } = useTrip(editTripId ?? "");
+  // Item 3 multi-pickup — the nine UWC Plant consignees. Fetched unconditionally
+  // (small, cached list) rather than gated on isInterplantBooking, so the
+  // picker has data ready the instant a requestor switches to Inter-Plant.
+  const { data: plants = [] } = usePlants();
   const createTrip = useCreateTrip();
   const updateTrip = useUpdateTrip();
   const requestChange = useRequestTripChange();
@@ -227,6 +232,14 @@ export function BookingFormScreen() {
   // their +/− did nothing (updateQty's .map can't grow an array), and
   // buildCargo dropped them silently because `undefined > 0` is false.
   const [palletQtys, setPalletQtys] = useState<number[]>(() => PALLET_SIZES.map(() => 0));
+  // Item 3 multi-pickup (Inter-Plant only): which UWC plant each pallet-size
+  // row, the box line, and the dimensioned extra were picked up from.
+  // Index-aligned with PALLET_SIZES, same as palletQtys. undefined = today's
+  // single hardcoded origin (ORIGIN_LABEL) — never shown/settable outside an
+  // Inter-Plant booking.
+  const [palletPickups, setPalletPickups] = useState<(string | undefined)[]>(() => PALLET_SIZES.map(() => undefined));
+  const [boxPickup, setBoxPickup] = useState<string | undefined>(undefined);
+  const [dimPickup, setDimPickup] = useState<string | undefined>(undefined);
   // Deprecated (1×1/1×2) lines carried in from a historical booking on edit. They
   // are NOT selectable/editable via the steppers — kept read-only and re-appended
   // verbatim on save so an unrelated edit can never silently drop them. Removal is
@@ -436,6 +449,15 @@ export function BookingFormScreen() {
     dimsOk ? `${dimQty} × ${canonicalCargoSize(dimWNum, dimLNum)}` : null,
   ].filter((p): p is string => p !== null);
   const cargoSummaryText = cargoSummaryParts.length > 0 ? cargoSummaryParts.join(" + ") : t(`booking.${cargoType}`);
+  // Item 3 multi-pickup — the distinct plant names actually chosen, for the
+  // Confirm step's review card. Undefined when nothing was picked (today's
+  // single-origin default), so the card falls back to no extra line at all.
+  const pickupSummary = useMemo(() => {
+    if (!isInterplantBooking) return undefined;
+    const ids = [...palletPickups, boxPickup, dimPickup].filter((id): id is string => Boolean(id));
+    const names = [...new Set(ids.map((id) => plants.find((p) => p.id === id)?.company_name).filter((n): n is string => Boolean(n)))];
+    return names.length > 0 ? names.join(", ") : undefined;
+  }, [isInterplantBooking, palletPickups, boxPickup, dimPickup, plants]);
 
   const resetForm = () => {
     setStep(0);
@@ -443,12 +465,15 @@ export function BookingFormScreen() {
     setStops([]);
     setCargoType("pallet");
     setPalletQtys(PALLET_SIZES.map(() => 0));
+    setPalletPickups(PALLET_SIZES.map(() => undefined));
     setLegacyCargo([]);
     setBoxQty(0);
+    setBoxPickup(undefined);
     setDimW("");
     setDimL("");
     setDimQty(1);
     setDimType("crate");
+    setDimPickup(undefined);
     setRemarks("");
     slotTouched.current = false; // fresh form — the default may auto-refresh again
     setSlot(nextBookableSlot());
@@ -495,18 +520,25 @@ export function BookingFormScreen() {
     const box = bookable.find((l) => l.pallet_type === "box");
     const dimLine = bookable.find((l) => l.pallet_type === "crate" || l.pallet_type === "rack" || l.pallet_type === "custom");
     const pallets = PALLET_SIZES.map((size) => bookable.find((l) => l.pallet_type === size)?.quantity ?? 0);
+    // Item 3 multi-pickup: carry the pickup plant back in on rebook/edit, same
+    // index alignment as pallets.
+    const pickups = PALLET_SIZES.map((size) => bookable.find((l) => l.pallet_type === size)?.pickup_consignee_id ?? undefined);
 
     setPalletQtys(pallets);
+    setPalletPickups(pickups);
     setBoxQty(box?.quantity ?? 0);
+    setBoxPickup(box?.pickup_consignee_id ?? undefined);
     if (dimLine) {
       setDimType(dimLine.pallet_type as "crate" | "rack" | "custom");
       setDimW(dimLine.width_ft != null ? String(dimLine.width_ft) : "");
       setDimL(dimLine.length_ft != null ? String(dimLine.length_ft) : "");
       setDimQty(dimLine.quantity ?? 1);
+      setDimPickup(dimLine.pickup_consignee_id ?? undefined);
     } else {
       setDimW("");
       setDimL("");
       setDimQty(1);
+      setDimPickup(undefined);
     }
     // Land on whichever tab has the PRIMARY content, so the form doesn't open
     // on an empty-looking panel — same preference order as before (box, then
@@ -647,10 +679,14 @@ export function BookingFormScreen() {
   // the preserved legacy cargo, so an edit can never silently drop it.
   const buildCargo = () => {
     const current: OutgoingCargoLine[] = [
-      ...PALLET_SIZES.map((size, i) => ({ pallet_type: size, quantity: palletQtys[i] })).filter((c) => c.quantity > 0),
+      ...PALLET_SIZES.map((size, i) => ({
+        pallet_type: size,
+        quantity: palletQtys[i],
+        pickup_consignee_id: palletPickups[i],
+      })).filter((c) => c.quantity > 0),
       // Q10: Box is a count only — no dimensions, and (27 Aug 2026) no truck
       // space — it never blocks auto-dispatch on its own.
-      ...(boxQty > 0 ? [{ pallet_type: "box", quantity: boxQty }] : []),
+      ...(boxQty > 0 ? [{ pallet_type: "box", quantity: boxQty, pickup_consignee_id: boxPickup }] : []),
       // Q10: structured dimensions in feet + a canonical stored size.
       ...(dimsOk
         ? [{
@@ -659,6 +695,7 @@ export function BookingFormScreen() {
             width_ft: dimWNum,
             length_ft: dimLNum,
             custom_size: canonicalCargoSize(dimWNum, dimLNum),
+            pickup_consignee_id: dimPickup,
           }]
         : []),
     ];
@@ -843,6 +880,14 @@ export function BookingFormScreen() {
           totalPallets={totalPallets}
           totalEquivalents={totalEquivalents}
           cargoSummaryParts={cargoSummaryParts}
+          isInterplantBooking={isInterplantBooking}
+          plants={plants}
+          palletPickups={palletPickups}
+          setPalletPickups={setPalletPickups}
+          boxPickup={boxPickup}
+          setBoxPickup={setBoxPickup}
+          dimPickup={dimPickup}
+          setDimPickup={setDimPickup}
         />
       )}
       {step === 2 && (
@@ -863,6 +908,7 @@ export function BookingFormScreen() {
           routeTypeName={routeTypes.find((r) => r.id === routeTypeId)?.name}
           stops={stops}
           cargoSummaryText={cargoSummaryText}
+          pickupSummary={pickupSummary}
           pickupDate={pickupDate}
           onEditStep={setStep}
           docs={docs}
@@ -1429,6 +1475,74 @@ function StartFromModal({
   );
 }
 
+// Item 3 multi-pickup: a compact button that opens a plain vertical list of
+// the nine UWC plants + "Default origin" — nine short rows always fit a
+// phone screen without scrolling, deliberately sidestepping the class of bug
+// a horizontal scroll strip has (see TimeOfDayPicker's fix, 28 Aug 2026): no
+// affordance is needed here because there is nothing to scroll.
+function PickupPlantButton({
+  value,
+  onChange,
+  plants,
+}: {
+  value: string | undefined;
+  onChange: (id: string | undefined) => void;
+  plants: { id: string; company_name: string }[];
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const selected = value ? plants.find((p) => p.id === value) : undefined;
+
+  return (
+    <>
+      <TouchableOpacity
+        style={styles.pickupBtn}
+        onPress={() => setOpen(true)}
+        accessibilityRole="button"
+      >
+        <Ionicons name="business-outline" size={13} color={colors.blue} />
+        <Text style={styles.pickupBtnText} numberOfLines={1}>
+          {selected ? selected.company_name : t("booking.pickupDefault")}
+        </Text>
+        <Ionicons name="chevron-down" size={12} color={colors.blue} />
+      </TouchableOpacity>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { alignItems: "stretch" }]}>
+            <Text style={styles.pickupModalTitle}>{t("booking.pickupPlantTitle")}</Text>
+            <TouchableOpacity
+              style={styles.pickupOption}
+              onPress={() => {
+                onChange(undefined);
+                setOpen(false);
+              }}
+            >
+              <Text style={styles.pickupOptionText}>{t("booking.pickupDefault")}</Text>
+              {!value && <Ionicons name="checkmark" size={16} color={colors.blue} />}
+            </TouchableOpacity>
+            {plants.map((p) => (
+              <TouchableOpacity
+                key={p.id}
+                style={styles.pickupOption}
+                onPress={() => {
+                  onChange(p.id);
+                  setOpen(false);
+                }}
+              >
+                <Text style={styles.pickupOptionText}>{p.company_name}</Text>
+                {value === p.id && <Ionicons name="checkmark" size={16} color={colors.blue} />}
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.pickupCancel} onPress={() => setOpen(false)}>
+              <Text style={styles.pickupCancelText}>{t("common.cancel")}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
 // ── Step 2: What (cargo) ─────────────────────────────────────────────────
 function StepWhat({
   cargoType,
@@ -1450,6 +1564,14 @@ function StepWhat({
   totalPallets,
   totalEquivalents,
   cargoSummaryParts,
+  isInterplantBooking,
+  plants,
+  palletPickups,
+  setPalletPickups,
+  boxPickup,
+  setBoxPickup,
+  dimPickup,
+  setDimPickup,
 }: {
   cargoType: "pallet" | "box" | "crate" | "rack" | "custom";
   setCargoType: (v: "pallet" | "box" | "crate" | "rack" | "custom") => void;
@@ -1474,6 +1596,15 @@ function StepWhat({
   setLegacyCargo: React.Dispatch<React.SetStateAction<OutgoingCargoLine[]>>;
   totalPallets: number;
   totalEquivalents: number;
+  /** Item 3 multi-pickup — the picker only ever shows on an Inter-Plant booking. */
+  isInterplantBooking: boolean;
+  plants: { id: string; company_name: string }[];
+  palletPickups: (string | undefined)[];
+  setPalletPickups: React.Dispatch<React.SetStateAction<(string | undefined)[]>>;
+  boxPickup: string | undefined;
+  setBoxPickup: React.Dispatch<React.SetStateAction<string | undefined>>;
+  dimPickup: string | undefined;
+  setDimPickup: React.Dispatch<React.SetStateAction<string | undefined>>;
 }) {
   const { t } = useTranslation();
   // On react-native-web a single tap on a TouchableOpacity can synthesize several
@@ -1541,6 +1672,13 @@ function StepWhat({
             {PALLET_SIZES.map((size, i) => (
               <View key={size} style={[styles.palletRow, i < PALLET_SIZES.length - 1 && styles.palletDivider]}>
                 <Text style={styles.palletSize}>{t("booking.cargoSizeRow", { size })}</Text>
+                {isInterplantBooking && palletQtys[i] > 0 ? (
+                  <PickupPlantButton
+                    value={palletPickups[i]}
+                    onChange={(id) => setPalletPickups((prev) => prev.map((v, idx) => (idx === i ? id : v)))}
+                    plants={plants}
+                  />
+                ) : null}
                 <View style={styles.stepper}>
                   <TouchableOpacity style={styles.stepBtnMinus} onPress={() => updateQty(i, -1)}>
                     <Text style={styles.stepBtnMinusText}>−</Text>
@@ -1620,6 +1758,9 @@ function StepWhat({
           <FieldLabel>{t("booking.numBoxes")}</FieldLabel>
           <View style={[styles.palletRow, { backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md }]}>
             <Text style={styles.palletSize}>{t("booking.box")}</Text>
+            {isInterplantBooking && boxQty > 0 ? (
+              <PickupPlantButton value={boxPickup} onChange={setBoxPickup} plants={plants} />
+            ) : null}
             <View style={styles.stepper}>
               <TouchableOpacity style={styles.stepBtnMinus} onPress={() => oncePerTap(() => setBoxQty((q) => Math.max(0, q - 1)))}>
                 <Text style={styles.stepBtnMinusText}>−</Text>
@@ -1660,6 +1801,9 @@ function StepWhat({
           <FieldLabel>{t("booking.quantity")}</FieldLabel>
           <View style={[styles.palletRow, { backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md }]}>
             <Text style={styles.palletSize}>{t(`booking.${cargoType}`)}</Text>
+            {isInterplantBooking && dimQty > 0 ? (
+              <PickupPlantButton value={dimPickup} onChange={setDimPickup} plants={plants} />
+            ) : null}
             <View style={styles.stepper}>
               <TouchableOpacity style={styles.stepBtnMinus} onPress={() => oncePerTap(() => setDimQty((q) => Math.max(1, q - 1)))}>
                 <Text style={styles.stepBtnMinusText}>−</Text>
@@ -1779,6 +1923,7 @@ function StepConfirm({
   routeTypeName,
   stops,
   cargoSummaryText,
+  pickupSummary,
   pickupDate,
   onEditStep,
   docs,
@@ -1791,6 +1936,8 @@ function StepConfirm({
   routeTypeName?: string;
   stops: Consignee[];
   cargoSummaryText: string;
+  /** Item 3 multi-pickup — distinct plant names chosen, or undefined. */
+  pickupSummary?: string;
   pickupDate: Date;
   onEditStep: (s: number) => void;
   docs: PickedPhoto[];
@@ -1890,6 +2037,14 @@ function StepConfirm({
           </View>
           <Text style={styles.confirmLineMain}>{cargoSummaryText}</Text>
         </View>
+        {pickupSummary ? (
+          <View style={styles.confirmLine}>
+            <View style={styles.confirmIcon}>
+              <Ionicons name="business-outline" size={16} color={colors.blue} />
+            </View>
+            <Text style={styles.confirmLineMain}>{t("booking.pickupSummary", { list: pickupSummary })}</Text>
+          </View>
+        ) : null}
       </Section>
 
       {/* Save this booking as a reusable template (device-local). Only offered
@@ -2139,6 +2294,33 @@ const styles = StyleSheet.create({
   stepBtnPlus: { width: 32, height: 32, borderRadius: 10, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center" },
   stepBtnPlusText: { fontSize: 20, fontWeight: "700", color: colors.white },
   stepVal: { fontSize: 16, fontWeight: "800", color: colors.navy, minWidth: 24, textAlign: "center" },
+  // Item 3 multi-pickup
+  pickupBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    maxWidth: 110,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.blue,
+    backgroundColor: colors.tintBlue,
+  },
+  pickupBtnText: { fontSize: 11, fontWeight: "700", color: colors.blue, flexShrink: 1 },
+  pickupModalTitle: { fontSize: 16, fontWeight: "800", color: colors.navy, marginBottom: 12, textAlign: "center" },
+  pickupOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.bg,
+  },
+  pickupOptionText: { fontSize: 14, fontWeight: "600", color: colors.navy },
+  pickupCancel: { paddingVertical: 12, alignItems: "center", marginTop: 4 },
+  pickupCancelText: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
   capacityCard: {
     backgroundColor: colors.white,
     borderRadius: radius.md,

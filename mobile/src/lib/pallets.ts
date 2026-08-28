@@ -141,6 +141,8 @@ export interface OutgoingCargoLine {
   length_ft?: number;
   estimated_pallets?: number;
   remark?: string;
+  // Item 3 multi-pickup (Inter-Plant only). Absent = today's single origin.
+  pickup_consignee_id?: string;
 }
 
 /**

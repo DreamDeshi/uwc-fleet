@@ -73,11 +73,23 @@ export async function ensureRequestor(client: PrismaClient = prisma): Promise<vo
 }
 
 /**
- * Ensure at least the synthetic consignees exist — but ONLY when the table is
- * empty, so we never duplicate a real Excel import on a DB that already has it.
+ * Ensure at least the synthetic consignees exist — but ONLY when the REAL or
+ * synthetic set is missing, so we never duplicate an Excel import on a DB
+ * that already has it.
+ *
+ * ⚠ EXCLUDES is_uwc_plant ROWS FROM THE COUNT (found 28 Aug 2026, Item 3
+ * multi-pickup). seed.ts unconditionally seeds nine UWC Plant consignees
+ * BEFORE this script runs, so a plain `count()` on a fresh CI database — no
+ * Excel workbook, so seedConsignees() no-ops — sees 9, not 0, and this whole
+ * function skips. That silently deletes the Bayan Lepas customs fixture the
+ * K2 e2e spec depends on, with no error anywhere: the gate's own job is to
+ * detect "nothing has been seeded yet", and nine always-present plant rows
+ * are not evidence that it has. Exactly the shape AGENTS.md's "ABSENCE LOOKS
+ * EXACTLY LIKE SUCCESS" section is about — caught only because the e2e job
+ * went red, not because anything here noticed.
  */
 export async function ensureConsignees(client: PrismaClient = prisma): Promise<void> {
-  const existing = await client.consignee.count();
+  const existing = await client.consignee.count({ where: { is_uwc_plant: false } });
   if (existing > 0) {
     console.log(`Consignees already present (${existing} rows) — skipping synthetic seed.`);
     return;

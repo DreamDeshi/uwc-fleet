@@ -228,6 +228,62 @@ export const bookableConsigneesWhere = (ids: string[]) => ({
   is_active: true,
 });
 
+/**
+ * Item 3 multi-pickup. A cargo line's pickup_consignee_id (if any is set)
+ * must be a UWC plant, and setting one at all is refused on a non-interplant
+ * booking.
+ *
+ * ⚠ SCOPE NOTE — what this deliberately does NOT enforce. Mr. Teh's R1
+ * 2026-07-24 answer also said "Interplant can only select pickup point AND
+ * delivery point from UWC Plant 1 to UWC Plant 9", which would suggest every
+ * interplant stop's DESTINATION should be plant-restricted too. That check
+ * was written, and it broke interplantDispatch.test.ts,
+ * interplantRoundTrip.test.ts and bookingCutoff.test.ts — the existing,
+ * already-shipped interplant rate/dispatch/round-trip-scoring suite books
+ * "Inter-Plant Delivery" trips to ordinary zone-P2 consignees, not
+ * specifically the nine plant rows, and none of that money-critical code
+ * treats the destination as plant-restricted. That is a genuine conflict
+ * between a written client answer and how the interplant system was actually
+ * built and tested (AGENTS.md: "If two authoritative sources conflict,
+ * identify the conflict and stop before implementing the affected
+ * behaviour") — so the destination-side rule was REMOVED rather than
+ * resolved here. Only the pickup side, which Item 3 actually asked for and
+ * which nothing else in the codebase assumes otherwise, is enforced.
+ *
+ * Pure (no DB) so it is unit-testable; the caller resolves consignee rows and
+ * passes plain data in. Exported for unit tests (tests/tripValidation.test.ts).
+ */
+export function assertMultiPickupPlantsValid(args: {
+  isInterplant: boolean;
+  pickupConsigneeIds: string[];
+  foundPickupConsignees: { id: string; is_uwc_plant: boolean }[];
+}): void {
+  const { isInterplant, pickupConsigneeIds, foundPickupConsignees } = args;
+  if (pickupConsigneeIds.length === 0) return;
+
+  if (!isInterplant) {
+    throw new ApiError(
+      400,
+      "MULTI_PICKUP_INTERPLANT_ONLY",
+      "Choosing a pickup plant is only available for Inter-Plant bookings."
+    );
+  }
+  if (foundPickupConsignees.length !== pickupConsigneeIds.length) {
+    throw new ApiError(
+      400,
+      "PICKUP_NOT_FOUND",
+      "One of the selected pickup plants is no longer available — please reselect it."
+    );
+  }
+  if (foundPickupConsignees.some((c) => !c.is_uwc_plant)) {
+    throw new ApiError(
+      400,
+      "PICKUP_NOT_A_PLANT",
+      "An Inter-Plant pickup must be UWC Plant 1 to UWC Plant 9."
+    );
+  }
+}
+
 // Exported for unit tests (tests/tripValidation.test.ts).
 /**
  * One cargo line, parameterised by the accepted pallet_type VOCABULARY. Normalise
@@ -263,6 +319,12 @@ export function cargoLineSchema(
       // manual assignment, so an estimate never lets them auto-dispatch.
       estimated_pallets: z.number().int().min(1).optional(),
       remark: z.string().optional(),
+      // Item 3 multi-pickup (Inter-Plant only). Which UWC plant this cargo
+      // line was picked up from — absent/undefined means today's single
+      // hardcoded origin. Runtime-validated (assertMultiPickupPlantsValid),
+      // not by this schema: whether it's allowed at all depends on the
+      // trip's route type, which lives outside one cargo line.
+      pickup_consignee_id: z.string().min(1).optional(),
     })
     .superRefine((line, ctx) => {
       const type = line.pallet_type;
@@ -399,6 +461,25 @@ router.post(
       if (foundConsignees.length !== new Set(consigneeIds).size) {
         throw consigneesNotFoundError(stops, foundConsignees);
       }
+
+      // Item 3 multi-pickup + the general interplant destination rule.
+      const rawPickupIds: string[] = [];
+      for (const c of cargo_details as { pickup_consignee_id?: string }[]) {
+        if (c.pickup_consignee_id) rawPickupIds.push(c.pickup_consignee_id);
+      }
+      const pickupConsigneeIds: string[] = [...new Set(rawPickupIds)];
+      const foundPickupConsignees =
+        pickupConsigneeIds.length > 0
+          ? await prisma.consignee.findMany({
+              where: bookableConsigneesWhere(pickupConsigneeIds),
+              select: { id: true, is_uwc_plant: true },
+            })
+          : [];
+      assertMultiPickupPlantsValid({
+        isInterplant: isInterplantRouteType(routeType.name),
+        pickupConsigneeIds,
+        foundPickupConsignees,
+      });
 
       // Cargo bigger than the biggest truck can NEVER be dispatched internally —
       // fail the booking now with a clear error instead of accepting it and
@@ -591,6 +672,7 @@ export interface TripEditInput {
     length_ft?: number | null;
     estimated_pallets?: number | null;
     remark?: string | null;
+    pickup_consignee_id?: string | null;
   }[];
 }
 
@@ -642,6 +724,7 @@ export interface TripEditSnapshot {
     length_ft: number | null;
     estimated_pallets: number | null;
     remark: string | null;
+    pickup_consignee_id?: string | null;
   }[];
 }
 
@@ -669,8 +752,12 @@ export function summarizeTripChanges(existing: TripEditSnapshot, next: TripEditI
 
   // Cargo compared line-by-line in order; remark-only differences report as
   // "notes", anything else as "cargo".
+  // ⚠ MUST include pickup_consignee_id (ITEM3_MULTIPICKUP_PLAN.md's own
+  // warning): moving 5 pallets from Plant 7 to Plant 5 with nothing else
+  // changed must register as a real cargo edit, or the `edited` timeline
+  // event silently reports "no change" for a plant move that DID happen.
   const cargoLine = (c: TripEditInput["cargo_details"][number] | TripEditSnapshot["cargo_details"][number]) =>
-    [c.pallet_type, c.quantity, c.cartons ?? "", c.custom_size ?? "", c.width_ft ?? "", c.length_ft ?? "", c.estimated_pallets ?? ""].join("|");
+    [c.pallet_type, c.quantity, c.cartons ?? "", c.custom_size ?? "", c.width_ft ?? "", c.length_ft ?? "", c.estimated_pallets ?? "", c.pickup_consignee_id ?? ""].join("|");
   const remarkLine = (c: { remark?: string | null }) => c.remark ?? "";
   const sameCargo =
     existing.cargo_details.length === next.cargo_details.length &&
@@ -722,6 +809,7 @@ async function validateTripEdit(
     length_ft: c.length_ft ?? undefined,
     estimated_pallets: c.estimated_pallets ?? undefined,
     remark: c.remark ?? undefined,
+    pickup_consignee_id: c.pickup_consignee_id ?? undefined,
   }));
   const effectiveCargo = cargoProvided ? cargo_details! : existingCargoInput;
 
@@ -756,6 +844,30 @@ async function validateTripEdit(
   if (foundConsignees.length !== new Set(consigneeIds).size) {
     throw consigneesNotFoundError(stops, foundConsignees);
   }
+
+  // Same multi-pickup / interplant-destination rule as create (validateTripEdit
+  // is the ONE definition shared by the requestor-edit route and the
+  // change-request approval flow — see the function header).
+  const pickupConsigneeIds = [
+    ...new Set(
+      effectiveCargo
+        .map((c) => c.pickup_consignee_id)
+        .filter((v): v is string => Boolean(v))
+    ),
+  ];
+  const foundPickupConsignees =
+    pickupConsigneeIds.length > 0
+      ? await prisma.consignee.findMany({
+          where: bookableConsigneesWhere(pickupConsigneeIds),
+          select: { id: true, is_uwc_plant: true },
+        })
+      : [];
+  assertMultiPickupPlantsValid({
+    isInterplant: isInterplantRouteType(routeType.name),
+    pickupConsigneeIds,
+    foundPickupConsignees,
+  });
+
   if (!existing.is_external) {
     const orderPallets = palletEquivalents(effectiveCargo);
     const largest = await prisma.truck.aggregate({ _max: { max_pallets: true } });
@@ -1222,8 +1334,13 @@ async function assignTripInTx(
 
   const orderCargo = await tx.cargoDetail.findMany({
               where: { trip_id: id },
-              select: { pallet_type: true, quantity: true, estimated_pallets: true, width_ft: true, length_ft: true },
+              select: { pallet_type: true, quantity: true, estimated_pallets: true, width_ft: true, length_ft: true, pickup_consignee_id: true },
             });
+            // Item 3 multi-pickup: each DISTINCT pickup plant is its own load
+            // stop, so the estimate must count loads, not trips. No pickups set
+            // (today's single-origin bookings) → 1, unchanged from before.
+            const pickupCount =
+              new Set(orderCargo.map((c) => c.pickup_consignee_id).filter((v): v is string => Boolean(v))).size || 1;
             // Capacity is scoped to THIS trip's pickup MYT day (16 Jul 2026 trial
             // fix): in_progress cargo is physically aboard and always counts, but
             // an assignment only occupies the truck on its own pickup day — a
@@ -1403,6 +1520,7 @@ async function assignTripInTx(
               windowStart: truck.operating_hours_start,
               windowEnd: truck.operating_hours_end,
               loadMin: opDefaults.loadMin,
+              pickupCount,
               unloadMinPerStop: opDefaults.unloadMinPerStop,
               driveMinPerLeg: opDefaults.driveMinPerLeg,
               drivePointsBaseline: opDefaults.drivePointsBaseline,
@@ -2043,7 +2161,30 @@ async function describeTripChange(
   }
 
   if (input.cargo_details !== undefined) {
-    const line = (c: { pallet_type: string; quantity: number }) => `${c.quantity}x ${c.pallet_type}`;
+    // Item 3 multi-pickup: a plant move (Plant 7 -> Plant 5, same pallets) must
+    // show as a change here too, or an admin approving this proposal sees an
+    // identical "Cargo:" line for two different pickup plants — the same
+    // silent-no-change defect the edit-diff key warns about, one level up.
+    const pickupIds = [
+      ...new Set(
+        [...existing.cargo_details, ...input.cargo_details]
+          .map((c) => c.pickup_consignee_id)
+          .filter((v): v is string => Boolean(v))
+      ),
+    ];
+    const pickupNames =
+      pickupIds.length > 0
+        ? new Map(
+            (
+              await prisma.consignee.findMany({
+                where: { id: { in: pickupIds } },
+                select: { id: true, company_name: true },
+              })
+            ).map((c) => [c.id, c.company_name])
+          )
+        : new Map<string, string>();
+    const line = (c: { pallet_type: string; quantity: number; pickup_consignee_id?: string | null }) =>
+      `${c.quantity}x ${c.pallet_type}${c.pickup_consignee_id ? ` (from ${pickupNames.get(c.pickup_consignee_id) ?? "?"})` : ""}`;
     const before = existing.cargo_details.map(line).join(", ");
     const after = input.cargo_details.map(line).join(", ");
     if (before !== after) {

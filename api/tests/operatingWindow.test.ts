@@ -34,6 +34,35 @@ describe("operating-window estimate (defaults 30 / 45 / 20)", () => {
     expect(r.reason).toBe("ok");
   });
 
+  // Item 3 multi-pickup: loadMin is "load at the plant" ONCE per pickup, not
+  // once per trip — two pickups means two loads.
+  describe("pickupCount (Item 3 multi-pickup)", () => {
+    it("defaults to 1 pickup — identical to omitting it entirely", () => {
+      const withDefault = estimateOperatingWindow({ pickupDateTime: myt(2026, 7, 6, 15, 55), stopCount: 1 });
+      const explicit1 = estimateOperatingWindow({ pickupDateTime: myt(2026, 7, 6, 15, 55), stopCount: 1, pickupCount: 1 });
+      expect(explicit1.addedMinutes).toBe(withDefault.addedMinutes);
+    });
+
+    it("adds one full loadMin per EXTRA pickup", () => {
+      // 1 pickup: 30 (load) + 45 (drive) + 20 (unload) = 95.
+      const onePickup = estimateOperatingWindow({ pickupDateTime: myt(2026, 7, 6, 15, 55), stopCount: 1, pickupCount: 1 });
+      expect(onePickup.addedMinutes).toBe(95);
+      // 2 pickups: 60 (load×2) + 45 + 20 = 125 — thirty minutes more, exactly
+      // one extra OP_LOAD_MIN, nothing else changed.
+      const twoPickups = estimateOperatingWindow({ pickupDateTime: myt(2026, 7, 6, 15, 55), stopCount: 1, pickupCount: 2 });
+      expect(twoPickups.addedMinutes).toBe(125);
+      expect(twoPickups.addedMinutes - onePickup.addedMinutes).toBe(OP_LOAD_MIN);
+    });
+
+    it("floors and clamps to a minimum of 1 — a bogus 0 or negative count never REDUCES the estimate below single-pickup", () => {
+      const base = estimateOperatingWindow({ pickupDateTime: myt(2026, 7, 6, 15, 55), stopCount: 1 });
+      const zero = estimateOperatingWindow({ pickupDateTime: myt(2026, 7, 6, 15, 55), stopCount: 1, pickupCount: 0 });
+      const negative = estimateOperatingWindow({ pickupDateTime: myt(2026, 7, 6, 15, 55), stopCount: 1, pickupCount: -3 });
+      expect(zero.addedMinutes).toBe(base.addedMinutes);
+      expect(negative.addedMinutes).toBe(base.addedMinutes);
+    });
+  });
+
   // ⚠ The two cases below used the FLEET DEFAULT end, which was 18:00 until
   // item 12 moved it to 02:00 (17 Jul 2026). They now pass an EXPLICIT 18:00
   // window: the non-wrapping path is still live for any truck an admin gives a

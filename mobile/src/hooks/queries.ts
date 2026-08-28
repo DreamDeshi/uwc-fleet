@@ -48,6 +48,20 @@ export function useConsignees(search: string) {
   });
 }
 
+/**
+ * The nine UWC Plant consignees (Item 3 multi-pickup) — a small, fixed,
+ * closed list, so this is a plain fetch rather than a debounced search like
+ * useConsignees. Cached generously: the plant list changes only via an
+ * admin, essentially never during a booking session.
+ */
+export function usePlants() {
+  return useQuery({
+    queryKey: ["consignees", "plants"],
+    queryFn: async () => (await api.get<Consignee[]>("/consignees/plants")).data,
+    staleTime: 1000 * 60 * 10,
+  });
+}
+
 // ── Public holidays ────────────────────────────────────────────────────
 // The admin-managed calendar (GET /holidays) as a Set of "YYYY-MM-DD" MYT
 // keys — what estimateIncentive's off-peak check consumes. Replaces the old
