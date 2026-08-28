@@ -1778,5 +1778,21 @@
     "title": "Mod luar",
     "on": "Aktif untuk telefon ini. Kontras lebih tinggi untuk dibaca di bawah matahari.",
     "off": "Tidak aktif. Hidupkan jika skrin susah dibaca di luar."
+  },
+  "unlock": {
+    "title": "Buka UWC Fleet",
+    "body": "Guna cap jari anda untuk masuk semula ke akaun anda pada telefon ini.",
+    "retry": "Buka dengan cap jari",
+    "usePassword": "Guna password saya",
+    "settingTitle": "Buka dengan cap jari",
+    "settingOn": "Aktif untuk telefon ini. Akaun anda dibuka dengan cap jari.",
+    "settingOff": "Tidak aktif. Anda log masuk dengan password setiap kali.",
+    "enrolFailed": "Tidak berjaya disediakan. Cuba lagi, atau guna password anda.",
+    "failure": {
+      "biometric_failed": "Cap jari itu tidak dikenali. Cuba lagi, atau guna password anda.",
+      "offline_expired": "Anda di luar talian dan telefon ini terkunci terlalu lama. Log masuk dengan password apabila ada talian.",
+      "session_rejected": "Anda telah log masuk pada telefon lain, jadi telefon ini dilog keluar. Log masuk semula di sini — notifikasi kini pergi ke telefon itu sehingga anda buat begitu.",
+      "unavailable": "Telefon ini tidak boleh guna cap jari lagi. Log masuk dengan password anda."
+    }
   }
 }

@@ -301,6 +301,12 @@ describe("only the storage layer may touch AsyncStorage", () => {
       "the same yard is handing over a setting he probably wants, so it " +
       "describes the device's environment rather than the person holding it. " +
       "No trip, consignee or POD data.",
+    "lib/biometricEnrolment.ts":
+      "Holds ONE user id — which user this DEVICE is enrolled for — plus the " +
+      "SecureStore pointer beside it. It is read at bootstrap to decide whether " +
+      "to lock, before any user is active and specifically to protect against " +
+      "the PREVIOUS user, so keying it by the person it names would make it " +
+      "unreadable exactly when it is needed. No trip, consignee or POD data.",
     "lib/sessionCache.ts":
       "Holds the signed-in user's OWN profile (id, name, role, assigned truck) " +
       "and nothing else — no consignee or trip data. It is what RESOLVES the " +
