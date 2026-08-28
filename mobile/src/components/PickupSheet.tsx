@@ -56,9 +56,13 @@ export function PickupSheet({
   isAdmin,
   onConfirm,
   onClose,
+  inline = false,
 }: {
   visible: boolean;
   slot: PickupSlot;
+  /** WIDE (>=1024px): render as a step of the form instead of an overlay — no
+   *  Modal, no backdrop, no dimming. See the note above the return. */
+  inline?: boolean;
   /** Injectable for tests/screenshots; defaults to the device clock. */
   now?: Date;
   /**
@@ -161,21 +165,21 @@ export function PickupSheet({
   };
 
   const headerDate = slotToDate(clock, draft);
-  const timeChosen = step !== "date";
+  // ⚠ The header used to render a literal "— : —" on the date step
+  // (`timeChosen = step !== "date"`), which read as a rendering failure rather
+  // than as an empty field — and it was never empty: `slot` always carries an
+  // hour and a minute, and `draft` is seeded from it. The header calls itself
+  // "the running answer", so it shows the answer from the first step.
 
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel={t("common.cancel")} />
-      <View style={styles.sheet}>
+  const body = (
+    <>
         {/* Header — the running answer, so the requestor always sees what they
             are about to commit to rather than just where the cursor is. */}
         <View style={styles.head}>
           <Text style={styles.headLabel}>{t("booking.pickupSheetTitle")}</Text>
           <View style={styles.headLine}>
             <Text style={styles.headDate}>{shortDay(headerDate, weekdays)}</Text>
-            <Text style={timeChosen ? styles.headTime : styles.headTimeEmpty}>
-              {timeChosen ? formatClock(draft.hour, draft.minute) : "— : —"}
-            </Text>
+            <Text style={styles.headTime}>{formatClock(draft.hour, draft.minute)}</Text>
           </View>
         </View>
 
@@ -361,10 +365,14 @@ export function PickupSheet({
         <View style={styles.footer}>
           <TouchableOpacity
             style={styles.secondaryBtn}
-            onPress={() => (step === "date" ? onClose() : setStep(step === "minute" ? "hour" : "date"))}
+            disabled={inline && step === "date"}
+            onPress={() => (step === "date" ? (inline ? undefined : onClose()) : setStep(step === "minute" ? "hour" : "date"))}
           >
-            <Text style={styles.secondaryText}>
-              {t(step === "date" ? "common.cancel" : "common.back")}
+            {/* Inline there is nothing to cancel OUT of — the picker is part of
+                the page — so on the first step the button is a disabled Back
+                rather than a Cancel that would do nothing. */}
+            <Text style={[styles.secondaryText, inline && step === "date" && styles.secondaryTextOff]}>
+              {t(inline || step !== "date" ? "common.back" : "common.cancel")}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -374,6 +382,9 @@ export function PickupSheet({
               if (step === "date") return setStep("hour");
               if (step === "hour") return setStep("minute");
               onConfirm(draft);
+              // Inline there is no overlay to dismiss: commit and return to the
+              // calendar, so the picker keeps showing the slot it just set.
+              if (inline) return setStep("date");
               onClose();
             }}
           >
@@ -388,7 +399,33 @@ export function PickupSheet({
             </Text>
           </TouchableOpacity>
         </View>
-      </View>
+    </>
+  );
+
+  // ── WIDE: the picker is a STEP OF THE FORM, not an overlay ───────────────
+  //
+  // At >=1024px the phone sheet was a 460px card floating over a dimmed 1440px
+  // form: it covered the form it belongs to, hid the primary action behind it,
+  // cut the fleet-hours hint mid-sentence, and sat beside "Pickup date" while
+  // overlapping "Pickup time" and "Remarks". Owner review, 18 Aug 2026.
+  //
+  // The fix is not a smaller overlay. An anchored popover keeps the phone
+  // interaction model — dim the page for one field — and adds viewport
+  // collision logic (flip above when there is no room below) that exists
+  // nowhere else in this codebase. Inline removes the problem instead of
+  // mitigating it: this control is a step of a form that is ALREADY a wide
+  // stepped layout (`layout.wide` is 1160 precisely so wide gets real columns
+  // rather than a stranded phone column), so at this width it can simply BE a
+  // step.
+  //
+  // ⚠ The narrow path below is untouched. Phones keep the sheet, the backdrop
+  // and the slide, because on a phone an overlay IS the right model.
+  if (inline) return <View style={styles.inlineCard}>{body}</View>;
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel={t("common.cancel")} />
+      <View style={styles.sheet}>{body}</View>
     </Modal>
   );
 }
@@ -412,6 +449,18 @@ function formatClock(hour: number, minute: number): string {
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(26,31,94,0.32)" },
+  // The inline (wide) container. A card in the form's own column: no rounded
+  // top-only corners, no bottom padding for a phone's home indicator, and no
+  // width cap fighting the column it sits in.
+  inlineCard: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    paddingBottom: 18,
+    marginTop: 8,
+    alignSelf: "stretch",
+  },
   sheet: {
     backgroundColor: colors.white,
     borderTopLeftRadius: 24,
@@ -477,6 +526,7 @@ const styles = StyleSheet.create({
 
   footer: { paddingHorizontal: 22, paddingTop: 16, flexDirection: "row", gap: 10 },
   secondaryBtn: { width: 104, height: 52, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
+  secondaryTextOff: { opacity: 0.4 },
   secondaryText: { fontSize: 15, fontWeight: "700", color: colors.textMuted },
   primaryBtn: { flex: 1, height: 52, borderRadius: radius.md, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center" },
   primaryBtnOff: { opacity: 0.5 },

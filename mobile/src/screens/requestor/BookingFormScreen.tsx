@@ -329,6 +329,26 @@ export function BookingFormScreen() {
     afternoonCutoffMin,
     sessionSplitMin,
   };
+
+  // ONE picker element, rendered in ONE of two places: inline inside StepWhen
+  // when wide, or inside the PickupSheet modal when narrow. Built here so the
+  // two paths cannot drift in what they pass it.
+  const pickupPicker = (
+    <PickupSheet
+      inline
+      visible
+      slot={slot}
+      isReturn={isReturnBooking}
+      isInterplant={isInterplantBooking}
+      isAdmin={isAdminBooking}
+      onConfirm={(next) => {
+        slotTouched.current = true;
+        setSlot(clampSlotToDay(next, new Date(), cutoffOpts));
+      }}
+      onClose={() => {}}
+    />
+  );
+
   const needsCutoffReason =
     isAdminBooking &&
     !isEdit &&
@@ -828,7 +848,10 @@ export function BookingFormScreen() {
       {step === 2 && (
         <StepWhen
           pickupDate={pickupDate}
-          onPickPickup={() => setPickupOpen(true)}
+          // Wide: tapping a field is a no-op because the picker is already on
+          // screen below. Narrow: it opens the sheet, exactly as before.
+          onPickPickup={() => (wide ? undefined : setPickupOpen(true))}
+          picker={wide ? pickupPicker : null}
           remarks={remarks}
           setRemarks={setRemarks}
           cutoffReason={needsCutoffReason ? cutoffReason : null}
@@ -950,7 +973,10 @@ export function BookingFormScreen() {
         </>
       )}
 
-      {/* Pickup — calendar, then the hour and minute dials (frames 5, 6, 6b) */}
+      {/* Pickup — calendar, then the hour and minute dials (frames 5, 6, 6b).
+          WIDE renders this inline inside StepWhen instead; see `pickupPicker`
+          above and the note in components/PickupSheet. */}
+      {!wide && (
       <PickupSheet
         visible={pickupOpen}
         slot={slot}
@@ -966,6 +992,7 @@ export function BookingFormScreen() {
         }}
         onClose={() => setPickupOpen(false)}
       />
+      )}
 
       {/* Save-as-template name dialog */}
       <Modal visible={templateSaveOpen} transparent animationType="fade" onRequestClose={() => setTemplateSaveOpen(false)}>
@@ -1668,6 +1695,7 @@ function StepWhat({
 function StepWhen({
   pickupDate,
   onPickPickup,
+  picker,
   remarks,
   setRemarks,
   cutoffReason,
@@ -1675,6 +1703,8 @@ function StepWhen({
 }: {
   pickupDate: Date;
   onPickPickup: () => void;
+  /** The inline (wide) picker, or null on a phone where it opens as a sheet. */
+  picker?: React.ReactNode;
   remarks: string;
   setRemarks: (v: string) => void;
   /** B7 — non-null ONLY when an ADMIN has chosen a slot past a cut-off, i.e.
@@ -1686,20 +1716,35 @@ function StepWhen({
   const { t } = useTranslation();
   return (
     <View>
-      <FieldLabel>{t("booking.pickupDate")}</FieldLabel>
-      <TouchableOpacity style={styles.slotField} onPress={onPickPickup} activeOpacity={0.8}>
-        <Ionicons name="calendar-outline" size={18} color={colors.textMuted} />
-        <Text style={styles.slotValue}>{formatDate(pickupDate)}</Text>
-        <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
-      </TouchableOpacity>
+      {/* ⚠ THE TWO TAP FIELDS AND THE INLINE PICKER ARE ALTERNATIVES, NOT A
+          STACK. Rendering both put two chevron fields above a picker that
+          already shows the same value in its header, and tapping them did
+          nothing — the sheet they open is not mounted when wide. Inert
+          controls that look tappable are worse than no controls. */}
+      {picker ? (
+        <>
+          <FieldLabel>{t("booking.pickupDate")}</FieldLabel>
+          {picker}
+          <Text style={styles.slotHint}>{t("booking.fleetHoursHint")}</Text>
+        </>
+      ) : (
+        <>
+          <FieldLabel>{t("booking.pickupDate")}</FieldLabel>
+          <TouchableOpacity style={styles.slotField} onPress={onPickPickup} activeOpacity={0.8}>
+            <Ionicons name="calendar-outline" size={18} color={colors.textMuted} />
+            <Text style={styles.slotValue}>{formatDate(pickupDate)}</Text>
+            <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
 
-      <FieldLabel>{t("booking.pickupTime")}</FieldLabel>
-      <TouchableOpacity style={styles.slotField} onPress={onPickPickup} activeOpacity={0.8}>
-        <Ionicons name="time-outline" size={18} color={colors.textMuted} />
-        <Text style={styles.slotValue}>{formatTime(pickupDate)}</Text>
-        <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
-      </TouchableOpacity>
-      <Text style={styles.slotHint}>{t("booking.fleetHoursHint")}</Text>
+          <FieldLabel>{t("booking.pickupTime")}</FieldLabel>
+          <TouchableOpacity style={styles.slotField} onPress={onPickPickup} activeOpacity={0.8}>
+            <Ionicons name="time-outline" size={18} color={colors.textMuted} />
+            <Text style={styles.slotValue}>{formatTime(pickupDate)}</Text>
+            <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+          <Text style={styles.slotHint}>{t("booking.fleetHoursHint")}</Text>
+        </>
+      )}
 
       {cutoffReason !== null && cutoffReason !== undefined && (
         <>
