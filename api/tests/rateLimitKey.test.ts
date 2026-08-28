@@ -149,3 +149,47 @@ describe("global limiter — one office IP, many people", () => {
     }
   });
 });
+
+/**
+ * Admin-settings Phase 6 (28 Aug 2026) — the MECHANISM the live settings path
+ * depends on: createGlobalRateLimiter also accepts a FUNCTION, which
+ * express-rate-limit must call fresh on every request rather than once at
+ * construction. Proven here rather than through a real settings PATCH — see
+ * tests/rateLimitSettings.test.ts's header for why a live full-app test isn't
+ * possible in this suite.
+ */
+function appWithDynamicLimiter(limit: () => number | Promise<number>) {
+  const app = express();
+  app.set("trust proxy", 1);
+  app.use(createGlobalRateLimiter(limit));
+  app.get("/api/v1/ping", (_req, res) => res.json({ ok: true }));
+  return app;
+}
+
+describe("global limiter — a function-valued limit (Phase 6)", () => {
+  it("is RE-INVOKED per request, not frozen at construction", async () => {
+    let current = 2;
+    const api = supertest(appWithDynamicLimiter(() => current));
+    const ip = "198.51.100.30";
+
+    await api.get("/api/v1/ping").set("X-Forwarded-For", ip);
+    await api.get("/api/v1/ping").set("X-Forwarded-For", ip);
+    const blocked = await api.get("/api/v1/ping").set("X-Forwarded-For", ip);
+    expect(blocked.status).toBe(429); // the limit of 2 is reached
+
+    // Raising the value takes effect on the VERY NEXT request. If the
+    // factory had baked in whatever the function returned on its first call
+    // (the bug this guards against), this would still be 429.
+    current = 10;
+    const allowed = await api.get("/api/v1/ping").set("X-Forwarded-For", ip);
+    expect(allowed.status).toBe(200);
+  });
+
+  it("supports an ASYNC limit function — what the live settings resolver actually returns", async () => {
+    const api = supertest(appWithDynamicLimiter(async () => 1));
+    const ip = "198.51.100.31";
+
+    expect((await api.get("/api/v1/ping").set("X-Forwarded-For", ip)).status).toBe(200);
+    expect((await api.get("/api/v1/ping").set("X-Forwarded-For", ip)).status).toBe(429);
+  });
+});
