@@ -27,8 +27,14 @@ import demoIdentities from "./demoIdentities.json";
 /** From the one canonical source, so this seeder cannot invent a name. */
 const DEMO_REQUESTOR_NAME = Object.values(demoIdentities.requestors)[0];
 
-const DEMO_DRIVER_PHONE = "+60100000101"; // the PLX 2406 driver
-const TRUCK = "PLX 2406";
+const DEMO_DRIVER_PHONE = "+60100000101";
+// Fallback only. The plate is resolved from the demo driver's OWN assignment
+// below, because hardcoding one is how this script became unrunnable on the
+// instance it exists for: the SDG demo's fleet was deliberately re-plated to
+// UWC 1001–1009 to get the real plates off a public screen, so a literal
+// "PLX 2406" here either fails to resolve or puts a real plate straight back
+// onto the anonymous instance.
+const FALLBACK_TRUCK = "PLX 2406";
 
 // Self-added test consignees to purge (created_by set, obviously not real).
 const JUNK_CONSIGNEES = ["Among us", "Yyy", "Congolese", "Hahah", "Chemor"];
@@ -53,6 +59,18 @@ async function main() {
   // ── References ────────────────────────────────────────────────────────
   const driver = await prisma.user.findUnique({ where: { phone: DEMO_DRIVER_PHONE } });
   if (!driver) throw new Error(`Demo driver ${DEMO_DRIVER_PHONE} not found — run the main seed first.`);
+
+  // Whatever plate this instance actually runs, so the seed follows the fleet
+  // rather than dictating it. Verified to exist before anything is deleted —
+  // failing here leaves the demo untouched, which is the right way round.
+  const TRUCK = driver.assigned_truck_plate ?? FALLBACK_TRUCK;
+  const truckRow = await prisma.truck.findUnique({ where: { plate: TRUCK } });
+  if (!truckRow) {
+    throw new Error(
+      `Truck ${TRUCK} not found. The demo driver has no assigned truck and the fallback plate does not exist on this instance.`
+    );
+  }
+  console.log(`Using truck ${TRUCK} (from ${driver.assigned_truck_plate ? "the driver's assignment" : "the fallback"}).`);
 
   let requestor = await prisma.user.findFirst({ where: { role: "requestor" }, orderBy: { created_at: "asc" } });
   if (!requestor) throw new Error("No requestor found — register one in the app first.");
@@ -136,6 +154,12 @@ async function main() {
     pallets: number;
     size: string;
     status: "pending" | "assigned" | "in_progress" | "completed" | "rejected";
+    // Further drops after `zone`, in order. A single-stop trip leaves the
+    // driver's Active Trip screen with a large empty panel where the remaining
+    // drops would be listed, which is neither representative of a real run nor
+    // usable as a screenshot. Only stop 1 takes the trip's status; the rest
+    // stay pending, which is what "Stop 1 of 3 · 0 delivered" means.
+    extraZones?: string[];
     withDriver: boolean;
     incentive?: number;
     rejectionReason?: string;
@@ -147,7 +171,7 @@ async function main() {
     // 2. Assigned — driver assigned for this afternoon, not yet started.
     { when: at(0, 14), zone: "K1", route: "Supplier Delivery", pallets: 5, size: "3×4", status: "assigned", withDriver: true },
     // 3. In progress — driver currently en route (live map demo).
-    { when: at(0, 8), zone: "P2", route: "Inter-Plant Delivery", pallets: 8, size: "4×4", status: "in_progress", withDriver: true },
+    { when: at(0, 8), zone: "P2", route: "Inter-Plant Delivery", pallets: 8, size: "4×4", status: "in_progress", withDriver: true, extraZones: ["K1", "A1"] },
     // 4. Completed — delivered yesterday, first trip of the day to Ipoh (A2):
     //    6 pts − 2 (PLX 2406 deduction) = 4 pts × RM 11 weekday = RM 44.
     //    incentive_earned stores the PER-TRIP MARGINAL (see incentiveEngine).
@@ -176,6 +200,19 @@ async function main() {
     const stopStatus =
       s.status === "completed" ? "delivered" : s.status === "in_progress" ? "arrived" : "pending";
 
+    // Later drops, resolved one per zone. A zone with no clean consignee is
+    // skipped rather than fatal: an extra stop is presentation, and it must
+    // never be the reason the whole demo fails to seed.
+    const extras: Awaited<ReturnType<typeof pickConsignee>>[] = [];
+    for (const zone of s.extraZones ?? []) {
+      try {
+        const ec = await pickConsignee(zone);
+        if (ec.id !== c.id && !extras.some((e) => e.id === ec.id)) extras.push(ec);
+      } catch {
+        /* no consignee in that zone on this instance */
+      }
+    }
+
     const trip = await prisma.trip.create({
       data: {
         ticket_number: nextTicket(s.when),
@@ -188,15 +225,29 @@ async function main() {
         incentive_earned: s.incentive != null ? s.incentive.toFixed(2) : null,
         rejection_reason: s.rejectionReason ?? null,
         stops: {
-          create: [{
-            sequence: 1,
-            consignee_id: c.id,
-            status: stopStatus,
-            arrived_at: stopStatus === "delivered" || stopStatus === "arrived" ? new Date(s.when.getTime() + 60 * 60 * 1000) : null,
-            delivered_at: stopStatus === "delivered" ? new Date(s.when.getTime() + 2 * 60 * 60 * 1000) : null,
-            do_uploaded: stopStatus === "delivered",
-            k2_form_ack: stopStatus === "delivered" && isK2,
-          }],
+          create: [
+            {
+              sequence: 1,
+              consignee_id: c.id,
+              status: stopStatus,
+              arrived_at: stopStatus === "delivered" || stopStatus === "arrived" ? new Date(s.when.getTime() + 60 * 60 * 1000) : null,
+              delivered_at: stopStatus === "delivered" ? new Date(s.when.getTime() + 2 * 60 * 60 * 1000) : null,
+              do_uploaded: stopStatus === "delivered",
+              k2_form_ack: stopStatus === "delivered" && isK2,
+            },
+            // Remaining drops are always PENDING — nothing arrived, nothing
+            // delivered, no POD. That is what keeps "0 delivered" honest on a
+            // trip whose first stop the driver has only just reached.
+            ...extras.map((ec, i) => ({
+              sequence: i + 2,
+              consignee_id: ec.id,
+              status: "pending" as const,
+              arrived_at: null,
+              delivered_at: null,
+              do_uploaded: false,
+              k2_form_ack: false,
+            })),
+          ],
         },
         cargo_details: { create: [{ pallet_type: s.size, quantity: s.pallets }] },
       },
