@@ -330,6 +330,46 @@ export const SETTINGS_REGISTRY: SettingDef[] = [
     envVar: "CLOUDINARY_POD_URL_TTL_SECONDS",
     default: POD_URL_TTL_SECONDS,
   },
+  /**
+   * Phase 6 — rate limits (middleware/rateLimit.ts). Like the Phase 5 lockout
+   * settings, resolution is delegated (lib/rateLimitSettings.ts) rather than
+   * routed through this registry's generic env-var mechanism, for the same
+   * reason: `resolveSecurityLimit` is a shared, security-reviewed parser and
+   * a second copy risks drift. Unlike every other phase, THIS setting is also
+   * CACHED (short TTL) rather than read fresh per call — see that file's own
+   * header for why: express-rate-limit invokes its threshold callback on
+   * every request across the whole API.
+   *
+   * `default` below is a LITERAL, not an import of
+   * middleware/rateLimit.ts's own GLOBAL_RATE_LIMIT_DEFAULT /
+   * SENSITIVE_RATE_LIMIT_DEFAULT constants — importing them here would create
+   * a cycle (rateLimit.ts → rateLimitSettings.ts → settingsRegistry.ts →
+   * rateLimit.ts). tests/rateLimitSettings.test.ts pins the two stay equal.
+   */
+  {
+    key: "rate_limit.global_max",
+    category: "Rate limits",
+    label: "Global rate limit (requests/min)",
+    description:
+      "Requests per minute allowed per person (per IP when unauthenticated) across the whole API. 0 means unlimited.",
+    type: "integer",
+    min: 0,
+    max: 100000,
+    envVar: "RATE_LIMIT_MAX",
+    default: 300,
+  },
+  {
+    key: "rate_limit.sensitive_max",
+    category: "Rate limits",
+    label: "Account-security rate limit (requests/min)",
+    description:
+      "Requests per minute allowed per IP on login, password change and password reset. 0 means unlimited — do not set this to 0 in production.",
+    type: "integer",
+    min: 0,
+    max: 100000,
+    envVar: "SENSITIVE_RATE_LIMIT_MAX",
+    default: 10,
+  },
 ];
 
 function findDef(key: string): SettingDef | undefined {

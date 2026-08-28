@@ -2,7 +2,8 @@ import "dotenv/config";
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
-import { createGlobalRateLimiter, resolveRateLimit } from "./middleware/rateLimit";
+import { createGlobalRateLimiter, resolveRateLimit, GLOBAL_RATE_LIMIT_DEFAULT } from "./middleware/rateLimit";
+import { effectiveGlobalRateLimitMax } from "./lib/rateLimitSettings";
 import authRoutes from "./routes/auth";
 import usersRoutes from "./routes/users";
 import meRoutes from "./routes/me";
@@ -60,8 +61,24 @@ app.use(cors({ origin: corsOrigins }));
 // ~15x idle and ~3x a heavy interaction minute. Because the budget is per
 // PERSON it no longer has to grow with UWC's headcount — the old per-IP 100 was
 // already exhausted by five idle office sessions.
-const RATE_LIMIT_MAX = resolveRateLimit(process.env.RATE_LIMIT_MAX, 300);
-app.use(createGlobalRateLimiter(RATE_LIMIT_MAX));
+const RATE_LIMIT_MAX = resolveRateLimit(process.env.RATE_LIMIT_MAX, GLOBAL_RATE_LIMIT_DEFAULT);
+// Admin-settings Phase 6 (28 Aug 2026): when the limiter is on at all (the
+// STATIC env value at boot is > 0), its per-request threshold becomes
+// admin-editable — see createGlobalRateLimiter's own comment for why the
+// disabled (RATE_LIMIT_MAX=0) path stays a plain number, not a function.
+app.use(
+  createGlobalRateLimiter(
+    RATE_LIMIT_MAX <= 0
+      ? RATE_LIMIT_MAX
+      : async () => {
+          const effective = await effectiveGlobalRateLimitMax(RATE_LIMIT_MAX);
+          // 0 from an admin's Setting means "unlimited going forward", not
+          // "block everything" — express-rate-limit treats a returned 0 as
+          // the latter, so this maps it the same way sensitiveRateLimiter does.
+          return effective > 0 ? effective : Number.POSITIVE_INFINITY;
+        }
+  )
+);
 app.use(express.json());
 
 /**
