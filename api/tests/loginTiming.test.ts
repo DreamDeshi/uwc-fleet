@@ -131,10 +131,17 @@ describe("the login route actually burns the compare", () => {
     // The call must sit between the user lookup and the throw — i.e. ON the
     // branch where there is no user. Matching the call anywhere in the file
     // would pass even if it were left in an unrelated handler.
-    const branch = src.slice(
-      src.indexOf('router.post("/login"'),
-      src.indexOf("const lockout = lockoutConfig();")
-    );
+    //
+    // ⚠ Phase 5 (28 Aug 2026): the landmark moved from `lockoutConfig()` to
+    // `effectiveLockoutConfig()` when the lockout thresholds became admin-
+    // editable. A guard keyed on an exact string is a POSITIVE assertion that
+    // is satisfied by nothing when the string changes — src.indexOf returns
+    // -1, and slice(x, -1) silently degrades to "almost the whole file" rather
+    // than failing loudly. Caught only by rereading this file while making
+    // that rename; nothing would have gone red on its own.
+    const landmark = "const lockout = await effectiveLockoutConfig();";
+    expect(src, "the lockout-config landmark moved — update it here too").toContain(landmark);
+    const branch = src.slice(src.indexOf('router.post("/login"'), src.indexOf(landmark));
     expect(branch.length, "login handler shape changed — re-read this guard").toBeGreaterThan(120);
     expect(branch, "the no-user branch must pay the bcrypt cost").toContain(
       "await burnPasswordCompare(password)"

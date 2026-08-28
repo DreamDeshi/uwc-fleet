@@ -134,6 +134,35 @@ describe("per-account login lockout", () => {
     expect(await readState()).toEqual({ failed_login_attempts: 0, locked_until: null });
   });
 
+  it("an admin Setting row OVERRIDES the env var (Phase 5, 28 Aug 2026)", async () => {
+    // The env var says 3 (this file's MAX, set in beforeEach). An admin sets a
+    // DB override of 5 — the SAME wrong-password run that used to lock at
+    // attempt 3 must now go all the way to attempt 5.
+    const admin = await loginAs(ADMIN);
+    const patch = await api()
+      .patch("/api/v1/settings/security.login_lockout_max_attempts")
+      .set(auth(admin))
+      .send({ value: 5 });
+    expect(patch.status).toBe(200);
+
+    for (let i = 1; i < 5; i++) {
+      const res = await login("WrongPassword1");
+      expect(res.status, `attempt ${i} (DB override in effect)`).toBe(401); // NOT locked yet
+    }
+    const locking = await login("WrongPassword1");
+    expect(locking.status).toBe(423); // locks on the 5th, per the DB override
+
+    // Resetting the setting restores the env var's value (3) as the governing
+    // one — proving the fallback chain, not just that the override works once.
+    const del = await api()
+      .delete("/api/v1/settings/security.login_lockout_max_attempts")
+      .set(auth(admin));
+    expect(del.status).toBe(200);
+    await ensureVictim(); // fresh account — the one above is now locked
+    for (let i = 1; i < MAX; i++) await login("WrongPassword1");
+    expect((await login("WrongPassword1")).status).toBe(423); // back to 3
+  });
+
   it("LOGIN_LOCKOUT_MAX_ATTEMPTS=0 disables it completely, touching neither column", async () => {
     process.env.LOGIN_LOCKOUT_MAX_ATTEMPTS = "0";
 

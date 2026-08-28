@@ -13,6 +13,8 @@ import { ASSIGNMENT_CONFLICT_BUFFER_MIN } from "../services/schedulingConflict";
 import { EXCEPTION_ALERT_THRESHOLD_MINUTES } from "../services/exceptionAlerts";
 import { PENDING_ALERT_THRESHOLD_MINUTES, PENDING_RETRY_CEILING_MINUTES } from "../services/pendingTripAlerts";
 import { DOC_EXPIRY_REMIND_DAYS_DEFAULT } from "../services/docExpiryReminders";
+import { LOCKOUT_DEFAULT_MAX_ATTEMPTS, LOCKOUT_DEFAULT_MINUTES } from "./loginLockout";
+import { POD_URL_TTL_SECONDS } from "./podPhotos";
 
 /**
  * The generic admin-settings registry.
@@ -259,6 +261,74 @@ export const SETTINGS_REGISTRY: SettingDef[] = [
     max: 365,
     envVar: "DOC_EXPIRY_REMIND_DAYS",
     default: DOC_EXPIRY_REMIND_DAYS_DEFAULT,
+  },
+  /**
+   * Phase 5 — security settings.
+   *
+   * The two login-lockout entries are DISPLAY/AUDIT/EDIT surfaces only — the
+   * actual runtime resolution is lib/securitySettings.ts's
+   * effectiveLockoutConfig(), which deliberately does NOT read through this
+   * registry's generic env-var mechanism for these two keys (see that file's
+   * own comment: loginLockout.ts already has a shared, security-reviewed env
+   * parser, and duplicating it here risks exactly the drift envLimit.ts was
+   * written to prevent). `envVar` is still listed below so the admin UI's
+   * "source" badge reports accurately when the env var is the reason a value
+   * isn't the bare default — tests/securitySettings.test.ts pins that this
+   * registry's own parsing and loginLockout.ts's resolveSecurityLimit still
+   * agree on every boundary, so the badge can never lie about which one
+   * actually governs.
+   */
+  {
+    key: "security.login_lockout_max_attempts",
+    category: "Security",
+    label: "Login lockout — attempts",
+    description:
+      "Failed sign-in attempts allowed before an account locks. 0 disables the lockout entirely.",
+    type: "integer",
+    min: 0,
+    max: 100,
+    envVar: "LOGIN_LOCKOUT_MAX_ATTEMPTS",
+    default: LOCKOUT_DEFAULT_MAX_ATTEMPTS,
+  },
+  {
+    key: "security.login_lockout_minutes",
+    category: "Security",
+    label: "Login lockout — duration",
+    description: "How long a triggered account lock lasts before it expires on its own.",
+    type: "minutes",
+    // min 0 (not 1) deliberately: loginLockout.ts's own resolveSecurityLimit
+    // accepts 0 for this knob too (see securitySettings.test.ts). A 0-minute
+    // lock is degenerate but not harmful — it expires immediately — and the
+    // bound here must match what actually governs, or the admin UI's "source"
+    // badge could disagree with reality for an env var set to 0.
+    min: 0,
+    max: 1440,
+    envVar: "LOGIN_LOCKOUT_MINUTES",
+    default: LOCKOUT_DEFAULT_MINUTES,
+  },
+  /**
+   * ⚠ REGISTERED FOR VISIBILITY ONLY — NOT WIRED LIVE. An admin can see and
+   * edit this, but the signing code (lib/podPhotos.ts) still reads only the
+   * env var. Two reasons, both explained fully in podPhotos.ts's own comment:
+   * (1) it has zero effect unless CLOUDINARY_POD_TOKEN_KEY (a paid Cloudinary
+   * add-on) is ALSO configured, which it is not in this project; (2) wiring
+   * it live would mean an async DB read on every trip response, since the
+   * signing pipeline is a synchronous hot path inside JSON serialization, not
+   * a per-request settings-resolution point like every other phase's.
+   * Owner decision, 28 Aug 2026: register only, don't pay that cost for a
+   * setting that currently does nothing either way.
+   */
+  {
+    key: "security.pod_url_ttl_seconds",
+    category: "Security",
+    label: "POD signed-URL lifetime (seconds) — NOT YET LIVE",
+    description:
+      "How long a signed POD/K2 delivery URL would stay valid, IF Cloudinary's token-based auth add-on were configured. Not consulted by the app today — editing this has no effect until that add-on is set up and the code is wired to read it.",
+    type: "integer",
+    min: 60,
+    max: 86400,
+    envVar: "CLOUDINARY_POD_URL_TTL_SECONDS",
+    default: POD_URL_TTL_SECONDS,
   },
 ];
 

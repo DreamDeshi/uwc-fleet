@@ -170,3 +170,36 @@ describe("zodSchemaFor — bounds are enforced per setting type", () => {
     expect(zodSchemaFor(minutesDef).safeParse("510").success).toBe(false);
   });
 });
+
+describe("settingsRegistry — the security entries (Phase 5)", () => {
+  it("the two login-lockout knobs are registered with loginLockout.ts's own defaults", () => {
+    const maxAttempts = getSettingDef("security.login_lockout_max_attempts");
+    const lockMinutes = getSettingDef("security.login_lockout_minutes");
+    expect(maxAttempts?.default).toBe(10);
+    expect(lockMinutes?.default).toBe(15);
+    expect(maxAttempts?.type).toBe("integer");
+    expect(lockMinutes?.type).toBe("minutes");
+    expect(maxAttempts?.envVar).toBe("LOGIN_LOCKOUT_MAX_ATTEMPTS");
+    expect(lockMinutes?.envVar).toBe("LOGIN_LOCKOUT_MINUTES");
+  });
+
+  it("both login-lockout knobs accept 0 — that is loginLockout.ts's own 'disabled' value", () => {
+    expect(zodSchemaFor(getSettingDef("security.login_lockout_max_attempts")!).safeParse(0).success).toBe(
+      true
+    );
+    expect(zodSchemaFor(getSettingDef("security.login_lockout_minutes")!).safeParse(0).success).toBe(true);
+  });
+
+  it("the POD URL TTL entry is registered but its own label/description say it is not yet live", () => {
+    const podTtl = getSettingDef("security.pod_url_ttl_seconds");
+    expect(podTtl?.default).toBe(3600);
+    expect(podTtl?.type).toBe("integer");
+    expect(podTtl?.envVar).toBe("CLOUDINARY_POD_URL_TTL_SECONDS");
+    // Not a style nitpick — this is the guard against the "ruled but
+    // unimplemented" failure mode. If the copy stops saying it's inert, that
+    // is exactly the signal that whoever removed the caveat must have also
+    // wired it — this test forces that decision to be deliberate.
+    expect(podTtl?.label).toMatch(/not yet live/i);
+    expect(podTtl?.description).toMatch(/not consulted/i);
+  });
+});
