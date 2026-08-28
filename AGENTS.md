@@ -204,7 +204,7 @@ Unless a latest written client answer explicitly resolves it, keep these frozen:
 
 \- Driver and lorry swapping where the incentive-rate source is unresolved.
 
-\- Multiple-pickup sequencing where pickups and deliveries may be mixed.
+&#x20; (Multiple-pickup sequencing used to be listed here. It is ANSWERED — see below.)
 
 \- Items still listed in `QUESTIONS\_FOR\_TEH\_R3.md` (the successor to the
 
@@ -256,7 +256,21 @@ here so it is not re-added:
 
 Nothing on that workbook change is unbuilt now.
 
+#### ANSWERED: multiple-pickup sequencing
 
+This item was frozen for its sequencing ambiguity — whether pickups and
+deliveries could interleave within one trip. Mr. Teh answered it directly,
+WhatsApp, 27 Aug 2026 2:42–2:44pm, when asked *"Can a pickup ever happen after
+a delivery in the same trip, or is it always: pick up everything first, then
+deliver?"*:
+
+    "pickup everything only deliver"
+
+All pickups happen first, then all deliveries — no interleaving. That resolves
+the SEQUENCING question this line was frozen for. It does NOT mean the
+multi-pickup feature itself (P1–P9, letting a requestor choose which UWC
+plant a booking is picked up from) is built — only that the open question
+blocking it is no longer open.
 
 \#### RULED BUT UNIMPLEMENTED — THE THIRD FAILURE MODE, AND THE UNWATCHED ONE
 
@@ -309,6 +323,33 @@ tests):
 **The rule this leaves behind:** when a written answer changes a NUMBER the code
 holds, grep for that number the same day and either change it or record why not.
 An answer file is not an implementation, and nothing in CI compares the two.
+
+#### A SECOND INSTANCE OF THE SAME THIRD FAILURE MODE — B7, found 28 Aug 2026
+
+Six days after B6, the identical shape happened again, in the same booking
+cut-off system (B7, `api/src/lib/bookingCutoff.ts`), from the same 27 Aug
+WhatsApp thread that moved the afternoon cut-off to 15:00. That thread did not
+stop at the afternoon number — Teh's next message, 2:19pm, sent while the
+simpler 3pm fix was already mid-deploy, gave the FULL spec:
+
+    "like this, for 'customer delivery' 3pm pickup cut off, morning session
+     '10am', then 'interplant' no cut off time.."
+
+Only the afternoon number shipped that day. The morning cut-off stayed at
+08:30 and interplant deliveries stayed fully gated — an interplant booking at
+9am for a 9:30am pickup was refused, contradicting what he'd asked for in the
+same conversation — until fixed 28 Aug (PR #195).
+
+**Why this one hid even better than B6.** B6 was missed because nobody
+re-read `CLIENT_ANSWERS.md` after it was written. This one was missed despite
+the code's OWN header comment in `bookingCutoff.ts` already quoting the same
+27 Aug conversation — but only the part relevant to the afternoon number it
+was recording, since that was the fix being made at the time. A written
+record can be accurate as far as it goes and still be read as the whole story
+when it is an excerpt of a longer exchange. **When a client message asks for
+more than the one thing you're currently fixing, the rest of it is a
+requirement too, not colour — reread the FULL message, not the sentence that
+prompted the fix.**
 
 \#### THIS LIST WAS WRONG ABOUT INTERPLANT SCORING FOR FIVE DAYS
 
