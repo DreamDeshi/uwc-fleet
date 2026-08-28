@@ -318,6 +318,25 @@ export function useUpdateStopDocs() {
   });
 }
 
+/**
+ * Undo a driver's own mis-tap on Arrived/Delivered — api/src/routes/trips.ts
+ * PATCH /trips/:id/stops/:stopId/undo. Only valid within a short window of
+ * the tap (STOP_TAP_UNDO_WINDOW_MS server-side); the server is the sole judge
+ * of whether it's still allowed, this hook just calls it.
+ */
+export function useUndoStopTap() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tripId, stopId }: { tripId: string; stopId: string }) =>
+      (await api.patch<Trip>(`/trips/${tripId}/stops/${stopId}/undo`, {})).data,
+    onSettled: (_trip, _err, vars) => {
+      qc.invalidateQueries({ queryKey: ["trip", vars.tripId] });
+      qc.invalidateQueries({ queryKey: ["trips"] });
+      qc.invalidateQueries({ queryKey: ["incentives", "mine"] });
+    },
+  });
+}
+
 // ── Uploads (multipart/form-data) ────────────────────────────────────────
 import type { PickedPhoto } from "../lib/photo";
 import { DocumentType } from "../types";

@@ -33,6 +33,7 @@ import {
   useUpdateStopDocs,
   useUploadPod,
   useUploadK2,
+  useUndoStopTap,
 } from "../../hooks/queries";
 import { capturePodPhoto, toDurablePhotoUri, type PickedPhoto } from "../../lib/photo";
 import { useTripLocation, TripLocationState } from "../../hooks/useTripLocation";
@@ -256,11 +257,19 @@ export function ActiveTripScreen() {
 
   const [error, setError] = useState<string | null>(null);
   const [earned, setEarned] = useState<string | number | null>(null);
+  const [earnedStopId, setEarnedStopId] = useState<string | null>(null);
 
   const updateStatus = useUpdateTripStatus();
   const updateDocs = useUpdateStopDocs();
   const uploadPod = useUploadPod();
   const uploadK2 = useUploadK2();
+  const undoStopTap = useUndoStopTap();
+  // Short client-side affordance window for undoing a mis-tap — well under the
+  // server's own STOP_TAP_UNDO_WINDOW_MS (2 min, api/src/services/
+  // tripCompletion.ts): the server is the sole judge of whether an undo is
+  // still allowed, this just decides how long the button stays on screen.
+  const [undoTarget, setUndoTarget] = useState<{ stopId: string } | null>(null);
+  const undoHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // POD offline outbox: deliveries saved on dead signal live here until the
   // background flush (usePodOutboxFlush in DriverTabs) replays them.
   const outbox = usePodOutboxItems();
@@ -360,12 +369,37 @@ export function ActiveTripScreen() {
     if (s?.consignee?.phone) Linking.openURL(`tel:${s.consignee.phone}`);
   };
 
+  const UNDO_AFFORDANCE_MS = 12_000;
+  const showUndo = (stopId: string) => {
+    if (undoHideTimer.current) clearTimeout(undoHideTimer.current);
+    setUndoTarget({ stopId });
+    undoHideTimer.current = setTimeout(() => setUndoTarget(null), UNDO_AFFORDANCE_MS);
+  };
+  const onUndoTap = () =>
+    oncePerAction(async () => {
+      if (!undoTarget) return;
+      const { stopId } = undoTarget;
+      if (undoHideTimer.current) clearTimeout(undoHideTimer.current);
+      setUndoTarget(null);
+      try {
+        await undoStopTap.mutateAsync({ tripId: trip.id, stopId });
+        toast(t("trip.undoDone"), "success");
+        if (earnedStopId === stopId) {
+          setEarned(null);
+          setEarnedStopId(null);
+        }
+      } catch (err) {
+        toast(apiErrorMessage(err), "error");
+      }
+    });
+
   const onArrived = (stop: TripStop) =>
     oncePerAction(async () => {
       setError(null);
       try {
         await updateStatus.mutateAsync({ tripId: trip.id, action: "arrived", stop_id: stop.id });
         toast(t("trip.toastArrived"), "success");
+        showUndo(stop.id);
       } catch (err) {
         if (ARRIVED_ALREADY_CODES.includes(apiErrorCode(err) ?? "")) {
           await reconcile();
@@ -539,9 +573,11 @@ export function ActiveTripScreen() {
         if (updated.status === "pending_approval") {
           void stopBackgroundTracking();
           setEarned(updated.incentive_earned);
+          setEarnedStopId(stop.id);
         } else {
           toast(t("trip.toastDelivered"), "success");
         }
+        showUndo(stop.id);
       } catch (err) {
         if (DELIVERED_ALREADY_CODES.includes(apiErrorCode(err) ?? "")) {
           await removePodItem(stop.id);
@@ -741,6 +777,24 @@ export function ActiveTripScreen() {
             </View>
             <Ionicons name="chevron-forward" size={20} color={CURRENT_STOP_HUE} />
           </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {/* Undo affordance for a mis-tapped Arrived/Delivered — hidden while the
+          earned modal (the finalizing-delivery case) has its own Undo link. */}
+      {undoTarget && earned === null ? (
+        <View style={styles.bannerWrap}>
+          <View style={styles.undoBanner}>
+            <Text style={styles.undoBannerText}>{t("trip.tapUndoPrompt")}</Text>
+            <TouchableOpacity
+              onPress={onUndoTap}
+              disabled={undoStopTap.isPending}
+              accessibilityRole="button"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.undoBannerAction}>{t("trip.undo")}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ) : null}
 
@@ -1058,6 +1112,19 @@ export function ActiveTripScreen() {
               <Text style={styles.pendingAmount}>{formatMoney(earned)}</Text>
               <Text style={styles.modalNote}>{t("trip.incentivePendingNote")}</Text>
             </View>
+            {undoTarget && undoTarget.stopId === earnedStopId ? (
+              <View style={styles.undoModalRow}>
+                <Text style={styles.undoModalText}>{t("trip.tapUndoPrompt")}</Text>
+                <TouchableOpacity
+                  onPress={onUndoTap}
+                  disabled={undoStopTap.isPending}
+                  accessibilityRole="button"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.undoModalLink}>{t("trip.undo")}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
             <Button
               title={t("trip.backToDashboard")}
               size="xl"
@@ -1255,6 +1322,26 @@ const styles = StyleSheet.create({
   },
   bannerTitle: { fontSize: typeScale.sm, fontWeight: "800", color: colors.navy },
   bannerSub: { fontSize: typeScale.xs, color: CURRENT_STOP_HUE, marginTop: 1 },
+
+  // Mis-tap undo banner — neutral tone (not a warning) with one explicit action.
+  undoBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    backgroundColor: colors.white,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    ...shadow.floating,
+  },
+  undoBannerText: { flex: 1, fontSize: typeScale.sm, fontWeight: "600", color: colors.navy },
+  undoBannerAction: { fontSize: typeScale.sm, fontWeight: "800", color: colors.blue },
+  undoModalRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 14 },
+  undoModalText: { fontSize: typeScale.sm, color: colors.textMuted },
+  undoModalLink: { fontSize: typeScale.sm, fontWeight: "800", color: colors.blue },
 
   // 4 — scroll body
   body: { width: "100%", maxWidth: layout.content, alignSelf: "center", paddingVertical: 14, gap: 12 },

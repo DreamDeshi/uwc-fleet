@@ -22,9 +22,11 @@ import {
 import {
   assertStopArrivable,
   assertStopDeliverable,
+  assertStopTapUndoable,
   assertIncentiveApprovable,
   collectFinalizeBreakdown,
   proposeTripIncentiveOnce,
+  revertFinalizeForUndo,
   approveTripIncentiveOnce,
   type FinalizedGroup,
 } from "../services/tripCompletion";
@@ -3370,6 +3372,60 @@ router.patch(
         });
       }
 
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ── PATCH /trips/:id/stops/:stopId/undo — driver undoes their own mis-tap ──
+// Fixes a wrong-button Arrived/Delivered tap. Deliberately narrow: a short
+// window from the tap itself (assertStopTapUndoable, tripCompletion.ts), not
+// a general-purpose reopen. Undoing a "delivered" tap that already triggered
+// this trip's finalization (trip is pending_approval) also unwinds the
+// finalize (revertFinalizeForUndo) — never when the incentive is already
+// approved, which is money already decided.
+router.patch(
+  "/:id/stops/:stopId/undo",
+  requireRole("driver"),
+  async (req, res, next) => {
+    try {
+      const { id, stopId } = req.params;
+      await prisma.$transaction(async (tx) => {
+        await lockTripRow(tx, id);
+        const trip = await tx.trip.findUnique({ where: { id } });
+        if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+        if (trip.driver_id !== req.user!.id) {
+          throw new ApiError(403, "FORBIDDEN", "You are not the driver assigned to this trip.");
+        }
+        const stop = await tx.tripStop.findUnique({ where: { id: stopId } });
+        if (!stop || stop.trip_id !== id) {
+          throw new ApiError(400, "STOP_NOT_FOUND", "That stop is not part of this trip.");
+        }
+        assertStopTapUndoable(trip, stop, new Date());
+
+        if (stop.status === "arrived") {
+          await tx.tripStop.update({ where: { id: stopId }, data: { status: "pending", arrived_at: null } });
+        } else {
+          // stop.status === "delivered"
+          if (trip.status === "pending_approval") {
+            const reverted = await revertFinalizeForUndo(tx, id);
+            if (!reverted) {
+              throw new ApiError(
+                409,
+                "TRIP_STATE_CHANGED",
+                "This trip's incentive was approved or changed just now. Refresh and try again."
+              );
+            }
+          }
+          await tx.tripStop.update({ where: { id: stopId }, data: { status: "arrived", delivered_at: null } });
+        }
+        await tx.auditLog.create({
+          data: { user_id: req.user!.id, action: `stop.${stop.status}_undone`, table_name: "TripStop", record_id: stopId },
+        });
+      });
+      const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
       res.json(updated);
     } catch (err) {
       next(err);
