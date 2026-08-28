@@ -6,7 +6,7 @@ vi.mock("../src/lib/pushNotifications", () => ({
   sendPushNotifications: vi.fn(async () => {}),
 }));
 
-import { REQUESTOR, loginAs, prisma, resetDb } from "./helpers/harness";
+import { REQUESTOR, ADMIN, loginAs, prisma, resetDb, api, auth } from "./helpers/harness";
 import { bookTrip, firstRouteTypeId } from "./helpers/flow";
 import {
   EXCEPTION_ALERT_THRESHOLD_MINUTES,
@@ -94,6 +94,28 @@ describe("overdue-exception alert sweep", () => {
     await sweepOverdueExceptions();
     expect(overdueAlertCount(fresh.id)).toBe(0);
     expect(overdueAlertCount(closed.id)).toBe(0);
+  });
+
+  it("PATCHing alert.exception_threshold_min changes when the sweep considers an exception overdue", async () => {
+    // Admin-settings Phase 4 (28 Aug 2026) — proves the SWEEP actually reads
+    // the effective setting, not just that overdueUnalerted accepts an
+    // override parameter in isolation (tests/exceptionAlerts.test.ts).
+    const admin = await loginAs(ADMIN);
+    // 20 minutes open — under the DEFAULT 30-minute threshold, not yet overdue.
+    const exc = await seedException({ reportedAt: new Date(Date.now() - 20 * 60 * 1000) });
+
+    await sweepOverdueExceptions();
+    expect(overdueAlertCount(exc.id)).toBe(0);
+
+    const patch = await api()
+      .patch("/api/v1/settings/alert.exception_threshold_min")
+      .set(auth(admin))
+      .send({ value: 10 });
+    expect(patch.status).toBe(200);
+
+    // The SAME exception, now overdue under the shrunk threshold.
+    await sweepOverdueExceptions();
+    expect(overdueAlertCount(exc.id)).toBe(1);
   });
 });
 

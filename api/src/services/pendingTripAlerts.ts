@@ -3,15 +3,16 @@ import { sendPushNotifications } from "../lib/pushNotifications";
 import { getDispatchMode } from "../lib/settings";
 import { autoDispatchTrip } from "./dispatchEngine";
 import { minutesFromEnv } from "../lib/envNumbers";
+import { effectivePendingTripAlertThresholds } from "../lib/alertThresholdSettings";
 
 // Reads a positive-integer minutes value from an env var, falling back to
 // `fallback` if the var is unset or not a valid positive integer.
 
 // How long a booking may sit unassigned before the engine retries auto-dispatch
 // and (failing that) alerts admins. Override with PENDING_ALERT_THRESHOLD_MINUTES
-// in the API env; defaults to 10 minutes.
-const PENDING_ALERT_THRESHOLD_MINUTES = minutesFromEnv("PENDING_ALERT_THRESHOLD_MINUTES", 10);
-const PENDING_ALERT_THRESHOLD_MS = PENDING_ALERT_THRESHOLD_MINUTES * 60 * 1000;
+// in the API env; defaults to 10 minutes. EXPORTED for settingsRegistry.ts's
+// default (Phase 4) — was module-private until then, nothing else needed it.
+export const PENDING_ALERT_THRESHOLD_MINUTES = minutesFromEnv("PENDING_ALERT_THRESHOLD_MINUTES", 10);
 
 // Retry CEILING — the point past which the sweep stops re-attempting a stuck
 // pending booking and escalates it to a human instead (DG-T1). Two triggers:
@@ -24,7 +25,6 @@ const PENDING_ALERT_THRESHOLD_MS = PENDING_ALERT_THRESHOLD_MINUTES * 60 * 1000;
 // forever (the retry/alert-decoupling fix removed the only thing that ever
 // stopped it).
 export const PENDING_RETRY_CEILING_MINUTES = minutesFromEnv("PENDING_RETRY_CEILING_MINUTES", 24 * 60);
-const PENDING_RETRY_CEILING_MS = PENDING_RETRY_CEILING_MINUTES * 60 * 1000;
 const CHECK_INTERVAL_MS = 60 * 1000; // sweep once a minute
 
 // Every stale pending booking, alerted or not. Retrying and alerting are
@@ -48,28 +48,50 @@ export type ExpiryReason = "pickup_passed" | "retry_ceiling";
 
 /**
  * Why a still-pending booking should STOP being auto-retried, or null while it's
- * still worth trying. Pure (no DB) — unit-tested. See PENDING_RETRY_CEILING_*.
+ * still worth trying. Pure (no DB) — unit-tested. `retryCeilingMs` defaults to
+ * the module constant so every existing call that omits it keeps today's exact
+ * behaviour. See PENDING_RETRY_CEILING_*.
  */
 export function pendingRetryExpired(
   trip: { pickup_datetime: Date; created_at: Date },
-  now: number
+  now: number,
+  retryCeilingMs: number = PENDING_RETRY_CEILING_MINUTES * 60 * 1000
 ): ExpiryReason | null {
   if (trip.pickup_datetime.getTime() <= now) return "pickup_passed";
-  if (now - trip.created_at.getTime() >= PENDING_RETRY_CEILING_MS) return "retry_ceiling";
+  if (now - trip.created_at.getTime() >= retryCeilingMs) return "retry_ceiling";
   return null;
 }
 
-const EXPIRY_NOTE: Record<ExpiryReason, string> = {
-  pickup_passed: "Pickup time passed while still unassigned — assign manually or ask the requestor to rebook.",
-  retry_ceiling: `Could not be auto-assigned within ${PENDING_RETRY_CEILING_MINUTES} minutes — assign manually.`,
-};
+// STABLE note text — never embeds a variable, so it never changes. Exported
+// for pendingTripAlerts.test.ts, which pins the stale-marker fix directly.
+export const PICKUP_PASSED_NOTE =
+  "Pickup time passed while still unassigned — assign manually or ask the requestor to rebook.";
+// The retry-ceiling note DOES embed the (now admin-editable) ceiling minutes,
+// so its full text can change between sweeps. Only the PREFIX is stable —
+// that's what the one-shot marker below keys on, not the number.
+export const RETRY_CEILING_NOTE_PREFIX = "Could not be auto-assigned within ";
+export function retryCeilingNote(retryCeilingMin: number): string {
+  return `${RETRY_CEILING_NOTE_PREFIX}${retryCeilingMin} minutes — assign manually.`;
+}
 
-// One-shot marker for "already escalated to manual by the ceiling". The engine
-// sets auto_dispatch_failed + its own note on every failed *in-window* attempt
-// (e.g. "No available truck…"), so that flag can't distinguish a transient
-// failure from a final give-up. The expiry note itself is the marker: once it's
-// been stamped, the booking is not re-escalated or re-alerted.
-const EXPIRY_NOTES = new Set<string>(Object.values(EXPIRY_NOTE));
+/**
+ * One-shot marker for "already escalated to manual by the ceiling". The engine
+ * sets auto_dispatch_failed + its own note on every failed *in-window* attempt
+ * (e.g. "No available truck…"), so that flag can't distinguish a transient
+ * failure from a final give-up. The expiry note itself is the marker: once it's
+ * been stamped, the booking is not re-escalated or re-alerted.
+ *
+ * ⚠ Phase 4: this used to be an exact-string Set built from the note text —
+ * which EMBEDS the retry-ceiling minutes. Once that number became admin-
+ * editable, a trip escalated under the OLD value would stop matching the SAME
+ * check re-built from the NEW value on the next sweep, and get silently
+ * re-escalated (a duplicate "Booking expired" push for something already
+ * handled). Matching on the stable prefix instead of the full string is what
+ * keeps the marker independent of the setting's current value.
+ */
+export function alreadyEscalated(note: string | null): boolean {
+  return note === PICKUP_PASSED_NOTE || (note?.startsWith(RETRY_CEILING_NOTE_PREFIX) ?? false);
+}
 
 async function activeAdminPushTokens(): Promise<(string | null)[]> {
   const admins = await prisma.user.findMany({
@@ -88,7 +110,11 @@ async function activeAdminPushTokens(): Promise<(string | null)[]> {
 // Exported so the integration suite can run one sweep deterministically.
 export async function sweepPendingTrips(): Promise<void> {
   const now = Date.now();
-  const cutoff = new Date(now - PENDING_ALERT_THRESHOLD_MS);
+  // Admin-settings Phase 4 — both thresholds are now admin-editable.
+  const { pendingTripThresholdMin, pendingRetryCeilingMin } = await effectivePendingTripAlertThresholds();
+  const pendingThresholdMs = pendingTripThresholdMin * 60 * 1000;
+  const retryCeilingMs = pendingRetryCeilingMin * 60 * 1000;
+  const cutoff = new Date(now - pendingThresholdMs);
 
   const staleTrips = await prisma.trip.findMany({
     where: staleSweepWhere(cutoff),
@@ -109,13 +135,13 @@ export async function sweepPendingTrips(): Promise<void> {
   const expired: { id: string; ticket_number: string; reason: ExpiryReason }[] = [];
 
   for (const trip of staleTrips) {
-    const reason = pendingRetryExpired(trip, now);
+    const reason = pendingRetryExpired(trip, now, retryCeilingMs);
     if (reason) {
       // Ceiling reached: never retry this booking again. Escalate to manual with
       // a one-shot "expired" alert the FIRST time it crosses — keyed on the
-      // expiry note (see EXPIRY_NOTES), so a booking already escalated just stops
-      // being retried, silently.
-      if (!EXPIRY_NOTES.has(trip.auto_dispatch_note ?? "")) {
+      // expiry note (see alreadyEscalated), so a booking already escalated just
+      // stops being retried, silently.
+      if (!alreadyEscalated(trip.auto_dispatch_note)) {
         expired.push({ id: trip.id, ticket_number: trip.ticket_number, reason });
       }
       continue;
@@ -153,19 +179,20 @@ export async function sweepPendingTrips(): Promise<void> {
   for (const reason of ["pickup_passed", "retry_ceiling"] as const) {
     const ids = expired.filter((t) => t.reason === reason).map((t) => t.id);
     if (ids.length > 0) {
+      const note = reason === "pickup_passed" ? PICKUP_PASSED_NOTE : retryCeilingNote(pendingRetryCeilingMin);
       await prisma.trip.updateMany({
         where: { id: { in: ids } },
-        data: { auto_dispatch_failed: true, auto_dispatch_note: EXPIRY_NOTE[reason] },
+        data: { auto_dispatch_failed: true, auto_dispatch_note: note },
       });
     }
   }
 
-  // One-shot 10-minute "still pending" alert.
+  // One-shot "still pending" alert.
   for (const trip of needAlert) {
     await sendPushNotifications(adminTokens, {
       title: "Pending order",
-      body: `Trip ${trip.ticket_number} has been pending for ${PENDING_ALERT_THRESHOLD_MINUTES} minute${
-        PENDING_ALERT_THRESHOLD_MINUTES === 1 ? "" : "s"
+      body: `Trip ${trip.ticket_number} has been pending for ${pendingTripThresholdMin} minute${
+        pendingTripThresholdMin === 1 ? "" : "s"
       }`,
       data: { type: "pending_alert", tripId: trip.id },
     });

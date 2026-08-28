@@ -10,6 +10,9 @@ import {
   OP_DRIVE_POINTS_BASELINE,
 } from "../services/operatingWindow";
 import { ASSIGNMENT_CONFLICT_BUFFER_MIN } from "../services/schedulingConflict";
+import { EXCEPTION_ALERT_THRESHOLD_MINUTES } from "../services/exceptionAlerts";
+import { PENDING_ALERT_THRESHOLD_MINUTES, PENDING_RETRY_CEILING_MINUTES } from "../services/pendingTripAlerts";
+import { DOC_EXPIRY_REMIND_DAYS_DEFAULT } from "../services/docExpiryReminders";
 
 /**
  * The generic admin-settings registry.
@@ -202,6 +205,60 @@ export const SETTINGS_REGISTRY: SettingDef[] = [
     max: 1439,
     envVar: "ASSIGNMENT_CONFLICT_BUFFER_MIN",
     default: ASSIGNMENT_CONFLICT_BUFFER_MIN,
+  },
+  /**
+   * Phase 4 — alert thresholds. Each one already env-tunable; an admin
+   * setting sits above the env var, same resolution order as every entry
+   * above. See lib/alertThresholdSettings.ts for the resolvers, and
+   * services/pendingTripAlerts.ts for why the retry-ceiling note text had to
+   * change shape to stay correct once its own minutes became admin-editable.
+   */
+  {
+    key: "alert.exception_threshold_min",
+    category: "Alert thresholds",
+    label: "Open-exception alert",
+    description:
+      "How long a driver-reported exception may stay open before admins are pinged. The trip is paused the whole time regardless of this setting.",
+    type: "minutes",
+    min: 1,
+    max: 1439,
+    envVar: "EXCEPTION_ALERT_THRESHOLD_MINUTES",
+    default: EXCEPTION_ALERT_THRESHOLD_MINUTES,
+  },
+  {
+    key: "alert.pending_trip_threshold_min",
+    category: "Alert thresholds",
+    label: "Pending-booking alert",
+    description: "How long a booking may sit unassigned before admins are pinged (auto-dispatch keeps retrying either way).",
+    type: "minutes",
+    min: 1,
+    max: 1439,
+    envVar: "PENDING_ALERT_THRESHOLD_MINUTES",
+    default: PENDING_ALERT_THRESHOLD_MINUTES,
+  },
+  {
+    key: "alert.pending_retry_ceiling_min",
+    category: "Alert thresholds",
+    label: "Pending-booking retry ceiling",
+    description:
+      "The generous backstop past which the engine gives up retrying a stuck booking and escalates it to manual handling instead.",
+    type: "minutes",
+    min: 1,
+    max: 10080, // a week — a backstop, not a same-day cut-off
+    envVar: "PENDING_RETRY_CEILING_MINUTES",
+    default: PENDING_RETRY_CEILING_MINUTES,
+  },
+  {
+    key: "alert.doc_expiry_remind_days",
+    category: "Alert thresholds",
+    label: "Document-expiry reminder window",
+    description:
+      "Admins get a daily push while any truck's insurance, permit or road tax is due within this many days (or already expired).",
+    type: "integer",
+    min: 1,
+    max: 365,
+    envVar: "DOC_EXPIRY_REMIND_DAYS",
+    default: DOC_EXPIRY_REMIND_DAYS_DEFAULT,
   },
 ];
 

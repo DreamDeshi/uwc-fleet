@@ -82,6 +82,44 @@ describe("settingsRegistry — the dispatch-estimate entries (Phase 3)", () => {
   });
 });
 
+describe("settingsRegistry — the alert-threshold entries (Phase 4)", () => {
+  it("all four are registered with each service's own default", () => {
+    const exceptionThreshold = getSettingDef("alert.exception_threshold_min");
+    const pendingThreshold = getSettingDef("alert.pending_trip_threshold_min");
+    const retryCeiling = getSettingDef("alert.pending_retry_ceiling_min");
+    const docExpiry = getSettingDef("alert.doc_expiry_remind_days");
+    expect(exceptionThreshold?.default).toBe(30);
+    expect(pendingThreshold?.default).toBe(10);
+    expect(retryCeiling?.default).toBe(24 * 60);
+    expect(docExpiry?.default).toBe(30);
+    expect(exceptionThreshold?.type).toBe("minutes");
+    expect(pendingThreshold?.type).toBe("minutes");
+    expect(retryCeiling?.type).toBe("minutes");
+    expect(docExpiry?.type).toBe("integer");
+    expect(exceptionThreshold?.envVar).toBe("EXCEPTION_ALERT_THRESHOLD_MINUTES");
+    expect(pendingThreshold?.envVar).toBe("PENDING_ALERT_THRESHOLD_MINUTES");
+    expect(retryCeiling?.envVar).toBe("PENDING_RETRY_CEILING_MINUTES");
+    expect(docExpiry?.envVar).toBe("DOC_EXPIRY_REMIND_DAYS");
+  });
+
+  it("the retry ceiling allows up to a week — a backstop, not a same-day cut-off", () => {
+    const retryCeiling = getSettingDef("alert.pending_retry_ceiling_min")!;
+    expect(zodSchemaFor(retryCeiling).safeParse(10080).success).toBe(true);
+    expect(zodSchemaFor(retryCeiling).safeParse(10081).success).toBe(false);
+  });
+
+  it("none of the four accept zero — a zero threshold has no sensible meaning here", () => {
+    for (const key of [
+      "alert.exception_threshold_min",
+      "alert.pending_trip_threshold_min",
+      "alert.pending_retry_ceiling_min",
+      "alert.doc_expiry_remind_days",
+    ]) {
+      expect(zodSchemaFor(getSettingDef(key)!).safeParse(0).success).toBe(false);
+    }
+  });
+});
+
 describe("zodSchemaFor — a 'time' setting validates HH:MM strictly", () => {
   const timeDef = SETTINGS_REGISTRY.find((d) => d.key === "dispatch.window_start")!;
 
