@@ -103,7 +103,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Cache the confirmed identity so a later offline cold start can still route
     // into the app (see the bootstrap effect + lib/sessionCache).
     saveCachedMe(res.data);
-    return res.data;
     if ((SUPPORTED_LANGUAGES as readonly string[]).includes(res.data.language_pref)) {
       i18n.changeLanguage(res.data.language_pref);
     }
