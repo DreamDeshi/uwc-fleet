@@ -17,17 +17,32 @@ import path from "node:path";
  * slot back to the form (verified by picking a different day and watching the
  * field change).
  */
-const read = (rel: string) => fs.readFileSync(path.resolve(__dirname, rel), "utf-8");
+// Normalize CRLF→LF: this file's line-search landmarks assume "\n", and a
+// Windows checkout (core.autocrlf) can hand back "\r\n" — which makes an
+// exact-string indexOf() silently return -1 rather than failing loudly. That
+// happened here: "return (\n    <Modal" stopped matching after a rebase
+// checked the file out with CRLF, so the "slice to the Modal" span ran to
+// end-of-file instead, and picked up the REAL Modal it was meant to exclude.
+const read = (rel: string) => fs.readFileSync(path.resolve(__dirname, rel), "utf-8").replace(/\r\n/g, "\n");
 const codeOnly = (s: string) =>
   s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
 describe("the pickup picker keeps two shapes", () => {
   it("INLINE renders no Modal and no backdrop", () => {
     const src = codeOnly(read("./PickupSheet.tsx"));
-    expect(src, "the inline branch must exist").toContain("if (inline) return");
+    // ⚠ NOT the bare substring "if (inline) return" — the confirm button's
+    // onPress handler (`if (inline) return setStep("date");`) also matches
+    // that, and sits EARLIER in the file inside the shared `body` the Modal
+    // branch renders too. indexOf() on the ambiguous string silently grabbed
+    // that occurrence instead of the render branch below, so the "slice to
+    // the Modal" span covered most of the file — including the real Modal —
+    // and this assertion would have failed on the render branch it was
+    // written to protect. Anchor on the full, unique statement instead.
+    const INLINE_RENDER = "if (inline) return <View style={styles.inlineCard}>";
+    expect(src, "the inline render branch must exist").toContain(INLINE_RENDER);
     // The inline branch returns before the Modal, so the wide path cannot dim
     // the page or trap the form behind a backdrop.
-    const inlineBranch = src.slice(src.indexOf("if (inline) return"), src.indexOf("return (\n    <Modal"));
+    const inlineBranch = src.slice(src.indexOf(INLINE_RENDER), src.indexOf("return (\n    <Modal"));
     expect(inlineBranch.length, "the branches moved").toBeGreaterThan(10);
     expect(inlineBranch).not.toContain("Modal");
     expect(inlineBranch).not.toContain("backdrop");
