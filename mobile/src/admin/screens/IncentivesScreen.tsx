@@ -6,7 +6,7 @@
 // note (old rate stays live today) so an admin is never misled into thinking
 // a new rate is live immediately.
 import React, { useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { LinearGradient } from "expo-linear-gradient";
@@ -30,6 +30,7 @@ import { apiErrorMessage } from "../services/api";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import type { DestinationRate, RateAuditEntry, RateResetResult, Truck } from "../types";
 import { formatPalletSpaces } from "../../lib/pallets";
+import { TimeOfDayPicker } from "../components/TimeOfDayPicker";
 
 // Small muted "last updated by X on DATE" line under a row (audit parity).
 function UpdatedNote({ entry }: { entry?: RateAuditEntry }) {
@@ -582,6 +583,19 @@ function parseMinutesHm(hhmm: string): number | null {
   return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 }
 
+// Which "minutes"-typed settings are a CLOCK TIME (10:00) vs a DURATION
+// (30 minutes) — the registry's `type` field can't tell the two apart, since
+// both are stored as an integer count of minutes. Only the keys listed here
+// get the tap-a-time picker; everything else in the Dispatch Window tab is a
+// length of time, not a time of day, and gets a plain number + stepper.
+const CLOCK_TIME_KEYS = new Set<string>([
+  "booking.morning_cutoff_min",
+  "booking.afternoon_cutoff_min",
+  "booking.session_split_min",
+  "dispatch.window_start",
+  "dispatch.window_end",
+]);
+
 function BookingCutoffsTab() {
   const { t } = useTranslation();
   const narrow = useLayoutMode() === "narrow";
@@ -627,7 +641,7 @@ function BookingCutoffsTab() {
             );
           })}
         </View>
-        {editing && <EditCutoffModal setting={editing} onClose={() => setEditing(null)} />}
+        {editing && <EditTimeModal setting={editing} onClose={() => setEditing(null)} />}
       </Card>
     );
   }
@@ -675,70 +689,8 @@ function BookingCutoffsTab() {
           </TableRow>
         );
       })}
-      {editing && <EditCutoffModal setting={editing} onClose={() => setEditing(null)} />}
+      {editing && <EditTimeModal setting={editing} onClose={() => setEditing(null)} />}
     </Card>
-  );
-}
-
-function EditCutoffModal({ setting, onClose }: { setting: EffectiveSettingDto; onClose: () => void }) {
-  const { t } = useTranslation();
-  const [text, setText] = useState(formatMinutesHm(setting.value as number));
-  const [error, setError] = useState<string | null>(null);
-  const update = useUpdateSetting();
-  const reset = useResetSetting();
-  const copy = CUTOFF_COPY[setting.key];
-  const label = copy ? t(copy.labelKey) : setting.label;
-
-  async function save() {
-    setError(null);
-    const parsed = parseMinutesHm(text);
-    if (parsed === null) {
-      setError(t("admin.settings.settingTimeInvalid"));
-      return;
-    }
-    try {
-      await update.mutateAsync({ key: setting.key, value: parsed });
-      onClose();
-    } catch (e) {
-      setError(apiErrorMessage(e, t("admin.settings.settingSaveFailed")));
-    }
-  }
-
-  async function resetToDefault() {
-    setError(null);
-    try {
-      await reset.mutateAsync(setting.key);
-      onClose();
-    } catch (e) {
-      setError(apiErrorMessage(e, t("admin.settings.settingResetFailed")));
-    }
-  }
-
-  return (
-    <Modal open onClose={onClose} title={t("admin.settings.settingEditTitle", { label })} width={380}>
-      {error && (
-        <View style={{ backgroundColor: colors.redTint, borderRadius: radius.md, paddingVertical: 9, paddingHorizontal: 12, marginBottom: 12 }}>
-          <Text style={{ color: colors.red, fontSize: font.sm }}>{error}</Text>
-        </View>
-      )}
-      <Input
-        label={label}
-        value={text}
-        onChange={setText}
-        placeholder={t("admin.settings.settingTimePlaceholder")}
-      />
-      <Button variant="ghost" size="sm" onPress={resetToDefault} disabled={reset.isPending} style={{ alignSelf: "flex-start", marginBottom: 8 }}>
-        {t("admin.settings.settingResetToDefault")}
-      </Button>
-      <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
-        <Button variant="ghost" onPress={onClose} style={{ flex: 1 }}>
-          {t("common.cancel")}
-        </Button>
-        <Button variant="primary" disabled={update.isPending} onPress={save} style={{ flex: 1 }}>
-          {update.isPending ? t("admin.trucks.saving") : t("common.save")}
-        </Button>
-      </View>
-    </Modal>
   );
 }
 
@@ -756,13 +708,37 @@ const WINDOW_COPY: Record<string, { labelKey: string; descKey: string }> = {
     labelKey: "admin.settings.windowEndLabel",
     descKey: "admin.settings.windowEndDesc",
   },
+  "dispatch.op_load_min": {
+    labelKey: "admin.settings.opLoadMinLabel",
+    descKey: "admin.settings.opLoadMinDesc",
+  },
+  "dispatch.op_unload_min_per_stop": {
+    labelKey: "admin.settings.opUnloadMinLabel",
+    descKey: "admin.settings.opUnloadMinDesc",
+  },
+  "dispatch.op_drive_min_per_leg": {
+    labelKey: "admin.settings.opDriveMinLabel",
+    descKey: "admin.settings.opDriveMinDesc",
+  },
+  "dispatch.op_drive_points_baseline": {
+    labelKey: "admin.settings.opDriveBaselineLabel",
+    descKey: "admin.settings.opDriveBaselineDesc",
+  },
+  "dispatch.assignment_conflict_buffer_min": {
+    labelKey: "admin.settings.conflictBufferLabel",
+    descKey: "admin.settings.conflictBufferDesc",
+  },
 };
 
-// Matches the server's TIME_RE exactly (settingsRegistry.ts) — a value this
-// accepts is never rejected by the PATCH.
-function isValidHm(text: string): boolean {
-  return /^([01]\d|2[0-3]):[0-5]\d$/.test(text.trim());
-}
+// Step size the +/- stepper moves by, per duration/points setting. Falls back
+// to 1 for anything not listed (a future setting added to this tab).
+const NUMBER_STEP: Record<string, number> = {
+  "dispatch.op_load_min": 5,
+  "dispatch.op_unload_min_per_stop": 5,
+  "dispatch.op_drive_min_per_leg": 5,
+  "dispatch.op_drive_points_baseline": 1,
+  "dispatch.assignment_conflict_buffer_min": 15,
+};
 
 function DispatchWindowTab() {
   const { t } = useTranslation();
@@ -771,19 +747,76 @@ function DispatchWindowTab() {
   const [editing, setEditing] = useState<EffectiveSettingDto | null>(null);
 
   const rows = (data ?? []).filter((s) => s.key.startsWith("dispatch."));
+  // Split by MEANING, not by the registry's `type` (which can't tell a clock
+  // time from a duration — both are stored as an integer count of minutes).
+  const timeRows = rows.filter((s) => CLOCK_TIME_KEYS.has(s.key));
+  const estimateRows = rows.filter((s) => !CLOCK_TIME_KEYS.has(s.key));
 
   if (isLoading) return <Loading />;
   if (isError) return <ErrorState message={t("admin.settings.settingSaveFailed")} onRetry={() => refetch()} />;
+
+  return (
+    <View style={{ gap: 16 }}>
+      <SettingsTable
+        narrow={narrow}
+        title={t("admin.incentives.windowTitle")}
+        subtitle={t("admin.incentives.windowSub")}
+        columnLabel={t("admin.incentives.colTime")}
+        rows={timeRows}
+        copyMap={WINDOW_COPY}
+        onEdit={setEditing}
+      />
+      <SettingsTable
+        narrow={narrow}
+        title={t("admin.incentives.estimateTitle")}
+        subtitle={t("admin.incentives.estimateSub")}
+        columnLabel={t("admin.incentives.colValue")}
+        rows={estimateRows}
+        copyMap={WINDOW_COPY}
+        onEdit={setEditing}
+      />
+      {editing &&
+        (CLOCK_TIME_KEYS.has(editing.key) ? (
+          <EditTimeModal setting={editing} onClose={() => setEditing(null)} />
+        ) : (
+          <EditNumberModal setting={editing} onClose={() => setEditing(null)} />
+        ))}
+    </View>
+  );
+}
+
+// Shared table/card renderer for both halves of the Dispatch Window tab —
+// the narrow/wide split is the same shape either way, only the rows, copy
+// and column label differ.
+function SettingsTable({
+  narrow,
+  title,
+  subtitle,
+  columnLabel,
+  rows,
+  copyMap,
+  onEdit,
+}: {
+  narrow: boolean;
+  title: string;
+  subtitle: string;
+  columnLabel: string;
+  rows: EffectiveSettingDto[];
+  copyMap: Record<string, { labelKey: string; descKey: string }>;
+  onEdit: (s: EffectiveSettingDto) => void;
+}) {
+  const { t } = useTranslation();
+  if (rows.length === 0) return null;
 
   if (narrow) {
     return (
       <Card pad={0}>
         <View style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-          <SectionTitle title={t("admin.incentives.windowTitle")} subtitle={t("admin.incentives.windowSub")} />
+          <SectionTitle title={title} subtitle={subtitle} />
         </View>
         <View style={{ padding: 12, gap: 10 }}>
           {rows.map((s) => {
-            const copy = WINDOW_COPY[s.key];
+            const copy = copyMap[s.key];
             return (
               <View key={s.key} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 12, gap: 8 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -796,7 +829,7 @@ function DispatchWindowTab() {
                     </Text>
                   </View>
                   <Text style={{ fontSize: font.lg, fontWeight: "800", color: colors.text }}>{String(s.value)}</Text>
-                  <Button variant="ghost" size="sm" onPress={() => setEditing(s)}>
+                  <Button variant="ghost" size="sm" onPress={() => onEdit(s)}>
                     {t("admin.consignees.edit")}
                   </Button>
                 </View>
@@ -807,7 +840,6 @@ function DispatchWindowTab() {
             );
           })}
         </View>
-        {editing && <EditWindowModal setting={editing} onClose={() => setEditing(null)} />}
       </Card>
     );
   }
@@ -815,16 +847,16 @@ function DispatchWindowTab() {
   return (
     <Card pad={0}>
       <View style={{ padding: 18, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-        <SectionTitle title={t("admin.incentives.windowTitle")} subtitle={t("admin.incentives.windowSub")} />
+        <SectionTitle title={title} subtitle={subtitle} />
       </View>
       <TableHeader style={{ borderRadius: 0 }}>
         <TableCell flex={2.2} header>{t("admin.incentives.colSetting")}</TableCell>
-        <TableCell flex={1} header>{t("admin.incentives.colTime")}</TableCell>
+        <TableCell flex={1} header>{columnLabel}</TableCell>
         <TableCell flex={1} header>{""}</TableCell>
         <TableCell flex={0.7} header>{""}</TableCell>
       </TableHeader>
       {rows.map((s) => {
-        const copy = WINDOW_COPY[s.key];
+        const copy = copyMap[s.key];
         return (
           <TableRow key={s.key}>
             <TableCell flex={2.2}>
@@ -846,35 +878,49 @@ function DispatchWindowTab() {
               ) : null}
             </TableCell>
             <TableCell flex={0.7}>
-              <Button variant="ghost" size="sm" onPress={() => setEditing(s)}>
+              <Button variant="ghost" size="sm" onPress={() => onEdit(s)}>
                 {t("admin.consignees.edit")}
               </Button>
             </TableCell>
           </TableRow>
         );
       })}
-      {editing && <EditWindowModal setting={editing} onClose={() => setEditing(null)} />}
     </Card>
   );
 }
 
-function EditWindowModal({ setting, onClose }: { setting: EffectiveSettingDto; onClose: () => void }) {
+// ── Editing a TIME setting — TAP a value, don't type (owner feedback, 28 Aug
+// 2026). Works for both representations the registry stores: a "time" setting
+// is already an "HH:MM" string; a "minutes" clock-time setting (the B7
+// cut-offs) is minutes-since-midnight. Both go through the same HH:MM text
+// internally, and typing stays available right below the picker.
+function EditTimeModal({ setting, onClose }: { setting: EffectiveSettingDto; onClose: () => void }) {
   const { t } = useTranslation();
-  const [text, setText] = useState(String(setting.value));
+  const isRawHmString = setting.type === "time";
+  const [text, setText] = useState(
+    isRawHmString ? String(setting.value) : formatMinutesHm(setting.value as number)
+  );
   const [error, setError] = useState<string | null>(null);
   const update = useUpdateSetting();
   const reset = useResetSetting();
-  const copy = WINDOW_COPY[setting.key];
+  const copy = CUTOFF_COPY[setting.key] ?? WINDOW_COPY[setting.key];
   const label = copy ? t(copy.labelKey) : setting.label;
+
+  const parsedMinutes = parseMinutesHm(text);
+  const hour = parsedMinutes !== null ? Math.floor(parsedMinutes / 60) : 0;
+  const minute = parsedMinutes !== null ? parsedMinutes % 60 : 0;
 
   async function save() {
     setError(null);
-    if (!isValidHm(text)) {
+    if (parsedMinutes === null) {
       setError(t("admin.settings.settingTimeInvalid"));
       return;
     }
     try {
-      await update.mutateAsync({ key: setting.key, value: text.trim() });
+      await update.mutateAsync({
+        key: setting.key,
+        value: isRawHmString ? formatMinutesHm(parsedMinutes) : parsedMinutes,
+      });
       onClose();
     } catch (e) {
       setError(apiErrorMessage(e, t("admin.settings.settingSaveFailed")));
@@ -898,8 +944,108 @@ function EditWindowModal({ setting, onClose }: { setting: EffectiveSettingDto; o
           <Text style={{ color: colors.red, fontSize: font.sm }}>{error}</Text>
         </View>
       )}
-      <Input label={label} value={text} onChange={setText} placeholder={t("admin.settings.settingTimePlaceholder")} />
+      <Text style={{ fontSize: font.md, fontWeight: "600", marginBottom: 8, color: colors.text }}>{label}</Text>
+      <TimeOfDayPicker hour={hour} minute={minute} onChange={(h, m) => setText(formatMinutesHm(h * 60 + m))} />
+      <View style={{ marginTop: 14 }}>
+        <Input
+          label={t("admin.settings.orType")}
+          value={text}
+          onChange={setText}
+          placeholder={t("admin.settings.settingTimePlaceholder")}
+        />
+      </View>
       <Button variant="ghost" size="sm" onPress={resetToDefault} disabled={reset.isPending} style={{ alignSelf: "flex-start", marginBottom: 8 }}>
+        {t("admin.settings.settingResetToDefault")}
+      </Button>
+      <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+        <Button variant="ghost" onPress={onClose} style={{ flex: 1 }}>
+          {t("common.cancel")}
+        </Button>
+        <Button variant="primary" disabled={update.isPending} onPress={save} style={{ flex: 1 }}>
+          {update.isPending ? t("admin.trucks.saving") : t("common.save")}
+        </Button>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Editing a DURATION/POINTS setting — a +/- stepper, typing still
+// available. Not a time of day, so no HH:MM picker here.
+function EditNumberModal({ setting, onClose }: { setting: EffectiveSettingDto; onClose: () => void }) {
+  const { t } = useTranslation();
+  const [text, setText] = useState(String(setting.value));
+  const [error, setError] = useState<string | null>(null);
+  const update = useUpdateSetting();
+  const reset = useResetSetting();
+  const copy = WINDOW_COPY[setting.key];
+  const label = copy ? t(copy.labelKey) : setting.label;
+  const step = NUMBER_STEP[setting.key] ?? 1;
+  const min = setting.min ?? 0;
+  const max = setting.max ?? Number.MAX_SAFE_INTEGER;
+
+  const parsedNum = Number(text);
+  const isValid = text.trim() !== "" && Number.isInteger(parsedNum) && parsedNum >= min && parsedNum <= max;
+
+  function bump(delta: number) {
+    const current = text.trim() !== "" && Number.isInteger(parsedNum) ? parsedNum : (setting.value as number);
+    setText(String(Math.min(max, Math.max(min, current + delta))));
+  }
+
+  async function save() {
+    setError(null);
+    if (!isValid) {
+      setError(t("admin.settings.settingNumberInvalid"));
+      return;
+    }
+    try {
+      await update.mutateAsync({ key: setting.key, value: parsedNum });
+      onClose();
+    } catch (e) {
+      setError(apiErrorMessage(e, t("admin.settings.settingSaveFailed")));
+    }
+  }
+
+  async function resetToDefault() {
+    setError(null);
+    try {
+      await reset.mutateAsync(setting.key);
+      onClose();
+    } catch (e) {
+      setError(apiErrorMessage(e, t("admin.settings.settingResetFailed")));
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={t("admin.settings.settingEditTitle", { label })} width={380}>
+      {error && (
+        <View style={{ backgroundColor: colors.redTint, borderRadius: radius.md, paddingVertical: 9, paddingHorizontal: 12, marginBottom: 12 }}>
+          <Text style={{ color: colors.red, fontSize: font.sm }}>{error}</Text>
+        </View>
+      )}
+      <Text style={{ fontSize: font.md, fontWeight: "600", marginBottom: 10, color: colors.text }}>{label}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 16, marginBottom: 14 }}>
+        <TouchableOpacity
+          onPress={() => bump(-step)}
+          accessibilityRole="button"
+          accessibilityLabel={t("admin.settings.decrease")}
+          style={{ width: 44, height: 44, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, alignItems: "center", justifyContent: "center" }}
+        >
+          <Text style={{ fontSize: 22, fontWeight: "700", color: colors.text }}>–</Text>
+        </TouchableOpacity>
+        <Text style={{ fontSize: 28, fontWeight: "800", color: colors.text, minWidth: 70, textAlign: "center" }}>
+          {text}
+        </Text>
+        <TouchableOpacity
+          onPress={() => bump(step)}
+          accessibilityRole="button"
+          accessibilityLabel={t("admin.settings.increase")}
+          style={{ width: 44, height: 44, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, alignItems: "center", justifyContent: "center" }}
+        >
+          <Text style={{ fontSize: 22, fontWeight: "700", color: colors.text }}>+</Text>
+        </TouchableOpacity>
+      </View>
+      <Input label={t("admin.settings.orType")} value={text} onChange={setText} type="number" />
+      <Button variant="ghost" size="sm" onPress={resetToDefault} disabled={reset.isPending} style={{ alignSelf: "flex-start", marginBottom: 8, marginTop: 4 }}>
         {t("admin.settings.settingResetToDefault")}
       </Button>
       <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
