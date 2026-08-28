@@ -202,6 +202,14 @@ export function deliverRaw(driverToken: string, tripId: string, stopId: string) 
     .send({ action: "delivered", stop_id: stopId });
 }
 
+/** Undo a driver's own Arrived/Delivered tap on a stop — RAW response. */
+export function undoRaw(driverToken: string, tripId: string, stopId: string) {
+  return api()
+    .patch(`/api/v1/trips/${tripId}/stops/${stopId}/undo`)
+    .set(auth(driverToken))
+    .send({});
+}
+
 export async function startTrip(driverToken: string, tripId: string): Promise<FlowTrip> {
   const res = await api()
     .patch(`/api/v1/trips/${tripId}/status`)

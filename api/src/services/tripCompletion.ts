@@ -70,6 +70,69 @@ export function assertStopDeliverable(
 }
 
 /**
+ * How long a driver has to undo a mistaken Arrived/Delivered tap. Short and
+ * deliberate: this is a "wrong button" fix, not a way to relitigate a trip
+ * minutes or hours later. Two minutes matches how quickly a driver actually
+ * notices — long enough for a genuine mis-tap, short enough that undoing a
+ * delivered tap can never plausibly race a same-day pay dispute.
+ */
+export const STOP_TAP_UNDO_WINDOW_MS = 2 * 60 * 1000;
+
+/**
+ * A driver may undo their OWN most recent Arrived or Delivered tap on a stop,
+ * within STOP_TAP_UNDO_WINDOW_MS of making it. This is a correction for a
+ * mis-tap, not a new lifecycle transition, so it is deliberately narrow:
+ *
+ * - An open exception blocks it, same as it blocks the taps themselves — the
+ *   exception's own state may already assume the stop is arrived/delivered.
+ * - A pending stop has nothing to undo.
+ * - Undoing "arrived" requires the trip still be in_progress (mirrors
+ *   assertStopArrivable's own precondition).
+ * - Undoing "delivered" requires the trip be in_progress OR pending_approval
+ *   (pending_approval means THIS tap, or another stop's tap on the same
+ *   trip, triggered finalization) — and, when the incentive has already been
+ *   approved, refuses outright. An approved incentive is money already
+ *   decided (see incentive_approved_at on Trip); reopening it here would be
+ *   the same defect as the frozen "partial-delivery incentive on cancel"
+ *   item, just reached from a different door.
+ * - Whichever tap it is, it must be within the window of that stop's OWN
+ *   arrived_at/delivered_at — not "some tap on this trip", so an old,
+ *   already-unnoticed mistake can't be undone by piggybacking on a fresh one.
+ *
+ * Pure guard (no DB) so it is unit-testable; the route re-reads trip/stop
+ * under lockTripRow and calls this before writing anything.
+ */
+export function assertStopTapUndoable(
+  trip: { status: string; open_exception_id: string | null; incentive_approved_at: unknown },
+  stop: { status: string; arrived_at: Date | null; delivered_at: Date | null },
+  now: Date
+): void {
+  if (trip.open_exception_id) {
+    throw new ApiError(409, "EXCEPTION_OPEN", "Resolve the open exception before undoing this stop.");
+  }
+  if (stop.status === "pending") {
+    throw new ApiError(400, "NOTHING_TO_UNDO", "This stop has not been marked arrived or delivered.");
+  }
+  if (stop.status === "arrived") {
+    if (trip.status !== "in_progress") {
+      throw new ApiError(409, "TRIP_NOT_ACTIVE", "This can only be undone while the trip is in progress.");
+    }
+  } else {
+    // stop.status === "delivered"
+    if (trip.status !== "in_progress" && trip.status !== "pending_approval") {
+      throw new ApiError(409, "TRIP_NOT_ACTIVE", "This can only be undone while the trip is in progress or awaiting approval.");
+    }
+    if (trip.incentive_approved_at != null) {
+      throw new ApiError(409, "INCENTIVE_ALREADY_APPROVED", "This trip's incentive was already approved and can no longer be undone.");
+    }
+  }
+  const tapAt = stop.status === "arrived" ? stop.arrived_at : stop.delivered_at;
+  if (!tapAt || now.getTime() - tapAt.getTime() > STOP_TAP_UNDO_WINDOW_MS) {
+    throw new ApiError(409, "UNDO_WINDOW_EXPIRED", "This can only be undone within 2 minutes of the tap.");
+  }
+}
+
+/**
  * The RM a COMPLETED trip actually pays. Under the POD-approval gate (16 Jul
  * 2026) that is the admin-approved `incentive_final`; a trip completed BEFORE
  * the gate has `incentive_final = null` and is paid at its engine proposal
@@ -263,13 +326,19 @@ export function payAttributionInstant(trip: {
 export interface TripFinalizeClient {
   trip: {
     updateMany(args: {
-      where: { id: string; status: "in_progress" | "pending_approval"; incentive_earned?: null; open_exception_id?: null };
+      where: {
+        id: string;
+        status: "in_progress" | "pending_approval";
+        incentive_earned?: null;
+        open_exception_id?: null;
+        incentive_approved_at?: null;
+      };
       data: Record<string, unknown>;
     }): Promise<{ count: number }>;
   };
   tripStop: {
     updateMany(args: {
-      where: { id: string };
+      where: { id: string } | { trip_id: string };
       data: Record<string, unknown>;
     }): Promise<{ count: number }>;
   };
@@ -312,6 +381,50 @@ export async function proposeTripIncentiveOnce(
     const { id, ...data } = row;
     await client.tripStop.updateMany({ where: { id }, data });
   }
+  return true;
+}
+
+/**
+ * The exact inverse of proposeTripIncentiveOnce, for the stop-tap-undo route
+ * (PATCH /trips/:id/stops/:stopId/undo — assertStopTapUndoable above gates
+ * when this may be called). Used when undoing a "delivered" tap on a trip
+ * that is currently pending_approval — i.e. this tap, or another stop's tap
+ * on the same trip, already triggered finalization, and undoing this one
+ * means the finalize itself must unwind.
+ *
+ * CAS-guarded on status=pending_approval + incentive_approved_at=null: an
+ * approved incentive is money already decided, never reopened here. The
+ * caller checks this before starting, but the WHERE re-checks it under the
+ * trip-row lock, so a concurrent approval between the check and the write
+ * loses the race safely (returns false) rather than clobbering an approval.
+ *
+ * Clears the finalize-only fields on EVERY stop of the trip, not just the one
+ * being undone — proposeTripIncentiveOnce scored and stamped every earning
+ * stop in the same write, so reverting only the undone stop would leave the
+ * others carrying a snapshot (points_awarded/was_repeat/zone_code) from a
+ * finalize that, trip-wide, no longer happened. The next delivered tap that
+ * re-triggers finalization recomputes all of it identically.
+ */
+export async function revertFinalizeForUndo(
+  client: TripFinalizeClient,
+  tripId: string
+): Promise<boolean> {
+  const res = await client.trip.updateMany({
+    where: { id: tripId, status: "pending_approval", incentive_approved_at: null },
+    data: {
+      status: "in_progress",
+      incentive_earned: null,
+      rate_used: null,
+      off_peak: null,
+      deduction_applied: null,
+      round_trip_shortfall: null,
+    },
+  });
+  if (res.count !== 1) return false;
+  await client.tripStop.updateMany({
+    where: { trip_id: tripId },
+    data: { points_awarded: null, was_repeat: null, zone_code: null },
+  });
   return true;
 }
 

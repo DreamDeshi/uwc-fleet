@@ -5,12 +5,15 @@ import {
   assertIncentiveApprovable,
   assertStopArrivable,
   assertStopDeliverable,
+  assertStopTapUndoable,
   collectFinalizeBreakdown,
   firstDeliveredAt,
   firstEarningInstant,
   payAttributionInstant,
   payableIncentive,
   proposeTripIncentiveOnce,
+  revertFinalizeForUndo,
+  STOP_TAP_UNDO_WINDOW_MS,
   type FinalizeBreakdown,
   type TripApproveClient,
   type TripFinalizeClient,
@@ -104,6 +107,241 @@ describe("assertStopDeliverable", () => {
   });
 });
 
+describe("assertStopTapUndoable (short-window mis-tap undo)", () => {
+  const now = new Date("2026-08-28T10:00:00Z");
+  const secondsAgo = (s: number) => new Date(now.getTime() - s * 1000);
+
+  it("allows undoing a fresh 'arrived' tap on an in_progress trip", () => {
+    expect(() =>
+      assertStopTapUndoable(
+        { status: "in_progress", open_exception_id: null, incentive_approved_at: null },
+        { status: "arrived", arrived_at: secondsAgo(30), delivered_at: null },
+        now
+      )
+    ).not.toThrow();
+  });
+
+  it("allows undoing a fresh 'delivered' tap that did NOT finalize the trip (still in_progress)", () => {
+    expect(() =>
+      assertStopTapUndoable(
+        { status: "in_progress", open_exception_id: null, incentive_approved_at: null },
+        { status: "delivered", arrived_at: secondsAgo(90), delivered_at: secondsAgo(30) },
+        now
+      )
+    ).not.toThrow();
+  });
+
+  it("allows undoing a fresh 'delivered' tap that DID finalize the trip, while unapproved", () => {
+    expect(() =>
+      assertStopTapUndoable(
+        { status: "pending_approval", open_exception_id: null, incentive_approved_at: null },
+        { status: "delivered", arrived_at: secondsAgo(90), delivered_at: secondsAgo(30) },
+        now
+      )
+    ).not.toThrow();
+  });
+
+  it("rejects any undo while an exception is open → EXCEPTION_OPEN", () => {
+    expectApiError(
+      () =>
+        assertStopTapUndoable(
+          { status: "in_progress", open_exception_id: "exc1", incentive_approved_at: null },
+          { status: "arrived", arrived_at: secondsAgo(10), delivered_at: null },
+          now
+        ),
+      "EXCEPTION_OPEN",
+      409
+    );
+  });
+
+  it("rejects a pending stop → NOTHING_TO_UNDO", () => {
+    expectApiError(
+      () =>
+        assertStopTapUndoable(
+          { status: "in_progress", open_exception_id: null, incentive_approved_at: null },
+          { status: "pending", arrived_at: null, delivered_at: null },
+          now
+        ),
+      "NOTHING_TO_UNDO",
+      400
+    );
+  });
+
+  it("rejects undoing 'arrived' once the trip is no longer in_progress → TRIP_NOT_ACTIVE", () => {
+    expectApiError(
+      () =>
+        assertStopTapUndoable(
+          { status: "assigned", open_exception_id: null, incentive_approved_at: null },
+          { status: "arrived", arrived_at: secondsAgo(10), delivered_at: null },
+          now
+        ),
+      "TRIP_NOT_ACTIVE",
+      409
+    );
+  });
+
+  it("rejects undoing 'delivered' on a trip that is neither in_progress nor pending_approval → TRIP_NOT_ACTIVE", () => {
+    expectApiError(
+      () =>
+        assertStopTapUndoable(
+          { status: "completed", open_exception_id: null, incentive_approved_at: new Date() },
+          { status: "delivered", arrived_at: secondsAgo(90), delivered_at: secondsAgo(10) },
+          now
+        ),
+      "TRIP_NOT_ACTIVE",
+      409
+    );
+  });
+
+  it("rejects undoing 'delivered' once the incentive is approved, even if still pending_approval → INCENTIVE_ALREADY_APPROVED", () => {
+    // Defence in depth: approval normally flips status to completed too, but
+    // this must refuse on the money fact (incentive_approved_at) alone, not
+    // rely on the status transition happening first.
+    expectApiError(
+      () =>
+        assertStopTapUndoable(
+          { status: "pending_approval", open_exception_id: null, incentive_approved_at: new Date() },
+          { status: "delivered", arrived_at: secondsAgo(90), delivered_at: secondsAgo(10) },
+          now
+        ),
+      "INCENTIVE_ALREADY_APPROVED",
+      409
+    );
+  });
+
+  it("rejects an 'arrived' undo past the window → UNDO_WINDOW_EXPIRED", () => {
+    expectApiError(
+      () =>
+        assertStopTapUndoable(
+          { status: "in_progress", open_exception_id: null, incentive_approved_at: null },
+          { status: "arrived", arrived_at: new Date(now.getTime() - STOP_TAP_UNDO_WINDOW_MS - 1), delivered_at: null },
+          now
+        ),
+      "UNDO_WINDOW_EXPIRED",
+      409
+    );
+  });
+
+  it("rejects a 'delivered' undo past the window → UNDO_WINDOW_EXPIRED, even though nothing else has consumed it", () => {
+    expectApiError(
+      () =>
+        assertStopTapUndoable(
+          { status: "in_progress", open_exception_id: null, incentive_approved_at: null },
+          {
+            status: "delivered",
+            arrived_at: new Date(now.getTime() - STOP_TAP_UNDO_WINDOW_MS - 60_000),
+            delivered_at: new Date(now.getTime() - STOP_TAP_UNDO_WINDOW_MS - 1),
+          },
+          now
+        ),
+      "UNDO_WINDOW_EXPIRED",
+      409
+    );
+  });
+
+  it("allows right at the boundary (exactly the window) and rejects one ms past it", () => {
+    expect(() =>
+      assertStopTapUndoable(
+        { status: "in_progress", open_exception_id: null, incentive_approved_at: null },
+        { status: "arrived", arrived_at: new Date(now.getTime() - STOP_TAP_UNDO_WINDOW_MS), delivered_at: null },
+        now
+      )
+    ).not.toThrow();
+    expectApiError(
+      () =>
+        assertStopTapUndoable(
+          { status: "in_progress", open_exception_id: null, incentive_approved_at: null },
+          { status: "arrived", arrived_at: new Date(now.getTime() - STOP_TAP_UNDO_WINDOW_MS - 1), delivered_at: null },
+          now
+        ),
+      "UNDO_WINDOW_EXPIRED",
+      409
+    );
+  });
+});
+
+describe("revertFinalizeForUndo (unwinds proposeTripIncentiveOnce for a delivered-tap undo)", () => {
+  function fakeFinalizedTrip() {
+    const row: Record<string, unknown> = {
+      status: "pending_approval",
+      incentive_earned: 44,
+      rate_used: 11,
+      off_peak: false,
+      deduction_applied: 2,
+      round_trip_shortfall: 0,
+      incentive_approved_at: null,
+    };
+    const stopRows: Record<string, Record<string, unknown>> = {
+      s1: { points_awarded: 6, was_repeat: false, zone_code: "A2" },
+      s2: { points_awarded: 3, was_repeat: true, zone_code: "A2" },
+    };
+    const client: TripFinalizeClient = {
+      trip: {
+        async updateMany({ where, data }) {
+          if (
+            row.status !== where.status ||
+            (where.incentive_approved_at === null && row.incentive_approved_at !== null)
+          ) {
+            return { count: 0 };
+          }
+          Object.assign(row, data);
+          return { count: 1 };
+        },
+      },
+      tripStop: {
+        async updateMany({ where, data }) {
+          if ("id" in where) {
+            stopRows[where.id] = { ...(stopRows[where.id] ?? {}), ...data };
+            return { count: 1 };
+          }
+          for (const key of Object.keys(stopRows)) {
+            stopRows[key] = { ...stopRows[key], ...data };
+          }
+          return { count: Object.keys(stopRows).length };
+        },
+      },
+    };
+    return { row, stopRows, client };
+  }
+
+  it("clears the trip's incentive/evidence fields and reopens it to in_progress", async () => {
+    const { row, client } = fakeFinalizedTrip();
+    expect(await revertFinalizeForUndo(client, "t1")).toBe(true);
+    expect(row).toEqual({
+      status: "in_progress",
+      incentive_earned: null,
+      rate_used: null,
+      off_peak: null,
+      deduction_applied: null,
+      round_trip_shortfall: null,
+      incentive_approved_at: null,
+    });
+  });
+
+  it("clears the finalize snapshot on EVERY stop of the trip, not just the one being undone", async () => {
+    const { stopRows, client } = fakeFinalizedTrip();
+    await revertFinalizeForUndo(client, "t1");
+    expect(stopRows["s1"]).toEqual({ points_awarded: null, was_repeat: null, zone_code: null });
+    expect(stopRows["s2"]).toEqual({ points_awarded: null, was_repeat: null, zone_code: null });
+  });
+
+  it("refuses (CAS loses) once the incentive has been approved, and touches nothing", async () => {
+    const { row, stopRows, client } = fakeFinalizedTrip();
+    row.incentive_approved_at = new Date();
+    expect(await revertFinalizeForUndo(client, "t1")).toBe(false);
+    expect(row.status).toBe("pending_approval");
+    expect(row.incentive_earned).toBe(44);
+    expect(stopRows["s1"]).toEqual({ points_awarded: 6, was_repeat: false, zone_code: "A2" });
+  });
+
+  it("refuses (CAS loses) when the trip is no longer pending_approval", async () => {
+    const { row, client } = fakeFinalizedTrip();
+    row.status = "completed";
+    expect(await revertFinalizeForUndo(client, "t1")).toBe(false);
+    expect(row.status).toBe("completed");
+  });
+});
+
 // The RM44 anchor case's breakdown: one Ipoh drop, full 6 points, weekday
 // RM11, deduction 2 → (6−2)×11 = RM44.
 function anchorBreakdown(): FinalizeBreakdown {
@@ -141,8 +379,16 @@ describe("proposeTripIncentiveOnce (POD-approval gate: write-once propose)", () 
       },
       tripStop: {
         async updateMany({ where, data }) {
-          stopRows[where.id] = { ...(stopRows[where.id] ?? {}), ...data };
-          return { count: 1 };
+          if ("id" in where) {
+            stopRows[where.id] = { ...(stopRows[where.id] ?? {}), ...data };
+            return { count: 1 };
+          }
+          // trip_id-scoped clear (revertFinalizeForUndo): apply to every row
+          // this fake already knows about, same as a real WHERE trip_id=… would.
+          for (const key of Object.keys(stopRows)) {
+            stopRows[key] = { ...stopRows[key], ...data };
+          }
+          return { count: Object.keys(stopRows).length };
         },
       },
     };
