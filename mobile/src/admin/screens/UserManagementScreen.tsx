@@ -12,21 +12,24 @@
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useTranslation } from "react-i18next";
-import { usePendingUsers } from "../hooks/queries";
+import { usePasswordResetRequests, usePendingUsers } from "../hooks/queries";
 import { colors } from "../theme";
 import { SegmentedFilter } from "../components/ui";
 import { useLayoutMode } from "../hooks/useLayoutMode";
 import { ApprovalsScreen } from "./ApprovalsScreen";
 import { AllUsersScreen } from "./AllUsersScreen";
+import { PasswordResetRequestsScreen } from "./PasswordResetRequestsScreen";
 
-type Tab = "approvals" | "all";
+type Tab = "approvals" | "all" | "password_resets";
 
 export function UserManagementScreen() {
   const { t } = useTranslation();
   const mode = useLayoutMode();
   const [tab, setTab] = useState<Tab>("approvals");
-  // Count only — ApprovalsScreen owns the same cached query internally.
+  // Count only — each screen owns its own cached query internally.
   const pending = usePendingUsers();
+  const resetRequests = usePasswordResetRequests();
+  const pendingResets = resetRequests.data?.filter((r) => r.status === "pending").length;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -37,10 +40,11 @@ export function UserManagementScreen() {
           options={[
             { value: "approvals", label: t("admin.users.tabApprovals"), count: pending.data?.length },
             { value: "all", label: t("admin.users.tabAll") },
+            { value: "password_resets", label: t("admin.users.tabPasswordResets"), count: pendingResets },
           ]}
         />
       </View>
-      {tab === "approvals" ? <ApprovalsScreen /> : <AllUsersScreen />}
+      {tab === "approvals" ? <ApprovalsScreen /> : tab === "all" ? <AllUsersScreen /> : <PasswordResetRequestsScreen />}
     </View>
   );
 }

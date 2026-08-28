@@ -193,7 +193,26 @@ router.post("/login", sensitiveRateLimiter, validateBody(loginSchema), async (re
     const refreshToken = signRefreshToken({ sub: user.id });
     const refresh_token_hash = await bcrypt.hash(refreshToken, BCRYPT_COST);
 
-    await prisma.user.update({ where: { id: user.id }, data: { refresh_token_hash } });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { refresh_token_hash, last_login_at: now },
+    });
+    // Password-reset request auto-close: a successful login is the "no longer
+    // needed" event (R6, 20 Aug 2026) — the user got in with a password that
+    // works, so any pending reset request is moot. CAS on status=pending; the
+    // approve/dismiss routes use the identical pattern, so whichever settles
+    // first simply wins the race. resolved_by stays null: this is the system
+    // closing it, not an admin decision.
+    // Password-reset request auto-close: a successful login is the "no longer
+    // needed" event (R6, 20 Aug 2026) — the user got in with a password that
+    // works, so any pending reset request is moot. CAS on status=pending; the
+    // approve/dismiss routes use the identical pattern, so whichever settles
+    // first simply wins the race. resolved_by stays null: this is the system
+    // closing it, not an admin decision.
+    await prisma.passwordResetRequest.updateMany({
+      where: { user_id: user.id, status: "pending" },
+      data: { status: "dismissed", resolved_at: now, resolved_by: null },
+    });
 
     res.json({
       accessToken,
@@ -300,6 +319,70 @@ router.post(
       });
 
       res.json({ message: "Password reset successfully." });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ── POST /auth/password-reset-requests — self-service, unauthenticated ──
+//
+// Owner-approved design, 20 Aug 2026: "the request survives nobody answering
+// the phone." A driver who forgot their password cannot authenticate to ask
+// for one, so this route takes no auth. It picks its OWN new password right
+// here — nothing is ever transmitted — and an admin verifies identity before
+// promoting it.
+//
+// ⚠ NON-ENUMERATION ON THREE SURFACES, on purpose:
+//   - SAME STATUS (always 200, never a 404 for an unknown phone);
+//   - SAME BODY (identical message regardless of what happened server-side);
+//   - SAME TIMING (an unknown phone, and a known phone with an existing open
+//     request, both still pay the same bcrypt cost as the branch that
+//     actually creates a row — see burnPasswordCompare; hash and compare are
+//     the same core work at a given cost factor, so this is the same fix
+//     PR #185 applied to /login, reused here for the same class of oracle).
+// A second dimension of rate limiting (one open request per user) is
+// enforced by silently not creating a duplicate — never by a different
+// response, which would itself be an enumeration channel.
+const createPasswordResetRequestSchema = z.object({
+  phone: z.string().min(1, "Phone is required"),
+  new_password: z
+    .string()
+    .refine(isStrongPassword, (p) => ({ message: passwordProblemMessage(p) })),
+});
+
+router.post(
+  "/password-reset-requests",
+  sensitiveRateLimiter,
+  validateBody(createPasswordResetRequestSchema),
+  async (req, res, next) => {
+    try {
+      const { new_password } = req.body;
+      const phone = normalizePhone(req.body.phone);
+      const user = await prisma.user.findUnique({ where: { phone } });
+
+      if (user) {
+        const openRequest = await prisma.passwordResetRequest.findFirst({
+          where: { user_id: user.id, status: "pending" },
+        });
+        if (!openRequest) {
+          const new_password_hash = await bcrypt.hash(new_password, BCRYPT_COST);
+          await prisma.passwordResetRequest.create({
+            data: { user_id: user.id, new_password_hash },
+          });
+        } else {
+          // Already has one open — burn the same bcrypt cost without creating
+          // a duplicate, so this branch is not a faster (or differently
+          // shaped) response than the one that actually writes a row.
+          await burnPasswordCompare(new_password);
+        }
+      } else {
+        await burnPasswordCompare(new_password);
+      }
+
+      res.json({
+        message: "If this phone number has an account, the office has been notified.",
+      });
     } catch (err) {
       next(err);
     }

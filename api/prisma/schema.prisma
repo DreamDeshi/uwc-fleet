@@ -153,6 +153,24 @@ enum DispatchMode {
   auto
 }
 
+// Self-service password reset REQUEST (a driver who forgot their password
+// picks a new one; an admin approves it — nothing is ever transmitted). See
+// PasswordResetRequest below for the full design.
+//
+// ⚠ "expired" is DELIBERATELY NOT a value here. It is time-derived (requested_at
+// older than PASSWORD_RESET_REQUEST_TTL_MS) and computed on read by
+// lib/passwordResetRequests.ts's effectiveStatus — never written. A row stays
+// literally "pending" in the DB forever unless something actually resolves it;
+// "expired" only ever appears in an API response, never in this column.
+enum PasswordResetRequestStatus {
+  pending
+  approved
+  // Closed without approval: either an admin dismissed it, or the user logged
+  // in successfully before the office acted (resolved_by is null for the
+  // latter — see lib/passwordResetRequests.ts closeOnLogin).
+  dismissed
+}
+
 // ── 1. User ──────────────────────────────────────────────────────────
 // One table for all three roles — `role` decides what the account can do,
 // `status` whether it can log in at all (new registrations wait in
@@ -169,6 +187,12 @@ model User {
   // `locked_until` is set when the counter trips and cleared by an admin unlock.
   failed_login_attempts Int         @default(0)
   locked_until          DateTime?
+  // Set on every SUCCESSFUL login (POST /auth/login), alongside the refresh
+  // token write — one combined update, not a second write. Display-only: the
+  // password-reset-request admin queue is the one reader (R6, 20 Aug 2026 —
+  // "whether the account is currently locked out, last successful sign-in").
+  // NULL means "never logged in since this column existed" — no backfill.
+  last_login_at         DateTime?
   name                  String
   employee_number       String?
   role                  Role
@@ -181,13 +205,47 @@ model User {
   assigned_truck        Truck?      @relation(fields: [assigned_truck_plate], references: [plate])
   created_at            DateTime    @default(now())
 
-  trips_requested  Trip[]        @relation("RequestorTrips")
-  trips_driven     Trip[]        @relation("DriverTrips")
-  location_logs    LocationLog[]
-  audit_logs       AuditLog[]
-  fuel_logs        FuelLog[]
-  consignees_added Consignee[]   @relation("ConsigneeCreatedBy")
-  leaves           DriverLeave[] @relation("DriverLeaves")
+  trips_requested          Trip[]                 @relation("RequestorTrips")
+  trips_driven             Trip[]                 @relation("DriverTrips")
+  location_logs            LocationLog[]
+  audit_logs               AuditLog[]
+  fuel_logs                FuelLog[]
+  consignees_added         Consignee[]            @relation("ConsigneeCreatedBy")
+  leaves                   DriverLeave[]          @relation("DriverLeaves")
+  password_reset_requests  PasswordResetRequest[] @relation("PasswordResetRequestUser")
+  password_resets_resolved PasswordResetRequest[] @relation("PasswordResetRequestResolvedBy")
+}
+
+// Self-service password reset request. The requester chooses their OWN new
+// password at request time (no SMS/email in this system) — the server stores
+// only its bcrypt hash, an admin verifies the person's identity and approves,
+// and approval promotes the stored hash onto User.password_hash. Nothing is
+// ever transmitted, which is the whole point: it converts "call the office"
+// into "wait for the office", not into a channel that can leak a password.
+//
+// ⚠ NO DB-LEVEL "one open request per user" CONSTRAINT (unlike
+// TripException's partial-unique index). Enforced in the route handler
+// instead — a duplicate pending request is a UX nuisance, not a money or
+// safety defect, so the simpler check is the correct amount of engineering
+// here. A rare concurrent double-submit could in theory create two; approving
+// either promotes that request's own hash, and the CAS on status=pending
+// means only one can ever be approved.
+model PasswordResetRequest {
+  id                String                     @id @default(cuid())
+  user_id           String
+  user              User                       @relation("PasswordResetRequestUser", fields: [user_id], references: [id])
+  new_password_hash String
+  requested_at      DateTime                   @default(now())
+  status            PasswordResetRequestStatus @default(pending)
+  resolved_at       DateTime?
+  // NULL = closed by the SYSTEM (the user logged in successfully before the
+  // office acted — lib/passwordResetRequests.ts closeOnLogin), never by an
+  // admin id in that case. Set = the admin who approved or dismissed it.
+  resolved_by       String?
+  resolver          User?                      @relation("PasswordResetRequestResolvedBy", fields: [resolved_by], references: [id])
+
+  // The admin queue's own ordering (oldest first — first come, first served).
+  @@index([status, requested_at])
 }
 
 // Per-driver leave calendar — feeds DISPATCH availability, not pay. A driver

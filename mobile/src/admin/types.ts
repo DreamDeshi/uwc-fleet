@@ -44,6 +44,24 @@ export interface AdminUser {
   locked_until: string | null;
 }
 
+// Self-service password reset request (owner-approved design, 20 Aug 2026).
+export interface PasswordResetRequest {
+  id: string;
+  status: "pending" | "approved" | "dismissed" | "expired";
+  requested_at: string;
+  resolved_at: string | null;
+  resolved_by: { id: string; name: string } | null;
+  user: {
+    id: string;
+    name: string;
+    phone: string;
+    employee_number: string | null;
+    assigned_truck_plate: string | null;
+    is_locked: boolean;
+    last_login_at: string | null;
+  };
+}
+
 export interface Department {
   id: string;
   name: string;
