@@ -36,4 +36,13 @@ describe("overdueUnalerted", () => {
     expect(overdueUnalerted([exc("young", 1000)], new Set(), NOW)).toEqual([]);
     expect(overdueUnalerted([exc("old", THRESHOLD_MS * 3)], new Set(["old"]), NOW)).toEqual([]);
   });
+
+  it("an explicit thresholdMs override moves the boundary (Phase 4, admin-editable)", () => {
+    const open = [exc("mid", 20 * 60 * 1000)]; // 20 minutes open
+    // At the module default (30 min), 20 minutes isn't due yet.
+    expect(overdueUnalerted(open, new Set(), NOW)).toEqual([]);
+    // An admin shrinking the threshold to 10 minutes makes the SAME exception due.
+    const due = overdueUnalerted(open, new Set(), NOW, 10 * 60 * 1000);
+    expect(due.map((e) => e.id)).toEqual(["mid"]);
+  });
 });

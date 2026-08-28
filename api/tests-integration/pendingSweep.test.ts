@@ -171,6 +171,36 @@ describe("pending sweep — retry decoupled from the one-shot alert", () => {
     expect(expiredAlertCount(trip.id)).toBe(1);
   });
 
+  it("PATCHing alert.pending_trip_threshold_min changes when the sweep alerts", async () => {
+    // Admin-settings Phase 4 (28 Aug 2026) — proves the SWEEP actually reads
+    // the effective setting, not just that the pure boundary is correct.
+    const admin = await loginAs(ADMIN);
+    await setMode("manual"); // isolate the alert from any auto-dispatch retry
+    const requestor = await loginAs(REQUESTOR);
+    const rt = await firstRouteTypeId(requestor);
+    const trip = await bookTrip(requestor, ["P1"], rt);
+    // 5 minutes old — under the DEFAULT 10-minute threshold, untouched.
+    await prisma.trip.update({
+      where: { id: trip.id },
+      data: { created_at: new Date(Date.now() - 5 * 60 * 1000) },
+    });
+
+    await sweepPendingTrips();
+    expect((await freshTrip(trip.id)).pending_alert_sent).toBe(false);
+    expect(pendingAlertCount(trip.id)).toBe(0);
+
+    const patch = await api()
+      .patch("/api/v1/settings/alert.pending_trip_threshold_min")
+      .set(auth(admin))
+      .send({ value: 3 });
+    expect(patch.status).toBe(200);
+
+    // The SAME 5-minute-old booking is now past the shrunk 3-minute threshold.
+    await sweepPendingTrips();
+    expect((await freshTrip(trip.id)).pending_alert_sent).toBe(true);
+    expect(pendingAlertCount(trip.id)).toBe(1);
+  });
+
   it("a booking younger than the threshold is untouched by the sweep", async () => {
     await setMode("auto");
     await putAllDriversOnLeave(); // even in auto mode, nothing should touch it

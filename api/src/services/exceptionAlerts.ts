@@ -3,6 +3,7 @@ import { sendPushNotifications } from "../lib/pushNotifications";
 import { exceptionsEnabled } from "../lib/featureFlags";
 import { minutesFromEnv } from "../lib/envNumbers";
 import { OPEN_EXCEPTION_WHERE } from "../lib/exceptionEvidence";
+import { effectiveExceptionAlertThresholdMin } from "../lib/alertThresholdSettings";
 
 // Overdue-open-exception alert sweep (failed-delivery plan, [R] alert-only).
 //
@@ -38,16 +39,17 @@ const alertedIds = new Set<string>();
 
 /**
  * Which of the given OPEN exceptions are overdue and not yet alerted. Pure
- * (no DB) — unit-tested.
+ * (no DB) — unit-tested. `thresholdMs` defaults to the module constant so
+ * every existing call that omits it keeps today's exact behaviour — same
+ * discipline as bookingCutoffVerdict's cut-off overrides.
  */
 export function overdueUnalerted<T extends { id: string; reported_at: Date }>(
   open: T[],
   alerted: ReadonlySet<string>,
-  now: number
+  now: number,
+  thresholdMs: number = EXCEPTION_ALERT_THRESHOLD_MS
 ): T[] {
-  return open.filter(
-    (e) => now - e.reported_at.getTime() >= EXCEPTION_ALERT_THRESHOLD_MS && !alerted.has(e.id)
-  );
+  return open.filter((e) => now - e.reported_at.getTime() >= thresholdMs && !alerted.has(e.id));
 }
 
 /** One sweep pass. Exported so the integration suite can run it deterministically. */
@@ -70,7 +72,9 @@ export async function sweepOverdueExceptions(): Promise<void> {
   for (const id of alertedIds) if (!openIds.has(id)) alertedIds.delete(id);
   if (open.length === 0) return;
 
-  const due = overdueUnalerted(open, alertedIds, Date.now());
+  // Admin-settings Phase 4 — the threshold is now admin-editable.
+  const thresholdMin = await effectiveExceptionAlertThresholdMin();
+  const due = overdueUnalerted(open, alertedIds, Date.now(), thresholdMin * 60 * 1000);
   if (due.length === 0) return;
 
   const admins = await prisma.user.findMany({
@@ -82,7 +86,7 @@ export async function sweepOverdueExceptions(): Promise<void> {
   for (const exc of due) {
     await sendPushNotifications(adminTokens, {
       title: "Exception needs a decision",
-      body: `Trip ${exc.trip.ticket_number} has had an open ${exc.category} exception for over ${EXCEPTION_ALERT_THRESHOLD_MINUTES} minutes (${exc.current_state}) — the trip is paused until you act`,
+      body: `Trip ${exc.trip.ticket_number} has had an open ${exc.category} exception for over ${thresholdMin} minutes (${exc.current_state}) — the trip is paused until you act`,
       data: { type: "exception_overdue", tripId: exc.trip.id, exceptionId: exc.id },
     });
     alertedIds.add(exc.id);

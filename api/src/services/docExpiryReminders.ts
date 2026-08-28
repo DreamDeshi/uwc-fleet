@@ -14,15 +14,18 @@
  */
 import { prisma } from "../lib/prisma";
 import { sendPushNotifications } from "../lib/pushNotifications";
+import { countFromEnv } from "../lib/envNumbers";
+import { effectiveDocExpiryRemindDays } from "../lib/alertThresholdSettings";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MYT_OFFSET_MS = 8 * 60 * 60 * 1000;
 const REMIND_HOUR_MYT = 9; // 09:00 MYT daily
 
-function remindWithinDays(): number {
-  const n = Number(process.env.DOC_EXPIRY_REMIND_DAYS);
-  return Number.isFinite(n) && n > 0 ? n : 30;
-}
+// EXPORTED for settingsRegistry.ts's default (Phase 4). The env-only fallback
+// stays available as the default arg on remindExpiringDocs below; the live
+// scheduler (startDocExpiryReminders) resolves the admin-editable setting
+// instead and passes it explicitly.
+export const DOC_EXPIRY_REMIND_DAYS_DEFAULT = countFromEnv("DOC_EXPIRY_REMIND_DAYS", 30);
 
 /**
  * Where-clause for non-retired trucks with any document at/under the horizon
@@ -42,7 +45,10 @@ export function expiringDocsWhere(now: Date, withinDays: number) {
 }
 
 /** Push active admins about trucks whose documents expire within the window. Returns the count. */
-export async function remindExpiringDocs(now: Date = new Date(), withinDays: number = remindWithinDays()): Promise<number> {
+export async function remindExpiringDocs(
+  now: Date = new Date(),
+  withinDays: number = DOC_EXPIRY_REMIND_DAYS_DEFAULT
+): Promise<number> {
   const trucks = await prisma.truck.findMany({
     where: expiringDocsWhere(now, withinDays),
     select: { plate: true },
@@ -86,7 +92,11 @@ export function msUntilNextReminder(now: Date): number {
  */
 export function startDocExpiryReminders(): void {
   const run = () => {
-    remindExpiringDocs().catch((err) => console.error("Doc-expiry reminders failed:", err));
+    // Admin-settings Phase 4 — resolved fresh each run so an admin's change
+    // takes effect on the NEXT daily push, not only after a redeploy.
+    effectiveDocExpiryRemindDays()
+      .then((days) => remindExpiringDocs(new Date(), days))
+      .catch((err) => console.error("Doc-expiry reminders failed:", err));
   };
   const delay = msUntilNextReminder(new Date());
   setTimeout(() => {
