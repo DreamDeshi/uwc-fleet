@@ -10,10 +10,12 @@ import { getSettingValue } from "./settingsRegistry";
 export async function effectiveBookingCutoffs(): Promise<{
   morningCutoffMin: number;
   afternoonCutoffMin: number;
+  sessionSplitMin: number;
 }> {
-  const [morningCutoffMin, afternoonCutoffMin] = await Promise.all([
+  const [morningCutoffMin, afternoonCutoffMin, sessionSplitMin] = await Promise.all([
     getSettingValue<number>("booking.morning_cutoff_min"),
     getSettingValue<number>("booking.afternoon_cutoff_min"),
+    getSettingValue<number>("booking.session_split_min"),
   ]);
-  return { morningCutoffMin, afternoonCutoffMin };
+  return { morningCutoffMin, afternoonCutoffMin, sessionSplitMin };
 }

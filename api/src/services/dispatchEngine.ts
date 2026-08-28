@@ -39,6 +39,7 @@ import {
   formatMinutesToHm,
   type OperatingWindowEstimate,
 } from "./operatingWindow";
+import { effectiveDispatchWindowDefaults, resolveTruckWindow } from "../lib/dispatchWindowSettings";
 
 // ── Pure engine types ─────────────────────────────────────────────────
 
@@ -547,12 +548,18 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
         const windowPoints = new Map(
           windowRates.map((r) => [r.zone_code, effectiveZonePoints(r, new Date())])
         );
+        // selTruck can come back undefined if `sel.plate` no longer matches a
+        // loaded truck (a race between candidate-gathering and selection) —
+        // the ONE call site where the admin's dispatch.window_start/end
+        // setting is actually reachable; see dispatchWindowSettings.ts.
+        const dispatchWindowDefaults = await effectiveDispatchWindowDefaults();
+        const resolvedWindow = resolveTruckWindow(selTruck, dispatchWindowDefaults);
         const windowEst = estimateOperatingWindow({
           pickupDateTime: trip.pickup_datetime,
           stopCount: trip.stops.length,
           stopPoints: stopZones.map((z) => windowPoints.get(z) ?? null),
-          windowStart: selTruck?.operating_hours_start,
-          windowEnd: selTruck?.operating_hours_end,
+          windowStart: resolvedWindow.windowStart,
+          windowEnd: resolvedWindow.windowEnd,
         });
         if (windowEst.exceedsWindow) {
           return { sel: null as TruckSelection | null, raced: false, window: windowEst };

@@ -450,6 +450,18 @@ describe("cutoffClosedAt — judged in MYT, not on the device clock", () => {
     expect(cutoffClosedAt(slot, now, false, false, false, { afternoonCutoffMin: 12 * 60 })).toBe(true);
   });
 
+  it("an explicit sessionSplitMin override moves which cut-off governs the slot", () => {
+    const now = at("2026-08-12T02:30:00Z"); // 10:30 MYT
+    const slot = at("2026-08-12T03:00:00Z"); // 11:00 MYT, same MYT day
+
+    // At the default split (noon), 11:00 is MORNING — already closed, since
+    // the morning cut-off (10:00) has passed by 10:30.
+    expect(cutoffClosedAt(slot, now)).toBe(true);
+    // Moving the split to 10:00 makes 11:00 an AFTERNOON pickup instead — the
+    // afternoon cut-off (15:00) has not passed, so the SAME instant opens.
+    expect(cutoffClosedAt(slot, now, false, false, false, { sessionSplitMin: 10 * 60 })).toBe(false);
+  });
+
   it("omitting the overrides keeps today's exact default behaviour", () => {
     const now = at("2026-08-12T07:06:00Z");
     const slot = at("2026-08-12T08:00:00Z");

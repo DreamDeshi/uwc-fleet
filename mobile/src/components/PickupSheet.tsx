@@ -83,7 +83,7 @@ export function PickupSheet({
   // live values so the picker never offers a slot the server would refuse
   // (or hides one it would actually accept). Falls back to the mirrored
   // constants while loading — see useBookingCutoffSettings.
-  const { morningCutoffMin, afternoonCutoffMin } = useBookingCutoffSettings();
+  const { morningCutoffMin, afternoonCutoffMin, sessionSplitMin } = useBookingCutoffSettings();
   const cutoffOpts = useMemo(
     () => ({
       isReturn: isReturn === true,
@@ -91,8 +91,9 @@ export function PickupSheet({
       isAdmin: isAdmin === true,
       morningCutoffMin,
       afternoonCutoffMin,
+      sessionSplitMin,
     }),
-    [isReturn, isInterplant, isAdmin, morningCutoffMin, afternoonCutoffMin]
+    [isReturn, isInterplant, isAdmin, morningCutoffMin, afternoonCutoffMin, sessionSplitMin]
   );
   const { t } = useTranslation();
   const clock = useMemo(() => now ?? new Date(), [now, visible]);

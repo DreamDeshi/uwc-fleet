@@ -3,7 +3,7 @@ import { Platform } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
 import { statusRequestBody } from "../lib/statusRequest";
-import { AFTERNOON_CUTOFF_MIN, MORNING_CUTOFF_MIN } from "../lib/bookingEdit";
+import { AFTERNOON_CUTOFF_MIN, MORNING_CUTOFF_MIN, SESSION_SPLIT_MIN } from "../lib/bookingEdit";
 import {
   Consignee,
   Department,
@@ -569,12 +569,17 @@ export function useSettingsList() {
 }
 
 /**
- * The two B7 cut-off minutes in effect right now. Defaults to the mirrored
- * constants in lib/bookingEdit.ts while the query hasn't resolved (or for
- * anyone offline) — same fallback shape the server itself uses, so a slow or
- * failed fetch degrades to today's exact behaviour rather than to nothing.
+ * The B7 cut-off minutes AND the morning/afternoon split in effect right now.
+ * Defaults to the mirrored constants in lib/bookingEdit.ts while the query
+ * hasn't resolved (or for anyone offline) — same fallback shape the server
+ * itself uses, so a slow or failed fetch degrades to today's exact behaviour
+ * rather than to nothing.
  */
-export function useBookingCutoffSettings(): { morningCutoffMin: number; afternoonCutoffMin: number } {
+export function useBookingCutoffSettings(): {
+  morningCutoffMin: number;
+  afternoonCutoffMin: number;
+  sessionSplitMin: number;
+} {
   const { data } = useSettingsList();
   const pick = (key: string, fallback: number): number => {
     const row = data?.find((s) => s.key === key);
@@ -583,5 +588,6 @@ export function useBookingCutoffSettings(): { morningCutoffMin: number; afternoo
   return {
     morningCutoffMin: pick("booking.morning_cutoff_min", MORNING_CUTOFF_MIN),
     afternoonCutoffMin: pick("booking.afternoon_cutoff_min", AFTERNOON_CUTOFF_MIN),
+    sessionSplitMin: pick("booking.session_split_min", SESSION_SPLIT_MIN),
   };
 }

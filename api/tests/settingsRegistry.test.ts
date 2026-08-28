@@ -22,6 +22,51 @@ describe("settingsRegistry — the booking cut-off entries", () => {
   it("an unknown key has no def", () => {
     expect(getSettingDef("not.a.real.key")).toBeUndefined();
   });
+
+  it("the session-split entry is registered with the same default bookingCutoff.ts exports", () => {
+    const split = getSettingDef("booking.session_split_min");
+    expect(split?.default).toBe(12 * 60);
+    expect(split?.type).toBe("minutes");
+    expect(split?.envVar).toBe("BOOKING_SESSION_SPLIT_MIN");
+  });
+});
+
+describe("settingsRegistry — the dispatch-window entries (Phase 2)", () => {
+  it("both window settings are registered with operatingWindow.ts's own defaults", () => {
+    const start = getSettingDef("dispatch.window_start");
+    const end = getSettingDef("dispatch.window_end");
+    expect(start?.default).toBe("07:00");
+    expect(end?.default).toBe("02:00");
+    expect(start?.type).toBe("time");
+    expect(end?.type).toBe("time");
+    // Never env-tunable — an admin's Setting row or the literal default only,
+    // same discipline as the two B7 cut-offs.
+    expect(start?.envVar).toBeUndefined();
+    expect(end?.envVar).toBeUndefined();
+  });
+});
+
+describe("zodSchemaFor — a 'time' setting validates HH:MM strictly", () => {
+  const timeDef = SETTINGS_REGISTRY.find((d) => d.key === "dispatch.window_start")!;
+
+  it("accepts a well-formed 24-hour HH:MM", () => {
+    expect(zodSchemaFor(timeDef).safeParse("07:00").success).toBe(true);
+    expect(zodSchemaFor(timeDef).safeParse("23:59").success).toBe(true);
+    expect(zodSchemaFor(timeDef).safeParse("00:00").success).toBe(true);
+  });
+
+  it("rejects a single-digit hour — the admin UI must always send two digits", () => {
+    expect(zodSchemaFor(timeDef).safeParse("7:00").success).toBe(false);
+  });
+
+  it("rejects an out-of-range hour or minute", () => {
+    expect(zodSchemaFor(timeDef).safeParse("24:00").success).toBe(false);
+    expect(zodSchemaFor(timeDef).safeParse("07:60").success).toBe(false);
+  });
+
+  it("rejects a non-time string", () => {
+    expect(zodSchemaFor(timeDef).safeParse("not a time").success).toBe(false);
+  });
 });
 
 describe("zodSchemaFor — bounds are enforced per setting type", () => {

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { prisma } from "./prisma";
-import { MORNING_CUTOFF_MIN, AFTERNOON_CUTOFF_MIN } from "./bookingCutoff";
+import { MORNING_CUTOFF_MIN, AFTERNOON_CUTOFF_MIN, SESSION_SPLIT_MIN } from "./bookingCutoff";
+import { DEFAULT_WINDOW_START, DEFAULT_WINDOW_END } from "../services/operatingWindow";
 
 /**
  * The generic admin-settings registry.
@@ -69,6 +70,58 @@ export const SETTINGS_REGISTRY: SettingDef[] = [
     min: 0,
     max: 1439,
     default: AFTERNOON_CUTOFF_MIN,
+  },
+  /**
+   * Phase 2 — the morning/afternoon boundary itself. An INVENTED constant
+   * (bookingCutoff.ts: Mr. Teh gave two sessions and two cut-offs but never
+   * named where morning ends), already env-tunable server-side via
+   * BOOKING_SESSION_SPLIT_MIN. This registry entry sits ABOVE that env var in
+   * the resolution order, same as every other setting here — an admin's
+   * change beats the env default, the env default beats the literal.
+   */
+  {
+    key: "booking.session_split_min",
+    category: "Booking cut-offs",
+    label: "Morning/afternoon split",
+    description:
+      "The time of day (MYT) that divides a morning pickup from an afternoon one. Decides which cut-off applies to a given pickup time.",
+    type: "minutes",
+    min: 0,
+    max: 1439,
+    envVar: "BOOKING_SESSION_SPLIT_MIN",
+    default: SESSION_SPLIT_MIN,
+  },
+  /**
+   * Phase 2 — the fleet's default operating window (services/operatingWindow.ts).
+   * ⚠ REACH IS NARROW BY DESIGN, not by oversight: every real Truck row carries
+   * its OWN operating_hours_start/end (schema default "07:00"/"02:00", NOT
+   * NULL — see Truck in schema.prisma), already admin-editable per truck on the
+   * Trucks screen, and that per-truck value always wins over this one. This
+   * setting is consulted only where a truck lookup can come back empty at the
+   * moment of estimating — dispatchEngine.ts's auto-dispatch selection, when a
+   * candidate plate no longer matches a loaded truck — and, being pure, the
+   * estimator's own compiled-in DEFAULT_WINDOW_START/END still answers for any
+   * caller (e.g. a direct unit test) that never resolves this setting at all.
+   * NOT the B6 ruling: this does not change what the value IS (07:00/02:00,
+   * unchanged), only makes that already-literal default admin-editable.
+   */
+  {
+    key: "dispatch.window_start",
+    category: "Dispatch window",
+    label: "Operating window start (default)",
+    description:
+      "Fallback pickup-window start (MYT) used only when a truck has no operating hours of its own. Every truck today has its own hours, set on the Trucks screen, and those always take priority over this.",
+    type: "time",
+    default: DEFAULT_WINDOW_START,
+  },
+  {
+    key: "dispatch.window_end",
+    category: "Dispatch window",
+    label: "Operating window end (default)",
+    description:
+      "Fallback pickup-window end (MYT) used only when a truck has no operating hours of its own. Every truck today has its own hours, set on the Trucks screen, and those always take priority over this.",
+    type: "time",
+    default: DEFAULT_WINDOW_END,
   },
 ];
 

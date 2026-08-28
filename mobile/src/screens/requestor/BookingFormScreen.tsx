@@ -320,13 +320,14 @@ export function BookingFormScreen() {
   // 27 Aug 2026 — the cut-off minutes are admin-editable now; the reason box
   // must key off the SAME effective values the server will actually enforce,
   // or it can show/hide out of step with what the booking will need.
-  const { morningCutoffMin, afternoonCutoffMin } = useBookingCutoffSettings();
+  const { morningCutoffMin, afternoonCutoffMin, sessionSplitMin } = useBookingCutoffSettings();
   const cutoffOpts = {
     isReturn: isReturnBooking,
     isInterplant: isInterplantBooking,
     isAdmin: isAdminBooking,
     morningCutoffMin,
     afternoonCutoffMin,
+    sessionSplitMin,
   };
   const needsCutoffReason =
     isAdminBooking &&
@@ -336,6 +337,7 @@ export function BookingFormScreen() {
       isInterplant: isInterplantBooking,
       morningCutoffMin,
       afternoonCutoffMin,
+      sessionSplitMin,
     });
   const [cutoffReason, setCutoffReason] = useState("");
   // Held separately from the resolved id so the two controls stay independent:

@@ -320,6 +320,40 @@ describe("B7 — booking cut-offs at the route", () => {
     expect((await book(requestor, delivery, myt(15, 0))).status).toBe(201);
   });
 
+  it("PATCHing booking.session_split_min changes which cut-off a pickup falls under", async () => {
+    const admin = await loginAs(ADMIN);
+    const requestor = await loginAs(REQUESTOR);
+    const delivery = await routeTypeIdNamed(requestor, "Customer Delivery");
+
+    // 11:00 MYT is a MORNING pickup at the default split (noon), so at 10:30
+    // (past the 10:00 morning cut-off) it is refused.
+    freeze(myt(10, 30));
+    const before = await book(requestor, delivery, myt(11, 0));
+    expect(before.status).toBe(400);
+    expect(before.body.error.message).toContain("Morning pickups close at 10:00am");
+
+    // An admin moves the split to 10:00 — 11:00 becomes an AFTERNOON pickup.
+    const patch = await api()
+      .patch("/api/v1/settings/booking.session_split_min")
+      .set(auth(admin))
+      .send({ value: 10 * 60 });
+    expect(patch.status).toBe(200);
+
+    // The SAME wall-clock instant and pickup, refused a moment ago under the
+    // morning cut-off, is now governed by the (still-open) afternoon one.
+    const after = await book(requestor, delivery, myt(11, 0));
+    expect(after.status).toBe(201);
+
+    // Resetting restores the default (noon) behaviour.
+    const del = await api()
+      .delete("/api/v1/settings/booking.session_split_min")
+      .set(auth(admin));
+    expect(del.status).toBe(200);
+    expect(del.body).toEqual({ key: "booking.session_split_min", value: 12 * 60 });
+    const restored = await book(requestor, delivery, myt(11, 0));
+    expect(restored.status).toBe(400);
+  });
+
   it("a REQUESTOR cannot change a setting, only read it", async () => {
     const requestor = await loginAs(REQUESTOR);
     const patch = await api()

@@ -127,8 +127,11 @@ export function mytMinutes(d: Date): number {
 
 export type BookingSession = "morning" | "afternoon";
 
-export function sessionOf(pickup: Date): BookingSession {
-  return mytMinutes(pickup) < SESSION_SPLIT_MIN ? "morning" : "afternoon";
+/** `sessionSplitMin` defaults to the module constant so every existing call
+ *  that omits it keeps today's exact behaviour — same discipline as
+ *  `morningCutoffMin`/`afternoonCutoffMin` on `bookingCutoffVerdict` below. */
+export function sessionOf(pickup: Date, sessionSplitMin: number = SESSION_SPLIT_MIN): BookingSession {
+  return mytMinutes(pickup) < sessionSplitMin ? "morning" : "afternoon";
 }
 
 /**
@@ -206,6 +209,9 @@ export function bookingCutoffVerdict(params: {
    *  these keeps today's exact behaviour. */
   morningCutoffMin?: number;
   afternoonCutoffMin?: number;
+  /** The morning/afternoon boundary — OURS, not his (see SESSION_SPLIT_MIN).
+   *  Same default-to-the-constant discipline as the two cut-offs above. */
+  sessionSplitMin?: number;
 }): CutoffVerdict {
   if (params.isReturn || params.isInterplant) return { allowed: true };
 
@@ -227,7 +233,7 @@ export function bookingCutoffVerdict(params: {
   // about today's dispatch and booking ahead costs it nothing.
   if (pickupKey !== todayKey) return { allowed: true };
 
-  const session = sessionOf(params.pickup);
+  const session = sessionOf(params.pickup, params.sessionSplitMin ?? SESSION_SPLIT_MIN);
   const morningCutoff = params.morningCutoffMin ?? MORNING_CUTOFF_MIN;
   const afternoonCutoff = params.afternoonCutoffMin ?? AFTERNOON_CUTOFF_MIN;
   const cutoff = session === "morning" ? morningCutoff : afternoonCutoff;
