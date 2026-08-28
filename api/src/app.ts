@@ -25,6 +25,7 @@ import feedbackRoutes from "./routes/feedback";
 import dispatchRoutes from "./routes/dispatch";
 import holidaysRoutes from "./routes/holidays";
 import leavesRoutes from "./routes/leaves";
+import passwordResetRequestsRoutes from "./routes/passwordResetRequests";
 import auditRoutes from "./routes/audit";
 import publicRoutes from "./routes/public";
 import searchRoutes from "./routes/search";
@@ -149,5 +150,6 @@ app.use("/api/v1/feedback", feedbackRoutes);
 app.use("/api/v1/dispatch", dispatchRoutes);
 app.use("/api/v1/holidays", holidaysRoutes);
 app.use("/api/v1/leaves", leavesRoutes);
+app.use("/api/v1/password-reset-requests", passwordResetRequestsRoutes);
 
 app.use(errorHandler);

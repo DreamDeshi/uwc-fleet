@@ -22,6 +22,7 @@ import { useWide } from "../../hooks/useWide";
 import { BrandLogo } from "../../components/BrandLogo";
 import { Button } from "../../components/Button";
 import { DemoRoleSwitcher } from "../../components/DemoRoleSwitcher";
+import { ForgotPasswordModal } from "../../components/ForgotPasswordModal";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
 
@@ -40,6 +41,7 @@ export function LoginScreen({ navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   // Presentation-only: which field wears the corporate-blue focus ring.
   const [focused, setFocused] = useState<"phone" | "pw" | null>(null);
+  const [forgotOpen, setForgotOpen] = useState(false);
 
   const onSubmit = async () => {
     setError(null);
@@ -120,14 +122,18 @@ export function LoginScreen({ navigation }: Props) {
         variant="outline"
         style={{ marginTop: 12 }}
       />
-      {/* There is NO self-service password recovery — no SMS, no email, no
-          security question — and only an admin can reset one
-          (POST /auth/forgot-password is admin-only despite its name). Until
-          this line existed the dead end was completely silent: a driver who
-          forgot their password just failed to log in, with nothing on screen
-          telling them the fix is to phone the office. Plain text, not a link,
-          because there is no flow to send them to. */}
-      <Text style={styles.forgotHint}>{t("login.forgotPassword")}</Text>
+      {/* Self-service password reset REQUEST (owner-approved design, 20 Aug
+          2026): the driver picks their own new password here; an admin
+          verifies identity and approves it. This replaced a dead end — a
+          driver who forgot their password used to have no in-app path at
+          all, only a sentence telling them to phone the office. */}
+      <View style={styles.forgotRow}>
+        <Text style={styles.forgotHint}>{t("login.forgotPasswordLead")}</Text>
+        <TouchableOpacity onPress={() => setForgotOpen(true)} hitSlop={8}>
+          <Text style={styles.forgotLink}>{t("login.forgotPasswordAction")}</Text>
+        </TouchableOpacity>
+      </View>
+      <ForgotPasswordModal visible={forgotOpen} onClose={() => setForgotOpen(false)} />
     </>
   );
 
@@ -311,15 +317,11 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   error: { flex: 1, color: colors.red, fontSize: 14, fontWeight: "600" },
-  // Muted and small: it is a fallback instruction, not a call to action, and it
-  // must not compete with Sign in / Create account.
-  forgotHint: {
-    marginTop: 18,
-    textAlign: "center",
-    color: colors.textMuted,
-    fontSize: 13,
-    lineHeight: 18,
-  },
+  // Muted lead-in + a distinct blue action — small, so it doesn't compete
+  // with Sign in / Create account, but the action itself is a real link now.
+  forgotRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", marginTop: 18, gap: 4 },
+  forgotHint: { textAlign: "center", color: colors.textMuted, fontSize: 13, lineHeight: 18 },
+  forgotLink: { textAlign: "center", color: colors.blue, fontSize: 13, lineHeight: 18, fontWeight: "700" },
   // Desktop card is content-height, so the footer sits just under the buttons.
   footerDesktop: { marginTop: 24, textAlign: "center", color: colors.textFaint, fontSize: 13 },
 });

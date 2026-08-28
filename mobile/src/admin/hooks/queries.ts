@@ -27,6 +27,7 @@ import type {
   FuelLog,
   LivePosition,
   MonthlyRow,
+  PasswordResetRequest,
   PayrollResponse,
   PublicHoliday,
   RateAuditEntry,
@@ -966,6 +967,33 @@ export function useApproveUser() {
   return useMutation({
     mutationFn: async (v: { id: string; status: "active" | "disabled" }) =>
       (await api.patch(`/users/${v.id}/approve`, { status: v.status })).data,
+    onSuccess: invalidate,
+  });
+}
+
+// ── Password reset requests (owner-approved design, 20 Aug 2026) ───────────
+export function usePasswordResetRequests() {
+  return useQuery({
+    queryKey: ["password-reset-requests"],
+    queryFn: async () =>
+      (await api.get<PasswordResetRequest[]>("/password-reset-requests")).data,
+  });
+}
+
+export function useApprovePasswordResetRequest() {
+  const invalidate = useInvalidate([["password-reset-requests"], ["users"]]);
+  return useMutation({
+    mutationFn: async (id: string) =>
+      (await api.patch(`/password-reset-requests/${id}/approve`)).data,
+    onSuccess: invalidate,
+  });
+}
+
+export function useDismissPasswordResetRequest() {
+  const invalidate = useInvalidate([["password-reset-requests"]]);
+  return useMutation({
+    mutationFn: async (id: string) =>
+      (await api.patch(`/password-reset-requests/${id}/dismiss`)).data,
     onSuccess: invalidate,
   });
 }

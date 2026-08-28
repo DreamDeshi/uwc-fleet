@@ -41,6 +41,12 @@ export const TRANSACTIONAL_TABLES = [
   "FuelLog",
   "VehicleMaintenance",
   "AuditLog",
+  // Per-user requests, not master data — a request created (and possibly
+  // approved/dismissed) by one test must not be seen by the next test that
+  // reuses the same throwaway victim phone (ensureVictim upserts by phone),
+  // or the second test's "fresh pending request" is actually the first
+  // test's already-resolved one.
+  "PasswordResetRequest",
   // Global settings — the singleton row holding `dispatch_mode`. It LOOKS like
   // master data, but nothing seeds it: the schema default is `manual` and
   // `getDispatchMode` upserts the row on first read. So truncating restores the
