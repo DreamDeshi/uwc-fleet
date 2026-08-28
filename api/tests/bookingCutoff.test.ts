@@ -61,6 +61,15 @@ describe("mytMinutes / sessionOf — the day's shape", () => {
     expect(sessionOf(at(12, 0))).toBe("afternoon");
   });
 
+  it("an explicit sessionSplitMin moves the boundary (Phase 2, admin-editable)", () => {
+    // At the DEFAULT split (noon), 11:00 is morning. An admin setting the
+    // split to 10:00 makes that same instant afternoon.
+    expect(sessionOf(at(11, 0))).toBe("morning");
+    expect(sessionOf(at(11, 0), 10 * 60)).toBe("afternoon");
+    // Omitting the override keeps today's exact behaviour.
+    expect(sessionOf(at(11, 0), SESSION_SPLIT_MIN)).toBe(sessionOf(at(11, 0)));
+  });
+
   it("the split is OURS and carries an override; the cut-offs are HIS and do not", () => {
     // Owner ruling 12 Aug 2026: an invented constant is env-tunable and named
     // as ours (OPEN_ITEMS N11). "10am" and "3pm" (both moved from "830am" and
@@ -202,6 +211,32 @@ describe("B7 — an admin-editable override changes which cut-off applies", () =
     ).toEqual({ allowed: true });
   });
 
+  it("an explicit sessionSplitMin changes which cut-off governs a pickup", () => {
+    // 11:00 MYT is MORNING at the default split (noon), so the morning
+    // cut-off (10:00) governs it — already closed at 10:30.
+    const pickup = at(11, 0);
+    const atDefault = bookingCutoffVerdict({
+      now: at(10, 30),
+      pickup,
+      isReturn: false, isInterplant: false,
+      holidays: NO_HOLIDAYS,
+    });
+    expect(atDefault.allowed).toBe(false);
+    if (!atDefault.allowed) expect(atDefault.session).toBe("morning");
+
+    // Moving the split to 10:00 makes 11:00 an AFTERNOON pickup instead, so
+    // the AFTERNOON cut-off (15:00) governs it — 10:30 is well before that,
+    // and the SAME instant that was refused above is now allowed.
+    const withSplitMoved = bookingCutoffVerdict({
+      now: at(10, 30),
+      pickup,
+      isReturn: false, isInterplant: false,
+      holidays: NO_HOLIDAYS,
+      sessionSplitMin: 10 * 60,
+    });
+    expect(withSplitMoved).toEqual({ allowed: true });
+  });
+
   it("omitting the override params behaves exactly as before — the default is unchanged", () => {
     const withDefaults = bookingCutoffVerdict({ now: at(15, 0), pickup: at(15, 30), isReturn: false, isInterplant: false, holidays: NO_HOLIDAYS });
     const withExplicitDefaults = bookingCutoffVerdict({
@@ -211,6 +246,7 @@ describe("B7 — an admin-editable override changes which cut-off applies", () =
       holidays: NO_HOLIDAYS,
       morningCutoffMin: MORNING_CUTOFF_MIN,
       afternoonCutoffMin: AFTERNOON_CUTOFF_MIN,
+      sessionSplitMin: SESSION_SPLIT_MIN,
     });
     expect(withExplicitDefaults).toEqual(withDefaults);
   });

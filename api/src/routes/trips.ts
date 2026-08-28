@@ -360,7 +360,7 @@ router.post(
       // as exempt rather than only the two he named.
       let cutoffOverride: string | null = null;
       {
-        const { morningCutoffMin, afternoonCutoffMin } = await effectiveBookingCutoffs();
+        const { morningCutoffMin, afternoonCutoffMin, sessionSplitMin } = await effectiveBookingCutoffs();
         const verdict = bookingCutoffVerdict({
           now: new Date(),
           pickup: pickup_datetime,
@@ -369,6 +369,7 @@ router.post(
           holidays: await loadHolidaySet(),
           morningCutoffMin,
           afternoonCutoffMin,
+          sessionSplitMin,
         });
         if (!verdict.allowed) {
           if (req.user!.role !== "admin") {
@@ -812,7 +813,7 @@ router.patch(
           where: { id: route_type_id },
           select: { name: true },
         });
-        const { morningCutoffMin, afternoonCutoffMin } = await effectiveBookingCutoffs();
+        const { morningCutoffMin, afternoonCutoffMin, sessionSplitMin } = await effectiveBookingCutoffs();
         const verdict = bookingCutoffVerdict({
           now: new Date(),
           pickup: pickup_datetime,
@@ -821,6 +822,7 @@ router.patch(
           holidays: await loadHolidaySet(),
           morningCutoffMin,
           afternoonCutoffMin,
+          sessionSplitMin,
         });
         if (!verdict.allowed) {
           throw new ApiError(400, "PICKUP_AFTER_CUTOFF", cutoffMessage(verdict));

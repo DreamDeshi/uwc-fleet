@@ -61,7 +61,7 @@ function PendingRatesNote({ pending }: { pending: Truck["pending_rates"] }) {
   );
 }
 
-type Tab = "trucks" | "destinations" | "cutoffs" | "formula";
+type Tab = "trucks" | "destinations" | "cutoffs" | "window" | "formula";
 
 export function IncentivesScreen() {
   const { t } = useTranslation();
@@ -73,6 +73,7 @@ export function IncentivesScreen() {
     ["trucks", t("admin.incentives.tabTrucks")],
     ["destinations", t("admin.incentives.tabDestinations")],
     ["cutoffs", t("admin.incentives.tabCutoffs")],
+    ["window", t("admin.incentives.tabWindow")],
     ["formula", t("admin.incentives.tabFormula")],
   ];
 
@@ -109,6 +110,7 @@ export function IncentivesScreen() {
       {tab === "trucks" && <TruckRatesTab />}
       {tab === "destinations" && <DestinationPointsTab />}
       {tab === "cutoffs" && <BookingCutoffsTab />}
+      {tab === "window" && <DispatchWindowTab />}
       {tab === "formula" && <FormulaTab />}
     </ScrollView>
   );
@@ -563,6 +565,10 @@ const CUTOFF_COPY: Record<string, { labelKey: string; descKey: string }> = {
     labelKey: "admin.settings.cutoffAfternoonLabel",
     descKey: "admin.settings.cutoffAfternoonDesc",
   },
+  "booking.session_split_min": {
+    labelKey: "admin.settings.cutoffSessionSplitLabel",
+    descKey: "admin.settings.cutoffSessionSplitDesc",
+  },
 };
 
 function formatMinutesHm(min: number): string {
@@ -721,6 +727,178 @@ function EditCutoffModal({ setting, onClose }: { setting: EffectiveSettingDto; o
         onChange={setText}
         placeholder={t("admin.settings.settingTimePlaceholder")}
       />
+      <Button variant="ghost" size="sm" onPress={resetToDefault} disabled={reset.isPending} style={{ alignSelf: "flex-start", marginBottom: 8 }}>
+        {t("admin.settings.settingResetToDefault")}
+      </Button>
+      <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+        <Button variant="ghost" onPress={onClose} style={{ flex: 1 }}>
+          {t("common.cancel")}
+        </Button>
+        <Button variant="primary" disabled={update.isPending} onPress={save} style={{ flex: 1 }}>
+          {update.isPending ? t("admin.trucks.saving") : t("common.save")}
+        </Button>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Dispatch window defaults (Phase 2, 28 Aug 2026) — the fleet's FALLBACK
+// pickup window, consulted only when a truck carries no operating hours of
+// its own. Every truck today HAS its own hours (Trucks screen), and those
+// always win over this — see settingsRegistry.ts's own comment on why this
+// tab's reach is narrow on purpose, not an oversight.
+const WINDOW_COPY: Record<string, { labelKey: string; descKey: string }> = {
+  "dispatch.window_start": {
+    labelKey: "admin.settings.windowStartLabel",
+    descKey: "admin.settings.windowStartDesc",
+  },
+  "dispatch.window_end": {
+    labelKey: "admin.settings.windowEndLabel",
+    descKey: "admin.settings.windowEndDesc",
+  },
+};
+
+// Matches the server's TIME_RE exactly (settingsRegistry.ts) — a value this
+// accepts is never rejected by the PATCH.
+function isValidHm(text: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(text.trim());
+}
+
+function DispatchWindowTab() {
+  const { t } = useTranslation();
+  const narrow = useLayoutMode() === "narrow";
+  const { data, isLoading, isError, refetch } = useSettingsList();
+  const [editing, setEditing] = useState<EffectiveSettingDto | null>(null);
+
+  const rows = (data ?? []).filter((s) => s.key.startsWith("dispatch."));
+
+  if (isLoading) return <Loading />;
+  if (isError) return <ErrorState message={t("admin.settings.settingSaveFailed")} onRetry={() => refetch()} />;
+
+  if (narrow) {
+    return (
+      <Card pad={0}>
+        <View style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+          <SectionTitle title={t("admin.incentives.windowTitle")} subtitle={t("admin.incentives.windowSub")} />
+        </View>
+        <View style={{ padding: 12, gap: 10 }}>
+          {rows.map((s) => {
+            const copy = WINDOW_COPY[s.key];
+            return (
+              <View key={s.key} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 12, gap: 8 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={{ fontSize: font.md, fontWeight: "600", color: colors.text }}>
+                      {copy ? t(copy.labelKey) : s.label}
+                    </Text>
+                    <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 1 }}>
+                      {copy ? t(copy.descKey) : s.description}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: font.lg, fontWeight: "800", color: colors.text }}>{String(s.value)}</Text>
+                  <Button variant="ghost" size="sm" onPress={() => setEditing(s)}>
+                    {t("admin.consignees.edit")}
+                  </Button>
+                </View>
+                {s.source === "db" ? (
+                  <Pill bg={colors.yellowTint} fg={colors.amber}>{t("admin.settings.settingCustomBadge")}</Pill>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
+        {editing && <EditWindowModal setting={editing} onClose={() => setEditing(null)} />}
+      </Card>
+    );
+  }
+
+  return (
+    <Card pad={0}>
+      <View style={{ padding: 18, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+        <SectionTitle title={t("admin.incentives.windowTitle")} subtitle={t("admin.incentives.windowSub")} />
+      </View>
+      <TableHeader style={{ borderRadius: 0 }}>
+        <TableCell flex={2.2} header>{t("admin.incentives.colSetting")}</TableCell>
+        <TableCell flex={1} header>{t("admin.incentives.colTime")}</TableCell>
+        <TableCell flex={1} header>{""}</TableCell>
+        <TableCell flex={0.7} header>{""}</TableCell>
+      </TableHeader>
+      {rows.map((s) => {
+        const copy = WINDOW_COPY[s.key];
+        return (
+          <TableRow key={s.key}>
+            <TableCell flex={2.2}>
+              <View>
+                <Text style={{ fontSize: font.md, fontWeight: "600", color: colors.text }}>
+                  {copy ? t(copy.labelKey) : s.label}
+                </Text>
+                <Text style={{ fontSize: font.xs, color: colors.textMuted, marginTop: 2 }}>
+                  {copy ? t(copy.descKey) : s.description}
+                </Text>
+              </View>
+            </TableCell>
+            <TableCell flex={1}>
+              <Text style={{ fontWeight: "700", fontSize: font.md, color: colors.text }}>{String(s.value)}</Text>
+            </TableCell>
+            <TableCell flex={1}>
+              {s.source === "db" ? (
+                <Pill bg={colors.yellowTint} fg={colors.amber}>{t("admin.settings.settingCustomBadge")}</Pill>
+              ) : null}
+            </TableCell>
+            <TableCell flex={0.7}>
+              <Button variant="ghost" size="sm" onPress={() => setEditing(s)}>
+                {t("admin.consignees.edit")}
+              </Button>
+            </TableCell>
+          </TableRow>
+        );
+      })}
+      {editing && <EditWindowModal setting={editing} onClose={() => setEditing(null)} />}
+    </Card>
+  );
+}
+
+function EditWindowModal({ setting, onClose }: { setting: EffectiveSettingDto; onClose: () => void }) {
+  const { t } = useTranslation();
+  const [text, setText] = useState(String(setting.value));
+  const [error, setError] = useState<string | null>(null);
+  const update = useUpdateSetting();
+  const reset = useResetSetting();
+  const copy = WINDOW_COPY[setting.key];
+  const label = copy ? t(copy.labelKey) : setting.label;
+
+  async function save() {
+    setError(null);
+    if (!isValidHm(text)) {
+      setError(t("admin.settings.settingTimeInvalid"));
+      return;
+    }
+    try {
+      await update.mutateAsync({ key: setting.key, value: text.trim() });
+      onClose();
+    } catch (e) {
+      setError(apiErrorMessage(e, t("admin.settings.settingSaveFailed")));
+    }
+  }
+
+  async function resetToDefault() {
+    setError(null);
+    try {
+      await reset.mutateAsync(setting.key);
+      onClose();
+    } catch (e) {
+      setError(apiErrorMessage(e, t("admin.settings.settingResetFailed")));
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={t("admin.settings.settingEditTitle", { label })} width={380}>
+      {error && (
+        <View style={{ backgroundColor: colors.redTint, borderRadius: radius.md, paddingVertical: 9, paddingHorizontal: 12, marginBottom: 12 }}>
+          <Text style={{ color: colors.red, fontSize: font.sm }}>{error}</Text>
+        </View>
+      )}
+      <Input label={label} value={text} onChange={setText} placeholder={t("admin.settings.settingTimePlaceholder")} />
       <Button variant="ghost" size="sm" onPress={resetToDefault} disabled={reset.isPending} style={{ alignSelf: "flex-start", marginBottom: 8 }}>
         {t("admin.settings.settingResetToDefault")}
       </Button>
