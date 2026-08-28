@@ -104,12 +104,12 @@ function withCanonicalCargoSize<
 }
 import { recordTripEvent } from "../lib/tripHistory";
 import { buildTripTimeline } from "../lib/tripTimeline";
-import {
-  findSchedulingConflicts,
-  CONFLICT_STATUSES,
-  ASSIGNMENT_CONFLICT_BUFFER_MS,
-} from "../services/schedulingConflict";
+import { findSchedulingConflicts, CONFLICT_STATUSES } from "../services/schedulingConflict";
 import { estimateOperatingWindow, formatMinutesToHm } from "../services/operatingWindow";
+import {
+  effectiveOperatingEstimateDefaults,
+  effectiveAssignmentConflictBufferMs,
+} from "../lib/dispatchTuningSettings";
 
 // ──────────────────────────────────────────────────────────────────────────
 // This file is the trip LIFECYCLE end to end — if you read one route file,
@@ -1291,14 +1291,18 @@ async function assignTripInTx(
             // clashing trips so the admin can decide; with force → record the
             // override and let the explicitly-overridden trips through.
             const pickup = trip.pickup_datetime;
+            // Admin-settings Phase 3 — resolved ONCE and used for both the
+            // fetch window and the conflict check itself, so the two never
+            // disagree about which candidates are "within the buffer".
+            const conflictBufferMs = await effectiveAssignmentConflictBufferMs();
             const conflictCandidates = await tx.trip.findMany({
               where: {
                 id: { not: id },
                 status: { in: [...CONFLICT_STATUSES] },
                 OR: [{ driver_id }, { truck_plate }],
                 pickup_datetime: {
-                  gte: new Date(pickup.getTime() - ASSIGNMENT_CONFLICT_BUFFER_MS),
-                  lte: new Date(pickup.getTime() + ASSIGNMENT_CONFLICT_BUFFER_MS),
+                  gte: new Date(pickup.getTime() - conflictBufferMs),
+                  lte: new Date(pickup.getTime() + conflictBufferMs),
                 },
               },
               select: {
@@ -1316,6 +1320,7 @@ async function assignTripInTx(
               truckPlate: truck_plate,
               pickupDateTime: pickup,
               candidates: conflictCandidates,
+              bufferMs: conflictBufferMs,
             });
             if (conflicts.length > 0 && !force) {
               throw new ApiError(
@@ -1387,12 +1392,18 @@ async function assignTripInTx(
             const windowPoints = new Map(
               windowRates.map((r) => [r.zone_code, effectiveZonePoints(r, new Date())])
             );
+            // Admin-settings Phase 3 — the estimate's own tuning knobs.
+            const opDefaults = await effectiveOperatingEstimateDefaults();
             const windowEst = estimateOperatingWindow({
               pickupDateTime: trip.pickup_datetime,
               stopCount: windowStops.length,
               stopPoints: windowZones.map((z) => windowPoints.get(z) ?? null),
               windowStart: truck.operating_hours_start,
               windowEnd: truck.operating_hours_end,
+              loadMin: opDefaults.loadMin,
+              unloadMinPerStop: opDefaults.unloadMinPerStop,
+              driveMinPerLeg: opDefaults.driveMinPerLeg,
+              drivePointsBaseline: opDefaults.drivePointsBaseline,
             });
             if (windowEst.exceedsWindow && !force) {
               throw new ApiError(

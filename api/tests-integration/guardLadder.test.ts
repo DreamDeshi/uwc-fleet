@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { prisma, resetDb, loginAs, ADMIN, REQUESTOR } from "./helpers/harness";
+import { prisma, resetDb, loginAs, ADMIN, REQUESTOR, api, auth } from "./helpers/harness";
 import {
   firstRouteTypeId,
   bookTrip,
@@ -9,6 +9,8 @@ import {
   pickupDateKey,
   pallets,
   DRIVERS,
+  ensureConsigneeInZone,
+  futurePickupIso,
 } from "./helpers/flow";
 
 /**
@@ -105,6 +107,53 @@ describe("GUARD-LADDER integration — manual approve (assignTripInTx)", () => {
       where: { action: "assignment_conflict_override", record_id: { startsWith: t2.id } },
     });
     expect(audit).not.toBeNull();
+  });
+
+  it("PATCHing dispatch.assignment_conflict_buffer_min changes whether two pickups conflict", async () => {
+    // Phase 3 (28 Aug 2026) — the buffer is now admin-editable. This proves
+    // the ROUTE actually reads the effective setting, not just that
+    // findSchedulingConflicts accepts a bufferMs parameter in isolation.
+    const { requestor, admin, rt, plxDriver } = await ids();
+    const consignee = await ensureConsigneeInZone("P1");
+    const basePickup = new Date(futurePickupIso());
+    // 90 minutes later: inside the DEFAULT 120-min buffer, outside a 30-min one.
+    const laterPickup = new Date(basePickup.getTime() + 90 * 60 * 1000);
+
+    async function bookAt(pickup: Date) {
+      const res = await api()
+        .post("/api/v1/trips")
+        .set(auth(requestor))
+        .send({
+          route_type_id: rt,
+          pickup_datetime: pickup.toISOString(),
+          stops: [{ consignee_id: consignee.id }],
+          cargo_details: [{ pallet_type: "4×4", quantity: 1 }],
+        });
+      if (res.status !== 201) throw new Error(`book failed: ${res.status} ${res.text}`);
+      return res.body as { id: string };
+    }
+
+    const t1 = await bookAt(basePickup);
+    const t2 = await bookAt(laterPickup);
+    await approveTrip(admin, t1.id, plxDriver, PND.plate);
+
+    // At the DEFAULT buffer (120 min), a pickup 90 minutes later for the SAME
+    // driver still conflicts.
+    const blockedAtDefault = await approveRaw(admin, t2.id, plxDriver, PND.plate, false);
+    expect(blockedAtDefault.status).toBe(409);
+    expect(blockedAtDefault.body.error.code).toBe("SCHEDULING_CONFLICT");
+
+    // An admin shrinks the buffer to 30 minutes.
+    const patch = await api()
+      .patch("/api/v1/settings/dispatch.assignment_conflict_buffer_min")
+      .set(auth(admin))
+      .send({ value: 30 });
+    expect(patch.status).toBe(200);
+
+    // The SAME two pickups, 90 minutes apart, no longer conflict under the
+    // shrunk buffer.
+    const allowedAfterShrink = await approveRaw(admin, t2.id, plxDriver, PND.plate, false);
+    expect(allowedAfterShrink.status).toBe(200);
   });
 
   it("DRIVER_ON_LEAVE is NOT force-overridable", async () => {
