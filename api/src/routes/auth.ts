@@ -16,10 +16,10 @@ import {
   isLocked,
   isLockoutEnabled,
   lockRemainingMs,
-  lockoutConfig,
   lockoutMessage,
   needsClearing,
 } from "../lib/loginLockout";
+import { effectiveLockoutConfig } from "../lib/securitySettings";
 import {
   signAccessToken,
   signRefreshToken,
@@ -124,7 +124,7 @@ router.post("/login", sensitiveRateLimiter, validateBody(loginSchema), async (re
       throw new ApiError(401, "INVALID_CREDENTIALS", "Phone number or password is incorrect.");
     }
 
-    const lockout = lockoutConfig();
+    const lockout = await effectiveLockoutConfig();
     const lockoutOn = isLockoutEnabled(lockout);
     const now = new Date();
 

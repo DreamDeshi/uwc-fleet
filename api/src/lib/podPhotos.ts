@@ -16,7 +16,15 @@ import { uploadStubEnabled } from "./uploadStub";
 // CLOUDINARY_POD_TOKEN_KEY is set we mint time-limited tokens; otherwise
 // signature-only URLs (unguessable on every plan, no expiry). The core fix —
 // no longer public/enumerable — holds either way.
-const POD_URL_TTL_SECONDS = Number(process.env.CLOUDINARY_POD_URL_TTL_SECONDS) || 3600;
+//
+// EXPORTED for settingsRegistry.ts's default (Phase 5) — registered there for
+// visibility/audit only, NOT wired live. This constant is read once here, not
+// per-request, and this whole module is a synchronous hot path (called deep
+// inside every trip response's JSON serialization); consulting a DB setting
+// here would mean an async read on every trip response for a value that has
+// zero effect unless CLOUDINARY_POD_TOKEN_KEY is also configured, which it
+// is not in this project. See the registry entry's own description.
+export const POD_URL_TTL_SECONDS = Number(process.env.CLOUDINARY_POD_URL_TTL_SECONDS) || 3600;
 const POD_TOKEN_KEY = process.env.CLOUDINARY_POD_TOKEN_KEY?.trim() || undefined;
 
 /**
