@@ -46,6 +46,42 @@ describe("settingsRegistry — the dispatch-window entries (Phase 2)", () => {
   });
 });
 
+describe("settingsRegistry — the dispatch-estimate entries (Phase 3)", () => {
+  it("all four estimate knobs are registered with operatingWindow.ts's own defaults", () => {
+    const load = getSettingDef("dispatch.op_load_min");
+    const unload = getSettingDef("dispatch.op_unload_min_per_stop");
+    const drive = getSettingDef("dispatch.op_drive_min_per_leg");
+    const baseline = getSettingDef("dispatch.op_drive_points_baseline");
+    expect(load?.default).toBe(30);
+    expect(unload?.default).toBe(20);
+    expect(drive?.default).toBe(45);
+    expect(baseline?.default).toBe(3);
+    expect(load?.type).toBe("minutes");
+    expect(unload?.type).toBe("minutes");
+    expect(drive?.type).toBe("minutes");
+    expect(baseline?.type).toBe("integer");
+    // All four were already env-tunable "invented constants" — an admin
+    // setting sits above the env var, never replaces it.
+    expect(load?.envVar).toBe("OP_LOAD_MIN");
+    expect(unload?.envVar).toBe("OP_UNLOAD_MIN_PER_STOP");
+    expect(drive?.envVar).toBe("OP_DRIVE_MIN_PER_LEG");
+    expect(baseline?.envVar).toBe("OP_DRIVE_POINTS_BASELINE");
+  });
+
+  it("the drive-points baseline cannot be set to zero — the estimate divides by it", () => {
+    const baseline = getSettingDef("dispatch.op_drive_points_baseline")!;
+    expect(zodSchemaFor(baseline).safeParse(0).success).toBe(false);
+    expect(zodSchemaFor(baseline).safeParse(1).success).toBe(true);
+  });
+
+  it("the scheduling-conflict buffer is registered with schedulingConflict.ts's own default", () => {
+    const buffer = getSettingDef("dispatch.assignment_conflict_buffer_min");
+    expect(buffer?.default).toBe(120);
+    expect(buffer?.type).toBe("minutes");
+    expect(buffer?.envVar).toBe("ASSIGNMENT_CONFLICT_BUFFER_MIN");
+  });
+});
+
 describe("zodSchemaFor — a 'time' setting validates HH:MM strictly", () => {
   const timeDef = SETTINGS_REGISTRY.find((d) => d.key === "dispatch.window_start")!;
 

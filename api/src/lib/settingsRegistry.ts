@@ -1,7 +1,15 @@
 import { z } from "zod";
 import { prisma } from "./prisma";
 import { MORNING_CUTOFF_MIN, AFTERNOON_CUTOFF_MIN, SESSION_SPLIT_MIN } from "./bookingCutoff";
-import { DEFAULT_WINDOW_START, DEFAULT_WINDOW_END } from "../services/operatingWindow";
+import {
+  DEFAULT_WINDOW_START,
+  DEFAULT_WINDOW_END,
+  OP_LOAD_MIN,
+  OP_UNLOAD_MIN_PER_STOP,
+  OP_DRIVE_MIN_PER_LEG,
+  OP_DRIVE_POINTS_BASELINE,
+} from "../services/operatingWindow";
+import { ASSIGNMENT_CONFLICT_BUFFER_MIN } from "../services/schedulingConflict";
 
 /**
  * The generic admin-settings registry.
@@ -122,6 +130,78 @@ export const SETTINGS_REGISTRY: SettingDef[] = [
       "Fallback pickup-window end (MYT) used only when a truck has no operating hours of its own. Every truck today has its own hours, set on the Trucks screen, and those always take priority over this.",
     type: "time",
     default: DEFAULT_WINDOW_END,
+  },
+  /**
+   * Phase 3 — the operating-window ESTIMATE's own tuning knobs
+   * (services/operatingWindow.ts). Unlike dispatch.window_start/end above,
+   * these are consulted on EVERY assignment (manual approve in trips.ts and
+   * auto-dispatch in dispatchEngine.ts) — no narrow-reach caveat needed.
+   * Already env-tunable "invented constants" (OPEN_ITEMS N11); an admin
+   * setting sits above the env var in the resolution order, same as every
+   * other entry here.
+   */
+  {
+    key: "dispatch.op_load_min",
+    category: "Dispatch estimate",
+    label: "Load time",
+    description: "Minutes assumed to load at the plant before departure, used to estimate when a run finishes.",
+    type: "minutes",
+    min: 0,
+    max: 1439,
+    envVar: "OP_LOAD_MIN",
+    default: OP_LOAD_MIN,
+  },
+  {
+    key: "dispatch.op_unload_min_per_stop",
+    category: "Dispatch estimate",
+    label: "Unload time per stop",
+    description: "Minutes assumed to unload at EACH delivery stop, used to estimate when a run finishes.",
+    type: "minutes",
+    min: 0,
+    max: 1439,
+    envVar: "OP_UNLOAD_MIN_PER_STOP",
+    default: OP_UNLOAD_MIN_PER_STOP,
+  },
+  {
+    key: "dispatch.op_drive_min_per_leg",
+    category: "Dispatch estimate",
+    label: "Drive time per leg (baseline)",
+    description:
+      "Minutes assumed to drive one leg at the baseline zone points below. A leg to a farther zone scales up from this; a nearer one scales down.",
+    type: "minutes",
+    min: 0,
+    max: 1439,
+    envVar: "OP_DRIVE_MIN_PER_LEG",
+    default: OP_DRIVE_MIN_PER_LEG,
+  },
+  {
+    key: "dispatch.op_drive_points_baseline",
+    category: "Dispatch estimate",
+    label: "Drive time baseline (zone points)",
+    description:
+      "The zone-points value that corresponds to exactly one baseline leg of driving. Must stay above zero — the estimate divides by it.",
+    type: "integer",
+    min: 1,
+    max: 50,
+    envVar: "OP_DRIVE_POINTS_BASELINE",
+    default: OP_DRIVE_POINTS_BASELINE,
+  },
+  /**
+   * Phase 3 — the scheduling-conflict buffer (services/schedulingConflict.ts).
+   * Consulted on every manual approve (trips.ts) and every auto-dispatch
+   * candidate filter (dispatchEngine.ts) — always reachable, no caveat.
+   */
+  {
+    key: "dispatch.assignment_conflict_buffer_min",
+    category: "Dispatch estimate",
+    label: "Scheduling-conflict buffer",
+    description:
+      "Minutes either side of a pickup within which the SAME driver or truck already committed elsewhere counts as a scheduling conflict.",
+    type: "minutes",
+    min: 0,
+    max: 1439,
+    envVar: "ASSIGNMENT_CONFLICT_BUFFER_MIN",
+    default: ASSIGNMENT_CONFLICT_BUFFER_MIN,
   },
 ];
 

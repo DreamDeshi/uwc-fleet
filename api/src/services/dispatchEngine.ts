@@ -32,7 +32,7 @@ import { mytDateKey } from "./incentiveEngine";
 import { mytDayBoundsForKey } from "../lib/myt";
 import { roadworthyWhere } from "./truckEligibility";
 import { recordTripEvent } from "../lib/tripHistory";
-import { CONFLICT_STATUSES, ASSIGNMENT_CONFLICT_BUFFER_MS } from "./schedulingConflict";
+import { CONFLICT_STATUSES } from "./schedulingConflict";
 import { INTERPLANT_PLATES, isInterplantPlate, isInterplantRouteType } from "../lib/uwcSpec";
 import {
   estimateOperatingWindow,
@@ -40,6 +40,10 @@ import {
   type OperatingWindowEstimate,
 } from "./operatingWindow";
 import { effectiveDispatchWindowDefaults, resolveTruckWindow } from "../lib/dispatchWindowSettings";
+import {
+  effectiveOperatingEstimateDefaults,
+  effectiveAssignmentConflictBufferMs,
+} from "../lib/dispatchTuningSettings";
 
 // ── Pure engine types ─────────────────────────────────────────────────
 
@@ -499,6 +503,9 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
         // excludes drivers on an assigned/in_progress trip); this additionally
         // covers the pickup-time buffer and the truck dimension.
         const pickupMs = trip.pickup_datetime.getTime();
+        // Admin-settings Phase 3 — resolved ONCE and used for both the fetch
+        // window and the filter below, so the two never disagree.
+        const conflictBufferMs = await effectiveAssignmentConflictBufferMs();
         const conflictRows = await tx.trip.findMany({
           where: {
             id: { not: tripId },
@@ -508,8 +515,8 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
               { truck_plate: { in: candidates.map((c) => c.plate) } },
             ],
             pickup_datetime: {
-              gte: new Date(pickupMs - ASSIGNMENT_CONFLICT_BUFFER_MS),
-              lte: new Date(pickupMs + ASSIGNMENT_CONFLICT_BUFFER_MS),
+              gte: new Date(pickupMs - conflictBufferMs),
+              lte: new Date(pickupMs + conflictBufferMs),
             },
           },
           select: { driver_id: true, truck_plate: true, pickup_datetime: true },
@@ -517,7 +524,7 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
         const conflictedDrivers = new Set<string>();
         const conflictedPlates = new Set<string>();
         for (const x of conflictRows) {
-          if (Math.abs(x.pickup_datetime.getTime() - pickupMs) >= ASSIGNMENT_CONFLICT_BUFFER_MS) continue;
+          if (Math.abs(x.pickup_datetime.getTime() - pickupMs) >= conflictBufferMs) continue;
           if (x.driver_id) conflictedDrivers.add(x.driver_id);
           if (x.truck_plate) conflictedPlates.add(x.truck_plate);
         }
@@ -554,12 +561,18 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
         // setting is actually reachable; see dispatchWindowSettings.ts.
         const dispatchWindowDefaults = await effectiveDispatchWindowDefaults();
         const resolvedWindow = resolveTruckWindow(selTruck, dispatchWindowDefaults);
+        // Admin-settings Phase 3 — the estimate's own tuning knobs.
+        const opDefaults = await effectiveOperatingEstimateDefaults();
         const windowEst = estimateOperatingWindow({
           pickupDateTime: trip.pickup_datetime,
           stopCount: trip.stops.length,
           stopPoints: stopZones.map((z) => windowPoints.get(z) ?? null),
           windowStart: resolvedWindow.windowStart,
           windowEnd: resolvedWindow.windowEnd,
+          loadMin: opDefaults.loadMin,
+          unloadMinPerStop: opDefaults.unloadMinPerStop,
+          driveMinPerLeg: opDefaults.driveMinPerLeg,
+          drivePointsBaseline: opDefaults.drivePointsBaseline,
         });
         if (windowEst.exceedsWindow) {
           return { sel: null as TruckSelection | null, raced: false, window: windowEst };
