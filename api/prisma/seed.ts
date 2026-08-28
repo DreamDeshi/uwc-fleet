@@ -398,6 +398,44 @@ async function seedConsignees() {
   console.log(`Seeded ${inserted} consignees from Excel (skipped ${skipped} rows with no company name or zone).`);
 }
 
+// Item 3 multi-pickup. Mr. Teh, R1 2026-07-24: "u just name it UWC Plant 1,
+// UWC Plant 2, etc … all postal code are same 14110 … You can use it all to
+// same P1 to P9 temporary, but can set admin to amend the address?" — nine
+// consignee rows, all zone P2 (Batu Kawan), all seeded with P1's own address
+// as a TEMPORARY placeholder until an admin corrects any of them.
+//
+// Idempotent by company_name (not a count guard like seedConsignees): this
+// must also backfill onto an already-seeded database, not just a fresh one —
+// unlike the Excel import, which only ever ran once.
+const UWC_PLANT_ADDRESS = {
+  address_1: "PMT 744-745, Jalan Cassia Selatan 5/1",
+  address_2: "Lebuhraya Bandar Cassia, Taman Perindustrian Batu Kawan",
+  area: "Batu Kawan",
+  state: "Pulau Pinang",
+  postal_code: "14110",
+};
+
+async function seedUwcPlants() {
+  let created = 0;
+  for (let n = 1; n <= 9; n++) {
+    const company_name = `UWC Plant ${n}`;
+    const existing = await prisma.consignee.findFirst({ where: { company_name } });
+    if (existing) {
+      // Backfill the flag onto a row a prior partial run may have created
+      // without it — never touch an address an admin has already amended.
+      if (!existing.is_uwc_plant) {
+        await prisma.consignee.update({ where: { id: existing.id }, data: { is_uwc_plant: true } });
+      }
+      continue;
+    }
+    await prisma.consignee.create({
+      data: { company_name, zone_code: "P2", is_uwc_plant: true, ...UWC_PLANT_ADDRESS },
+    });
+    created++;
+  }
+  console.log(`Seeded ${created} UWC Plant consignees (9 total, is_uwc_plant=true).`);
+}
+
 async function main() {
   // Guard: seeding deletes nothing, but seedTrucks() re-syncs rates/deductions/
   // expiries from the spec IMMEDIATELY — on prod that would bypass the client's
@@ -429,6 +467,7 @@ async function main() {
   } else {
     console.log(`Consignees already seeded (${existingConsignees} rows) — skipping Excel import.`);
   }
+  await seedUwcPlants();
 }
 
 main()

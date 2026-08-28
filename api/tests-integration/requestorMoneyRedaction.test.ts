@@ -201,10 +201,16 @@ describe("requestors never receive driver pay", () => {
         "id", "company_name", "vendor_code", "contact_person", "phone",
         "address_1", "address_2", "area", "state", "postal_code", "zone_code",
         "is_active", "created_by", "latitude", "longitude", "geocode_match_type",
+        // Item 3 multi-pickup: which consignees are a UWC plant (P1-P9) — a
+        // booking-eligibility flag, not money or rate data.
+        "is_uwc_plant",
       ]),
       CargoDetail: new Set([
         "id", "trip_id", "pallet_type", "quantity", "cartons",
         "width_ft", "length_ft", "custom_size", "estimated_pallets", "remark",
+        // Item 3 multi-pickup: which plant this cargo line was picked up from
+        // — exactly what the requestor themselves selected when booking.
+        "pickup_consignee_id",
       ]),
       TripDocument: new Set([
         "id", "trip_id", "type", "file_url", "public_id", "resource_type",

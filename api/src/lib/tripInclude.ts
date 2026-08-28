@@ -34,6 +34,10 @@ export const TRIP_INCLUDE = {
     },
     orderBy: { sequence: "asc" as const },
   },
-  cargo_details: true,
+  // Item 3 multi-pickup: minimal select on the nested plant (name only, same
+  // as the requestor's own destination consignee names elsewhere) so every
+  // screen that already renders cargo_details can show which plant a line
+  // was picked up from without a second lookup.
+  cargo_details: { include: { pickup_consignee: { select: { id: true, company_name: true } } } },
   documents: { orderBy: { uploaded_at: "desc" as const } },
 };

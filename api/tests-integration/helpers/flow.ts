@@ -24,6 +24,24 @@ export async function firstRouteTypeId(token: string): Promise<string> {
   return res.body[0].id;
 }
 
+/** The seeded "Inter-Plant Delivery" route type id — Item 3 multi-pickup. */
+export async function interplantRouteTypeId(token: string): Promise<string> {
+  const res = await api().get("/api/v1/route-types").set(auth(token));
+  if (res.status !== 200) throw new Error(`route-types failed: ${res.status} ${res.text}`);
+  const rt = (res.body as { id: string; name: string }[]).find((r) =>
+    r.name.replace(/[^a-z0-9]/gi, "").toLowerCase().startsWith("interplantdelivery")
+  );
+  if (!rt) throw new Error(`"Inter-Plant Delivery" route type not found among: ${JSON.stringify(res.body)}`);
+  return rt.id;
+}
+
+/** The nine seeded UWC Plant consignee ids, via prisma/seed.ts's seedUwcPlants(). */
+export async function uwcPlantIds(): Promise<string[]> {
+  const plants = await prisma.consignee.findMany({ where: { is_uwc_plant: true }, select: { id: true } });
+  if (plants.length < 2) throw new Error(`expected at least 2 seeded UWC Plant rows, found ${plants.length}`);
+  return plants.map((p) => p.id);
+}
+
 /**
  * A consignee in `zone`, created if the zone has none yet (via Prisma — test
  * setup, not the money/dispatch path). The synthetic seed covers the Penang/

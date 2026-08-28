@@ -219,6 +219,24 @@ router.get("/", async (req, res, next) => {
   }
 });
 
+// ── GET /consignees/plants — the nine UWC Plant 1-9 rows (Item 3 multi-pickup) ──
+// A DEDICATED route rather than a param on the search above: the plant list is
+// fixed at nine rows, needed as a closed picker (not a free-text search) for
+// both an interplant booking's pickup AND its destination, and this way it
+// never interacts with the search route's ranking/normalisation logic at all.
+router.get("/plants", async (_req, res, next) => {
+  try {
+    const plants = await prisma.consignee.findMany({
+      where: { is_uwc_plant: true, is_active: true },
+      select: { id: true, company_name: true, zone_code: true },
+      orderBy: { company_name: "asc" },
+    });
+    res.json(plants);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // SQL prefilter + similarity pass for "a similar active consignee already
 // exists" — shared by self-add (POST) and the admin rename path (PATCH).
 async function similarActiveConsignees(

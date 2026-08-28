@@ -97,6 +97,11 @@ export interface CargoDetail {
   length_ft?: number | null;
   estimated_pallets?: number | null;
   remark?: string | null;
+  // Item 3 multi-pickup (Inter-Plant only): which UWC plant this cargo line
+  // was picked up from. Absent/null = today's single hardcoded origin.
+  pickup_consignee_id?: string | null;
+  // Resolved name (minimal select, id + company_name only) — display only.
+  pickup_consignee?: { id: string; company_name: string } | null;
 }
 
 export interface TripStop {

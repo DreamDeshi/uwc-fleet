@@ -163,6 +163,13 @@ export interface OperatingWindowInput {
   windowStart?: string | null; // "HH:MM" MYT; defaults to 07:00
   windowEnd?: string | null; // "HH:MM" MYT; defaults to 18:00
   loadMin?: number;
+  /**
+   * Item 3 multi-pickup: number of DISTINCT UWC plants this run loads at.
+   * loadMin is "load at the plant" ONCE; two pickups means two loads, so the
+   * estimate must count loadMin per pickup, not per trip. Defaults to 1 —
+   * every trip that doesn't use multi-pickup is unaffected.
+   */
+  pickupCount?: number;
   unloadMinPerStop?: number;
   driveMinPerLeg?: number;
   drivePointsBaseline?: number;
@@ -192,6 +199,7 @@ export interface OperatingWindowEstimate {
 export function estimateOperatingWindow(input: OperatingWindowInput): OperatingWindowEstimate {
   const stops = Math.max(0, Math.floor(input.stopCount));
   const loadMin = input.loadMin ?? OP_LOAD_MIN;
+  const pickupCount = Math.max(1, Math.floor(input.pickupCount ?? 1));
   const unloadMinPerStop = input.unloadMinPerStop ?? OP_UNLOAD_MIN_PER_STOP;
   const driveMinPerLeg = input.driveMinPerLeg ?? OP_DRIVE_MIN_PER_LEG;
   const drivePointsBaseline = input.drivePointsBaseline ?? OP_DRIVE_POINTS_BASELINE;
@@ -214,7 +222,7 @@ export function estimateOperatingWindow(input: OperatingWindowInput): OperatingW
       ? input.stopPoints.reduce<number>((sum, p) => sum + legDriveMin(p), 0)
       : stops * driveMinPerLeg;
 
-  const addedMinutes = loadMin + driveMinutes + stops * unloadMinPerStop;
+  const addedMinutes = loadMin * pickupCount + driveMinutes + stops * unloadMinPerStop;
   const estimatedCompletion = new Date(input.pickupDateTime.getTime() + addedMinutes * 60 * 1000);
 
   const pickupMinutesMyt = mytMinutesOfDay(input.pickupDateTime);

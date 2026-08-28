@@ -159,27 +159,27 @@ enum DispatchMode {
 // pending_approval until an admin approves). Drivers are pinned 1:1 to their
 // truck via assigned_truck_plate, mirroring UWC's real fixed driver-truck pairs.
 model User {
-  id                   String      @id @default(cuid())
-  phone                String      @unique // login ID
-  password_hash        String
-  refresh_token_hash   String? // current rotated refresh token, hashed
+  id                    String      @id @default(cuid())
+  phone                 String      @unique // login ID
+  password_hash         String
+  refresh_token_hash    String? // current rotated refresh token, hashed
   // SC3 per-account lockout. The per-IP limiter on /login slows credential
   // stuffing but does nothing to a patient attacker working ONE known phone at
   // a few guesses a minute. Counter resets on any successful password check;
   // `locked_until` is set when the counter trips and cleared by an admin unlock.
-  failed_login_attempts Int        @default(0)
-  locked_until         DateTime?
-  name                 String
-  employee_number      String?
-  role                 Role
-  status               UserStatus  @default(pending_approval)
-  language_pref        String      @default("en") // en | ms | zh
-  expo_push_token      String? // Expo push token for this user's current device
-  department_id        String?
-  department           Department? @relation(fields: [department_id], references: [id])
-  assigned_truck_plate String?     @unique // drivers only — 1 driver : 1 truck
-  assigned_truck       Truck?      @relation(fields: [assigned_truck_plate], references: [plate])
-  created_at           DateTime    @default(now())
+  failed_login_attempts Int         @default(0)
+  locked_until          DateTime?
+  name                  String
+  employee_number       String?
+  role                  Role
+  status                UserStatus  @default(pending_approval)
+  language_pref         String      @default("en") // en | ms | zh
+  expo_push_token       String? // Expo push token for this user's current device
+  department_id         String?
+  department            Department? @relation(fields: [department_id], references: [id])
+  assigned_truck_plate  String?     @unique // drivers only — 1 driver : 1 truck
+  assigned_truck        Truck?      @relation(fields: [assigned_truck_plate], references: [plate])
+  created_at            DateTime    @default(now())
 
   trips_requested  Trip[]        @relation("RequestorTrips")
   trips_driven     Trip[]        @relation("DriverTrips")
@@ -464,21 +464,21 @@ model Trip {
 // This is where the proof-of-delivery lives (pod_photo) and where the driver's
 // per-stop Arrived/Delivered taps land.
 model TripStop {
-  id             String          @id @default(cuid())
-  trip_id        String
-  trip           Trip            @relation(fields: [trip_id], references: [id])
-  sequence       Int
-  consignee_id   String
-  consignee      Consignee       @relation(fields: [consignee_id], references: [id])
-  status         StopStatus      @default(pending)
-  arrived_at     DateTime?
-  delivered_at   DateTime?
-  pod_photo      String? // Cloudinary delivery URL (legacy rows: public; new rows: the private/authenticated URL, not directly accessible)
+  id                     String          @id @default(cuid())
+  trip_id                String
+  trip                   Trip            @relation(fields: [trip_id], references: [id])
+  sequence               Int
+  consignee_id           String
+  consignee              Consignee       @relation(fields: [consignee_id], references: [id])
+  status                 StopStatus      @default(pending)
+  arrived_at             DateTime?
+  delivered_at           DateTime?
+  pod_photo              String? // Cloudinary delivery URL (legacy rows: public; new rows: the private/authenticated URL, not directly accessible)
   // Cloudinary public_id of the AUTHENTICATED (private-delivery) POD asset.
   // Set → the API serves a freshly-signed, unguessable URL each read
   // (lib/podPhotos.ts); NULL → legacy public pod_photo, until the backfill
   // (prisma/secure-existing-pods.ts) flips + records it. Additive, nullable.
-  pod_public_id  String?
+  pod_public_id          String?
   // WHEN the POD was uploaded (server receipt), IM6. Additive + nullable.
   //
   // Until this existed the time lived only in React state, so the driver's green
@@ -503,7 +503,7 @@ model TripStop {
   // delivered tap (delivery is gated on pod_photo), and the rate tier keys on
   // the delivery confirm, so this must never be read as a pay instant. The
   // admin approval row labels it "POD uploaded" for exactly that reason.
-  pod_uploaded_at DateTime?
+  pod_uploaded_at        DateTime?
   // DEVICE capture time — the offline half of the pair above, same shape as
   // TripException.client_reported_at beside the server's reported_at.
   //
@@ -522,7 +522,7 @@ model TripStop {
   // NULL = the device did not say. Every pre-column stop, and any upload from a
   // client that does not send it.
   pod_captured_client_at DateTime?
-  do_uploaded    Boolean         @default(false)
+  do_uploaded            Boolean         @default(false)
   // K2 customs form (Borang K2). Mr. Teh, R1 2026-07-24 Q6: "Prefer they need
   // upload the form … we need admin to final validate and approve, only they can
   // get pay." So for a K2-zone stop the driver must UPLOAD the actual document
@@ -531,30 +531,30 @@ model TripStop {
   // the delivery gate keys on the uploaded document). The upload is visible to
   // the admin at the existing POD/incentive approval (that IS "admin validate +
   // approve, only then pay"). All additive/nullable.
-  k2_photo       String?
-  k2_public_id   String?
-  k2_form_ack    Boolean         @default(false) // LEGACY tick (grandfathered rows only)
+  k2_photo               String?
+  k2_public_id           String?
+  k2_form_ack            Boolean         @default(false) // LEGACY tick (grandfathered rows only)
   // This stop's destination-zone points, snapshotted at assignment (rate lock —
   // same rationale as the Trip claim-rate snapshot). Null = pre-migration stop;
   // finalization falls back to the live DestinationRate points.
-  zone_points    Int?
+  zone_points            Int?
   // Finalize-time scoring EVIDENCE (the engine's own outputs, written once
   // with the trip's incentive): the points this drop actually earned
   // (pre-deduction), and whether it scored as a same-zone repeat (flat 1 —
   // not derivable from points alone: a 1-point zone's first drop also
   // scores 1). NULL = completed pre-feature.
-  points_awarded Int?
-  was_repeat     Boolean?
+  points_awarded         Int?
+  was_repeat             Boolean?
   // The zone IDENTITY this drop is scored under. Snapshotted at ASSIGNMENT
   // next to zone_points (identity lock, audit 2026-07-05 #4: a mid-flight
   // consignee zone correction must not split the ledger key / evidence from
   // the snapshotted points), confirmed by the finalize evidence write, and
   // cleared with zone_points on unassign. NULL = assigned pre-snapshot →
   // finalization falls back to the consignee's live zone.
-  zone_code      String?
+  zone_code              String?
   // Stop-scoped exceptions (Q2(a) "can't deliver"). A per-stop failure is a
   // TripException with trip_stop_id set; evidence lives in ExceptionEvidence.
-  exceptions     TripException[]
+  exceptions             TripException[]
 }
 
 // ── 8a. TripException / ExceptionAction / ExceptionEvidence ──────────────
@@ -600,14 +600,14 @@ model TripStop {
 // fails, and it would run inside Railway's preDeployCommand, blocking that
 // deploy and every migration after it.
 model TripException {
-  id                   String               @id @default(cuid())
+  id                   String                 @id @default(cuid())
   trip_id              String
-  trip                 Trip                 @relation("TripExceptions", fields: [trip_id], references: [id])
+  trip                 Trip                   @relation("TripExceptions", fields: [trip_id], references: [id])
   // Back-side of Trip.open_exception (the one-open-per-trip pointer/guard). Set
   // only while this exception is the trip's open one; cleared when it closes.
-  open_for_trip        Trip?                @relation("TripOpenException")
+  open_for_trip        Trip?                  @relation("TripOpenException")
   trip_stop_id         String? // Q2(a): the stop the driver could not deliver
-  trip_stop            TripStop?            @relation(fields: [trip_stop_id], references: [id])
+  trip_stop            TripStop?              @relation(fields: [trip_stop_id], references: [id])
   client_occurrence_id String // device UUID → dedup on offline replay
   // SERVER-computed SHA-256 over the NORMALIZED report inputs (trip/stop, category,
   // reason, actor, client_action_id, client_evidence_id, GPS, client timestamps)
@@ -625,14 +625,14 @@ model TripException {
   // simply has no code, and the banner falls back to the category wording.
   canned_reason        ExceptionCannedReason?
   reported_by          String // driver User id (no FK — matches TripStatusHistory.actor_id)
-  reported_at          DateTime             @default(now()) // SERVER receipt — immutable
+  reported_at          DateTime               @default(now()) // SERVER receipt — immutable
   client_reported_at   DateTime? // device capture time (offline gap)
-  current_state        ExceptionState       @default(reported) // derived projection
+  current_state        ExceptionState         @default(reported) // derived projection
   resolution           ExceptionResolution?
   resolved_at          DateTime?
   closed_at            DateTime? // set when terminal (resolved/rejected); null = OPEN
-  version              Int                  @default(0) // optimistic concurrency
-  created_at           DateTime             @default(now())
+  version              Int                    @default(0) // optimistic concurrency
+  created_at           DateTime               @default(now())
   actions              ExceptionAction[]
   evidence             ExceptionEvidence[]
 
@@ -732,6 +732,15 @@ model Consignee {
   zone_code          String
   zone               Zone    @relation(fields: [zone_code], references: [code])
   is_active          Boolean @default(true)
+  // True for exactly the nine seeded "UWC Plant 1".."UWC Plant 9" rows (Item 3
+  // multi-pickup; Mr. Teh, R1 2026-07-24: "Interplant can only select pickup
+  // point and delivery point from UWC Plant 1 to UWC Plant 9"). A DEDICATED
+  // FLAG rather than matching on company_name or zone_code: the name has
+  // already changed once (the 28 Jul workbook's "UWC BERHAD (P1)" became
+  // "UWC Plant 1" in his own written answer), and zone P2 also holds ordinary
+  // Batu Kawan/Juru/Prai customer consignees, so neither is a stable
+  // identifier. Default false so every existing row is unaffected.
+  is_uwc_plant       Boolean @default(false)
   created_by         String? // requestor can self-add
   created_by_user    User?   @relation("ConsigneeCreatedBy", fields: [created_by], references: [id])
   // ── Geocoded position (lib/geocodeConsignee.ts + scripts/geocode-google.ts) ──
@@ -812,7 +821,8 @@ model Consignee {
   longitude          Float?
   geocode_match_type String?
 
-  stops TripStop[]
+  stops         TripStop[]
+  cargo_pickups CargoDetail[] @relation("CargoPickupConsignee")
 }
 
 // ── 10. CargoDetail ──────────────────────────────────────────────────
@@ -821,27 +831,40 @@ model Consignee {
 // per-TRIP, not per-stop — which is why truck capacity frees only when the
 // whole trip completes (a known, documented spec trade-off).
 model CargoDetail {
-  id                String  @id @default(cuid())
-  trip_id           String
-  trip              Trip    @relation(fields: [trip_id], references: [id])
-  pallet_type       String // e.g. "4x4"; or a non-pallet type: carton/box/crate/rack/custom
-  quantity          Int
-  cartons           Int?
+  id                  String     @id @default(cuid())
+  trip_id             String
+  trip                Trip       @relation(fields: [trip_id], references: [id])
+  pallet_type         String // e.g. "4x4"; or a non-pallet type: carton/box/crate/rack/custom
+  quantity            Int
+  cartons             Int?
   // Q10 structured dimensions (feet) for crate/rack/custom cargo. `custom_size`
   // holds the canonical "W × L ft" display string (derived from these); a LEGACY
   // custom row may carry a free-text `custom_size` with these null — preserved
   // as-is on unrelated edits. Additive/nullable.
-  width_ft          Float?
-  length_ft         Float?
-  custom_size       String?
+  width_ft            Float?
+  length_ft           Float?
+  custom_size         String?
   // Requestor's OPTIONAL estimated 4×4-pallet-equivalent for a "carton"/"custom"
   // (Others) line — those types carry no pallet footprint by conversion (factor
   // 0), so without an estimate auto-dispatch can't size them. When given, the
   // capacity math uses it; when absent, the booking is routed to manual
   // assignment (needs-attention) instead of silently taking the smallest truck.
   // Lives on the cargo line so it stays correct if cargo later becomes per-stop.
-  estimated_pallets Int?
-  remark            String?
+  estimated_pallets   Int?
+  remark              String?
+  // Item 3 multi-pickup (interplant only): which UWC plant this cargo line
+  // was picked up from. NULL means today's single hardcoded origin
+  // ("UWC Batu Kawan", ORIGIN_LABEL in mobile/src/lib/trip.ts) — additive,
+  // zero backfill, every existing trip renders identically. Deliberately on
+  // CargoDetail, not a new TripStop: a pickup is a property of the cargo
+  // (Mr. Teh's own Sheet1 shows cargo annotated per pickup plant), and the
+  // incentive engine's stop-scoring query never reads cargo_details, so this
+  // column cannot be read by the money path even by accident. See
+  // ITEM3_MULTIPICKUP_PLAN.md for why a TripStop-shaped pickup would silently
+  // misprice the trip (pays a point for arriving at your own factory, eats
+  // the daily deduction on the wrong stop, picks the wrong rate tier).
+  pickup_consignee_id String?
+  pickup_consignee    Consignee? @relation("CargoPickupConsignee", fields: [pickup_consignee_id], references: [id])
 }
 
 // ── 11. TripDocument ─────────────────────────────────────────────────
