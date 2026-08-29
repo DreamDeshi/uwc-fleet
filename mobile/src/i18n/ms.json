@@ -810,6 +810,8 @@
       "k2GateSince": "Sejak 29 Julai, pemandu tidak boleh menanda hentian Bayan Lepas sebagai dihantar tanpa memuat naik satu, jadi keadaan ini sepatutnya tidak berlaku. Hentian yang dihantar sebelum tarikh itu mendahului peraturan dan mungkin memang tiada.",
       "k2GateNotExpected": "Kes berbeza, bukan sebahagian amaran ini: {{stops}} berada dalam cadangan ini tanpa pengesahan penghantaran, jadi K2 memang tidak pernah diperlukan di situ.",
       "k2GateWarn": "Kelulusan akan membayar untuk hentian yang dokumen kastamnya tiada dalam fail.",
+      "k2GateReason": "Sebab meluluskan tanpa dokumen ini",
+      "k2GateReasonPlaceholder": "cth. dihantar sebelum peraturan muat naik 29 Jul",
       "k2GateApproveAnyway": "Luluskan juga",
       "notDelivered": "Tidak dihantar",
       "partialTrip": "Trip separa — {{done}}/{{total}} hentian dihantar",

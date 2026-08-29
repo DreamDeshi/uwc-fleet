@@ -1,6 +1,15 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { api, auth, prisma, resetDb, loginAs, ADMIN, DRIVER, REQUESTOR } from "./helpers/harness";
-import { userIdByPhone, firstRouteTypeId, bookTrip, approveTrip, startTrip, arriveRaw, deliverRaw } from "./helpers/flow";
+import {
+  userIdByPhone,
+  firstRouteTypeId,
+  bookTrip,
+  approveTrip,
+  startTrip,
+  arriveRaw,
+  deliverRaw,
+  approveIncentiveRaw,
+} from "./helpers/flow";
 import { cloudinary } from "../src/lib/cloudinary";
 
 // Q6 (Mr. Teh R1 2026-07-24): the gated delivery requires the UPLOADED customs
@@ -104,5 +113,67 @@ describe("customs document gate — Q6", () => {
     // Wrong role (admin) → 403 (route is driver-only).
     const asAdmin = await api().post(`/api/v1/trips/${tripId}/stops/${stopId}/k2`).set(auth(admin));
     expect(asAdmin.status).toBe(403);
+  });
+
+  // Until this coverage existed, the admin app's "approve without the customs
+  // document?" confirm dialog was PURE UI — nothing on the server checked
+  // k2_photo at approval, so a direct API call skipped the confirm entirely,
+  // with no trace of it having happened. This proves the server now enforces
+  // what the dialog only used to ask about.
+  describe("approve-incentive enforces the K2 confirm server-side, not just in the admin app", () => {
+    /** A stop delivered normally (K2 uploaded, exactly like readyK2Stop's
+     *  caller does) and then stripped of its k2_photo directly — simulating
+     *  the one way this combination exists today: a legacy row predating the
+     *  29 Jul zone fix. The normal delivery route cannot produce it (that is
+     *  the whole point of the upload gate), so this is the only way to reach
+     *  the approval-time defense at all. */
+    async function deliveredWithMissingK2() {
+      const { tripId, stopId } = await readyK2Stop();
+      await prisma.tripStop.update({ where: { id: stopId }, data: { k2_photo: "test://k2.jpg", k2_public_id: "uwc/k2/x" } });
+      expect((await deliverRaw(driver, tripId, stopId)).status).toBe(200);
+      await prisma.tripStop.update({ where: { id: stopId }, data: { k2_photo: null, k2_public_id: null } });
+      return { tripId, stopId };
+    }
+
+    it("refuses approval with no override reason", async () => {
+      const { tripId } = await deliveredWithMissingK2();
+      const res = await approveIncentiveRaw(admin, tripId);
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("K2_MISSING_CONFIRM_REQUIRED");
+      expect((await prisma.trip.findUnique({ where: { id: tripId } }))!.status).toBe("pending_approval");
+    });
+
+    it("refuses a whitespace-only override reason the same way", async () => {
+      const { tripId } = await deliveredWithMissingK2();
+      const res = await approveIncentiveRaw(admin, tripId, { k2_override_reason: "   " });
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("K2_MISSING_CONFIRM_REQUIRED");
+    });
+
+    it("approves once an override reason is given, and records why", async () => {
+      const { tripId, stopId } = await deliveredWithMissingK2();
+      const res = await approveIncentiveRaw(admin, tripId, {
+        k2_override_reason: "legacy row, predates the 29 Jul zone fix",
+      });
+      expect(res.status).toBe(200);
+      expect((await prisma.trip.findUnique({ where: { id: tripId } }))!.status).toBe("completed");
+
+      const log = await prisma.auditLog.findFirst({
+        where: { table_name: "Trip", record_id: tripId, action: { contains: "K2 override" } },
+        orderBy: { timestamp: "desc" },
+      });
+      expect(log?.action).toContain("legacy row, predates the 29 Jul zone fix");
+      // Names the actual stop, not just "something was overridden".
+      const stop = await prisma.tripStop.findUnique({ where: { id: stopId } });
+      expect(log?.action).toContain(`stop ${stop!.sequence}`);
+    });
+
+    it("a normal approval (K2 present) is unaffected", async () => {
+      const { tripId, stopId } = await readyK2Stop();
+      await prisma.tripStop.update({ where: { id: stopId }, data: { k2_photo: "test://k2.jpg", k2_public_id: "uwc/k2/x" } });
+      expect((await deliverRaw(driver, tripId, stopId)).status).toBe(200);
+      const res = await approveIncentiveRaw(admin, tripId);
+      expect(res.status).toBe(200);
+    });
   });
 });

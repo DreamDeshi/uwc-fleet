@@ -3,6 +3,7 @@ import { ApiError } from "../src/lib/apiError";
 import {
   approveTripIncentiveOnce,
   assertIncentiveApprovable,
+  assertK2ApprovalConfirmed,
   assertStopArrivable,
   assertStopDeliverable,
   assertStopTapUndoable,
@@ -524,6 +525,33 @@ describe("assertIncentiveApprovable (approval guard)", () => {
       "REASON_REQUIRED",
       400
     );
+  });
+});
+
+describe("assertK2ApprovalConfirmed (server-side counterpart of the admin K2ApprovalGate dialog)", () => {
+  it("passes through when nothing is blocking", () => {
+    expect(() => assertK2ApprovalConfirmed([], undefined)).not.toThrow();
+    expect(() => assertK2ApprovalConfirmed([], "some reason")).not.toThrow();
+  });
+
+  it("rejects a blocking stop with no override reason → 409, names the stop", () => {
+    expectApiError(
+      () => assertK2ApprovalConfirmed([{ sequence: 2 }], undefined),
+      "K2_MISSING_CONFIRM_REQUIRED",
+      409
+    );
+    // Whitespace-only is not a reason, same rule as the edited-amount reason.
+    expectApiError(
+      () => assertK2ApprovalConfirmed([{ sequence: 2 }], "   "),
+      "K2_MISSING_CONFIRM_REQUIRED",
+      409
+    );
+  });
+
+  it("allows a blocking stop through once an override reason is given", () => {
+    expect(() =>
+      assertK2ApprovalConfirmed([{ sequence: 1 }, { sequence: 3 }], "legacy row, predates the 29 Jul zone fix")
+    ).not.toThrow();
   });
 });
 

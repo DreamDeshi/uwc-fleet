@@ -810,6 +810,8 @@
       "k2GateSince": "自 7 月 29 日起，司机必须先上传该文件才能将峇六拜的停靠点标记为已送达，因此正常情况下不应出现这种状况。在该日期之前送达的停靠点早于此规则，可能本就没有文件。",
       "k2GateNotExpected": "情况不同，不在此警告范围内：{{stops}} 在没有送达确认的情况下计入本次拟付，因此本就无需 K2。",
       "k2GateWarn": "批准即代表为一个报关文件不在档的停靠点放款。",
+      "k2GateReason": "没有该文件仍批准的原因",
+      "k2GateReasonPlaceholder": "例如：送达日期早于 7 月 29 日的上传规定",
       "k2GateApproveAnyway": "仍然批准",
       "notDelivered": "未送达",
       "partialTrip": "部分行程——已送达 {{done}}/{{total}} 个停靠点",

@@ -810,6 +810,8 @@
       "k2GateSince": "Since 29 July a driver cannot mark a Bayan Lepas stop delivered without uploading one, so this should not normally be possible. Stops delivered before that date predate the rule and may legitimately have none.",
       "k2GateNotExpected": "Different case, not part of this warning: {{stops}} is on this proposal without a delivery confirm, so no K2 was ever required there.",
       "k2GateWarn": "Approving releases pay for a stop whose customs document is not on file.",
+      "k2GateReason": "Reason for approving without it",
+      "k2GateReasonPlaceholder": "e.g. delivered before the 29 Jul upload rule",
       "k2GateApproveAnyway": "Approve anyway",
       "notDelivered": "Not delivered",
       "partialTrip": "Partial trip — {{done}}/{{total}} stops delivered",
