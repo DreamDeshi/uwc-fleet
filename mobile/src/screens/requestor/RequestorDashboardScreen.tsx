@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { greetingFontSize } from "../../lib/greetingName";
@@ -19,7 +19,6 @@ import { dayMonth, formatDate, formatTime } from "../../lib/format";
 import { tripConsigneeName, tripDestination, ORIGIN_LABEL } from "../../lib/trip";
 import { isDelivered } from "../../lib/tripStatus";
 import { homeStatusStrip, requestorHome } from "../../lib/requestorHome";
-import { initials } from "../../lib/format";
 import { Trip } from "../../types";
 
 // Home tab, but it also pushes BookingDetail onto the parent requestor stack.
@@ -43,12 +42,10 @@ export function RequestorDashboardScreen() {
   const wide = useWide();
   const { data: trips, isLoading, isError, refetch, isRefetching } = useTrips();
 
-  const { active, pending, recent, stats, home, strip } = useMemo(() => {
+  const { recent, stats, home, strip } = useMemo(() => {
     const list = (trips ?? []).slice().sort(
       (a, b) => +new Date(b.created_at) - +new Date(a.created_at)
     );
-    const active = list.find((tr) => tr.status === "in_progress" || tr.status === "assigned");
-    const pending = list.find((tr) => tr.status === "pending" || tr.status === "approved");
     // Up to 8 (wide shows more; the phone column slices to 4 below).
     const recent = list.slice(0, 8);
     const now = new Date();
@@ -60,7 +57,7 @@ export function RequestorDashboardScreen() {
       pending: monthTrips.filter((tr) => tr.status === "pending" || tr.status === "approved").length,
     };
     const home = requestorHome(list, now);
-    return { active, pending, recent, stats, home, strip: homeStatusStrip(home.next, now) };
+    return { recent, stats, home, strip: homeStatusStrip(home.next, now) };
   }, [trips]);
 
   const openDetail = (tripId: string) => navigation.navigate("BookingDetail", { tripId });
@@ -69,78 +66,6 @@ export function RequestorDashboardScreen() {
 
   if (isLoading) return <View style={styles.fill}><LoadingState /></View>;
   if (isError) return <View style={styles.fill}><ErrorState onRetry={refetch} /></View>;
-
-  // ── Shared card fragments (identical markup, composed differently per layout) ──
-  const ctaCard = (
-    <TouchableOpacity style={styles.cta} activeOpacity={0.9} onPress={() => navigation.navigate("NewBooking")}>
-      <View style={styles.ctaIcon}>
-        <MaterialCommunityIcons name="truck" size={22} color={colors.blue} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.ctaTitle}>{t("requestor.whereTo")}</Text>
-        <Text style={styles.ctaSub}>{t("requestor.tapToBook")}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={20} color={colors.blue} />
-    </TouchableOpacity>
-  );
-
-  const activeCard = active ? (
-    <TouchableOpacity activeOpacity={0.9} onPress={() => openDetail(active.id)}>
-      <View style={styles.activeCard}>
-        <View style={styles.activeTop}>
-          <Text style={styles.activeLabel}>{t("requestor.activeTrip")}</Text>
-          <StatusBadge status={active.status} small />
-        </View>
-        <Text style={styles.activeTicket}>{active.ticket_number}</Text>
-        <View style={styles.routeMini}>
-          <View style={[styles.miniDot, { backgroundColor: colors.white }]} />
-          <Text style={styles.miniPlace}>{ORIGIN_LABEL}</Text>
-          <Text style={styles.miniArrow}>→</Text>
-          <View style={[styles.miniDot, { backgroundColor: colors.yellow }]} />
-          <Text style={styles.miniPlace}>{tripDestination(active)}</Text>
-        </View>
-        {active.driver ? (
-          <View style={styles.driverRow}>
-            <View style={styles.driverAvatar}>
-              <Text style={styles.driverAvatarText}>{initials(active.driver.name)}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.driverName}>{active.driver.name}</Text>
-              <Text style={styles.driverPlate}>{active.truck_plate}</Text>
-            </View>
-            <Text style={styles.track}>{t("requestor.track")} →</Text>
-          </View>
-        ) : null}
-      </View>
-    </TouchableOpacity>
-  ) : null;
-
-  const pendingCard = pending ? (
-    <TouchableOpacity activeOpacity={0.9} onPress={() => openDetail(pending.id)}>
-      <View style={styles.pendingCard}>
-        <View style={styles.pendingStripe} />
-        <View style={{ flex: 1, padding: 14 }}>
-          <View style={styles.pendingHead}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Ionicons name="time-outline" size={16} color={colors.amberText} />
-              <Text style={styles.pendingLabel}>{t("requestor.pendingApproval")}</Text>
-            </View>
-            <View style={styles.awaitPill}>
-              <Text style={styles.awaitText}>{t("requestor.awaiting")}</Text>
-            </View>
-          </View>
-          <Text style={styles.pendingTicket}>{pending.ticket_number}</Text>
-          <Text style={styles.pendingRoute}>
-            {ORIGIN_LABEL} → {tripDestination(pending)}
-          </Text>
-          <Text style={styles.pendingMeta} numberOfLines={1}>
-            {pending.route_type?.name} · {formatDate(pending.pickup_datetime)}, {formatTime(pending.pickup_datetime)}
-          </Text>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color={colors.textFaint} style={{ alignSelf: "center", marginRight: 12 }} />
-      </View>
-    </TouchableOpacity>
-  ) : null;
 
   const statsRow = (
     <View style={styles.statRow}>
@@ -353,6 +278,13 @@ export function RequestorDashboardScreen() {
   );
 
   // ── Wide (office PC) — two-column dashboard that uses the whole screen ──
+  // The left column is the SAME "next booking" hero as phone (owner ask,
+  // 30 Aug 2026: the desktop dashboard had drifted onto the pre-Final-Picks
+  // compact active/pending cards while phone moved to one hero + a route
+  // ladder — same colours and card shapes on both, but only phone had the
+  // newer hero, so desktop read as the older screen). `nextCard`/
+  // `firstBookingCard`/`bookAgainCard` are the exact fragments phone renders
+  // below, just given more width here instead of a phone-width column.
   if (wide) {
     return (
       <ScrollView
@@ -363,20 +295,10 @@ export function RequestorDashboardScreen() {
         {header}
         <View style={styles.wideBody}>
           <View style={styles.wideRow}>
-            {/* Left — the primary book action + whatever bookings are live now. */}
+            {/* Left — the next booking hero, same as phone. */}
             <View style={styles.wideMain}>
-              {ctaCard}
-              <Text style={[styles.sectionTitle, { marginTop: 20 }]}>{t("requestor.currentBookings")}</Text>
-              <View style={{ gap: 12, marginTop: 12 }}>
-                {activeCard}
-                {pendingCard}
-                {!active && !pending ? (
-                  <View style={styles.emptyBookings}>
-                    <MaterialCommunityIcons name="truck-outline" size={30} color={colors.textFaint} />
-                    <Text style={styles.emptyBookingsText}>{t("requestor.noActiveBookings")}</Text>
-                  </View>
-                ) : null}
-              </View>
+              {home.next ? nextCard : firstBookingCard}
+              {home.next ? <View style={{ marginTop: 12 }}>{bookAgainCard}</View> : null}
             </View>
             {/* Right — the glanceable month figures + a taller recent list. */}
             <View style={styles.wideSide}>
@@ -480,10 +402,6 @@ const styles = StyleSheet.create({
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 2, borderColor: colors.yellow, alignItems: "center", justifyContent: "center" },
   avatarText: { color: colors.white, fontSize: 15, fontWeight: "800" },
   ctaWrap: { paddingHorizontal: 20, marginTop: -28, width: "100%", maxWidth: layout.content, alignSelf: "center" },
-  cta: { backgroundColor: colors.white, borderRadius: radius.lg, padding: 14, flexDirection: "row", alignItems: "center", gap: 14, ...shadow.floating },
-  ctaIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: colors.yellow, alignItems: "center", justifyContent: "center" },
-  ctaTitle: { fontSize: 16, fontWeight: "700", color: colors.navy },
-  ctaSub: { fontSize: 14, color: colors.textFaint },
   section: { paddingHorizontal: 16, paddingTop: 12, width: "100%", maxWidth: layout.content, alignSelf: "center" },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
 
@@ -494,35 +412,6 @@ const styles = StyleSheet.create({
   wideRow: { flexDirection: "row", alignItems: "flex-start", gap: 24 },
   wideMain: { flex: 1.6 },
   wideSide: { flex: 1, maxWidth: 460 },
-  emptyBookings: { backgroundColor: colors.white, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderLight, alignItems: "center", justifyContent: "center", paddingVertical: 34, gap: 10, ...shadow.card },
-  emptyBookingsText: { fontSize: 14, color: colors.textMuted, fontWeight: "600" },
-
-  // Owner call (feedback round 2): the dark navy active card and the dashed
-  // pending card are the PREFERRED look — kept exactly as originally shipped.
-  activeCard: { backgroundColor: colors.blueDark, borderRadius: radius.xl, padding: 18, ...shadow.card },
-  activeTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  activeLabel: { fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: 1 },
-  activeTicket: { fontSize: 13, fontWeight: "700", color: "rgba(255,255,255,0.5)", marginBottom: 10 },
-  routeMini: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" },
-  miniDot: { width: 8, height: 8, borderRadius: 4 },
-  miniPlace: { fontSize: 14, fontWeight: "700", color: colors.white },
-  miniArrow: { color: "rgba(255,255,255,0.3)" },
-  driverRow: { flexDirection: "row", alignItems: "center", gap: 10, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.1)", paddingTop: 12 },
-  driverAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
-  driverAvatarText: { color: colors.yellow, fontSize: 12, fontWeight: "800" },
-  driverName: { fontSize: 14, fontWeight: "600", color: colors.white },
-  driverPlate: { fontSize: 13, color: "rgba(255,255,255,0.5)" },
-  track: { fontSize: 13, color: "rgba(255,255,255,0.7)" },
-
-  pendingCard: { backgroundColor: colors.white, borderRadius: radius.lg, flexDirection: "row", overflow: "hidden", borderWidth: 2, borderStyle: "dashed", borderColor: "#FFB74D" },
-  pendingStripe: { width: 5, backgroundColor: colors.yellow },
-  pendingHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
-  pendingLabel: { fontSize: 13, fontWeight: "700", color: colors.amberText, textTransform: "uppercase" },
-  awaitPill: { backgroundColor: "#fffbeb", paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.pill },
-  awaitText: { color: colors.amberText, fontSize: 13, fontWeight: "700" },
-  pendingTicket: { fontSize: 13, fontWeight: "700", color: colors.blue, marginBottom: 4 },
-  pendingRoute: { fontSize: 14, fontWeight: "600", color: colors.navy },
-  pendingMeta: { fontSize: 13, color: colors.textMuted, marginTop: 4 },
 
   statRow: { flexDirection: "row", gap: 10, marginTop: 12 },
   statBox: { flex: 1, borderRadius: radius.md, padding: 14, alignItems: "center" },

@@ -10,6 +10,8 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, font, radius } from "../theme";
+import { FilterDropdown } from "./ui";
+import { useLayoutMode } from "../hooks/useLayoutMode";
 
 // Owner feedback, 28 Aug 2026: editing a time by TYPING "10:00" into a box is
 // not "easy" — tap a value instead. Typing stays available as a fallback (the
@@ -145,9 +147,47 @@ function ChipRow<T extends number>({
 }
 
 /**
+ * PC form: two "value ▾" dropdowns (hour, minute), same shape as every other
+ * admin filter select (`FilterDropdown`) rather than a horizontal strip. A
+ * mouse has no swipe gesture and RN-Web gives a nested horizontal ScrollView
+ * nothing a mouse can obviously grab — see the chip strip below, which this
+ * replaces on wide screens rather than trying to make scrollable-by-mouse
+ * work (owner screenshot, 30 Aug 2026, referencing a stock date/time-picker
+ * design that pairs a calendar grid with plain dropdown selects for h/m).
+ * 24-hour values throughout this app, so no AM/PM segment.
+ */
+function WideTimeOfDayPicker({
+  hour,
+  minute,
+  onChange,
+  minuteStep,
+}: {
+  hour: number;
+  minute: number;
+  onChange: (hour: number, minute: number) => void;
+  minuteStep: number;
+}) {
+  const minutes = Array.from({ length: 60 / minuteStep }, (_, i) => i * minuteStep);
+  const hourOptions = HOURS.map((h) => ({ value: String(h), label: pad2(h) }));
+  const minuteOptions = minutes.map((m) => ({ value: String(m), label: pad2(m) }));
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <FilterDropdown value={String(hour)} onChange={(v) => onChange(Number(v), minute)} options={hourOptions} />
+      <Text style={{ fontSize: font.lg, fontWeight: "800", color: colors.textMuted }}>:</Text>
+      <FilterDropdown value={String(minute)} onChange={(v) => onChange(hour, Number(v))} options={minuteOptions} />
+    </View>
+  );
+}
+
+/**
  * Tap an hour, tap a minute — two rows, no keyboard. `minuteStep` defaults to
  * 5 (the same grid the requestor's own pickup dial uses), so an exact-on-the-
  * hour setting like the B7 cut-offs needs one tap per row.
+ *
+ * PHONE ONLY past this point (`useLayoutMode() === "narrow"`) — touch-swipe
+ * reaches every chip and that gesture exists on a phone. `wide` renders
+ * `WideTimeOfDayPicker` instead; see its comment for why the two forms
+ * diverge rather than sharing one.
  */
 export function TimeOfDayPicker({
   hour,
@@ -160,6 +200,7 @@ export function TimeOfDayPicker({
   onChange: (hour: number, minute: number) => void;
   minuteStep?: number;
 }) {
+  const wide = useLayoutMode() === "wide";
   const minutes = Array.from({ length: 60 / minuteStep }, (_, i) => i * minuteStep);
   const hourScroll = useRef<ScrollView>(null);
   const minuteScroll = useRef<ScrollView>(null);
@@ -181,6 +222,12 @@ export function TimeOfDayPicker({
       animated: false,
     });
   };
+
+  // `wide` can flip on a window resize, so the hooks above still run every
+  // render (rules of hooks) — only the JSX branches here.
+  if (wide) {
+    return <WideTimeOfDayPicker hour={hour} minute={minute} onChange={onChange} minuteStep={minuteStep} />;
+  }
 
   return (
     <View style={{ gap: 8 }}>

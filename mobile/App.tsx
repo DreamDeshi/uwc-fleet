@@ -14,6 +14,7 @@ import { RootNavigator } from "./src/navigation/RootNavigator";
 import { ReconnectingBanner } from "./src/components/ReconnectingBanner";
 import { UpdateReadyBanner } from "./src/components/UpdateReadyBanner";
 import { installWebFocusRing } from "./src/lib/webFocusRing";
+import { installWebScrollbars } from "./src/lib/webScrollbars";
 import { wireReactQueryNative } from "./src/lib/reactQueryNative";
 import { installGlobalErrorReporting } from "./src/lib/errorReporting";
 
@@ -23,6 +24,7 @@ export default function App() {
   // Global error reporting → POST /client-errors (owner ask, 27 Jul).
   React.useEffect(() => {
     installWebFocusRing();
+    installWebScrollbars();
     wireReactQueryNative();
     installGlobalErrorReporting();
   }, []);
