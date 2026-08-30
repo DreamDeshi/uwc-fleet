@@ -410,22 +410,36 @@ export function FilterDropdown<F extends string>({
         <Ionicons name="chevron-down" size={14} color={colors.textMuted} />
       </Pressable>
       <RNModal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.35)", justifyContent: "center", paddingHorizontal: 32 }} onPress={() => setOpen(false)}>
-          <Pressable style={{ backgroundColor: colors.card, borderRadius: radius.lg, overflow: "hidden", ...shadow.floating }} onPress={() => {}}>
-            {options.map((o, i) => {
-              const active = o.value === value;
-              return (
-                <Pressable
-                  key={o.value}
-                  onPress={() => { onChange(o.value); setOpen(false); }}
-                  style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 14, paddingHorizontal: 16, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.divider, backgroundColor: active ? colors.blueTint : "transparent" }}
-                >
-                  <Text style={{ flex: 1, fontSize: font.md, fontWeight: active ? "700" : "500", color: active ? colors.blue : colors.text }}>{o.label}</Text>
-                  {o.count !== undefined ? <Text style={{ fontSize: font.sm, color: colors.textMuted, fontWeight: "700" }}>{o.count}</Text> : null}
-                  {active ? <Ionicons name="checkmark" size={18} color={colors.blue} /> : null}
-                </Pressable>
-              );
-            })}
+        <Pressable style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.35)", alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }} onPress={() => setOpen(false)}>
+          {/* The backdrop is `flex:1` with no `alignItems` set, so it defaults
+              to stretch — without a width cap this card stretches to fill the
+              ENTIRE screen (found 30 Aug 2026 on TimeOfDayPicker's hour list:
+              24 rows, each one edge-to-edge across a 1440px+ window). `flex:1`
+              on each row's label text still pushes the count/checkmark to
+              this box's own right edge, which is the point — just capped now. */}
+          <Pressable style={{ width: 280, maxWidth: "100%", maxHeight: "70%", backgroundColor: colors.card, borderRadius: radius.lg, overflow: "hidden", ...shadow.floating }} onPress={() => {}}>
+            {/* A long option list (e.g. TimeOfDayPicker's 24 hours) is TALLER
+                than most viewports at ~46px/row — without this the card just
+                overflowed top and bottom equally (`justifyContent:"center"`
+                on the backdrop) with no way to reach either end. A normal
+                scrollable dropdown list, not the rejected horizontal
+                scroll-strip picker — this is the standard `<select>` shape. */}
+            <ScrollView>
+              {options.map((o, i) => {
+                const active = o.value === value;
+                return (
+                  <Pressable
+                    key={o.value}
+                    onPress={() => { onChange(o.value); setOpen(false); }}
+                    style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 14, paddingHorizontal: 16, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.divider, backgroundColor: active ? colors.blueTint : "transparent" }}
+                  >
+                    <Text style={{ flex: 1, fontSize: font.md, fontWeight: active ? "700" : "500", color: active ? colors.blue : colors.text }}>{o.label}</Text>
+                    {o.count !== undefined ? <Text style={{ fontSize: font.sm, color: colors.textMuted, fontWeight: "700" }}>{o.count}</Text> : null}
+                    {active ? <Ionicons name="checkmark" size={18} color={colors.blue} /> : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           </Pressable>
         </Pressable>
       </RNModal>
