@@ -525,6 +525,7 @@
     "documents": "文件（可选）",
     "documentsHint": "现在附上送货单或发票，或稍后添加。",
     "attachDocument": "附加文件",
+    "documentPreviewFailed": "无法打开文件。请重试，或移除后重新附加。",
     "docUploadPartial": "预订已提交，但文件没有上传。请从预订详情中添加。",
     "summary": "预订摘要",
     "noStopsYet": "尚未添加卸货点。",

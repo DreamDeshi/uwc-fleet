@@ -525,6 +525,7 @@
     "documents": "Dokumen (Pilihan)",
     "documentsHint": "Lampirkan DO atau invois sekarang, atau tambah kemudian.",
     "attachDocument": "Lampirkan dokumen",
+    "documentPreviewFailed": "Tidak dapat membuka dokumen. Cuba lagi atau alih keluar dan lampirkan semula.",
     "docUploadPartial": "Tempahan anda sudah masuk, tetapi dokumen tidak dimuat naik. Tambah dari butiran tempahan.",
     "summary": "Ringkasan Tempahan",
     "noStopsYet": "Belum ada hentian ditambah.",
