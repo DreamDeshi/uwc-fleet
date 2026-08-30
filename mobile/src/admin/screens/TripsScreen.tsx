@@ -314,17 +314,22 @@ export function TripsScreen() {
       style={{
         flexDirection: "row",
         alignItems: "center",
-        gap: 6,
+        gap: 7,
         borderRadius: radius.pill,
-        paddingVertical: 5,
-        paddingHorizontal: 11,
-        borderWidth: 1,
+        // Same paddingVertical/paddingHorizontal/borderWidth/fontSize as
+        // SegmentedFilter's pills (ui.tsx) — this chip sits in the same row
+        // as those (`alignItems: "flex-end"`), so a smaller box here reads
+        // as sunk below the others rather than just differently coloured.
+        // Found 30 Aug 2026: it was 5/11/1/font.sm against their 8/15/1.5/font.md.
+        paddingVertical: 8,
+        paddingHorizontal: 15,
+        borderWidth: 1.5,
         borderColor: colors.red,
         backgroundColor: needsAttentionOnly ? colors.red : colors.redTint,
       }}
     >
-      <Ionicons name="warning" size={12} color={needsAttentionOnly ? "#fff" : colors.red} />
-      <Text style={{ fontSize: font.sm, fontWeight: "700", color: needsAttentionOnly ? "#fff" : colors.red }}>
+      <Ionicons name="warning" size={14} color={needsAttentionOnly ? "#fff" : colors.red} />
+      <Text style={{ fontSize: font.md, fontWeight: "700", color: needsAttentionOnly ? "#fff" : colors.red }}>
         {t("admin.trips.needsAttention")}
         {attentionCount > 0 ? ` · ${attentionCount}` : ""}
       </Text>
