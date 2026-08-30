@@ -525,6 +525,7 @@
     "documents": "Documents (Optional)",
     "documentsHint": "Attach your DO or invoice now, or add it later.",
     "attachDocument": "Attach document",
+    "documentPreviewFailed": "Couldn't open the document. Try again or remove it and re-attach.",
     "docUploadPartial": "Your booking is in, but the document did not upload. Add it from the booking details.",
     "summary": "Booking Summary",
     "noStopsYet": "No stops added yet.",

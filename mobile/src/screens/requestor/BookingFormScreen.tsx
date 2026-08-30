@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -37,6 +38,9 @@ import { ORIGIN_LABEL } from "../../lib/trip";
 import { LoadingState } from "../../components/States";
 import { useToast } from "../../components/Toast";
 import { pickDocumentFile, PickedPhoto } from "../../lib/photo";
+import { isCompressibleType } from "../../lib/uploadTypes";
+import { openLocalFile } from "../../lib/localFileOpen";
+import { ImagePreviewModal } from "../../components/ImagePreviewModal";
 import {
   palletEquivalents,
   partitionEditableCargo,
@@ -1948,6 +1952,26 @@ function StepConfirm({
   onSaveTemplate: () => void;
 }) {
   const { t } = useTranslation();
+  const toast = useToast();
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
+  // Images preview IN-APP (see ImagePreviewModal for why: a compressed
+  // image's uri is a data: URI, and window.open silently refuses to
+  // navigate to one). Anything else — a PDF, never compressed, always a
+  // blob:/file: uri — hands off to the OS/browser, which can render it.
+  const onOpenDoc = async (d: PickedPhoto) => {
+    if (isCompressibleType(d.type)) {
+      setPreviewUri(d.uri);
+      return;
+    }
+    try {
+      await openLocalFile(d.uri, { mimeType: d.type, dialogTitle: d.name });
+    } catch {
+      // A share sheet with nothing that can open a PDF, or a browser popup
+      // blocked — either way the file itself is fine, only the preview
+      // attempt failed, so this is a toast, not a form error.
+      toast(t("booking.documentPreviewFailed"), "error");
+    }
+  };
   const Section = ({ title, editStep, children }: { title: string; editStep: number; children: React.ReactNode }) => (
     <View style={styles.confirmCard}>
       <View style={styles.confirmHead}>
@@ -1978,10 +2002,23 @@ function StepConfirm({
 
         {docs.map((d, i) => (
           <View key={`${d.uri}-${i}`} style={styles.docAttachRow}>
-            <Ionicons name="document-text-outline" size={16} color={colors.blue} />
-            <Text style={styles.docAttachName} numberOfLines={1}>
-              {d.name}
-            </Text>
+            <TouchableOpacity
+              onPress={() => onOpenDoc(d)}
+              style={styles.docAttachTap}
+              accessibilityRole="button"
+            >
+              {isCompressibleType(d.type) ? (
+                <Image source={{ uri: d.uri }} style={styles.docAttachThumb} />
+              ) : (
+                <View style={[styles.docAttachThumb, styles.docAttachThumbIcon]}>
+                  <Ionicons name="document-text-outline" size={18} color={colors.blue} />
+                </View>
+              )}
+              <Text style={styles.docAttachName} numberOfLines={1}>
+                {d.name}
+              </Text>
+              <Ionicons name="open-outline" size={16} color={colors.blue} />
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => onRemoveDoc(i)} hitSlop={10} disabled={uploadingDoc}>
               <Ionicons name="close-circle" size={18} color={colors.textFaint} />
             </TouchableOpacity>
@@ -2055,6 +2092,8 @@ function StepConfirm({
           <Text style={styles.saveTemplateText}>{t("booking.saveAsTemplate")}</Text>
         </TouchableOpacity>
       ) : null}
+
+      <ImagePreviewModal visible={previewUri !== null} uri={previewUri ?? ""} onClose={() => setPreviewUri(null)} />
     </View>
   );
 }
@@ -2390,6 +2429,9 @@ const styles = StyleSheet.create({
   dropZoneSub: { fontSize: 12, color: colors.amberText, textAlign: "center" },
   docHint: { fontSize: 13, color: colors.textMuted, lineHeight: 17, marginBottom: 12 },
   docAttachRow: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.bg, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8 },
+  docAttachTap: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10, minWidth: 0 },
+  docAttachThumb: { width: 28, height: 28, borderRadius: radius.sm, backgroundColor: colors.tintBlue },
+  docAttachThumbIcon: { alignItems: "center", justifyContent: "center" },
   docAttachName: { flex: 1, fontSize: 14, fontWeight: "600", color: colors.navy },
 
   error: { color: colors.red, fontSize: 14, fontWeight: "600", marginTop: 14 },
