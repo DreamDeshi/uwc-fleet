@@ -180,16 +180,26 @@ describe("ITEM 3 MULTI-PICKUP integration", () => {
   //
   // This is a "guard reached" proof, not just a pure-function test: it drives
   // the real POST /dispatch/auto route against a real database, with every
-  // truck's window narrowed just enough that a genuine 1-pickup estimate (95
-  // min: 30 load + 45 drive + 20 unload) fits but a genuine 2-pickup estimate
-  // (125 min) does not. Before the fix, BOTH cases below would incorrectly
-  // succeed, because auto-dispatch never saw the second pickup at all.
+  // truck's window narrowed just enough that a genuine 1-pickup estimate
+  // fits but a genuine 2-pickup estimate does not. Before the fix, BOTH
+  // cases below would incorrectly succeed, because auto-dispatch never saw
+  // the second pickup at all.
+  //
+  // ⚠ The destination plant sits in zone P2 (1 point), and the drive leg is
+  // SCALED by zone points relative to OP_DRIVE_POINTS_BASELINE (default 3):
+  // round(45 * 1/3) = 15 min, not the flat 45. First version of this test
+  // assumed the flat figure and picked a window loose enough that BOTH
+  // cases fit — it went green against a real database while proving
+  // nothing, caught by CI's Postgres integration tier. The real numbers:
+  //   1 pickup: 30 load + 15 drive + 20 unload = 65 min
+  //   2 pickups: 60 load + 15 drive + 20 unload = 95 min
   describe("auto-dispatch respects the multi-pickup load count", () => {
     beforeEach(async () => {
-      // Tomorrow 09:00 MYT (futurePickupIso) + 11:00 close leaves exactly a
-      // 120-minute margin: enough for one pickup (95 min), not two (125 min).
+      // Tomorrow 09:00 MYT (futurePickupIso) + 65 min = 10:05 (fits);
+      // + 95 min = 10:35 (does not). 10:15 sits between the two with a
+      // margin on both sides.
       await prisma.truck.updateMany({
-        data: { operating_hours_start: "07:00", operating_hours_end: "11:00" },
+        data: { operating_hours_start: "07:00", operating_hours_end: "10:15" },
       });
     });
 
