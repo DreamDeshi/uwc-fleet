@@ -2,10 +2,20 @@
 // dates as ISO strings; these turn them into the prototype's display strings.
 import i18n from "i18next";
 
+// ⚠ Found in code review 31 Aug 2026: this used to print a WHOLE number with
+// no decimals ("RM 44") and only switch to 2dp for a non-integer amount
+// ("RM 44.55"), while admin/lib/format.ts's formatMoney is ALWAYS 2dp — whose
+// own comment already explains why: "payroll columns are reconciled
+// line-by-line, and mixed RM 44 / RM 44.5 / RM 44.55 is ambiguous (is 'RM 44'
+// exactly 44.00?)." That reasoning does not stop applying just because the
+// screen is the driver's Earnings rather than the admin's approval queue — a
+// driver and the admin approving the SAME stop's incentive could see
+// differently-formatted figures for the identical number. Always 2dp here
+// too, matching admin's format exactly.
 export function formatMoney(value: string | number | null | undefined): string {
   const n = Number(value ?? 0);
-  if (!Number.isFinite(n)) return "RM 0";
-  return Number.isInteger(n) ? `RM ${n}` : `RM ${n.toFixed(2)}`;
+  if (!Number.isFinite(n)) return "RM 0.00";
+  return `RM ${n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // ── Localised month names ────────────────────────────────────────────────
