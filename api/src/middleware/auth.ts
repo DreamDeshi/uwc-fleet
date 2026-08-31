@@ -51,15 +51,21 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   }
 
   try {
-    // Step 2: is this account still allowed in? Account status is re-checked on
-    // EVERY request (single indexed PK lookup) so that disabling a user cuts
-    // access immediately — otherwise a disabled account could keep
-    // authenticating until its tokens expire (30-min access, and /refresh
-    // would mint new ones for 7-day stretches). This was an audit finding; the
-    // DB round-trip per request is the accepted price of instant revocation.
+    // Step 2: is this account still allowed in, and with what role RIGHT NOW?
+    // Both status and role are re-checked on EVERY request (still a single
+    // indexed PK lookup — same round trip as before, one more column) so that
+    // disabling OR DEMOTING a user cuts that privilege immediately, not just
+    // on next login — otherwise a demoted admin's already-issued access token
+    // keeps passing requireRole("admin") until it naturally expires (30-min
+    // access, and /refresh would mint new ones for 7-day stretches). Trusting
+    // `payload.role` from the token, as this used to, meant a demotion during
+    // incident response did not actually revoke the demoted admin's access
+    // until the token expired on its own — found in code review 31 Aug 2026,
+    // the same shape as the status check right above it, just for the field
+    // that check's own comment didn't cover.
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { status: true },
+      select: { status: true, role: true },
     });
     const statusErr = accountStatusError(user?.status);
     if (statusErr) {
@@ -67,8 +73,9 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
       return;
     }
     // Attach the identity for downstream handlers — requireRole and the
-    // row-level ownership checks all read req.user from here.
-    req.user = { id: payload.sub, role: payload.role };
+    // row-level ownership checks all read req.user from here. `role` is the
+    // DB's CURRENT value, not the token's snapshot from login time.
+    req.user = { id: payload.sub, role: user!.role };
     next();
   } catch (err) {
     next(err);
