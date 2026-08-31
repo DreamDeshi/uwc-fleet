@@ -29,9 +29,14 @@ import {
   proposeTripIncentiveOnce,
   revertFinalizeForUndo,
   approveTripIncentiveOnce,
+  payAttributionInstant,
   type FinalizedGroup,
 } from "../services/tripCompletion";
 import { otDemotionReason, resolveLastTripOt } from "../services/lastTripOt";
+import {
+  isWithinAdjustmentWindow,
+  INCENTIVE_ADJUSTMENT_MAX_MONTHS_BACK,
+} from "../services/incentiveAdjustments";
 import { isInterplantRouteType, isReturnRouteType } from "../lib/uwcSpec";
 import { bookingCutoffVerdict, cutoffMessage, cutoffOverrideNote } from "../lib/bookingCutoff";
 import { effectiveBookingCutoffs } from "../lib/bookingCutoffSettings";
@@ -46,7 +51,7 @@ import {
 import { validateBody } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
-import { mytDayBoundsForKey } from "../lib/myt";
+import { mytDayBoundsForKey, mytMonthKey } from "../lib/myt";
 import {
   TRIP_LIST_ORDER,
   buildTripPage,
@@ -65,7 +70,7 @@ import {
 } from "../services/incentiveEngine";
 import { leaveDateFilter } from "../services/driverLeave";
 import { priorDeliveredDropsWhere } from "../services/dayLedger";
-import { SETTLED_UNDELIVERED_WHERE, isStopSettled, hasOpenException, ADJUDICATED_UNDELIVERED_WHERE, isStopAdjudicated } from "../services/undeliveredPay";
+import { SETTLED_UNDELIVERED_WHERE, isStopSettled, hasOpenException, ADJUDICATED_UNDELIVERED_WHERE, isStopAdjudicated, EARNING_STOP_SELECT } from "../services/undeliveredPay";
 import { sha256Hex } from "../lib/exceptionFingerprint";
 import { changeRequestsEnabled } from "../lib/featureFlags";
 import { TRIP_INCLUDE } from "../lib/tripInclude";
@@ -3704,6 +3709,105 @@ router.patch(
 
       const updated = await prisma.trip.findUnique({ where: { id }, include: tripInclude });
       res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ── Incentive ADJUSTMENT — the correction lever for an already-completed
+// trip's pay (R6-2/R6-3, owner ruling 29 Aug 2026). See
+// services/incentiveAdjustments.ts for the full reasoning. Append-only: this
+// NEVER rewrites Trip.incentive_final. No second-admin approval by design —
+// same trust level as the original approval itself (one admin, a required
+// reason, an audit trail).
+const incentiveAdjustmentSchema = z.object({
+  delta: z.number().refine((n) => n !== 0, "delta must not be zero — there is nothing to adjust."),
+  reason: z.string().trim().min(3).max(500),
+});
+
+router.get("/:id/incentive-adjustments", requireRole("admin"), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const trip = await prisma.trip.findUnique({ where: { id }, select: { id: true } });
+    if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+    const adjustments = await prisma.incentiveAdjustment.findMany({
+      where: { trip_id: id },
+      orderBy: { created_at: "asc" },
+      include: { creator: { select: { name: true } } },
+    });
+    res.json(adjustments);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post(
+  "/:id/incentive-adjustments",
+  requireRole("admin"),
+  validateBody(incentiveAdjustmentSchema),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { delta, reason } = req.body as { delta: number; reason: string };
+
+      const trip = await prisma.trip.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          ticket_number: true,
+          status: true,
+          incentive_final: true,
+          pickup_datetime: true,
+          stops: { select: EARNING_STOP_SELECT },
+        },
+      });
+      if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
+      // Only a trip that actually finished the POD-approval gate has a real
+      // paid figure to correct. A trip still pending_approval is edited
+      // through approve-incentive's own final_amount instead — that route
+      // hasn't locked yet, so there is nothing here for it to correct.
+      if (trip.status !== "completed" || trip.incentive_final === null) {
+        throw new ApiError(
+          400,
+          "TRIP_NOT_ADJUSTABLE",
+          "Only a completed trip with an approved incentive can be adjusted."
+        );
+      }
+      const tripMonthKey = mytMonthKey(payAttributionInstant(trip));
+      const nowMonthKey = mytMonthKey(new Date());
+      if (!isWithinAdjustmentWindow(tripMonthKey, nowMonthKey)) {
+        throw new ApiError(
+          409,
+          "ADJUSTMENT_WINDOW_EXPIRED",
+          `This trip's pay month (${tripMonthKey}) is more than ${INCENTIVE_ADJUSTMENT_MAX_MONTHS_BACK} months back and can no longer be adjusted.`
+        );
+      }
+
+      const rounded = Math.round(delta * 100) / 100;
+      const sign = rounded >= 0 ? "+" : "";
+      const adjustment = await prisma.$transaction(async (tx) => {
+        const created = await tx.incentiveAdjustment.create({
+          data: {
+            trip_id: id,
+            delta: rounded,
+            reason,
+            created_by: req.user!.id,
+            effective_month: nowMonthKey,
+          },
+        });
+        await tx.auditLog.create({
+          data: {
+            user_id: req.user!.id,
+            action: `trip.incentive_adjusted ${sign}RM${rounded.toFixed(2)} (effective ${nowMonthKey}) — ${reason}`,
+            table_name: "Trip",
+            record_id: id,
+          },
+        });
+        return created;
+      });
+
+      res.status(201).json(adjustment);
     } catch (err) {
       next(err);
     }

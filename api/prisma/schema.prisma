@@ -205,15 +205,16 @@ model User {
   assigned_truck        Truck?      @relation(fields: [assigned_truck_plate], references: [plate])
   created_at            DateTime    @default(now())
 
-  trips_requested          Trip[]                 @relation("RequestorTrips")
-  trips_driven             Trip[]                 @relation("DriverTrips")
-  location_logs            LocationLog[]
-  audit_logs               AuditLog[]
-  fuel_logs                FuelLog[]
-  consignees_added         Consignee[]            @relation("ConsigneeCreatedBy")
-  leaves                   DriverLeave[]          @relation("DriverLeaves")
-  password_reset_requests  PasswordResetRequest[] @relation("PasswordResetRequestUser")
-  password_resets_resolved PasswordResetRequest[] @relation("PasswordResetRequestResolvedBy")
+  trips_requested               Trip[]                 @relation("RequestorTrips")
+  trips_driven                  Trip[]                 @relation("DriverTrips")
+  location_logs                 LocationLog[]
+  audit_logs                    AuditLog[]
+  fuel_logs                     FuelLog[]
+  consignees_added              Consignee[]            @relation("ConsigneeCreatedBy")
+  leaves                        DriverLeave[]          @relation("DriverLeaves")
+  password_reset_requests       PasswordResetRequest[] @relation("PasswordResetRequestUser")
+  password_resets_resolved      PasswordResetRequest[] @relation("PasswordResetRequestResolvedBy")
+  incentive_adjustments_created IncentiveAdjustment[]  @relation("IncentiveAdjustmentCreator")
 }
 
 // Self-service password reset request. The requester chooses their OWN new
@@ -497,14 +498,15 @@ model Trip {
   open_exception            TripException? @relation("TripOpenException", fields: [open_exception_id], references: [id])
   created_at                DateTime       @default(now())
 
-  stops              TripStop[]
-  cargo_details      CargoDetail[]
-  documents          TripDocument[]
-  location_logs      LocationLog[]
-  external_forwarder ExternalForwarder?
-  status_history     TripStatusHistory[]
-  exceptions         TripException[]     @relation("TripExceptions")
-  change_requests    TripChangeRequest[]
+  stops                 TripStop[]
+  cargo_details         CargoDetail[]
+  documents             TripDocument[]
+  location_logs         LocationLog[]
+  external_forwarder    ExternalForwarder?
+  status_history        TripStatusHistory[]
+  exceptions            TripException[]       @relation("TripExceptions")
+  change_requests       TripChangeRequest[]
+  incentive_adjustments IncentiveAdjustment[]
 
   // The idempotency constraint itself (DG-T7). This is what makes a concurrent
   // double-submit safe: the second INSERT loses on the unique index rather than
@@ -515,6 +517,42 @@ model Trip {
   // composite serves it via a backward index scan. Also covers the legacy
   // newest-N limit window the other admin pages still use.
   @@index([created_at, id])
+}
+
+// Append-only pay CORRECTION for a completed trip (R6-2/R6-3, owner ruling
+// 29 Aug 2026 — this was internal implementation policy, never asked to
+// Mr. Teh). `Trip.incentive_final` is write-once (approveTripIncentiveOnce's
+// CAS never matches a `completed` trip again) and payroll has no period
+// lock — an in-place correction would silently rewrite an ALREADY-PAID
+// month, so the same report run twice a month apart would return different
+// numbers with nothing explaining why.
+//
+// The fix is a NEW line, not an edit: `effective_month` is always the MYT
+// month the adjustment is CREATED in (R6-2) — never the trip's own
+// pay-attribution month, which is never touched. A trip whose original
+// pay-attribution month is more than 3 months back cannot be adjusted
+// through this route at all (R6-3), checked at write time.
+//
+// Deliberately does NOT touch `points_awarded` or the zone ledger — the
+// zone slot follows the JOURNEY, not the money (see the IM8 trap in
+// AGENTS.md); a money-only correction that also re-scored would silently
+// change every later same-zone drop that day.
+model IncentiveAdjustment {
+  id              String   @id @default(cuid())
+  trip_id         String
+  trip            Trip     @relation(fields: [trip_id], references: [id])
+  delta           Decimal  @db.Decimal(10, 2) // + or - RM
+  reason          String
+  created_by      String
+  creator         User     @relation("IncentiveAdjustmentCreator", fields: [created_by], references: [id])
+  created_at      DateTime @default(now())
+  effective_month String // "YYYY-MM", MYT — the CURRENT month at creation
+
+  // The trip-detail trace (every adjustment against one trip) and the
+  // payroll fold-in (every adjustment effective in one month) are the two
+  // reads this table exists to serve.
+  @@index([trip_id])
+  @@index([effective_month])
 }
 
 // ── 8. TripStop ──────────────────────────────────────────────────────
