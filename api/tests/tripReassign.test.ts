@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   claimPendingTrip,
   releaseAssignedTrip,
+  releaseInProgressTripWithNoDeliveries,
   RELEASE_TRIP_DATA,
 } from "../src/services/tripAssignment";
 import { truckRateSnapshot } from "../src/services/rateSnapshot";
@@ -100,6 +101,84 @@ describe("releaseAssignedTrip — the unassign primitive (CLIENT CASE: back to p
       auto_dispatch_failed: false,
       auto_dispatch_note: null, // travels with the flag it annotates
     });
+  });
+});
+
+// In-memory Trip store that ALSO honours a `stops: { none: { status } } }`
+// relation filter, the same way Postgres would evaluate it as part of one
+// atomic UPDATE...WHERE — needed to test releaseInProgressTripWithNoDeliveries
+// without a real database.
+function fakeTripStoreWithStops(
+  initial: { id: string; status: string; [k: string]: unknown },
+  stops: { status: string }[]
+) {
+  const row: Record<string, unknown> = { ...initial };
+  return {
+    row,
+    client: {
+      trip: {
+        async updateMany(args: {
+          where: { id: string; status: string; stops?: { none: { status: string } } };
+          data: Record<string, unknown>;
+        }) {
+          if (row.id !== args.where.id || row.status !== args.where.status) {
+            return { count: 0 };
+          }
+          if (args.where.stops && stops.some((s) => s.status === args.where.stops!.none.status)) {
+            return { count: 0 };
+          }
+          Object.assign(row, args.data);
+          return { count: 1 };
+        },
+      },
+    },
+  };
+}
+
+// ⚠ MID-TRIP EXTENSION, 31 Aug 2026 — companion to releaseAssignedTrip above.
+// Only an in_progress trip with ZERO delivered stops may be released, because
+// nothing has been earned yet on the old assignment, so there is no R6-6
+// rate-split question to answer. See the function's own doc comment.
+describe("releaseInProgressTripWithNoDeliveries — the mid-trip reassign primitive", () => {
+  const IN_PROGRESS_TRIP = { ...ASSIGNED_TRIP, status: "in_progress" };
+
+  it("releases an in_progress trip whose stops are all still pending", async () => {
+    const { row, client } = fakeTripStoreWithStops(IN_PROGRESS_TRIP, [
+      { status: "pending" },
+      { status: "pending" },
+    ]);
+    expect(await releaseInProgressTripWithNoDeliveries(client, "t1")).toBe(true);
+    expect(row.status).toBe("pending");
+    expect(row.driver_id).toBeNull();
+  });
+
+  it("releases an in_progress trip where the driver ARRIVED but never delivered", async () => {
+    // arrived_at is physical-presence metadata, not money — no stop being
+    // "delivered" is the only thing that matters here.
+    const { client } = fakeTripStoreWithStops(IN_PROGRESS_TRIP, [{ status: "arrived" }]);
+    expect(await releaseInProgressTripWithNoDeliveries(client, "t1")).toBe(true);
+  });
+
+  it("⚠ refuses the moment ANY stop is delivered, even just one of several", async () => {
+    const { row, client } = fakeTripStoreWithStops(IN_PROGRESS_TRIP, [
+      { status: "delivered" },
+      { status: "pending" },
+    ]);
+    expect(await releaseInProgressTripWithNoDeliveries(client, "t1")).toBe(false);
+    expect(row.status).toBe("in_progress"); // untouched
+    expect(row.driver_id).toBe("d-old");
+  });
+
+  it("never releases a merely-assigned trip (that's releaseAssignedTrip's job, not this one's)", async () => {
+    const { client } = fakeTripStoreWithStops({ ...ASSIGNED_TRIP }, []);
+    expect(await releaseInProgressTripWithNoDeliveries(client, "t1")).toBe(false);
+  });
+
+  it("loses cleanly for a completed/cancelled/rejected trip regardless of its stops", async () => {
+    for (const status of ["completed", "cancelled", "rejected", "pending"]) {
+      const { client } = fakeTripStoreWithStops({ ...ASSIGNED_TRIP, status }, []);
+      expect(await releaseInProgressTripWithNoDeliveries(client, "t1")).toBe(false);
+    }
   });
 });
 

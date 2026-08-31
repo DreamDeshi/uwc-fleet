@@ -12,6 +12,7 @@ import {
 import {
   claimPendingTripOrThrow,
   releaseAssignedTrip,
+  releaseInProgressTripWithNoDeliveries,
   startAssignedTripForDriver,
   rejectPendingTrip,
   cancelBookedTrip,
@@ -1799,13 +1800,25 @@ router.patch(
   }
 );
 
-// ── PATCH /trips/:id/reassign — move an ASSIGNED trip to another driver ──
+// ── PATCH /trips/:id/reassign — move an ASSIGNED trip (or a STARTED one with
+// nothing delivered yet) to another driver ──
 // Client-approved ops lever (Q3, 3 Jul 2026). Release + full re-assignment in
 // ONE Serializable transaction: the new driver/truck passes the SAME guard
 // ladder as a fresh assignment (capacity, roadworthiness, conflict, busy,
 // leave, operating window — see assignTripInTx) and the rate snapshot is
 // RE-TAKEN for the new truck at this moment. If any guard rejects, the whole
 // transaction rolls back and the trip stays with the old driver.
+//
+// ⚠ MID-TRIP EXTENSION (31 Aug 2026, whole-codebase-review follow-up): an
+// `in_progress` trip is now reassignable too, but ONLY while it has ZERO
+// delivered stops. This is deliberately narrow — the general case (some
+// stops already delivered under the old driver, the rest handed to a new
+// one) hits R6-6, an unanswered client question about whose rate applies to
+// the split, and AGENTS.md's frozen-work list names this exact scenario.
+// Zero delivered stops means nothing has been earned on the old assignment
+// yet, so there is no split to answer: the new assignment starts exactly
+// like any fresh one. See releaseInProgressTripWithNoDeliveries's own
+// comment for the atomicity argument.
 const reassignTripSchema = z.object({
   driver_id: z.string().min(1),
   truck_plate: z.string().min(1),
@@ -1832,16 +1845,25 @@ router.patch(
           driver_id: true,
           truck_plate: true,
           driver: { select: { name: true, expo_push_token: true } },
+          stops: { select: { status: true } },
         },
       });
       if (!trip) {
         throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
       }
-      if (trip.status !== "assigned") {
+      const midTrip = trip.status === "in_progress";
+      if (trip.status !== "assigned" && !midTrip) {
         throw new ApiError(
           400,
           "INVALID_STATUS",
-          "Only assigned (not yet started) trips can be reassigned."
+          "Only an assigned trip, or an in-progress trip with no delivered stops yet, can be reassigned."
+        );
+      }
+      if (midTrip && trip.stops.some((s) => s.status === "delivered")) {
+        throw new ApiError(
+          409,
+          "MID_TRIP_REASSIGN_HAS_DELIVERIES",
+          "This trip already has a delivered stop. Whose rate applies to a split assignment is not yet decided — reassignment is only available before the first delivery."
         );
       }
       if (trip.driver_id === driver_id && trip.truck_plate === truck_plate) {
@@ -1866,14 +1888,31 @@ router.patch(
         updated = await prisma.$transaction(
           async (tx) => {
             // Release first (status-guarded CAS — loses to a concurrent Start
-            // Trip), then run the untouched assignment ladder + claim.
-            const released = await releaseAssignedTrip(tx, id);
+            // Trip, or, in the mid-trip case, a concurrent Deliver on the
+            // first stop), then run the untouched assignment ladder + claim.
+            const released = midTrip
+              ? await releaseInProgressTripWithNoDeliveries(tx, id)
+              : await releaseAssignedTrip(tx, id);
             if (!released) {
               throw new ApiError(
                 409,
                 "TRIP_NOT_UNASSIGNABLE",
-                "This trip just changed state (the driver may have started it). Refresh and try again."
+                midTrip
+                  ? "This trip just changed state (a stop may have just been delivered). Refresh and try again."
+                  : "This trip just changed state (the driver may have started it). Refresh and try again."
               );
+            }
+            if (midTrip) {
+              // The old driver may have physically arrived at a stop without
+              // delivering it (arrived_at set, status "arrived") — that state
+              // belongs to the OLD driver's visit. The new driver hasn't been
+              // anywhere yet, so every stop resets to pending, same as the
+              // zone-snapshot reset unassign already does for the pre-start
+              // case (see the unassign route above).
+              await tx.tripStop.updateMany({
+                where: { trip_id: id },
+                data: { status: "pending", arrived_at: null, zone_points: null, zone_code: null },
+              });
             }
             return assignTripInTx(tx, {
               trip,
@@ -1881,7 +1920,7 @@ router.patch(
               truck_plate,
               force: !!force,
               actorUserId: req.user!.id,
-              auditAction: `trip.reassigned ${oldPair} → ${driver.name} · ${truck_plate}${reason ? ` — ${reason}` : ""}`,
+              auditAction: `trip.reassigned${midTrip ? " (mid-trip, pre-delivery)" : ""} ${oldPair} → ${driver.name} · ${truck_plate}${reason ? ` — ${reason}` : ""}`,
               timelineEvent: "reassigned",
               timelineNote: `${oldPair} → ${driver.name} · ${truck_plate}`,
             });

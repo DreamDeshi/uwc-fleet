@@ -150,6 +150,46 @@ export async function releaseAssignedTrip(
   return res.count === 1;
 }
 
+// Minimal client slice for the in-progress release CAS. Separate from
+// TripReleaseClient because the where-shape is different (adds the
+// zero-delivered-stops guard as a relation filter, not just a status match).
+export interface TripReleaseInProgressClient {
+  trip: {
+    updateMany(args: {
+      where: { id: string; status: "in_progress"; stops: { none: { status: "delivered" } } };
+      data: Record<string, unknown>;
+    }): Promise<{ count: number }>;
+  };
+}
+
+/**
+ * Flip an IN-PROGRESS trip with NO delivered stops back to pending, so it can
+ * be reassigned to a different driver/truck (R6-6 companion: mid-trip
+ * reassignment is frozen in the general case because whose rate applies to a
+ * split — some stops delivered under the old driver, the rest under the new
+ * one — is an unanswered client question. This case has no split to answer:
+ * nothing has been delivered yet, so nothing has been earned on the old
+ * assignment, and the new assignment starts exactly like any fresh one).
+ *
+ * `stops: { none: { status: "delivered" } }` is evaluated as part of the same
+ * atomic UPDATE...WHERE, not a separate read-then-write — a driver delivering
+ * the first stop in the instant between an admin's preflight read and this
+ * call loses the race cleanly (count 0) rather than being silently reassigned
+ * out from under a stop they just completed.
+ *
+ * Returns true iff THIS caller released it.
+ */
+export async function releaseInProgressTripWithNoDeliveries(
+  client: TripReleaseInProgressClient,
+  tripId: string
+): Promise<boolean> {
+  const res = await client.trip.updateMany({
+    where: { id: tripId, status: "in_progress", stops: { none: { status: "delivered" } } },
+    data: { ...RELEASE_TRIP_DATA },
+  });
+  return res.count === 1;
+}
+
 // ── Exits: reject / cancel / assign-external, status-guarded like the claim ──
 //
 // These three used to be plain update-by-id behind a pre-check, which loses to
