@@ -111,6 +111,33 @@ describe("PATCH /users/:id/role", () => {
     expect((await prisma.user.findUnique({ where: { id: reqId } }))!.role).toBe("admin");
   });
 
+  // ⚠ Found in code review 31 Aug 2026: requireAuth re-checks account STATUS
+  // on every request (for instant deactivation) but used to trust ROLE
+  // straight from the already-issued JWT, never re-reading it from the DB.
+  // A demoted admin's existing access token kept passing requireRole("admin")
+  // until it naturally expired — the demotion above only worked for a NEW
+  // login, not the token already in the demoted admin's hand. This is the
+  // "guard reached" proof: the token is minted BEFORE the demotion, then
+  // reused AFTER it, against a real admin-only route.
+  it("a demoted admin's EXISTING access token loses admin access immediately, not on next login", async () => {
+    const originalAdminToken = await loginAs(ADMIN); // minted while still admin
+    const adminId = await userIdByPhone(ADMIN.phone);
+    const reqId = await userIdByPhone(REQUESTOR.phone);
+
+    // Second admin so the demotion below is allowed at all.
+    expect((await patchRole(originalAdminToken, reqId, "admin")).status).toBe(200);
+    // Demote the ORIGINAL admin using the second admin's fresh session, so
+    // originalAdminToken is never re-minted after this point.
+    const secondAdminToken = await loginAs(REQUESTOR);
+    expect((await patchRole(secondAdminToken, adminId, "requestor")).status).toBe(200);
+
+    // The demoted admin's OLD token — issued before the demotion, never
+    // refreshed — must be refused on an admin-only route right away.
+    const res = await api().get("/api/v1/users").set(auth(originalAdminToken));
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("FORBIDDEN");
+  });
+
   it("moving a driver off the driver role releases their 1:1 truck slot", async () => {
     const admin = await loginAs(ADMIN);
     const driverId = await userIdByPhone(DRIVER.phone); // PND 1888, assigned_truck_plate set
