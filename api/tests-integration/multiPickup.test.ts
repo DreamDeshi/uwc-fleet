@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { api, auth, prisma, resetDb, loginAs, REQUESTOR } from "./helpers/harness";
-import { firstRouteTypeId, interplantRouteTypeId, uwcPlantIds, ensureConsigneeInZone, futurePickupIso } from "./helpers/flow";
+import { api, auth, prisma, resetDb, loginAs, ADMIN, REQUESTOR } from "./helpers/harness";
+import {
+  firstRouteTypeId,
+  interplantRouteTypeId,
+  uwcPlantIds,
+  ensureConsigneeInZone,
+  futurePickupIso,
+  autoDispatch,
+} from "./helpers/flow";
 
 /**
  * ITEM 3 MULTI-PICKUP (interplant-only). Mr. Teh, R1 2026-07-24, also said
@@ -162,5 +169,78 @@ describe("ITEM 3 MULTI-PICKUP integration", () => {
     });
     expect(history.length).toBe(1);
     expect(history[0].note ?? "").toMatch(/cargo/i);
+  });
+
+  // AUTO-DISPATCH must count MULTI-PICKUP LOADS the same way manual assign
+  // does. Found in code review 31 Aug 2026: autoDispatchTrip's cargo select
+  // never fetched pickup_consignee_id, so its operating-window estimate
+  // always used pickupCount=1 regardless of how many distinct pickup plants
+  // (or plant + default-origin combinations) the cargo actually named — see
+  // computePickupCount in services/operatingWindow.ts.
+  //
+  // This is a "guard reached" proof, not just a pure-function test: it drives
+  // the real POST /dispatch/auto route against a real database, with every
+  // truck's window narrowed just enough that a genuine 1-pickup estimate (95
+  // min: 30 load + 45 drive + 20 unload) fits but a genuine 2-pickup estimate
+  // (125 min) does not. Before the fix, BOTH cases below would incorrectly
+  // succeed, because auto-dispatch never saw the second pickup at all.
+  describe("auto-dispatch respects the multi-pickup load count", () => {
+    beforeEach(async () => {
+      // Tomorrow 09:00 MYT (futurePickupIso) + 11:00 close leaves exactly a
+      // 120-minute margin: enough for one pickup (95 min), not two (125 min).
+      await prisma.truck.updateMany({
+        data: { operating_hours_start: "07:00", operating_hours_end: "11:00" },
+      });
+    });
+
+    it("a single-pickup interplant trip (pickupCount=1) auto-dispatches inside the narrowed window", async () => {
+      const requestor = await loginAs(REQUESTOR);
+      const admin = await loginAs(ADMIN);
+      const rt = await interplantRouteTypeId(requestor);
+      const [, plant2] = await uwcPlantIds();
+
+      const booked = await bookRaw(requestor, {
+        route_type_id: rt,
+        pickup_datetime: futurePickupIso(),
+        stops: [{ consignee_id: plant2 }],
+        // No pickup_consignee_id on either line → both default-origin → 1 load.
+        cargo_details: [{ pallet_type: "4×4", quantity: 1 }],
+      });
+      expect(booked.status).toBe(201);
+
+      const res = await autoDispatch(admin, booked.body.id);
+      expect(res.status).toBe(200);
+    });
+
+    it("⚠ a MIXED interplant trip (explicit plant + default origin, pickupCount=2) fails on the SAME window that admitted pickupCount=1", async () => {
+      const requestor = await loginAs(REQUESTOR);
+      const admin = await loginAs(ADMIN);
+      const rt = await interplantRouteTypeId(requestor);
+      const [plant1, plant2] = await uwcPlantIds();
+
+      const booked = await bookRaw(requestor, {
+        route_type_id: rt,
+        pickup_datetime: futurePickupIso(),
+        stops: [{ consignee_id: plant2 }],
+        // One line pinned to an explicit plant, the other left at the
+        // default origin — two real physical pickup stops, same cargo
+        // volume as the case above.
+        cargo_details: [
+          { pallet_type: "4×4", quantity: 1, pickup_consignee_id: plant1 },
+          { pallet_type: "2×2", quantity: 1 },
+        ],
+      });
+      expect(booked.status).toBe(201);
+
+      const res = await autoDispatch(admin, booked.body.id);
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("NO_TRUCK_AVAILABLE");
+
+      const after = (await prisma.trip.findUnique({ where: { id: booked.body.id } }))!;
+      expect(after.status).toBe("pending");
+      // Specifically the WINDOW note, not a generic no-capacity one — proves
+      // the extra load, not something unrelated, is what pushed this over.
+      expect(after.auto_dispatch_note ?? "").toMatch(/exceeds the .* operating window/);
+    });
   });
 });

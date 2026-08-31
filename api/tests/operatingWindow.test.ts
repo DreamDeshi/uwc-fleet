@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   estimateOperatingWindow,
+  computePickupCount,
   parseHmToMinutes,
   formatMinutesToHm,
   OP_LOAD_MIN,
@@ -60,6 +61,52 @@ describe("operating-window estimate (defaults 30 / 45 / 20)", () => {
       const negative = estimateOperatingWindow({ pickupDateTime: myt(2026, 7, 6, 15, 55), stopCount: 1, pickupCount: -3 });
       expect(zero.addedMinutes).toBe(base.addedMinutes);
       expect(negative.addedMinutes).toBe(base.addedMinutes);
+    });
+  });
+
+  // computePickupCount: the DISTINCT-STOP formula that feeds pickupCount above.
+  // Fixtures below are chosen so a formula that just filters nulls (the
+  // original, undercounting implementation) gives a DIFFERENT answer than the
+  // correct one — a fixture that can't tell the two apart doesn't prove
+  // anything (see AGENTS.md, "A fixture must discriminate the two behaviours").
+  describe("computePickupCount (Item 3 multi-pickup)", () => {
+    it("every line at the default origin (ordinary booking) → 1", () => {
+      expect(computePickupCount([{ pickup_consignee_id: null }, { pickup_consignee_id: null }])).toBe(1);
+    });
+
+    it("empty cargo → 1 (never below the floor)", () => {
+      expect(computePickupCount([])).toBe(1);
+    });
+
+    it("two distinct explicit plants, no default-origin line → 2", () => {
+      expect(
+        computePickupCount([{ pickup_consignee_id: "plant-5" }, { pickup_consignee_id: "plant-7" }])
+      ).toBe(2);
+    });
+
+    it("the same explicit plant repeated → 1, not 2", () => {
+      expect(
+        computePickupCount([{ pickup_consignee_id: "plant-5" }, { pickup_consignee_id: "plant-5" }])
+      ).toBe(1);
+    });
+
+    it("⚠ one explicit plant MIXED with a default-origin line → 2, not 1", () => {
+      // The bug this guards: `new Set(ids).filter(Boolean).size` alone would
+      // silently drop the null and answer 1 here, though the truck must
+      // physically visit both the default origin AND the named plant.
+      expect(
+        computePickupCount([{ pickup_consignee_id: "plant-5" }, { pickup_consignee_id: null }])
+      ).toBe(2);
+    });
+
+    it("two distinct plants PLUS a default-origin line → 3", () => {
+      expect(
+        computePickupCount([
+          { pickup_consignee_id: "plant-5" },
+          { pickup_consignee_id: "plant-7" },
+          { pickup_consignee_id: undefined },
+        ])
+      ).toBe(3);
     });
   });
 

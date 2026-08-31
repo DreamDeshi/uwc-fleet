@@ -190,6 +190,34 @@ export interface OperatingWindowEstimate {
 }
 
 /**
+ * Item 3 multi-pickup: how many distinct physical load stops a trip's cargo
+ * implies, for `pickupCount` above. A cargo line with no `pickup_consignee_id`
+ * is picked up from the hardcoded default origin (`ORIGIN_LABEL`, "UWC Batu
+ * Kawan" — see mobile/src/lib/trip.ts), which is itself a distinct physical
+ * location from any named plant.
+ *
+ * ⚠ Counting `new Set(ids).filter(Boolean).size` alone (the original
+ * implementation, in both the manual-assign path and auto-dispatch)
+ * UNDERCOUNTS a trip that mixes an explicit plant pickup with a line left at
+ * the default origin — `assertMultiPickupPlantsValid` (routes/trips.ts) only
+ * validates the lines that DO name a plant, so nothing stops a requestor
+ * picking "UWC Plant 5" for one pallet row and leaving another at the
+ * default. That is two real stops, not one. A trip with every line at the
+ * default (today's ordinary bookings) still counts as exactly 1, same as
+ * before.
+ *
+ * Pure and shared by both the manual-assign path (routes/trips.ts) and
+ * auto-dispatch (dispatchEngine.ts) so the two never diverge again.
+ */
+export function computePickupCount(cargo: { pickup_consignee_id: string | null | undefined }[]): number {
+  const explicitPlants = new Set(
+    cargo.map((c) => c.pickup_consignee_id).filter((v): v is string => Boolean(v))
+  );
+  const hasDefaultOriginLine = cargo.some((c) => !c.pickup_consignee_id);
+  return explicitPlants.size + (hasDefaultOriginLine ? 1 : 0) || 1;
+}
+
+/**
  * Estimate a run's completion and whether it breaches the operating window.
  *
  * `exceedsWindow` is true when EITHER the pickup is outside [start,end] OR the

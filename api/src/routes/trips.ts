@@ -109,7 +109,7 @@ function withCanonicalCargoSize<
 import { recordTripEvent } from "../lib/tripHistory";
 import { buildTripTimeline } from "../lib/tripTimeline";
 import { findSchedulingConflicts, CONFLICT_STATUSES } from "../services/schedulingConflict";
-import { estimateOperatingWindow, formatMinutesToHm } from "../services/operatingWindow";
+import { estimateOperatingWindow, formatMinutesToHm, computePickupCount } from "../services/operatingWindow";
 import {
   effectiveOperatingEstimateDefaults,
   effectiveAssignmentConflictBufferMs,
@@ -1338,11 +1338,10 @@ async function assignTripInTx(
               where: { trip_id: id },
               select: { pallet_type: true, quantity: true, estimated_pallets: true, width_ft: true, length_ft: true, pickup_consignee_id: true },
             });
-            // Item 3 multi-pickup: each DISTINCT pickup plant is its own load
+            // Item 3 multi-pickup: each DISTINCT pickup location is its own load
             // stop, so the estimate must count loads, not trips. No pickups set
             // (today's single-origin bookings) → 1, unchanged from before.
-            const pickupCount =
-              new Set(orderCargo.map((c) => c.pickup_consignee_id).filter((v): v is string => Boolean(v))).size || 1;
+            const pickupCount = computePickupCount(orderCargo);
             // Capacity is scoped to THIS trip's pickup MYT day (16 Jul 2026 trial
             // fix): in_progress cargo is physically aboard and always counts, but
             // an assignment only occupies the truck on its own pickup day — a
