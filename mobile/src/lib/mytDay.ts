@@ -51,3 +51,16 @@ export function mytDayKey(date: Date): string {
 export function sameMytDay(a: Date, b: Date): boolean {
   return mytDayKey(a) === mytDayKey(b);
 }
+
+/** The MYT calendar month of an instant, as "YYYY-MM" — same offset as
+ * mytDayKey, so "this month" agrees with "today" on the same clock. */
+export function mytMonthKey(date: Date): string {
+  const myt = new Date(date.getTime() + MYT_OFFSET_MS);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${myt.getUTCFullYear()}-${pad(myt.getUTCMonth() + 1)}`;
+}
+
+/** Do two instants fall in the same MYT calendar month? */
+export function sameMytMonth(a: Date, b: Date): boolean {
+  return mytMonthKey(a) === mytMonthKey(b);
+}

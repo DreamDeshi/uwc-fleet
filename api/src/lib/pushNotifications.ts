@@ -16,6 +16,12 @@ function isExpoPushToken(token: string): boolean {
   return /^Expo(nent)?PushToken\[[^\]]+\]$/.test(token);
 }
 
+export interface PushSendResult {
+  /** How many tokens actually got a send attempt. 0 is a FINDING, not a
+   * success — see the comment on the early return below. */
+  recipients: number;
+}
+
 /**
  * Send a single notification to one or more device tokens. Best-effort:
  * invalid/empty tokens are skipped and transport errors are logged rather than
@@ -24,11 +30,28 @@ function isExpoPushToken(token: string): boolean {
 export async function sendPushNotifications(
   tokens: (string | null | undefined)[],
   payload: PushPayload
-): Promise<void> {
+): Promise<PushSendResult> {
   const valid = tokens.filter(
     (t): t is string => typeof t === "string" && isExpoPushToken(t)
   );
-  if (valid.length === 0) return;
+  if (valid.length === 0) {
+    // ⚠ THE PUSH THAT WENT TO NOBODY (AGENTS.md). This used to `return`
+    // silently here, so `sendPushNotifications([])` resolved exactly like a
+    // real send — "notified everyone" and "notified nobody" were the same
+    // non-event to every one of the ~20 call sites across the codebase
+    // (driver reassignment, stale-ticket sweeps, doc-expiry reminders, admin
+    // exception pings...), because none of them inspected a return value that
+    // never carried the information. The one place this was actually fixed
+    // (reports.ts's exceptions dashboard count) is a compensating UI for ONE
+    // caller, not a fix to the shared function every OTHER caller also goes
+    // through — found in code review 31 Aug 2026. Logging it here, in the one
+    // choke point almost every caller already funnels through, fixes all of
+    // them at once with no call-site changes needed.
+    console.warn(
+      `Push "${payload.title}" reached 0 recipients (${tokens.length} candidate token(s), none valid) — nobody was notified.`
+    );
+    return { recipients: 0 };
+  }
 
   const messages = valid.map((to) => ({
     to,
@@ -62,4 +85,6 @@ export async function sendPushNotifications(
       console.error("Failed to send push notification chunk:", err);
     }
   }
+
+  return { recipients: valid.length };
 }

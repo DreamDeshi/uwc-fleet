@@ -145,6 +145,26 @@ describe("one-time migration of the pre-DG-D4 global keys", () => {
     expect(values).toContain('["second-orphan"]');
   });
 
+  it("⚠ preserves the legacy value instead of deleting it when a SIGNED-IN driver's scoped destination is already occupied", async () => {
+    // Found in code review 31 Aug 2026: the uid-known branch fell straight
+    // through to removeItem with no write at all when the scoped key was
+    // already populated — silently deleting real data (an unsent POD is
+    // delivery evidence) while still reporting it as "adopted".
+    await setActiveUser("driver-A");
+    store.map.set(scopedKeyFor("driver-A", "podOutbox"), '["fresh-capture"]');
+    store.map.set("uwc.podOutbox", '["legacy-photo"]');
+
+    const report = await migrateLegacyGlobalKeys(9000);
+
+    // The scoped slot a fresh capture already wrote to is UNTOUCHED.
+    expect(store.map.get(scopedKeyFor("driver-A", "podOutbox"))).toBe('["fresh-capture"]');
+    // The legacy value survives, under SOME key — never just gone.
+    expect(store.map.get("uwc.orphaned.podOutbox.9000")).toBe('["legacy-photo"]');
+    expect(store.map.has("uwc.podOutbox")).toBe(false);
+    expect(report.quarantined).toContain("uwc.podOutbox");
+    expect(report.adopted).toHaveLength(0);
+  });
+
   it("is a no-op on a device with nothing left to migrate", async () => {
     await setActiveUser("driver-A");
     const report = await migrateLegacyGlobalKeys();

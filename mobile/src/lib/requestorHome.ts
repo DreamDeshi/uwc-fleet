@@ -1,6 +1,6 @@
 import type { Trip } from "../types";
 import { ACTIVE_STATUSES, isDelivered } from "./tripStatus";
-import { sameMytDay } from "./mytDay";
+import { sameMytDay, sameMytMonth } from "./mytDay";
 
 /**
  * What the requestor's Home screen is showing (design frame 10), computed
@@ -56,9 +56,6 @@ export function nextBooking(trips: Trip[], _now: Date = new Date()): Trip | null
 }
 
 export function requestorHome(trips: Trip[], now: Date = new Date(), recentLimit = 4): RequestorHome {
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-
   const recent = trips
     .filter((tr) => isDelivered(tr.status) || tr.status === "cancelled" || tr.status === "rejected")
     .slice()
@@ -68,10 +65,13 @@ export function requestorHome(trips: Trip[], now: Date = new Date(), recentLimit
   return {
     next: nextBooking(trips, now),
     todayCount: trips.filter((tr) => sameDay(new Date(tr.pickup_datetime), now)).length,
-    monthCount: trips.filter((tr) => {
-      const t = pickupTime(tr);
-      return t >= +monthStart && t < +monthEnd;
-    }).length,
+    // ⚠ Found in code review 31 Aug 2026: this used to build monthStart/
+    // monthEnd from now.getFullYear()/now.getMonth() — the DEVICE's month —
+    // right next to todayCount above, which already reads MYT via sameDay.
+    // Same bug this file's own guard test already exists to catch for the
+    // DAY shape (mytDay.test.ts); the MONTH shape of it slipped through
+    // because the guard never named it.
+    monthCount: trips.filter((tr) => sameMytMonth(new Date(tr.pickup_datetime), now)).length,
     recent,
     hasEverBooked: trips.length > 0,
   };

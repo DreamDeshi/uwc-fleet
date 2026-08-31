@@ -412,13 +412,30 @@ export async function migrateLegacyGlobalKeys(
       const existing = await AsyncStorage.getItem(destination);
       if (existing === null) {
         await AsyncStorage.setItem(destination, value);
-      } else if (!uid) {
-        // Same-millisecond collision on the orphan key. Rather than drop the
-        // value, leave the legacy key untouched for the next launch.
+        await AsyncStorage.removeItem(legacyKey);
+        (uid ? report.adopted : report.quarantined).push(legacyKey);
         continue;
       }
-      await AsyncStorage.removeItem(legacyKey);
-      (uid ? report.adopted : report.quarantined).push(legacyKey);
+      // ⚠ The scoped/orphan destination is ALREADY occupied. A known `uid`
+      // used to fall through here straight to removeItem(legacyKey) with no
+      // write at all — silently deleting the legacy value while still
+      // reporting it as "adopted". Found in code review 31 Aug 2026; same
+      // failure this function's own history already names above ("an
+      // earlier version... STILL removed the legacy key"), just reachable
+      // from the opposite (uid-known) branch instead. This module's whole
+      // premise is that deleting is worse than a few kilobytes of
+      // quarantine, so an occupied destination gets the SAME treatment
+      // regardless of whether uid is known: preserve the legacy value under
+      // a fresh timestamped orphan slot rather than drop it.
+      const overflowKey = orphanKey(suffix, now);
+      const overflowExisting = await AsyncStorage.getItem(overflowKey);
+      if (overflowExisting === null) {
+        await AsyncStorage.setItem(overflowKey, value);
+        await AsyncStorage.removeItem(legacyKey);
+        report.quarantined.push(legacyKey);
+      }
+      // else: same-millisecond collision on the orphan key too — leave the
+      // legacy key untouched for the next launch rather than lose data.
     } catch {
       /* leave the legacy key in place and try again next launch */
     }

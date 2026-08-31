@@ -19,6 +19,7 @@ import { dayMonth, formatDate, formatTime } from "../../lib/format";
 import { tripConsigneeName, tripDestination, ORIGIN_LABEL } from "../../lib/trip";
 import { isDelivered } from "../../lib/tripStatus";
 import { homeStatusStrip, requestorHome } from "../../lib/requestorHome";
+import { sameMytMonth } from "../../lib/mytDay";
 import { Trip } from "../../types";
 
 // Home tab, but it also pushes BookingDetail onto the parent requestor stack.
@@ -49,8 +50,13 @@ export function RequestorDashboardScreen() {
     // Up to 8 (wide shows more; the phone column slices to 4 below).
     const recent = list.slice(0, 8);
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthTrips = list.filter((tr) => new Date(tr.created_at) >= monthStart);
+    // ⚠ Found in code review 31 Aug 2026: this used to build monthStart from
+    // now.getFullYear()/now.getMonth() — the DEVICE's month, not MYT's — the
+    // same bug independently re-implemented in lib/requestorHome.ts (see the
+    // fix there). Reading this as MYT matters most exactly when it would
+    // otherwise be wrong: a requestor on a UTC-set web build, just after MYT
+    // midnight, whose device still thinks it's the previous month.
+    const monthTrips = list.filter((tr) => sameMytMonth(new Date(tr.created_at), now));
     const stats = {
       total: monthTrips.length,
       completed: monthTrips.filter((tr) => tr.status === "completed").length,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { mytDayKey, sameMytDay } from "./mytDay";
+import { mytDayKey, sameMytDay, mytMonthKey, sameMytMonth } from "./mytDay";
 
 /**
  * The client's "today" must be MALAYSIA's today, not the device's.
@@ -41,6 +41,27 @@ describe("mytDayKey — the server's day, from the client", () => {
   });
 });
 
+describe("mytMonthKey — 'this month' in Malaysia time, not the device's", () => {
+  it("reads the MYT wall-clock month, not the UTC one", () => {
+    // 31 Jul 2026 16:05 UTC == 1 Aug 2026 00:05 MYT. UTC still says July;
+    // MYT has already turned over to August.
+    expect(mytMonthKey(new Date("2026-07-31T16:05:00Z"))).toBe("2026-08");
+  });
+
+  it("pads, so the key sorts", () => {
+    expect(mytMonthKey(new Date("2026-01-05T04:00:00Z"))).toBe("2026-01");
+  });
+
+  it("sameMytMonth agrees a just-past-midnight pickup belongs to the NEW month", () => {
+    const justAfter = new Date("2026-07-31T16:05:00Z"); // 00:05 MYT, 1 Aug
+    const midAugust = new Date("2026-08-15T04:00:00Z"); // 12:00 MYT, 15 Aug
+    expect(sameMytMonth(justAfter, midAugust)).toBe(true);
+
+    const stillJuly = new Date("2026-07-31T11:00:00Z"); // 19:00 MYT, 31 Jul
+    expect(sameMytMonth(justAfter, stillJuly)).toBe(false);
+  });
+});
+
 describe("no screen decides 'today' on the device clock", () => {
   /**
    * The regression guard. Both home screens computed their own day from the
@@ -74,6 +95,15 @@ describe("no screen decides 'today' on the device clock", () => {
       expect(src, "toDateString() reads the DEVICE day").not.toContain("toDateString()");
       expect(src, "a local Y/M/D compare reads the DEVICE day").not.toMatch(
         /getFullYear\(\)\s*===\s*\w+\.getFullYear\(\)/
+      );
+      // ⚠ Found in code review 31 Aug 2026: monthCount was built from
+      // `new Date(now.getFullYear(), now.getMonth(), 1)` — the SAME device-
+      // clock family as the day checks above, sitting right next to a
+      // correct sameMytDay call, and this guard never named the shape. A
+      // month boundary built from getFullYear()/getMonth() together reads
+      // the device's month.
+      expect(src, "a device-local month boundary reads the DEVICE month").not.toMatch(
+        /getFullYear\(\).*getMonth\(\)/
       );
     });
   }

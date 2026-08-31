@@ -37,6 +37,7 @@ import { INTERPLANT_PLATES, isInterplantPlate, isInterplantRouteType } from "../
 import {
   estimateOperatingWindow,
   formatMinutesToHm,
+  computePickupCount,
   type OperatingWindowEstimate,
 } from "./operatingWindow";
 import { effectiveDispatchWindowDefaults, resolveTruckWindow } from "../lib/dispatchWindowSettings";
@@ -354,7 +355,7 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
     include: {
-      cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true, width_ft: true, length_ft: true } },
+      cargo_details: { select: { pallet_type: true, quantity: true, estimated_pallets: true, width_ft: true, length_ft: true, pickup_consignee_id: true } },
       stops: { orderBy: { sequence: "asc" }, select: { consignee: { select: { zone_code: true } } } },
       // Selects WHICH of the truck's two rate pairs the assignment snapshot
       // freezes (see truckRateSnapshot) — interplant work is paid from the
@@ -566,6 +567,10 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
         const windowEst = estimateOperatingWindow({
           pickupDateTime: trip.pickup_datetime,
           stopCount: trip.stops.length,
+          // Item 3 multi-pickup: unlike the manual-assign path, auto-dispatch
+          // was silently defaulting this to 1 regardless of how many distinct
+          // pickup plants the cargo actually named — see computePickupCount.
+          pickupCount: computePickupCount(trip.cargo_details),
           stopPoints: stopZones.map((z) => windowPoints.get(z) ?? null),
           windowStart: resolvedWindow.windowStart,
           windowEnd: resolvedWindow.windowEnd,
