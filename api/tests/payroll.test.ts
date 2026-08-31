@@ -176,6 +176,123 @@ describe("buildPayrollRows — the month-end payroll sheet", () => {
     expect(rows[0].trips.map((t) => t.incentive_earned)).toEqual([48, 96]);
   });
 
+  // R6-2/R6-3 — the incentive-adjustment fold-in. An adjustment lands in the
+  // month it was CREATED in (already pre-filtered by the caller), never the
+  // trip's own month, and shows as its OWN labeled line, never merged into
+  // `trips` (an adjustment has no pickup/delivery instant of its own).
+  describe("incentive adjustments (R6-2/R6-3)", () => {
+    it("adds an adjustment's delta to the driver's total, as a SEPARATE line from trips", () => {
+      const rows = buildPayrollRows(
+        [
+          {
+            id: "d1",
+            name: "Azmi",
+            employee_number: null,
+            trips: [trip({ id: "a", incentive_earned: 44 })],
+            adjustments: [
+              {
+                trip_id: "old-trip-id",
+                ticket_number: "TKT-20260501-001",
+                delta: 12.5,
+                reason: "underpaid zone points, found late",
+                created_at: new Date("2026-07-15T04:00:00Z"),
+              },
+            ],
+          },
+        ],
+        JULY
+      );
+      expect(rows[0].total).toBe(56.5); // 44 (trip) + 12.5 (adjustment)
+      expect(rows[0].trips.map((t) => t.id)).toEqual(["a"]); // adjustment NOT mixed in
+      expect(rows[0].adjustments).toEqual([
+        {
+          trip_id: "old-trip-id",
+          ticket_number: "TKT-20260501-001",
+          delta: 12.5,
+          reason: "underpaid zone points, found late",
+          created_at: new Date("2026-07-15T04:00:00Z"),
+        },
+      ]);
+    });
+
+    it("a NEGATIVE adjustment reduces the total, including below the trip-only sum", () => {
+      const rows = buildPayrollRows(
+        [
+          {
+            id: "d1",
+            name: "Azmi",
+            employee_number: null,
+            trips: [trip({ id: "a", incentive_earned: 44 })],
+            adjustments: [
+              {
+                trip_id: "x",
+                ticket_number: "TKT-1",
+                delta: -20,
+                reason: "overpaid, admin approved wrong tier",
+                created_at: new Date("2026-07-15T04:00:00Z"),
+              },
+            ],
+          },
+        ],
+        JULY
+      );
+      expect(rows[0].total).toBe(24);
+    });
+
+    it("no adjustments field at all (every pre-existing caller) behaves exactly as before", () => {
+      const rows = buildPayrollRows(
+        [{ id: "d1", name: "Azmi", employee_number: null, trips: [trip({ id: "a", incentive_earned: 44 })] }],
+        JULY
+      );
+      expect(rows[0].total).toBe(44);
+      expect(rows[0].adjustments).toEqual([]);
+    });
+
+    it("Decimal-as-string deltas round the same way trip amounts do", () => {
+      const rows = buildPayrollRows(
+        [
+          {
+            id: "d1",
+            name: "Azmi",
+            employee_number: null,
+            trips: [],
+            adjustments: [
+              {
+                trip_id: "x",
+                ticket_number: "TKT-1",
+                delta: "9.999", // Prisma Decimal serialises as a string
+                reason: "rounding check",
+                created_at: new Date("2026-07-15T04:00:00Z"),
+              },
+            ],
+          },
+        ],
+        JULY
+      );
+      expect(rows[0].adjustments[0].delta).toBe(10);
+      expect(rows[0].total).toBe(10);
+    });
+
+    it("multiple adjustments sort oldest first, same convention as trips", () => {
+      const rows = buildPayrollRows(
+        [
+          {
+            id: "d1",
+            name: "Azmi",
+            employee_number: null,
+            trips: [],
+            adjustments: [
+              { trip_id: "b", ticket_number: "TKT-2", delta: 1, reason: "second", created_at: new Date("2026-07-20T00:00:00Z") },
+              { trip_id: "a", ticket_number: "TKT-1", delta: 1, reason: "first", created_at: new Date("2026-07-05T00:00:00Z") },
+            ],
+          },
+        ],
+        JULY
+      );
+      expect(rows[0].adjustments.map((a) => a.reason)).toEqual(["first", "second"]);
+    });
+  });
+
   it("sorts drivers by month total (top earner first) and trips by delivery time", () => {
     const rows = buildPayrollRows(
       [

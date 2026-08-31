@@ -26,11 +26,30 @@ export interface PayrollTripInput {
   incentive_final?: unknown; // admin-approved payable amount; null on pre-approval-gate trips
 }
 
+/**
+ * A correction against a trip whose pay-attribution month may be a PRIOR
+ * month entirely — this driver's own earlier IncentiveAdjustment rows,
+ * filtered by the route to those whose `effective_month` matches the sheet
+ * being built (R6-2: an adjustment lands in the month it was CREATED in,
+ * never the trip's original month). See services/incentiveAdjustments.ts.
+ */
+export interface PayrollAdjustmentInput {
+  trip_id: string;
+  ticket_number: string;
+  delta: unknown; // Prisma Decimal | string | number
+  reason: string;
+  created_at: Date;
+}
+
 export interface PayrollDriverInput {
   id: string;
   name: string;
   employee_number: string | null;
   trips: PayrollTripInput[];
+  /** This driver's adjustments EFFECTIVE in the sheet's month — already
+   * pre-filtered by the caller. Optional so every existing caller/fixture
+   * that predates this feature keeps working unchanged. */
+  adjustments?: PayrollAdjustmentInput[];
 }
 
 export interface PayrollTripRow {
@@ -41,14 +60,30 @@ export interface PayrollTripRow {
   incentive_earned: number; // per-trip stored marginal, as a plain number
 }
 
+export interface PayrollAdjustmentRow {
+  trip_id: string;
+  ticket_number: string;
+  delta: number;
+  reason: string;
+  created_at: Date;
+}
+
 export interface PayrollDriverRow {
   driver_id: string;
   name: string;
   employee_number: string | null;
   trip_count: number;
-  /** Month total in RM, rounded to cents (sum of stored per-trip marginals). */
+  /** Month total in RM, rounded to cents — sum of stored per-trip marginals
+   * PLUS any adjustment deltas effective this month. A total that differs
+   * from trip_count × per-trip figures without adjustments to explain it
+   * would be exactly the "same report, different numbers" defect R6-2/R6-3
+   * exist to prevent. */
   total: number;
   trips: PayrollTripRow[];
+  /** Rendered as its OWN labeled line, never merged into `trips` — an
+   * adjustment has no pickup/delivery instant of its own, and mixing it into
+   * the trip list would misrepresent it as a trip that happened this month. */
+  adjustments: PayrollAdjustmentRow[];
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -80,6 +115,19 @@ export function buildPayrollRows(
           // its name — it is what payroll pays.
           incentive_earned: round2(payableIncentive(t)),
         }));
+      // Caller has already filtered these to the sheet's own effective_month
+      // (R6-2) — this function only sums and formats, same discipline as the
+      // trip totals above.
+      const adjustments = (d.adjustments ?? [])
+        .slice()
+        .sort((a, b) => a.created_at.getTime() - b.created_at.getTime())
+        .map((a) => ({
+          trip_id: a.trip_id,
+          ticket_number: a.ticket_number,
+          delta: round2(Number(a.delta)),
+          reason: a.reason,
+          created_at: a.created_at,
+        }));
       return {
         driver_id: d.id,
         name: d.name,
@@ -87,8 +135,14 @@ export function buildPayrollRows(
         trip_count: monthTrips.length,
         // Rounded once at the end: summing stored cents-clean marginals can
         // still pick up float dust, and this figure is what payroll pays.
-        total: round2(monthTrips.reduce((sum, t) => sum + t.incentive_earned, 0)),
+        // Includes adjustment deltas, per R6-2 — this month's sheet is the
+        // ONLY place a correction is ever visible in the total.
+        total: round2(
+          monthTrips.reduce((sum, t) => sum + t.incentive_earned, 0) +
+            adjustments.reduce((sum, a) => sum + a.delta, 0)
+        ),
         trips: monthTrips,
+        adjustments,
       };
     })
     .sort(

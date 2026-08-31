@@ -541,40 +541,65 @@ router.get("/payroll", async (req, res, next) => {
       throw new ApiError(400, "INVALID_MONTH", "month must be YYYY-MM.");
     }
 
-    const drivers = await prisma.user.findMany({
-      where: { role: "driver" },
-      orderBy: { name: "asc" },
-      select: {
-        id: true,
-        name: true,
-        employee_number: true,
-        trips_driven: {
-          // Superset SQL bound (EARNED-in-month OR picked-up-in-month, the
-          // latter covering the legacy null-delivered_at fallback);
-          // buildPayrollRows applies the precise pay-day [start, end) predicate.
-          // `earnedInWindow` (not a bare delivered_at bound) is load-bearing:
-          // a trip whose stops ALL failed and were adjudicated has no delivery
-          // confirm, so a delivered-only bound would drop it from this month
-          // AND — because its pickup can sit in another month — from every
-          // other month's sheet too. Real pay, invisible on payroll.
-          where: {
-            status: "completed",
-            OR: [
-              { stops: { some: earnedInWindow({ gte: bounds.start, lt: bounds.end }) } },
-              { pickup_datetime: { gte: bounds.start, lt: bounds.end } },
-            ],
-          },
-          select: {
-            id: true,
-            ticket_number: true,
-            pickup_datetime: true,
-            incentive_earned: true,
-            incentive_final: true,
-            stops: { select: EARNING_STOP_SELECT },
+    const [drivers, adjustments] = await Promise.all([
+      prisma.user.findMany({
+        where: { role: "driver" },
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          employee_number: true,
+          trips_driven: {
+            // Superset SQL bound (EARNED-in-month OR picked-up-in-month, the
+            // latter covering the legacy null-delivered_at fallback);
+            // buildPayrollRows applies the precise pay-day [start, end) predicate.
+            // `earnedInWindow` (not a bare delivered_at bound) is load-bearing:
+            // a trip whose stops ALL failed and were adjudicated has no delivery
+            // confirm, so a delivered-only bound would drop it from this month
+            // AND — because its pickup can sit in another month — from every
+            // other month's sheet too. Real pay, invisible on payroll.
+            where: {
+              status: "completed",
+              OR: [
+                { stops: { some: earnedInWindow({ gte: bounds.start, lt: bounds.end }) } },
+                { pickup_datetime: { gte: bounds.start, lt: bounds.end } },
+              ],
+            },
+            select: {
+              id: true,
+              ticket_number: true,
+              pickup_datetime: true,
+              incentive_earned: true,
+              incentive_final: true,
+              stops: { select: EARNING_STOP_SELECT },
+            },
           },
         },
-      },
-    });
+      }),
+      // R6-2: an adjustment lands in the month it was CREATED in, never the
+      // original trip's month — so this is a flat effective_month match, NOT
+      // bounded by the trip's own pickup/delivery instant like the query
+      // above. `driver_id` comes off the ORIGINAL trip (whoever drove it),
+      // even if that driver has since moved to a different truck or left.
+      prisma.incentiveAdjustment.findMany({
+        where: { effective_month: monthKey },
+        select: {
+          trip_id: true,
+          delta: true,
+          reason: true,
+          created_at: true,
+          trip: { select: { ticket_number: true, driver_id: true } },
+        },
+      }),
+    ]);
+
+    const adjustmentsByDriver = new Map<string, typeof adjustments>();
+    for (const a of adjustments) {
+      if (!a.trip.driver_id) continue; // an adjustment against a trip with no driver on record — nothing to attach it to
+      const list = adjustmentsByDriver.get(a.trip.driver_id) ?? [];
+      list.push(a);
+      adjustmentsByDriver.set(a.trip.driver_id, list);
+    }
 
     const rows = buildPayrollRows(
       drivers.map((d) => ({
@@ -590,6 +615,13 @@ router.get("/payroll", async (req, res, next) => {
           delivered_at: firstEarningInstant(t.stops),
           incentive_earned: t.incentive_earned,
           incentive_final: t.incentive_final,
+        })),
+        adjustments: (adjustmentsByDriver.get(d.id) ?? []).map((a) => ({
+          trip_id: a.trip_id,
+          ticket_number: a.trip.ticket_number,
+          delta: a.delta,
+          reason: a.reason,
+          created_at: a.created_at,
         })),
       })),
       bounds
