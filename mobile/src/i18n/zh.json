@@ -699,7 +699,7 @@
       "title": "提醒",
       "empty": "已全部处理完毕。",
       "autoFailed": "{{count}} 个预订自动派单失败",
-      "podApprovals": "{{count}} 个交付待 POD 审批",
+      "podApprovals": "{{count}} 个已送达待 POD 审批",
       "pendingUsers": "{{count}} 个账户待审批",
       "truckDocs": "{{count}} 份罗里文件即将到期"
     },
@@ -959,7 +959,7 @@
       "onTime": "准时",
       "completion": "完成率",
       "productivity": "生产力",
-      "productivityHint": "交付的工作量 — 本月行程、激励积分与里程。",
+      "productivityHint": "送货工作量 — 本月行程、激励积分与里程。",
       "tripsAll": "行程（全部）",
       "rmMonth": "RM（月）",
       "distMonth": "里程（月）",
