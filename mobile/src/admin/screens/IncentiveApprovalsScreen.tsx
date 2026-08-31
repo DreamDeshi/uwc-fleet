@@ -30,7 +30,7 @@ import { isStopSettled } from "../../lib/stopSettled";
 import { approvalStep, k2ApprovalGaps, k2Evidence, type K2ApprovalGaps } from "../lib/k2Evidence";
 
 /** What an approval sends beyond the trip id. `{}` = pay the proposal as-is. */
-type ApprovalVars = { final_amount?: number; reason?: string };
+type ApprovalVars = { final_amount?: number; reason?: string; k2_override_reason?: string };
 
 // The engine proposal stored on the trip (what pay defaults to at approval).
 const proposedAmount = (trip: Trip): number => Number(trip.incentive_earned ?? 0);
@@ -291,8 +291,8 @@ function ApprovalCard({ trip }: { trip: Trip }) {
           gaps={k2Gaps}
           pending={approve.isPending}
           onCancel={() => setConfirmK2(null)}
-          onConfirm={() => {
-            const vars = confirmK2;
+          onConfirm={(overrideReason) => {
+            const vars = { ...confirmK2, k2_override_reason: overrideReason };
             setConfirmK2(null);
             void runApproval(vars);
           }}
@@ -321,9 +321,14 @@ function K2ApprovalGate({
   gaps: K2ApprovalGaps<TripStop>;
   pending: boolean;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (overrideReason: string) => void;
 }) {
   const { t } = useTranslation();
+  // Required (not just recorded): before this field existed, confirming here
+  // left NO trace of why an admin released pay against a missing customs
+  // document — the server now refuses the approval without it too.
+  const [reason, setReason] = useState("");
+  const reasonGiven = reason.trim().length > 0;
   return (
     <Modal open onClose={onCancel} title={t("admin.incentiveApprovals.k2GateTitle")} width={460}>
       <Text style={{ fontSize: font.sm, color: colors.text, lineHeight: 20, marginBottom: 10 }}>
@@ -365,14 +370,25 @@ function K2ApprovalGate({
           })}
         </Text>
       ) : null}
-      <Text style={{ fontSize: font.sm, color: colors.text, lineHeight: 20, marginBottom: 14 }}>
+      <Text style={{ fontSize: font.sm, color: colors.text, lineHeight: 20, marginBottom: 10 }}>
         {t("admin.incentiveApprovals.k2GateWarn")}
       </Text>
-      <View style={{ flexDirection: "row", gap: 10 }}>
+      <Input
+        label={t("admin.incentiveApprovals.k2GateReason")}
+        value={reason}
+        onChange={setReason}
+        placeholder={t("admin.incentiveApprovals.k2GateReasonPlaceholder")}
+      />
+      <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
         <Button variant="ghost" onPress={onCancel} disabled={pending} style={{ flex: 1 }}>
           {t("common.cancel")}
         </Button>
-        <Button variant="success" onPress={onConfirm} disabled={pending} style={{ flex: 1 }}>
+        <Button
+          variant="success"
+          onPress={() => onConfirm(reason.trim())}
+          disabled={pending || !reasonGiven}
+          style={{ flex: 1 }}
+        >
           {pending ? t("admin.working") : t("admin.incentiveApprovals.k2GateApproveAnyway")}
         </Button>
       </View>

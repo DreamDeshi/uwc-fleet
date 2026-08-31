@@ -459,6 +459,31 @@ export function assertIncentiveApprovable(
   }
 }
 
+/**
+ * Approving a trip with a delivered-but-missing-K2 stop (`k2BlockingStops`,
+ * incentiveEngine.ts) requires an explicit override reason — the server-side
+ * counterpart to the admin app's K2ApprovalGate confirm dialog (owner ruling,
+ * 2 Aug 2026). Without this, that dialog was pure UI: nothing stopped a direct
+ * API call from approving the same trip with no confirm and no trace.
+ *
+ * Pure guard, same shape as assertIncentiveApprovable — throws the canonical
+ * 409 so it is unit-testable without a database.
+ */
+export function assertK2ApprovalConfirmed(
+  blockingStops: { sequence: number }[],
+  overrideReason: string | undefined
+): void {
+  if (blockingStops.length === 0) return;
+  if (!overrideReason || overrideReason.trim().length === 0) {
+    const stops = blockingStops.map((s) => s.sequence).join(", ");
+    throw new ApiError(
+      409,
+      "K2_MISSING_CONFIRM_REQUIRED",
+      `Stop ${stops} was marked delivered with no customs document on file. Provide k2_override_reason to approve anyway.`
+    );
+  }
+}
+
 export interface TripApproveClient {
   trip: {
     updateMany(args: {

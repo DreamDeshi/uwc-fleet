@@ -840,10 +840,16 @@ export function useApproveIncentive() {
     ["reports"],
   ]);
   return useMutation({
-    mutationFn: async (v: { id: string; final_amount?: number; reason?: string }) =>
+    mutationFn: async (v: {
+      id: string;
+      final_amount?: number;
+      reason?: string;
+      k2_override_reason?: string;
+    }) =>
       (await api.patch<Trip>(`/trips/${v.id}/approve-incentive`, {
         ...(v.final_amount !== undefined ? { final_amount: v.final_amount } : {}),
         ...(v.reason ? { reason: v.reason } : {}),
+        ...(v.k2_override_reason ? { k2_override_reason: v.k2_override_reason } : {}),
       })).data,
     onSuccess: invalidate,
   });

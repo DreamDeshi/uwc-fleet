@@ -273,7 +273,7 @@ export async function arriveAndDeliver(
 export function approveIncentiveRaw(
   adminToken: string,
   tripId: string,
-  body: { final_amount?: number; reason?: string } = {}
+  body: { final_amount?: number; reason?: string; k2_override_reason?: string } = {}
 ) {
   return api()
     .patch(`/api/v1/trips/${tripId}/approve-incentive`)
@@ -285,7 +285,7 @@ export function approveIncentiveRaw(
 export async function approveIncentive(
   adminToken: string,
   tripId: string,
-  body: { final_amount?: number; reason?: string } = {}
+  body: { final_amount?: number; reason?: string; k2_override_reason?: string } = {}
 ): Promise<FlowTrip> {
   const res = await approveIncentiveRaw(adminToken, tripId, body);
   if (res.status !== 200) throw new Error(`approve failed: ${res.status} ${res.text}`);

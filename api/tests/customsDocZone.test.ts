@@ -4,6 +4,8 @@ import {
   CUSTOMS_DOC_AREA,
   requiresCustomsDoc,
   isDocumentationComplete,
+  k2BlockingStops,
+  type K2GateStop,
 } from "../src/services/incentiveEngine";
 
 // The customs-document gate blocks Delivered, and Delivered is what moves pay.
@@ -114,5 +116,41 @@ describe("isDocumentationComplete — the gate itself", () => {
   it("WHAT the document is, is never inspected — any upload satisfies it", () => {
     // R3: "you just let them upload any document will do."
     expect(isDocumentationComplete({ ...complete, k2_photo: "a-random-photo.jpg" }, "P1", BL)).toBe(true);
+  });
+});
+
+describe("k2BlockingStops — the server-side approval gate's input", () => {
+  const bl = (over: Partial<K2GateStop> = {}): K2GateStop => ({
+    sequence: 1,
+    status: "delivered",
+    k2_photo: null,
+    consignee: { zone_code: "P1", area: BL },
+    ...over,
+  });
+
+  it("flags a delivered Bayan Lepas stop with no k2_photo", () => {
+    expect(k2BlockingStops([bl()])).toEqual([bl()]);
+  });
+
+  it("does not flag one that has a k2_photo", () => {
+    expect(k2BlockingStops([bl({ k2_photo: "doc.jpg" })])).toEqual([]);
+  });
+
+  it("does not flag an undelivered stop, even with no k2_photo", () => {
+    // Not on the approval invoice at all yet — see k2ApprovalGaps' "notExpected".
+    expect(k2BlockingStops([bl({ status: "pending" })])).toEqual([]);
+  });
+
+  it("does not flag a delivered stop outside the customs-document area", () => {
+    expect(k2BlockingStops([bl({ consignee: { zone_code: "P1", area: "GEORGE TOWN" } })])).toEqual([]);
+  });
+
+  it("does not flag a stop with no consignee joined", () => {
+    expect(k2BlockingStops([bl({ consignee: null })])).toEqual([]);
+  });
+
+  it("names every blocking stop, not just the first", () => {
+    const stops = [bl({ sequence: 1 }), bl({ sequence: 2, k2_photo: "doc.jpg" }), bl({ sequence: 3 })];
+    expect(k2BlockingStops(stops).map((s) => s.sequence)).toEqual([1, 3]);
   });
 });

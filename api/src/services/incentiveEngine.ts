@@ -331,6 +331,38 @@ export function isDocumentationComplete(
   return true;
 }
 
+export interface K2GateStop {
+  sequence: number;
+  status: string;
+  k2_photo: string | null;
+  consignee: { zone_code: string; area: string | null } | null;
+}
+
+/**
+ * Delivered stops that need a customs document and don't have one — mirrors
+ * mobile's `k2ApprovalGaps` "blocking" set (`admin/lib/k2Evidence.ts`) so the
+ * server can enforce the same confirm the admin app's approval-queue dialog
+ * has shown since 2 Aug 2026.
+ *
+ * ⚠ Until this existed, that dialog was PURE UI: `PATCH
+ * /trips/:id/approve-incentive` never checked `k2_photo` at all, so a direct
+ * API call could approve a delivered Bayan-Lepas stop with a missing customs
+ * document, no confirm, no trace. On current rules this combination should be
+ * unreachable through the normal delivery flow — the upload gate
+ * (`isDocumentationComplete`) sits directly in front of the Delivered write —
+ * so a non-empty result here means either a legacy row (delivered before the
+ * 29 Jul zone fix) or an anomaly, not routine data.
+ */
+export function k2BlockingStops<T extends K2GateStop>(stops: T[]): T[] {
+  return stops.filter(
+    (s) =>
+      s.status === "delivered" &&
+      !s.k2_photo &&
+      s.consignee != null &&
+      requiresCustomsDoc(s.consignee.zone_code, s.consignee.area)
+  );
+}
+
 export interface DeliveryIncentiveResult {
   isOffPeak: boolean;
   rateUsed: number;

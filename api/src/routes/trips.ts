@@ -24,6 +24,7 @@ import {
   assertStopDeliverable,
   assertStopTapUndoable,
   assertIncentiveApprovable,
+  assertK2ApprovalConfirmed,
   collectFinalizeBreakdown,
   proposeTripIncentiveOnce,
   revertFinalizeForUndo,
@@ -58,6 +59,7 @@ import {
   getTripDayEnd,
   groupStopsByDeliveryDay,
   isDocumentationComplete,
+  k2BlockingStops,
   mytDateKey,
   scoreDrops,
 } from "../services/incentiveEngine";
@@ -3585,6 +3587,9 @@ router.patch(
 const approveIncentiveSchema = z.object({
   final_amount: z.number().min(0).optional(), // omit → confirm the proposal as-is
   reason: z.string().optional(), // required iff final_amount differs from the proposal
+  // Required iff the trip has a delivered stop with no customs document —
+  // the server-side counterpart of the admin app's K2ApprovalGate confirm.
+  k2_override_reason: z.string().optional(),
 });
 router.patch(
   "/:id/approve-incentive",
@@ -3593,7 +3598,11 @@ router.patch(
   async (req, res, next) => {
     try {
       const id = req.params.id;
-      const { final_amount, reason } = req.body as { final_amount?: number; reason?: string };
+      const { final_amount, reason, k2_override_reason } = req.body as {
+        final_amount?: number;
+        reason?: string;
+        k2_override_reason?: string;
+      };
       const trip = await prisma.trip.findUnique({
         where: { id },
         select: {
@@ -3602,10 +3611,20 @@ router.patch(
           incentive_earned: true,
           ticket_number: true,
           driver: { select: { expo_push_token: true } },
+          stops: {
+            select: {
+              sequence: true,
+              status: true,
+              k2_photo: true,
+              consignee: { select: { zone_code: true, area: true } },
+            },
+          },
         },
       });
       if (!trip) throw new ApiError(404, "TRIP_NOT_FOUND", "Trip not found.");
       assertIncentiveApprovable(trip, final_amount, reason);
+      const k2Blocking = k2BlockingStops(trip.stops);
+      assertK2ApprovalConfirmed(k2Blocking, k2_override_reason);
 
       const proposedAmount = Number(trip.incentive_earned ?? 0);
 
@@ -3642,12 +3661,23 @@ router.patch(
       const finalAmount =
         effectiveAmount === undefined ? proposedAmount : Math.round(effectiveAmount * 100) / 100;
       const edited = Math.round(finalAmount * 100) !== Math.round(proposedAmount * 100);
+      // Two independent things worth flagging on one approval — an edited
+      // amount and a K2 override — so both are named rather than one silently
+      // winning the ternary the way a single edited/not-edited branch would.
+      const auditNotes: string[] = [];
+      if (edited) auditNotes.push(`edited RM${proposedAmount}→RM${finalAmount}: ${effectiveReason}`);
+      if (k2Blocking.length > 0) {
+        auditNotes.push(
+          `K2 override (stop ${k2Blocking.map((s) => s.sequence).join(", ")}): ${k2_override_reason}`
+        );
+      }
       await prisma.auditLog.create({
         data: {
           user_id: req.user!.id,
-          action: edited
-            ? `trip.incentive_approved (edited RM${proposedAmount}→RM${finalAmount}: ${effectiveReason})`
-            : "trip.incentive_approved",
+          action:
+            auditNotes.length > 0
+              ? `trip.incentive_approved (${auditNotes.join("; ")})`
+              : "trip.incentive_approved",
           table_name: "Trip",
           record_id: id,
         },
@@ -3656,7 +3686,7 @@ router.patch(
         tripId: id,
         event: "incentive_approved",
         actorId: req.user!.id,
-        note: edited ? `Rate edited to RM${finalAmount}` : undefined,
+        note: auditNotes.length > 0 ? auditNotes.join("; ") : undefined,
       });
       // The trip reaches its terminal `completed` state only now (approval is
       // what completes it under the POD-approval gate) — record it so the
