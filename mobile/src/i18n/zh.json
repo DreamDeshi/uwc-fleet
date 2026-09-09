@@ -468,6 +468,7 @@
     "cargoSizeFeetHint": "尺寸以英尺为单位（宽 × 长）。",
     "cargoSizeRow": "{{size}} 英尺",
     "pickupDefault": "默认起点",
+    "pickupPointLabel": "取货点",
     "pickupPlantTitle": "取货地点",
     "pickupSummary": "取货：{{list}}",
     "legacyCargoLabel": "旧尺寸（不再可选）",

@@ -468,6 +468,7 @@
     "cargoSizeFeetHint": "Sizes are in feet (width × length).",
     "cargoSizeRow": "{{size}} ft",
     "pickupDefault": "Default origin",
+    "pickupPointLabel": "Pickup point",
     "pickupPlantTitle": "Pick up from",
     "pickupSummary": "Pickup: {{list}}",
     "legacyCargoLabel": "Legacy sizes (no longer selectable)",
