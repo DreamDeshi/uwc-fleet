@@ -1594,6 +1594,7 @@
       "deductionApplied": "每日扣减 −{{count}} 分",
       "deductionApplied_one": "每日扣减 −{{count}} 分",
       "deductionApplied_other": "每日扣减 −{{count}} 分",
+      "roundTripHeld": "保留至回程（往返一趟才计酬）",
       "noBreakdown": "未记录明细（行程在按站报酬历史保存之前完成）。",
       "adjustments": "调整记录",
       "adjustIncentive": "调整奖励金",

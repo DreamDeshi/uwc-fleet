@@ -1594,6 +1594,7 @@
       "deductionApplied": "daily deduction −{{count}} pt(s)",
       "deductionApplied_one": "daily deduction −{{count}} pt",
       "deductionApplied_other": "daily deduction −{{count}} pts",
+      "roundTripHeld": "Held for the return leg (paid on the round trip)",
       "noBreakdown": "Breakdown not recorded (trip completed before per-drop pay history was kept).",
       "adjustments": "Adjustments",
       "adjustIncentive": "Adjust incentive",

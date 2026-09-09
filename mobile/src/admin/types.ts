@@ -258,6 +258,13 @@ export interface Trip {
   rate_used?: string | null; // Decimal serialises as string
   off_peak?: boolean | null;
   deduction_applied?: number | null;
+  // R5 A2 (IM10) — points this trip SCORED but was not PAID for, because the
+  // day's interplant legs do not yet make up whole round trips (paid on a
+  // LATER leg instead). 0 on customer/supplier trips; null = finalized before
+  // this column existed. Without showing this, an admin sees a delivered,
+  // pointed stop next to RM0 with nothing explaining it — the same "the
+  // system lost his money" read the driver-side breakdown was built to fix.
+  round_trip_shortfall?: number | null;
   is_external: boolean;
   rejection_reason: string | null;
   // Free-text pickup location for Customer/Supplier bookings. Display-only —
