@@ -18,6 +18,7 @@ import type {
   ConsolidationSavings,
   GlobalSearchResults,
   DashboardKpis,
+  IncentiveAdjustment,
   IncentiveRules,
   Department,
   DestinationRate,
@@ -136,6 +137,33 @@ export function useTrip(id: string | null) {
     queryKey: ["trips", "detail", id],
     queryFn: async () => (await api.get<Trip>(`/trips/${id}`)).data,
     enabled: !!id,
+  });
+}
+
+// Append-only pay corrections for a COMPLETED trip (R6-2/R6-3). Every
+// adjustment ever made against this trip, oldest first — the trip-detail
+// trace the API's own comment describes.
+export function useIncentiveAdjustments(tripId: string | null) {
+  return useQuery({
+    queryKey: ["trips", "detail", tripId, "incentive-adjustments"],
+    queryFn: async () => (await api.get<IncentiveAdjustment[]>(`/trips/${tripId}/incentive-adjustments`)).data,
+    enabled: !!tripId,
+  });
+}
+
+export function useCreateIncentiveAdjustment() {
+  // Prefix match: invalidating ["trips"] also catches
+  // ["trips", "detail", tripId, "incentive-adjustments"], the same way it
+  // already catches ["trips", "detail", id] for every other trip mutation
+  // in this file.
+  const invalidate = useInvalidate([["trips"], ["reports"], ["dashboard"]]);
+  return useMutation({
+    mutationFn: async (v: { tripId: string; delta: number; reason: string }) =>
+      (await api.post<IncentiveAdjustment>(`/trips/${v.tripId}/incentive-adjustments`, {
+        delta: v.delta,
+        reason: v.reason,
+      })).data,
+    onSuccess: invalidate,
   });
 }
 
