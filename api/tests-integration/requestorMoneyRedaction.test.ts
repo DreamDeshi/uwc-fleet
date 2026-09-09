@@ -184,6 +184,9 @@ describe("requestors never receive driver pay", () => {
         "rejection_reason", "pending_alert_sent", "auto_dispatch_failed",
         "auto_dispatch_note", "auto_dispatch_paused", "client_request_id",
         "open_exception_id", "created_at",
+        // Free-text Customer/Supplier pickup location — the requestor's own
+        // input, display-only, never money/rate data.
+        "pickup_location",
       ]),
       Truck: new Set([
         "plate", "type", "max_pallets", "priority_zones",
