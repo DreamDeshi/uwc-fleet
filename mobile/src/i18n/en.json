@@ -487,6 +487,7 @@
     "pickupLocationLabel": "Pickup location",
     "pickupLocationPlaceholder": "e.g. UWC Batu Kawan, or the supplier's address",
     "pickupLocationHint": "Leave blank for UWC Batu Kawan.",
+    "pickupFromLabel": "Pickup from",
     "cutoffReasonLabel": "Reason for booking past the cut-off",
     "cutoffReasonPlaceholder": "Why this cannot wait for the next working day",
     "cutoffReasonHint": "Admin override. Your name and this reason are recorded on the booking.",

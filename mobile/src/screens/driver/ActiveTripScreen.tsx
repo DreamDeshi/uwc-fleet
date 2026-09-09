@@ -365,12 +365,23 @@ export function ActiveTripScreen() {
       `https://www.google.com/maps/dir/?api=1&destination=${c.latitude},${c.longitude}&travelmode=driving`
     );
   };
-  // Customer/Supplier pickup can now be anywhere (free text, not just UWC —
-  // see mobile pickup_location). There is no stored coordinate for it, so
-  // this hands the TEXT ADDRESS to Google Maps as the destination query
-  // rather than lat/long — Maps geocodes it live, same as if the driver
-  // typed the address into Maps themselves. Only rendered when set.
+  // Customer/Supplier pickup can be anywhere — either a picked consignee
+  // (pickup_consignee, 10 Sep 2026) or free text (pickup_location). A picked
+  // consignee's own lat/lng (when geocoded) is more accurate than a live
+  // Maps text search, same reason destination stops prefer it over a zone
+  // centroid — so this checks pickup_consignee FIRST via the same
+  // consigneeDestination helper the delivery stops use. Free text falls back
+  // to handing the TEXT ADDRESS to Google Maps as the destination query,
+  // which geocodes it live, same as if the driver typed it into Maps
+  // themselves. Only rendered when either is set.
   const openMapsForPickup = () => {
+    if (trip.pickup_consignee) {
+      const c = consigneeDestination(trip.pickup_consignee).coord;
+      Linking.openURL(
+        `https://www.google.com/maps/dir/?api=1&destination=${c.latitude},${c.longitude}&travelmode=driving`
+      );
+      return;
+    }
     if (!trip.pickup_location?.trim()) return;
     Linking.openURL(
       `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(trip.pickup_location.trim())}&travelmode=driving`
@@ -609,7 +620,12 @@ export function ActiveTripScreen() {
   const footer = (() => {
     if (!activeStop || stage === null) return null;
     if (stage === "arrived") {
-      const pickupText = trip.pickup_location?.trim();
+      // A picked consignee (10 Sep 2026) or free text — either means a
+      // non-default pickup that needs the notice card + navigate button.
+      // Without checking pickup_consignee here too, a picked-consignee trip
+      // (which sends pickup_location empty, see the booking form) would show
+      // NO card at all and silently lose the Drive to pickup button.
+      const pickupText = trip.pickup_consignee?.company_name ?? trip.pickup_location?.trim();
       return {
         meta: t("trip.stepNOfTotal", { n: 1, total: 3 }),
         node: (

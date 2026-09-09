@@ -176,7 +176,7 @@ export function TripDetailsScreen() {
           {/* Route */}
           <Card style={{ marginBottom: 12 }}>
             <RouteLine
-              from={trip.pickup_location?.trim() || ORIGIN_LABEL}
+              from={trip.pickup_consignee?.company_name || trip.pickup_location?.trim() || ORIGIN_LABEL}
               to={
                 multiStop
                   ? t("trip.multiDest", { name: tripConsigneeName(trip), n: stops.length - 1 })

@@ -39,5 +39,11 @@ export const TRIP_INCLUDE = {
   // screen that already renders cargo_details can show which plant a line
   // was picked up from without a second lookup.
   cargo_details: { include: { pickup_consignee: { select: { id: true, company_name: true } } } },
+  // Trip-level pickup picker (10 Sep 2026) — FULL include, same as
+  // stops.consignee above, not the minimal name-only select cargo_details'
+  // plant picker uses: the driver's "Drive to pickup" navigation needs the
+  // consignee's own lat/lng and area when it has them, the same way it
+  // already does for a delivery destination.
+  pickup_consignee: true,
   documents: { orderBy: { uploaded_at: "desc" as const } },
 };

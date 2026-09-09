@@ -272,6 +272,10 @@ export interface Trip {
   // Free-text pickup location for Customer/Supplier bookings. Display-only —
   // null means the default origin (ORIGIN_LABEL, "UWC Batu Kawan").
   pickup_location?: string | null;
+  // The picker half of the same field (10 Sep 2026) — see mobile/src/types.ts's
+  // Trip.pickup_consignee_id for the full note.
+  pickup_consignee_id?: string | null;
+  pickup_consignee?: Consignee | null;
   // Phase 2: true when auto-dispatch couldn't place this booking. Self-clearing.
   // "Needs attention" UI shows for (status === "pending" && auto_dispatch_failed).
   auto_dispatch_failed: boolean;
