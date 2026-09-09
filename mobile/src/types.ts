@@ -205,10 +205,14 @@ export interface Trip {
   // Null = finalized pre-feature. The server has always shipped these.
   rate_used?: string | number | null;
   deduction_applied?: number | null;
-  // R5 A2 (IM10) — points withheld because the day's interplant legs do not yet
-  // make up whole round trips. 0 on customer/supplier work; null = finalized
-  // before the column. This is what lets the breakdown explain a RM0 leg.
-  round_trip_shortfall?: number | null;
+  // R5 A2 (IM10/IM11) — points scored but not paid the FULL rate, because
+  // interplant pays per round trip. 0 on customer/supplier work; null =
+  // finalized before the column. This is what lets the breakdown explain the
+  // gap between points scored and points paid.
+  // DECIMAL on the wire since IM11 (9 Sep 2026) — a halved leg can be a
+  // half-point (0.5), and Prisma's Decimal serialises as a STRING over JSON
+  // (same reason rate_used above is `string | number`, not just `number`).
+  round_trip_shortfall?: string | number | null;
   is_external: boolean;
   rejection_reason?: string | null;
   // Free-text pickup location for Customer/Supplier bookings. Display-only —

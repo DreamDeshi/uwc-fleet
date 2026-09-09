@@ -197,11 +197,12 @@ export async function proposeDeliveredStopsIncentive(
         null
       ) ?? group.anchor;
     // R5 A2 — interplant is paid in whole ROUND TRIPS: the day's interplant
-    // points are halved and floored (18 → 9, 17 → 8). Driven by the SAME `pool`
-    // that already chose this trip's ledger, so a trip cannot be scored on the
-    // interplant ledger and paid per-leg, or the reverse. The halving telescopes
-    // over `priorPointsToday`, which is why it can be a day rule without any
-    // Delivery-to-Return pairing (see the note in incentiveEngine).
+    // points are halved (18 → 9, 17 → 8.5 — NOT floored, since the IM11 fix
+    // 9 Sep 2026, see incentiveEngine's `payable` comment). Driven by the SAME
+    // `pool` that already chose this trip's ledger, so a trip cannot be scored
+    // on the interplant ledger and paid per-leg, or the reverse. The halving is
+    // linear (no telescoping state needed any more), which is why it can be a
+    // day rule without any Delivery-to-Return pairing.
     const incentive = calculateDeliveryIncentive({ rateDateTime: rateAnchor, drops, zonesDeliveredEarlierToday, priorPointsToday, publicHolidays, truck: truckRates, roundTripHalving: pool === "interplant" });
     incentiveThisTrip += incentive.incentiveThisTrip;
     finalizedGroups.push({ stops: group.stops.map((s) => ({ id: s.id, zoneCode: dropZoneCode(s, s.consignee.zone_code) })), result: incentive });

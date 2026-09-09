@@ -119,7 +119,12 @@ const CENT = 0.005;
 export function persistedPaidPoints(trip: {
   stops: { points_awarded: number | null; delivered_at: Date | null }[];
   deduction_applied: number | null;
-  round_trip_shortfall?: number | null;
+  // Prisma's Decimal, a plain number, or null/undefined — round_trip_shortfall
+  // is DECIMAL in the DB (IM11, 9 Sep 2026: a halved leg can be a half-point),
+  // so this accepts whatever shape the caller's own query returns and
+  // normalises with Number() below, same as every other Decimal field read in
+  // this file (weekdayRate, proposed, rateUsed).
+  round_trip_shortfall?: unknown;
 }): number | null {
   let total = 0;
   for (const s of trip.stops) {
@@ -132,7 +137,7 @@ export function persistedPaidPoints(trip: {
     }
     total += s.points_awarded;
   }
-  return total - (trip.deduction_applied ?? 0) - (trip.round_trip_shortfall ?? 0);
+  return total - (trip.deduction_applied ?? 0) - Number(trip.round_trip_shortfall ?? 0);
 }
 
 /** The money quotient — the fallback, and only where it proves itself. */

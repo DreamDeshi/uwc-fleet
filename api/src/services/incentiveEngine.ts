@@ -379,12 +379,15 @@ export interface DeliveryIncentiveResult {
    */
   deductionApplied: number;
   /**
-   * Points this group did NOT get paid because the day's interplant legs do not
-   * yet make up whole round trips (R5 A2). 0 on every customer/supplier trip and
-   * on any interplant group that completes a pair. Kept SEPARATE from
-   * `deductionApplied` because interplant takes no deduction at all — folding
-   * the halving into that field would print a deduction the client says does not
-   * exist, on the one kind of work that has none.
+   * Points this group scored but was not paid the FULL rate for, because
+   * interplant pays per round trip (R5 A2) and this group's own points didn't
+   * divide evenly into one. 0 on every customer/supplier trip and on any
+   * interplant group whose points came out even. CAN BE A HALF-POINT (0.5,
+   * 1.5, …) since the IM11 fix (9 Sep 2026) removed the floor — see the
+   * `payable` comment above. Kept SEPARATE from `deductionApplied` because
+   * interplant takes no deduction at all — folding the halving into that
+   * field would print a deduction the client says does not exist, on the one
+   * kind of work that has none.
    */
   roundTripShortfall: number;
   /**
@@ -493,44 +496,61 @@ export function calculateDeliveryIncentive(params: {
   // Not a new rule — it is the round-trip rule stated arithmetically. The
   // workbook has said since 29 Jul "SEND AND RETRUN WITH CARGO ONLY CAN
   // CONSIDER 1 TRIP COUNT", and each leg is its own booking scoring 1 point, so
-  // legs ÷ 2 = round trips. 17 → 8, not 8.5 and not 9: FLOOR, because the odd
-  // leg is an INCOMPLETE round trip and earns nothing yet.
+  // legs ÷ 2 = round trips.
   //
-  // ⚠ HALVE THE DAY, NOT THE TRIP. He counts "for that day", which is what
-  // removes the Delivery-to-Return matching problem entirely — no pairing
-  // heuristic, no guessing which Return belongs to which Delivery. Applying it
-  // per trip instead would pay 0 for every single-leg booking forever, which is
-  // every interplant booking he has described.
+  // ⚠ IM11 FIX, 9 Sep 2026 — NO LONGER FLOORED. Teh's own worked example
+  // floors the odd leg to nothing (17 → 8, "the odd leg earns nothing yet"),
+  // which is exactly what produced IM11: a round trip split by the MYT day
+  // boundary (the Return booked for the next morning, or one booking whose
+  // two stops straddle midnight) floored BOTH sides to zero — 0 + 0 — for a
+  // genuinely completed round trip, with no carry-forward to recover it.
   //
-  // It therefore telescopes exactly like the deduction, over the same running
-  // day total: floor(with/2) − floor(before/2) summed across a driver-day is
-  // floor(dayTotal/2). The consequence, stated plainly: the day's FIRST leg
-  // pays RM0 and the pay lands on the second. That is the rule, not a bug — but
-  // it is the first place in this system where a completed trip legitimately
-  // earns nothing, so it is on the first-payroll watch list.
+  // ── THE DECISION, AND WHY IT ISN'T A RE-ASK OF TEH ──────────────────────
+  // Raised with the project owner, not guessed at. First asked broadly
+  // ("what should a midnight-split round trip pay"); the owner asked back
+  // "why not pay the rate when it got picked up... in case another problem
+  // like this comes again, pick the first date always" — i.e. anchor on
+  // pickup, not delivery. That would have reversed Teh's own written 3 Jul
+  // rule (points count on DELIVERY confirm, not pickup — see
+  // groupStopsByDeliveryDay), a much bigger change than IM11 itself, since
+  // every trip's day-bucket uses that same mechanism. Surfaced that conflict
+  // explicitly rather than building it. Re-scoped to three options — ask Teh,
+  // leave frozen, or pay the unpaired leg at half rate without touching which
+  // day anything is bucketed into — with the half-rate option's preview
+  // stating outright that it deviates from Teh's own 17 → 8 example (giving
+  // 8.5 instead). The owner chose that option, informed of the deviation.
   //
-  // ⚠ THE MIDNIGHT STRADDLE — KNOWN, REACHABLE, AND UNRESOLVED.
-  // Halving the DAY means a round trip split by the day boundary pays NOTHING:
-  // floor(1/2) on Monday plus floor(1/2) on Tuesday is 0 + 0, for a genuine
-  // completed round trip — the exact case the rule exists to reward. The loss is
-  // total, not partial, and there is no carry-forward: an unpaired leg is lost
-  // when its day closes.
+  // The engine cannot know at finalization time whether an unpaired leg will
+  // ever be joined by its partner (trips finalize serially, and the day is
+  // not over), so there is no way to floor-only-when-truly-orphaned without
+  // inventing a pairing/deferral mechanism Teh was never asked about — the
+  // exact thing his day-level counting was meant to avoid ("no pairing
+  // heuristic, no guessing which Return belongs to which Delivery").
   //
-  // Two ways in, neither exotic:
-  //   1. the Return is BOOKED for the next morning (send Monday evening, return
-  //      Tuesday) — an ordinary industrial pattern that nothing forbids, since
-  //      each leg sits inside its own day's operating window;
-  //   2. one booking whose two stops straddle midnight — the "rare midnight
-  //      straddler" this file already handles, which splits into two day groups
-  //      of one point each.
+  // The fix removes the floor instead: `points / 2`, no rounding. This is a
+  // KNOWN, ACCEPTED deviation from Teh's literal arithmetic (17 → 8.5, not 8)
+  // — chosen because floor-to-zero can discard real completed work
+  // permanently while a half-point never can, and because no interplant trip
+  // has ever finalized in production (see round_trip_shortfall's own schema
+  // comment) — this changes nobody's pay retroactively. If the odd-leg
+  // arithmetic itself ever needs Teh's own sign-off (not just the midnight
+  // case), that is still open — this fix answers "does a completed round trip
+  // ever pay zero", not "should 17 points pay 8 or 8.5 in general".
   //
-  // NOT FIXED HERE, deliberately. Every repair pairs legs across a day boundary,
-  // and pairing is precisely what his day-level counting removed ("18points for
-  // that day"). Choosing a pairing rule now would be inventing the answer to a
-  // question he was never asked. Pinned instead by the MIDNIGHT STRADDLE block
-  // in tests/interplantRoundTrip.test.ts, so the next reader meets it in a test
-  // rather than in a driver's complaint, and logged as an open item.
-  const payable = (points: number) => (params.roundTripHalving ? Math.floor(points / 2) : points);
+  // Two consequences fall out of removing the floor, both wanted:
+  //   1. no leg is ever unpaid for real completed work — the worst case is
+  //      half rate, never zero;
+  //   2. the formula becomes LINEAR, so unlike the floor it needs no pairing
+  //      state at all: every leg's marginal pay is exactly half of its own
+  //      scored (post-deduction) points, independent of what came before it,
+  //      what comes after it, or which MYT day it lands in. A midnight
+  //      straddle is therefore not a special case any more — it was only ever
+  //      a special case because of the floor.
+  //
+  // It still telescopes exactly like the deduction, over the same running day
+  // total — the structure below (before/with via the same `payable`) is
+  // unchanged; only the function stopped rounding down.
+  const payable = (points: number) => (params.roundTripHalving ? points / 2 : points);
   const beforePoints = payable(beforeDeducted);
   const withPoints = payable(withDeducted);
   const marginalPoints = withPoints - beforePoints;

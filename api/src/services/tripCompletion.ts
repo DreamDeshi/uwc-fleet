@@ -223,13 +223,15 @@ export function collectFinalizeBreakdown(groups: FinalizedGroup[]): FinalizeBrea
       rate_used: single ? single.rateUsed : null,
       off_peak: single ? single.isOffPeak : null,
       deduction_applied: groups.reduce((sum, g) => sum + g.result.deductionApplied, 0),
-      // R5 A2 (IM10) — points withheld because the day's interplant legs do not
-      // yet make up whole round trips. Sums across groups for the same reason
-      // the deduction does: each group withheld its own day's figure. 0 on all
-      // customer/supplier work, so this is a no-op for every trip prod has ever
-      // finalized. It is what lets the driver's breakdown say why a delivered
-      // leg paid RM0, and what lets A4 read an interplant trip's PAID points
-      // from stored evidence instead of dividing money by the rate.
+      // R5 A2 (IM10/IM11) — points scored but not paid the full rate for,
+      // because interplant pays per round trip. Sums across groups for the
+      // same reason the deduction does: each group withheld its own day's
+      // figure. 0 on all customer/supplier work, so this is a no-op for every
+      // trip prod has ever finalized. It is what lets the driver's breakdown
+      // say why a delivered leg's payout is less than its points × rate
+      // (before IM11 this could be RM0 outright; now the worst case is half),
+      // and what lets A4 read an interplant trip's PAID points from stored
+      // evidence instead of dividing money by the rate.
       round_trip_shortfall: groups.reduce((sum, g) => sum + g.result.roundTripShortfall, 0),
     },
     stopRows,

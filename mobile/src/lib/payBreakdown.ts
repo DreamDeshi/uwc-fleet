@@ -30,16 +30,19 @@ export interface PayBreakdown {
   /** Deduction points actually subtracted at this trip's finalization; null = not recorded (legacy). */
   deduction: number | null;
   /**
-   * R5 A2 (IM10) — points HELD BACK because the day's interplant legs do not yet
-   * make up whole round trips. 0 on every customer/supplier trip; null = not
-   * recorded (finalized before the column).
+   * R5 A2 (IM10/IM11) — points scored but not paid at the FULL rate, because
+   * interplant pays per round trip and this trip's own points didn't divide
+   * evenly into one. 0 on every customer/supplier trip; null = not recorded
+   * (finalized before the column). CAN BE A HALF-POINT (0.5, 1.5, …) since the
+   * IM11 fix (9 Sep 2026) — see incentiveEngine's `payable` comment.
    *
-   * ⚠ THIS IS THE LINE THAT EXPLAINS RM0. Interplant is paid per completed round
-   * trip, so the day's FIRST leg pays nothing and the pay lands on the return —
-   * the only place in this system where a delivered, completed trip legitimately
-   * earns zero. Without a line saying so, the driver's breakdown shows a
-   * delivered stop worth points and a payout of RM0, which reads as the system
-   * losing his money.
+   * ⚠ THIS IS THE LINE THAT EXPLAINS THE GAP between points scored and points
+   * paid. Before IM11, an unpaired leg paid RM0 outright and this field
+   * explained the whole amount; now every leg pays at least half, and this
+   * field explains the half that round-trip pairing still discounts. Without a
+   * line saying so, the driver's breakdown shows a delivered stop worth points
+   * and a payout smaller than points × rate, which reads as the system losing
+   * his money.
    */
   roundTripShortfall: number | null;
   /** totalPoints − deduction − shortfall, when the deduction was recorded. */
@@ -53,9 +56,7 @@ export interface PayBreakdown {
  * finalized, or a legacy pre-feature trip) — callers render nothing then.
  */
 export function buildPayBreakdown(
-  trip: Pick<Trip, "stops" | "deduction_applied" | "rate_used"> & {
-    round_trip_shortfall?: number | null;
-  }
+  trip: Pick<Trip, "stops" | "deduction_applied" | "rate_used" | "round_trip_shortfall">
 ): PayBreakdown | null {
   const rows: BreakdownRow[] = (trip.stops ?? [])
     .filter((s) => s.points_awarded !== null && s.points_awarded !== undefined)
@@ -80,9 +81,16 @@ export function buildPayBreakdown(
       ? null
       : Number(rateRaw);
 
+  // Decimal-on-the-wire (IM11): the API serialises round_trip_shortfall as a
+  // STRING ("0.50"), same as rate_used above — Number() it the same way, not
+  // passed through raw. A shortfall that arrives as a string and is compared
+  // or formatted as one elsewhere (e.g. a strict `=== 0`) would silently
+  // misbehave; this is the one place that conversion happens for every caller.
   const shortfallRaw = trip.round_trip_shortfall;
   const roundTripShortfall =
-    shortfallRaw === null || shortfallRaw === undefined ? null : shortfallRaw;
+    shortfallRaw === null || shortfallRaw === undefined || Number.isNaN(Number(shortfallRaw))
+      ? null
+      : Number(shortfallRaw);
 
   return {
     rows,
