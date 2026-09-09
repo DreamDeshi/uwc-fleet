@@ -613,6 +613,10 @@ router.get("/payroll", async (req, res, next) => {
           // The EARNING instant, not the delivery confirm — this is the field
           // buildPayrollRows buckets and sorts on.
           delivered_at: firstEarningInstant(t.stops),
+          // Literal, not `t.status` — the query above is already
+          // `WHERE status: "completed"`, so every row here IS one; see
+          // PayrollTripInput's own comment for why this is carried at all.
+          status: "completed" as const,
           incentive_earned: t.incentive_earned,
           incentive_final: t.incentive_final,
         })),

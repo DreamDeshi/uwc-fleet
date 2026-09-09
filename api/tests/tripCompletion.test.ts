@@ -12,6 +12,7 @@ import {
   firstEarningInstant,
   payAttributionInstant,
   payableIncentive,
+  payableIncentiveProposal,
   proposeTripIncentiveOnce,
   revertFinalizeForUndo,
   STOP_TAP_UNDO_WINDOW_MS,
@@ -636,23 +637,57 @@ describe("approveTripIncentiveOnce (write-once approve → completed + payable)"
 
 describe("payableIncentive (the ONE 'what did this trip pay' read)", () => {
   it("pays the admin-approved final when present", () => {
-    expect(payableIncentive({ incentive_final: 50, incentive_earned: 44 })).toBe(50);
+    expect(payableIncentive({ status: "completed", incentive_final: 50, incentive_earned: 44 })).toBe(50);
   });
 
   it("grandfathers a pre-gate trip: final null → pays the engine proposal", () => {
-    expect(payableIncentive({ incentive_final: null, incentive_earned: 44 })).toBe(44);
-    expect(payableIncentive({ incentive_earned: 44 })).toBe(44);
+    expect(payableIncentive({ status: "completed", incentive_final: null, incentive_earned: 44 })).toBe(44);
+    expect(payableIncentive({ status: "completed", incentive_earned: 44 })).toBe(44);
   });
 
   it("an approved-down-to-zero trip pays 0, not the proposal (0 is a real final)", () => {
     // Editing the final to 0 must win over the proposal — ?? only falls through
     // on null/undefined, so a legitimate zero payout is honoured.
-    expect(payableIncentive({ incentive_final: 0, incentive_earned: 44 })).toBe(0);
+    expect(payableIncentive({ status: "completed", incentive_final: 0, incentive_earned: 44 })).toBe(0);
   });
 
   it("pays 0 when nothing is recorded", () => {
-    expect(payableIncentive({})).toBe(0);
-    expect(payableIncentive({ incentive_final: null, incentive_earned: null })).toBe(0);
+    expect(payableIncentive({ status: "completed" })).toBe(0);
+    expect(payableIncentive({ status: "completed", incentive_final: null, incentive_earned: null })).toBe(0);
+  });
+
+  // SAFE BY CONSTRUCTION (9 Sep 2026). Every case above proves the ARITHMETIC;
+  // this proves the GUARD is actually reached — a real incentive_final present
+  // on a NON-completed trip must still pay 0, because that money has not been
+  // approved yet. Without this the function could be "correct" for completed
+  // trips and silently pay out a pending_approval proposal to a caller that
+  // forgot to filter — exactly the bug class this hardening exists to close.
+  it("MONEY: pays 0 for a pending_approval trip even though incentive_final is set — not yet payable", () => {
+    expect(payableIncentive({ status: "pending_approval", incentive_final: 50, incentive_earned: 44 })).toBe(0);
+  });
+
+  it("pays 0 for every other status too (assigned, in_progress, cancelled, rejected)", () => {
+    for (const status of ["pending", "assigned", "in_progress", "cancelled", "rejected"]) {
+      expect(payableIncentive({ status, incentive_final: 50, incentive_earned: 44 })).toBe(0);
+    }
+  });
+});
+
+describe("payableIncentiveProposal (driver Earnings' ONE deliberate exception)", () => {
+  // Same arithmetic as payableIncentive, but with NO status guard — this is
+  // what lets the Earnings screen show a pending_approval trip's proposed
+  // amount at all (flagged `pending` downstream, never presented as paid).
+  it("shows the proposed amount for a pending_approval trip (payableIncentive would refuse)", () => {
+    expect(payableIncentiveProposal({ incentive_final: null, incentive_earned: 44 })).toBe(44);
+    expect(payableIncentive({ status: "pending_approval", incentive_final: null, incentive_earned: 44 })).toBe(0);
+  });
+
+  it("still prefers the approved final once one exists", () => {
+    expect(payableIncentiveProposal({ incentive_final: 50, incentive_earned: 44 })).toBe(50);
+  });
+
+  it("pays 0 when nothing is recorded", () => {
+    expect(payableIncentiveProposal({})).toBe(0);
   });
 });
 

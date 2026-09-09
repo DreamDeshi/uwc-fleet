@@ -30,6 +30,7 @@ function driver(
         ticket_number: `TKT-${id}`,
         pickup_datetime: new Date("2026-07-10T01:00:00Z"),
         delivered_at: new Date("2026-07-10T05:00:00Z"),
+        status: "completed" as const,
         incentive_earned: total,
       },
     ],

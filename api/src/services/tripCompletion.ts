@@ -137,10 +137,36 @@ export function assertStopTapUndoable(
  * 2026) that is the admin-approved `incentive_final`; a trip completed BEFORE
  * the gate has `incentive_final = null` and is paid at its engine proposal
  * `incentive_earned` (grandfathered — no data migration). This is the ONE
- * function every "what did this trip pay" read must use. Only meaningful for
- * `completed` trips; a `pending_approval` proposal is not yet payable.
+ * function every "what did this trip pay" read must use.
+ *
+ * SAFE BY CONSTRUCTION (9 Sep 2026): returns 0 for anything but `completed`,
+ * rather than trusting every caller to filter first. Before this, 4 of 5
+ * callers were correct only BY DISCIPLINE — an in-code `status === "completed"`
+ * filter a future edit could silently drop, and nothing would fail. Payroll's
+ * own DB query (`WHERE status: "completed"`) was already correct by
+ * construction; this makes the other four match it. The one caller that
+ * deliberately wants a `pending_approval` trip's proposed amount (driver
+ * Earnings) must use `payableIncentiveProposal` instead — see its own doc.
  */
-export function payableIncentive(t: { incentive_final?: unknown; incentive_earned?: unknown }): number {
+export function payableIncentive(t: {
+  status: string;
+  incentive_final?: unknown;
+  incentive_earned?: unknown;
+}): number {
+  if (t.status !== "completed") return 0;
+  return Number(t.incentive_final ?? t.incentive_earned ?? 0);
+}
+
+/**
+ * The driver Earnings screen's ONE deliberate exception to `payableIncentive`:
+ * it shows a `pending_approval` trip's PROPOSED amount (the admin hasn't
+ * signed off yet), flagged `pending` downstream so the UI never presents it
+ * as paid. This is the pre-hardening `payableIncentive` behaviour, kept under
+ * its own name so that intent is explicit at the call site rather than
+ * silently bypassing the guard above. Never use this for a sum/total that
+ * doesn't also carry the `pending` flag through to whoever reads it.
+ */
+export function payableIncentiveProposal(t: { incentive_final?: unknown; incentive_earned?: unknown }): number {
   return Number(t.incentive_final ?? t.incentive_earned ?? 0);
 }
 

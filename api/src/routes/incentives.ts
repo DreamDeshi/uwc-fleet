@@ -4,7 +4,7 @@ import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/roleGuard";
 import { estimateTripDistanceKm } from "../lib/geo";
 import { currentMytMonthBounds, inMytMonth, mytMonthKey, mytMonthParts, mytMonthStart } from "../lib/myt";
-import { firstEarningInstant, payAttributionInstant, payableIncentive } from "../services/tripCompletion";
+import { firstEarningInstant, payAttributionInstant, payableIncentiveProposal } from "../services/tripCompletion";
 import { EARNING_STOP_SELECT, earnedInWindow } from "../services/undeliveredPay";
 import { countFromEnv } from "../lib/envNumbers";
 import {
@@ -260,7 +260,10 @@ router.get("/mine", requireRole("driver"), async (req, res, next) => {
         // The payable amount (approved final, or proposal for grandfathered
         // trips). For a pending_approval trip this is the PROPOSED figure —
         // flagged `pending` so the UI shows it as awaiting approval, not paid.
-        incentive_earned: payableIncentive(t),
+        // Deliberately payableIncentiveProposal, not payableIncentive: this
+        // screen is the one place a pending_approval trip's proposed amount
+        // is meant to show at all — see that function's own doc.
+        incentive_earned: payableIncentiveProposal(t),
         pending, // true while awaiting admin approval (not yet paid)
         truck_plate: t.truck_plate,
         route_type: t.route_type?.name ?? null,
@@ -290,7 +293,7 @@ router.get("/mine", requireRole("driver"), async (req, res, next) => {
     const monthTrips = summaryRows.filter((t) =>
       inMytMonth(payAttributionInstant(t), monthBounds)
     );
-    const monthTotal = monthTrips.reduce((sum, t) => sum + payableIncentive(t), 0);
+    const monthTotal = monthTrips.reduce((sum, t) => sum + payableIncentiveProposal(t), 0);
     const monthDistance = monthTrips.reduce(
       (sum, t) => sum + estimateTripDistanceKm(t.stops[0]?.consignee.zone_code ?? null),
       0
