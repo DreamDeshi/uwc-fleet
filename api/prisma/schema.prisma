@@ -492,17 +492,37 @@ model Trip {
   // Composite means a replay can only ever return your own trip.
   client_request_id         String?
   // Free-text pickup location for Customer/Supplier bookings (Mr. Teh, 9 Sep
-  // 2026: "let them pick any location, same like we arrange to customer" —
-  // his own R1 answer already said customer/supplier pickup "can be any
-  // place", unlike Inter-Plant which is fenced to the nine UWC plants via
-  // CargoDetail.pickup_consignee_id). Deliberately a single free-text field,
-  // not a picker or a new consignee row: no fixed list exists to pick from.
-  // Display-only — NEVER read by zone/rate/dispatch logic, which keys off the
-  // DESTINATION stops, not pickup. Null = today's single hardcoded origin
-  // (ORIGIN_LABEL, "UWC Batu Kawan"), so every existing trip renders exactly
-  // as before. Not wired into the A19 change-request flow — that is a
-  // separate surface, deliberately left for its own pass.
+  // 2026: "let them pick any location, same like we arrange to customer").
+  // ⚠ 10 Sep 2026 RE-READ: re-reading the full exchange, "same like we
+  // arrange to customer" more likely means the SAME search-and-select
+  // mechanism already used to choose a delivery consignee (he used "select"
+  // twice earlier in the same conversation for pickup location), not free
+  // text — see pickup_consignee_id below, which is that picker. Free text
+  // STAYS as a deliberate second option (owner decision, 10 Sep): a one-off
+  // pickup from a location that isn't a registered consignee must not be
+  // blocked. Display-only either way — NEVER read by zone/rate/dispatch
+  // logic, which keys off the DESTINATION stops, not pickup. Null = today's
+  // single hardcoded origin (ORIGIN_LABEL, "UWC Batu Kawan"). Not wired into
+  // the A19 change-request flow — that is a separate surface, deliberately
+  // left for its own pass.
   pickup_location            String?
+  // The picker half of the same field (10 Sep 2026) — an EXISTING consignee
+  // chosen as the pickup point for a Customer/Supplier booking, the same way
+  // a delivery stop is chosen (search, or "Add manually" to register a new
+  // one). Mutually exclusive with pickup_location in practice (the requestor
+  // does one or the other) but not enforced at the DB level — the UI decides
+  // which one to send, and a stale value in the other column is harmless
+  // (whichever the reader prefers wins; see the render-order note wherever
+  // this is displayed). NOT a CargoDetail.pickup_consignee_id — that is Item
+  // 3's per-cargo-line, plants-ONLY interplant picker, a different mechanism
+  // for a different family. This one is TRIP-level (one pickup point per
+  // booking, matching how Customer/Supplier already works) and UNRESTRICTED
+  // (any consignee, not just the nine plants) — see
+  // assertMultiPickupPlantsValid's own scope note for why those two must
+  // stay separate. Display/navigation only, same as pickup_location: never
+  // read by zone/rate/dispatch logic.
+  pickup_consignee_id        String?
+  pickup_consignee           Consignee?     @relation("TripPickupConsignee", fields: [pickup_consignee_id], references: [id])
   // Failed-delivery / exception workflow (Phase 1, feature-flagged). A trip's
   // exception state is DERIVED, not stored: Trip.status stays `in_progress` while
   // an exception is open. `open_exception_id` is a CACHE/pointer (cheap "has an
@@ -934,8 +954,9 @@ model Consignee {
   longitude          Float?
   geocode_match_type String?
 
-  stops         TripStop[]
-  cargo_pickups CargoDetail[] @relation("CargoPickupConsignee")
+  stops           TripStop[]
+  cargo_pickups   CargoDetail[] @relation("CargoPickupConsignee")
+  trip_pickups    Trip[]        @relation("TripPickupConsignee")
 }
 
 // ── 10. CargoDetail ──────────────────────────────────────────────────

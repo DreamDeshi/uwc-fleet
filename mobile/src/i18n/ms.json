@@ -487,6 +487,7 @@
     "pickupLocationLabel": "Lokasi ambil",
     "pickupLocationPlaceholder": "cth. UWC Batu Kawan, atau alamat pembekal",
     "pickupLocationHint": "Biar kosong untuk UWC Batu Kawan.",
+    "pickupFromLabel": "Ambil dari",
     "cutoffReasonLabel": "Sebab menempah selepas waktu tutup",
     "cutoffReasonPlaceholder": "Mengapa ini tidak boleh menunggu hari bekerja berikutnya",
     "cutoffReasonHint": "Pengecualian admin. Nama anda dan sebab ini direkodkan pada tempahan.",

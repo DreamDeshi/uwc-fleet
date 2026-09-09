@@ -390,6 +390,19 @@ export const createTripSchema = z.object({
     .max(200)
     .optional()
     .transform((v) => (v === undefined ? undefined : v === "" ? null : v)),
+  // The picker half of the same field (10 Sep 2026) — an existing consignee
+  // chosen as the pickup point, same three-way undefined/null/string
+  // convention as pickup_location above (omitted = preserve, empty = clear).
+  // NOT enforced mutually exclusive with pickup_location here — the booking
+  // form always sends both explicitly (whichever is active, plus an empty
+  // string for the other) so a trip never carries a stale value in both; a
+  // caller that omits one leaves it untouched, same as any other field.
+  pickup_consignee_id: z
+    .string()
+    .trim()
+    .max(200)
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "" ? null : v)),
   stops: z
     .array(
       z.object({
@@ -424,6 +437,7 @@ router.post(
         cargo_details,
         cutoff_override_reason,
         pickup_location,
+        pickup_consignee_id,
         requestor_id: requestedRequestorId,
       } = req.body;
 
@@ -520,6 +534,19 @@ router.post(
         throw consigneesNotFoundError(stops, foundConsignees);
       }
 
+      // Trip-level pickup consignee (10 Sep 2026) — the picker half of
+      // Customer/Supplier pickup location. Unlike the destination stops
+      // above, no family restriction: any bookable consignee, matching how
+      // the requestor already searches for a delivery destination.
+      if (pickup_consignee_id) {
+        const foundPickup = await prisma.consignee.findFirst({
+          where: bookableConsigneesWhere([pickup_consignee_id]),
+        });
+        if (!foundPickup) {
+          throw new ApiError(400, "PICKUP_CONSIGNEE_NOT_FOUND", "The selected pickup company is no longer available — please reselect it.");
+        }
+      }
+
       // Item 3 multi-pickup + the general interplant destination rule.
       const rawPickupIds: string[] = [];
       for (const c of cargo_details as { pickup_consignee_id?: string }[]) {
@@ -571,6 +598,7 @@ router.post(
               route_type_id,
               pickup_datetime,
               pickup_location: pickup_location ?? null,
+              pickup_consignee_id: pickup_consignee_id ?? null,
               is_external: is_external ?? false,
               stops: {
                 // Normalised to a contiguous, tie-free 1..N — the truck pick and
@@ -698,6 +726,7 @@ export const updateTripSchema = z.object({
   route_type_id: z.string().min(1),
   pickup_datetime: z.coerce.date(),
   pickup_location: createTripSchema.shape.pickup_location,
+  pickup_consignee_id: createTripSchema.shape.pickup_consignee_id,
   stops: createTripSchema.shape.stops,
   // Full/legacy vocabulary so a historical 1×1/1×2 line still PARSES on edit (the
   // create schema's BOOKABLE enum would 400 the whole update). Optional: when the
@@ -723,6 +752,10 @@ export interface TripEditInput {
   route_type_id: string;
   pickup_datetime: Date;
   pickup_location?: string | null;
+  // TRIP-level pickup picker (10 Sep 2026) — not to be confused with
+  // cargo_details[].pickup_consignee_id below, which is Item 3's per-line
+  // interplant plant picker. Different field, different table, same name.
+  pickup_consignee_id?: string | null;
   stops: { sequence?: number | null; consignee_id: string }[];
   cargo_details: {
     pallet_type: string;
@@ -776,6 +809,8 @@ export interface TripEditSnapshot {
   route_type_id: string;
   pickup_datetime: Date;
   pickup_location?: string | null;
+  // TRIP-level pickup picker — see TripEditInput's own note on the name collision.
+  pickup_consignee_id?: string | null;
   stops: { sequence: number; consignee_id: string }[];
   cargo_details: {
     pallet_type: string;
@@ -806,9 +841,14 @@ export function summarizeTripChanges(existing: TripEditSnapshot, next: TripEditI
   // undefined = omitted = "not proposed" (see the schema comment) — never
   // compared, so a caller that doesn't send this field (the A19 change-request
   // routes, today) can never register a spurious change here.
-  if (next.pickup_location !== undefined && (existing.pickup_location ?? null) !== next.pickup_location) {
-    changed.push("pickup location");
-  }
+  // Free-text and picked-consignee are the same conceptual field (a
+  // switch between them, e.g. free text -> a picked company, changes BOTH
+  // at once) — pushed at most ONCE, not twice, for exactly that case.
+  const pickupLocationChanged =
+    (next.pickup_location !== undefined && (existing.pickup_location ?? null) !== next.pickup_location) ||
+    (next.pickup_consignee_id !== undefined &&
+      (existing.pickup_consignee_id ?? null) !== next.pickup_consignee_id);
+  if (pickupLocationChanged) changed.push("pickup location");
 
   const orderedConsignees = (stops: { sequence?: number | null; consignee_id: string }[]) =>
     stops
@@ -862,7 +902,7 @@ async function validateTripEdit(
   existing: Prisma.TripGetPayload<{ include: { stops: true; cargo_details: true } }>,
   input: UpdateTripInput
 ): Promise<{ effectiveCargo: TripEditInput["cargo_details"]; changeNote: string | null }> {
-  const { route_type_id, pickup_datetime, pickup_location, stops, cargo_details } = input;
+  const { route_type_id, pickup_datetime, pickup_location, pickup_consignee_id, stops, cargo_details } = input;
 
   // Cargo is OPTIONAL: when omitted, preserve the existing cargo unchanged
   // (resolved from the stored rows). When present, it replaces the cargo — but
@@ -936,6 +976,16 @@ async function validateTripEdit(
     foundPickupConsignees,
   });
 
+  // Trip-level pickup consignee (10 Sep 2026) — same check as create.
+  if (pickup_consignee_id) {
+    const foundPickup = await prisma.consignee.findFirst({
+      where: bookableConsigneesWhere([pickup_consignee_id]),
+    });
+    if (!foundPickup) {
+      throw new ApiError(400, "PICKUP_CONSIGNEE_NOT_FOUND", "The selected pickup company is no longer available — please reselect it.");
+    }
+  }
+
   if (!existing.is_external) {
     const orderPallets = palletEquivalents(effectiveCargo);
     const largest = await prisma.truck.aggregate({ _max: { max_pallets: true } });
@@ -953,6 +1003,7 @@ async function validateTripEdit(
     route_type_id,
     pickup_datetime,
     pickup_location,
+    pickup_consignee_id,
     stops,
     cargo_details: effectiveCargo,
   });
@@ -966,7 +1017,8 @@ router.patch(
   async (req, res, next) => {
     try {
       const { id } = req.params;
-      const { route_type_id, pickup_datetime, pickup_location, stops, cargo_details } = req.body as UpdateTripInput;
+      const { route_type_id, pickup_datetime, pickup_location, pickup_consignee_id, stops, cargo_details } =
+        req.body as UpdateTripInput;
 
       const existing = await prisma.trip.findUnique({
         where: { id },
@@ -1016,6 +1068,7 @@ router.patch(
         route_type_id,
         pickup_datetime,
         pickup_location,
+        pickup_consignee_id,
         stops,
         cargo_details,
       });
@@ -1045,6 +1098,7 @@ router.patch(
             // Omitted = preserve (see schema comment) — only write when the
             // requestor's edit form actually sent a value.
             ...(pickup_location !== undefined ? { pickup_location } : {}),
+            ...(pickup_consignee_id !== undefined ? { pickup_consignee_id } : {}),
             auto_dispatch_failed: false,
             auto_dispatch_note: null,
           },

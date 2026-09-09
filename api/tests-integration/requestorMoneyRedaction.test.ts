@@ -187,6 +187,10 @@ describe("requestors never receive driver pay", () => {
         // Free-text Customer/Supplier pickup location — the requestor's own
         // input, display-only, never money/rate data.
         "pickup_location",
+        // The picker half of the same field (10 Sep 2026) — an existing
+        // consignee id, same visibility rule: it's the requestor's own
+        // choice, display-only, never money/rate data.
+        "pickup_consignee_id",
       ]),
       Truck: new Set([
         "plate", "type", "max_pallets", "priority_zones",

@@ -247,6 +247,14 @@ export function BookingFormScreen() {
   // Free-text pickup location (Customer/Supplier only — Inter-Plant keeps its
   // own P1-P9 picker above). Empty = today's default origin (ORIGIN_LABEL).
   const [pickupLocation, setPickupLocation] = useState("");
+  // The picker half of the same field (10 Sep 2026) — an existing consignee
+  // chosen as the pickup point, same mechanism as choosing a delivery stop.
+  // Holds the full object (not just the id) so the confirm step and the
+  // pickup field itself can show the name/area with no extra lookup — mirrors
+  // how `stops` holds full Consignee objects rather than bare ids. Mutually
+  // exclusive with pickupLocation in the UI (picking one clears the other),
+  // but both are sent explicitly on submit either way.
+  const [pickupConsignee, setPickupConsignee] = useState<Consignee | null>(null);
   // Deprecated (1×1/1×2) lines carried in from a historical booking on edit. They
   // are NOT selectable/editable via the steppers — kept read-only and re-appended
   // verbatim on save so an unrelated edit can never silently drop them. Removal is
@@ -536,6 +544,7 @@ export function BookingFormScreen() {
     setBoxQty(box?.quantity ?? 0);
     setBoxPickup(box?.pickup_consignee_id ?? undefined);
     setPickupLocation(tr.pickup_location ?? "");
+    setPickupConsignee(tr.pickup_consignee ?? null);
     if (dimLine) {
       setDimType(dimLine.pallet_type as "crate" | "rack" | "custom");
       setDimW(dimLine.width_ft != null ? String(dimLine.width_ft) : "");
@@ -739,7 +748,18 @@ export function BookingFormScreen() {
         // deliberately OMITTED on a change-request proposal — the server reads
         // an omitted field as "not proposed, preserve the existing value", so
         // this can never silently wipe an assigned trip's pickup location.
-        ...(!isChangeRequest && !isInterplantBooking ? { pickup_location: pickupLocation.trim() } : {}),
+        //
+        // Free text and a picked consignee are mutually exclusive in the UI
+        // (picking one clears the other), so BOTH are always sent explicitly
+        // together — never one omitted while the other is set — so a switch
+        // from one to the other actually clears the field it replaced instead
+        // of leaving a stale value the confirm screen would have to arbitrate.
+        ...(!isChangeRequest && !isInterplantBooking
+          ? {
+              pickup_location: pickupConsignee ? "" : pickupLocation.trim(),
+              pickup_consignee_id: pickupConsignee?.id ?? "",
+            }
+          : {}),
       };
 
       if (isChangeRequest && editTripId) {
@@ -870,6 +890,10 @@ export function BookingFormScreen() {
           templates={isEdit ? [] : templates}
           onApplyTemplate={applyTemplate}
           onDeleteTemplate={deleteTemplate}
+          pickupLocation={!isInterplantBooking ? pickupLocation : undefined}
+          setPickupLocation={setPickupLocation}
+          pickupConsignee={!isInterplantBooking ? pickupConsignee : undefined}
+          setPickupConsignee={setPickupConsignee}
         />
       )}
       {step === 1 && (
@@ -914,8 +938,6 @@ export function BookingFormScreen() {
           setRemarks={setRemarks}
           cutoffReason={needsCutoffReason ? cutoffReason : null}
           setCutoffReason={setCutoffReason}
-          pickupLocation={!isInterplantBooking ? pickupLocation : undefined}
-          setPickupLocation={setPickupLocation}
         />
       )}
       {step === 3 && (
@@ -933,6 +955,7 @@ export function BookingFormScreen() {
           canSaveTemplate={canSaveTemplate && !isEdit}
           onSaveTemplate={() => setTemplateSaveOpen(true)}
           pickupLocation={!isInterplantBooking ? pickupLocation : undefined}
+          pickupConsignee={!isInterplantBooking ? pickupConsignee : undefined}
         />
       )}
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -1144,6 +1167,10 @@ function StepWhere({
   templates,
   onApplyTemplate,
   onDeleteTemplate,
+  pickupLocation,
+  setPickupLocation,
+  pickupConsignee,
+  setPickupConsignee,
 }: {
   routeMatrix: ReturnType<typeof buildRouteMatrix>;
   routeTypesFailed: boolean;
@@ -1158,6 +1185,12 @@ function StepWhere({
   setStops: React.Dispatch<React.SetStateAction<Consignee[]>>;
   recent: Consignee[];
   canRebook: boolean;
+  /** Customer/Supplier only — undefined on Inter-Plant, which keeps its own
+   *  P1-P9 picker in the cargo step and has no use for this field. */
+  pickupLocation?: string;
+  setPickupLocation?: (v: string) => void;
+  pickupConsignee?: Consignee | null;
+  setPickupConsignee?: (c: Consignee | null) => void;
   onRebook: () => void;
   templates: BookingTemplate[];
   onApplyTemplate: (tpl: BookingTemplate) => void;
@@ -1182,6 +1215,15 @@ function StepWhere({
   const directions = family ? availableDirections(routeMatrix, family) : [];
   const query = search.trim();
   const noResults = query.length >= CONSIGNEE_SEARCH_MIN && results.length === 0 && !isFetching;
+
+  // Pickup — the picker half of the same field (10 Sep 2026). A SEPARATE
+  // search from the delivery one above: typing free text is the common case
+  // (a one-off supplier address), so this reuses useConsignees purely to
+  // surface live suggestions under the same field, not a dedicated results
+  // card. Skips fetching once a company is actually picked (empty query).
+  const pickupQuery = (pickupConsignee ? "" : pickupLocation ?? "").trim();
+  const { data: pickupResults = [] } = useConsignees(pickupConsignee ? "" : pickupLocation ?? "");
+  const showPickupSuggestions = !pickupConsignee && pickupQuery.length >= CONSIGNEE_SEARCH_MIN;
 
   return (
     <View>
@@ -1299,6 +1341,70 @@ function StepWhere({
           <Ionicons name="checkmark-circle" size={14} color={colors.greenText} />
           <Text style={styles.resolvedText}>{resolvedRouteName}</Text>
         </View>
+      ) : null}
+
+      {/* Pickup — moved here from the WHEN step (owner feedback, 10 Sep 2026):
+          "from" belongs beside "to", the same place a delivery stop is
+          chosen, not several screens later beside date/time. Customer/
+          Supplier only — pickupLocation is undefined on Inter-Plant, which
+          keeps its own P1-P9 picker in the cargo step. */}
+      {pickupLocation !== undefined && setPickupLocation && setPickupConsignee ? (
+        <>
+          <FieldLabel>{t("booking.pickupLocationLabel")}</FieldLabel>
+          {pickupConsignee ? (
+            // A picked company — shown as a confirmed chip, same visual
+            // language as a selected delivery stop, not an editable field.
+            <View style={styles.pickupChip}>
+              <Ionicons name="business" size={16} color={colors.blue} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.pickupChipName}>{pickupConsignee.company_name}</Text>
+                {pickupConsignee.area || pickupConsignee.zone_code ? (
+                  <Text style={styles.pickupChipArea}>
+                    {[pickupConsignee.area, pickupConsignee.zone_code].filter(Boolean).join(" · ")}
+                  </Text>
+                ) : null}
+              </View>
+              <TouchableOpacity
+                onPress={() => setPickupConsignee(null)}
+                hitSlop={10}
+                accessibilityLabel={t("common.clear")}
+              >
+                <Ionicons name="close-circle" size={22} color={colors.textFaint} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              <TextInput
+                value={pickupLocation}
+                onChangeText={setPickupLocation}
+                placeholder={t("booking.pickupLocationPlaceholder")}
+                placeholderTextColor={colors.textFaint}
+                style={styles.singleLineField}
+                maxLength={200}
+              />
+              {/* Live suggestions as they type — tap one to switch to the
+                  confirmed-chip state above. Typing on past a match without
+                  tapping just keeps it as free text, same as today. */}
+              {showPickupSuggestions && pickupResults.length > 0 ? (
+                <View style={styles.results}>
+                  {pickupResults.slice(0, 5).map((c) => (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={styles.resultRow}
+                      onPress={() => setPickupConsignee(c)}
+                    >
+                      <Text style={styles.resultName}>{c.company_name}</Text>
+                      <Text style={styles.resultArea}>
+                        {[c.area, c.zone?.name ?? c.zone_code].filter(Boolean).join(" · ")}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
+            </>
+          )}
+          <Text style={styles.slotHint}>{t("booking.pickupLocationHint")}</Text>
+        </>
       ) : null}
 
       <FieldLabel>{t("booking.consignee")}</FieldLabel>
@@ -1873,8 +1979,6 @@ function StepWhen({
   setRemarks,
   cutoffReason,
   setCutoffReason,
-  pickupLocation,
-  setPickupLocation,
 }: {
   pickupDate: Date;
   onPickPickup: () => void;
@@ -1887,10 +1991,6 @@ function StepWhen({
    *  the box does not exist on the ordinary booking path at all. */
   cutoffReason?: string | null;
   setCutoffReason?: (v: string) => void;
-  /** Customer/Supplier free-text pickup location. Undefined on an Inter-Plant
-   *  booking, which has its own P1-P9 picker and no use for this field. */
-  pickupLocation?: string;
-  setPickupLocation?: (v: string) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -1922,25 +2022,6 @@ function StepWhen({
             <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
           </TouchableOpacity>
           <Text style={styles.slotHint}>{t("booking.fleetHoursHint")}</Text>
-        </>
-      )}
-
-      {pickupLocation !== undefined && (
-        <>
-          <FieldLabel>{t("booking.pickupLocationLabel")}</FieldLabel>
-          {/* Single-line field — was styles.textarea (minHeight 90, built for
-              wrapped multi-line text), which left it nearly double the height
-              of Pickup Date/Time right above it for one line of text. Matches
-              slotField's compact sizing instead. */}
-          <TextInput
-            value={pickupLocation}
-            onChangeText={setPickupLocation}
-            placeholder={t("booking.pickupLocationPlaceholder")}
-            placeholderTextColor={colors.textFaint}
-            style={styles.singleLineField}
-            maxLength={200}
-          />
-          <Text style={styles.slotHint}>{t("booking.pickupLocationHint")}</Text>
         </>
       )}
 
@@ -1992,6 +2073,7 @@ function StepConfirm({
   canSaveTemplate,
   onSaveTemplate,
   pickupLocation,
+  pickupConsignee,
 }: {
   routeTypeName?: string;
   stops: Consignee[];
@@ -2009,6 +2091,9 @@ function StepConfirm({
   /** Customer/Supplier free-text pickup location, or undefined on Inter-Plant
    *  (which shows pickupSummary instead) or when left blank. */
   pickupLocation?: string;
+  /** The picker half of the same field — takes priority over pickupLocation
+   *  for display when both would otherwise apply. */
+  pickupConsignee?: Consignee | null;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -2098,9 +2183,7 @@ function StepConfirm({
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.confirmLineMain}>{formatTime(pickupDate)}</Text>
-            <Text style={styles.confirmLineSub}>
-              {formatDate(pickupDate)} · {pickupLocation?.trim() || ORIGIN_LABEL}
-            </Text>
+            <Text style={styles.confirmLineSub}>{formatDate(pickupDate)}</Text>
           </View>
         </View>
       </Section>
@@ -2108,7 +2191,22 @@ function StepConfirm({
       <Section title={routeTypeName ?? t("booking.route")} editStep={0}>
         {/* Mr. Teh 16 Jul: "Can show the zone area and cargo pickup point after
             requestor select customer name in confirmation page?" — the pickup
-            origin (single-origin model today) plus each stop's zone + area. */}
+            origin (single-origin model today) plus each stop's zone + area.
+            Pickup moved here from Schedule (10 Sep 2026) — it's now chosen in
+            the WHERE step, alongside the delivery stops below, not WHEN. */}
+        {pickupLocation !== undefined ? (
+          <View style={styles.confirmLine}>
+            <View style={styles.confirmIcon}>
+              <Ionicons name="business-outline" size={16} color={colors.blue} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.confirmLineMain}>
+                {pickupConsignee?.company_name || pickupLocation?.trim() || ORIGIN_LABEL}
+              </Text>
+              <Text style={styles.confirmLineSub}>{t("booking.pickupFromLabel")}</Text>
+            </View>
+          </View>
+        ) : null}
         {stops.map((c, i) => (
           <View key={c.id} style={styles.confirmStop}>
             <View style={styles.confirmStopSeq}>
@@ -2322,6 +2420,12 @@ const styles = StyleSheet.create({
   stopSeqText: { color: colors.white, fontSize: 13, fontWeight: "800" },
   stopChipName: { fontSize: 14, fontWeight: "700", color: colors.navy },
   stopChipArea: { fontSize: 13, color: colors.textFaint, marginTop: 2 },
+
+  // A picked pickup consignee — same family as stopChip, no numbered badge
+  // (there is only ever one pickup point).
+  pickupChip: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.tintBlue, borderRadius: radius.md, padding: 12, borderWidth: 1, borderColor: colors.blue },
+  pickupChipName: { fontSize: 14, fontWeight: "700", color: colors.navy },
+  pickupChipArea: { fontSize: 13, color: colors.textFaint, marginTop: 2 },
 
   searchBox: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: 14, minHeight: 50 },
   searchBoxActive: { borderColor: colors.blue },

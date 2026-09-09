@@ -260,7 +260,7 @@ export function BookingDetailScreen() {
       <Card padded={false}>
         <View style={styles.stopRow}>
           <View style={styles.originDot} />
-          <Text style={styles.stopName} numberOfLines={1}>{trip.pickup_location?.trim() || ORIGIN_LABEL}</Text>
+          <Text style={styles.stopName} numberOfLines={1}>{trip.pickup_consignee?.company_name || trip.pickup_location?.trim() || ORIGIN_LABEL}</Text>
         </View>
         {[...stops]
           .sort((a, b) => a.sequence - b.sequence)

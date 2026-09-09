@@ -189,4 +189,129 @@ describe("pickup location — Customer/Supplier free text", () => {
       expect(trip.pickup_location).toBe("Supplier Site A");
     });
   });
+
+  describe("pickup_consignee_id — the picker half of the same field (10 Sep 2026)", () => {
+    it("POST /trips accepts an existing consignee as the pickup point", async () => {
+      const requestor = await loginAs(REQUESTOR);
+      const rt = await firstRouteTypeId(requestor);
+      const delivery = await ensureConsigneeInZone("P1");
+      const pickup = await ensureConsigneeInZone("P2");
+      const res = await bookRaw(requestor, {
+        route_type_id: rt,
+        pickup_datetime: futurePickupIso(),
+        stops: [{ consignee_id: delivery.id }],
+        cargo_details: [{ pallet_type: "4×4", quantity: 1 }],
+        pickup_consignee_id: pickup.id,
+      });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(res.body.pickup_consignee_id).toBe(pickup.id);
+      expect(res.body.pickup_consignee?.company_name).toBe(pickup.company_name);
+
+      const trip = await prisma.trip.findUnique({ where: { id: res.body.id } });
+      expect(trip?.pickup_consignee_id).toBe(pickup.id);
+    });
+
+    it("POST /trips rejects a pickup_consignee_id that doesn't exist", async () => {
+      const requestor = await loginAs(REQUESTOR);
+      const rt = await firstRouteTypeId(requestor);
+      const delivery = await ensureConsigneeInZone("P1");
+      const res = await bookRaw(requestor, {
+        route_type_id: rt,
+        pickup_datetime: futurePickupIso(),
+        stops: [{ consignee_id: delivery.id }],
+        cargo_details: [{ pallet_type: "4×4", quantity: 1 }],
+        pickup_consignee_id: "nonexistent-id",
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("PICKUP_CONSIGNEE_NOT_FOUND");
+    });
+
+    it("PATCH /trips/:id updates the pickup consignee on a pending booking", async () => {
+      const requestor = await loginAs(REQUESTOR);
+      const rt = await firstRouteTypeId(requestor);
+      const delivery = await ensureConsigneeInZone("P1");
+      const pickupA = await ensureConsigneeInZone("P2");
+      const pickupB = await ensureConsigneeInZone("P3");
+      const created = await bookRaw(requestor, {
+        route_type_id: rt,
+        pickup_datetime: futurePickupIso(),
+        stops: [{ consignee_id: delivery.id }],
+        cargo_details: [{ pallet_type: "4×4", quantity: 1 }],
+        pickup_consignee_id: pickupA.id,
+      });
+      expect(created.status).toBe(201);
+
+      const edited = await api()
+        .patch(`/api/v1/trips/${created.body.id}`)
+        .set(auth(requestor))
+        .send({
+          route_type_id: rt,
+          pickup_datetime: futurePickupIso(),
+          stops: [{ consignee_id: delivery.id }],
+          cargo_details: [{ pallet_type: "4×4", quantity: 1 }],
+          pickup_consignee_id: pickupB.id,
+        });
+      expect(edited.status, JSON.stringify(edited.body)).toBe(200);
+      expect(edited.body.pickup_consignee_id).toBe(pickupB.id);
+    });
+
+    it("switching from a picked consignee back to free text clears the consignee id", async () => {
+      const requestor = await loginAs(REQUESTOR);
+      const rt = await firstRouteTypeId(requestor);
+      const delivery = await ensureConsigneeInZone("P1");
+      const pickup = await ensureConsigneeInZone("P2");
+      const created = await bookRaw(requestor, {
+        route_type_id: rt,
+        pickup_datetime: futurePickupIso(),
+        stops: [{ consignee_id: delivery.id }],
+        cargo_details: [{ pallet_type: "4×4", quantity: 1 }],
+        pickup_consignee_id: pickup.id,
+      });
+      expect(created.status).toBe(201);
+
+      // The booking form sends BOTH fields explicitly on every submit (see the
+      // schema comment) — free text plus an empty consignee id, not an omission.
+      const edited = await api()
+        .patch(`/api/v1/trips/${created.body.id}`)
+        .set(auth(requestor))
+        .send({
+          route_type_id: rt,
+          pickup_datetime: futurePickupIso(),
+          stops: [{ consignee_id: delivery.id }],
+          cargo_details: [{ pallet_type: "4×4", quantity: 1 }],
+          pickup_location: "A different one-off address",
+          pickup_consignee_id: "",
+        });
+      expect(edited.status, JSON.stringify(edited.body)).toBe(200);
+      expect(edited.body.pickup_consignee_id).toBeNull();
+      expect(edited.body.pickup_location).toBe("A different one-off address");
+    });
+
+    it("PATCH omitting pickup_consignee_id PRESERVES the existing value", async () => {
+      const requestor = await loginAs(REQUESTOR);
+      const rt = await firstRouteTypeId(requestor);
+      const delivery = await ensureConsigneeInZone("P1");
+      const pickup = await ensureConsigneeInZone("P2");
+      const created = await bookRaw(requestor, {
+        route_type_id: rt,
+        pickup_datetime: futurePickupIso(),
+        stops: [{ consignee_id: delivery.id }],
+        cargo_details: [{ pallet_type: "4×4", quantity: 1 }],
+        pickup_consignee_id: pickup.id,
+      });
+      expect(created.status).toBe(201);
+
+      const edited = await api()
+        .patch(`/api/v1/trips/${created.body.id}`)
+        .set(auth(requestor))
+        .send({
+          route_type_id: rt,
+          pickup_datetime: futurePickupIso(),
+          stops: [{ consignee_id: delivery.id }],
+          cargo_details: [{ pallet_type: "4×4", quantity: 2 }],
+        });
+      expect(edited.status).toBe(200);
+      expect(edited.body.pickup_consignee_id).toBe(pickup.id);
+    });
+  });
 });

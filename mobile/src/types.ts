@@ -218,6 +218,15 @@ export interface Trip {
   // Free-text pickup location for Customer/Supplier bookings. Display-only —
   // null means the default origin (ORIGIN_LABEL, "UWC Batu Kawan").
   pickup_location?: string | null;
+  // The picker half of the same field (10 Sep 2026) — an existing consignee
+  // chosen as the pickup point, same as choosing a delivery destination. NOT
+  // CargoDetail.pickup_consignee_id (Item 3's per-line interplant plant
+  // picker) — this is trip-level, unrestricted to any consignee. Prefer this
+  // over pickup_location for navigation when both are present: a picked
+  // consignee's own lat/lng (when geocoded) is more accurate than a live
+  // Maps text search on free-typed text.
+  pickup_consignee_id?: string | null;
+  pickup_consignee?: Consignee | null;
   created_at: string;
   requestor?: { id: string; name: string; phone: string };
   driver?: { id: string; name: string; phone: string } | null;
