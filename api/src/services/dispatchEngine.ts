@@ -642,17 +642,11 @@ export async function autoDispatchTrip(tripId: string, actorId?: string): Promis
       // trip pending so the other writer (or the 15-min sweep) handles it.
       return { assigned: false, reason: "Concurrent dispatch in progress; will retry." };
     }
-    if (err instanceof ApiError && err.code === "ZONE_POINTS_MISSING") {
-      // Configuration error, not a race: a stop's zone has no destination
-      // points, so the snapshot refused to write a silent 1-point payday.
-      // Leave the trip pending and raise the needs-attention flag so an admin
-      // fixes the rates instead of the booking vanishing into a log line.
-      await prisma.trip.updateMany({
-        where: { id: tripId, status: "pending" },
-        data: { auto_dispatch_failed: true, auto_dispatch_note: err.message },
-      });
-      return { assigned: false, reason: err.message };
-    }
+    // ZONE_POINTS_MISSING used to be caught here (a missing destination rate
+    // aborted the assignment). Owner directive, 9 Sep 2026: snapshotStopZonePoints
+    // no longer throws it — a missing rate snapshots zone_points as null and lets
+    // the assignment proceed (see rateSnapshot.ts). This branch is dead as of
+    // that change; removed rather than left as a catch nothing can reach.
     throw err;
   }
 
