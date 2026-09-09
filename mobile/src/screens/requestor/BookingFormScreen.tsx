@@ -1830,12 +1830,10 @@ function StepWhat({
               </TouchableOpacity>
             </View>
           </View>
-          {/* Rack's dims now size the truck like a pallet (27 Aug 2026); crate
-              and custom still have no authoritative capacity rule and always
-              go to manual assignment. */}
-          <Text style={styles.estimateHint}>
-            {t(cargoType === "rack" ? "booking.rackSizedHint" : "booking.dimensionsManualHint")}
-          </Text>
+          {/* All three dimensioned types (rack since 27 Aug 2026, crate/custom
+              since 9 Sep 2026) now size the truck like a pallet when their
+              dims are valid — see DIMENSION_SIZED_TYPES. */}
+          <Text style={styles.estimateHint}>{t("booking.dimensionsSizedHint")}</Text>
         </>
       )}
 

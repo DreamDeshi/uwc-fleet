@@ -198,8 +198,10 @@ test.describe("Structured cargo & templates (requestor, mobile web)", () => {
     await page.getByText("Custom", { exact: true }).click();
     await page.getByPlaceholder("Width").fill("6.5");
     await page.getByPlaceholder("Length").fill("4");
-    // Quantity stepper defaults to 1; the manual-assignment hint shows.
-    await expect(page.getByText("The dispatcher assigns the truck manually for this cargo.")).toBeVisible();
+    // Quantity stepper defaults to 1; Custom is sized like a pallet now (9 Sep
+    // 2026 — joined Rack's 27 Aug 2026 treatment), so this is the sized hint,
+    // not a manual-assignment one.
+    await expect(page.getByText("This size counts toward the truck's load, the same as a pallet.")).toBeVisible();
     await toConfirmStep(page);
 
     const ticket = await submitAndReadTicket(page);
