@@ -22,6 +22,11 @@ export interface PayrollTripInput {
   pickup_datetime: Date;
   /** First delivery confirm — the pay-deciding instant the month bucket keys on. */
   delivered_at: Date | null;
+  // Literal "completed" — the caller's own DB query is already
+  // `WHERE status: "completed"` (payroll pays completed trips only), so this
+  // is always true in practice. Carried explicitly, rather than assumed, so
+  // payableIncentive's status guard is satisfied by construction here too.
+  status: "completed";
   incentive_earned: unknown; // Prisma Decimal | string | number | null — the engine PROPOSAL
   incentive_final?: unknown; // admin-approved payable amount; null on pre-approval-gate trips
 }

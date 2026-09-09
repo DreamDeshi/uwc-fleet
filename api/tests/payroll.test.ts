@@ -19,6 +19,9 @@ const trip = (over: Partial<{ id: string; ticket_number: string; pickup_datetime
   ticket_number: "TKT-20260710-001",
   pickup_datetime: new Date("2026-07-10T01:00:00Z"),
   delivered_at: new Date("2026-07-10T05:00:00Z"),
+  // Literal, matching payroll's own DB query (WHERE status: "completed") —
+  // every trip this sheet ever sees IS one. See PayrollTripInput's own note.
+  status: "completed" as const,
   incentive_earned: 44,
   ...over,
 });
