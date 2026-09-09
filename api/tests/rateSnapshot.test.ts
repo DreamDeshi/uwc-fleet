@@ -127,16 +127,13 @@ describe("dropZonePoints — snapshot wins over live zone points", () => {
     expect(dropZonePoints({ zone_points: null }, 6)).toBe(6);
   });
 
-  it("THROWS ZONE_POINTS_MISSING when the zone is unknown everywhere (never a silent 1-point pay)", () => {
-    try {
-      dropZonePoints({ zone_points: null }, undefined, "ZZ");
-      expect.unreachable("expected ZONE_POINTS_MISSING");
-    } catch (err) {
-      const e = err as { code?: string; statusCode?: number; message?: string };
-      expect(e.code).toBe("ZONE_POINTS_MISSING");
-      expect(e.statusCode).toBe(422);
-      expect(e.message).toContain("ZZ");
-    }
+  // Owner directive, 9 Sep 2026 ("don't care if incentive is wrong, make the
+  // system as flexible as possible — stop blocking bookings/dispatch over
+  // incentive edge cases"): this used to THROW ZONE_POINTS_MISSING. It now
+  // scores 0 and lets the trip finalize — see the function's own header for
+  // the full reasoning and what changed.
+  it("scores 0, not a throw, when the zone is unknown everywhere", () => {
+    expect(dropZonePoints({ zone_points: null }, undefined, "ZZ")).toBe(0);
   });
 });
 

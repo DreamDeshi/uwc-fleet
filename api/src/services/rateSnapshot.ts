@@ -1,5 +1,4 @@
 import type { Prisma } from "@prisma/client";
-import { ApiError } from "../lib/apiError";
 import { INTERPLANT_FALLBACK_RATE } from "../lib/uwcSpec";
 import { effectiveZonePoints } from "./pendingRates";
 
@@ -110,25 +109,28 @@ export function finalizationRateParams(trip: {
  * A drop's zone points at finalization: the stop's assignment-time snapshot
  * when present, else the live DestinationRate points (legacy fallback).
  *
- * A zone with NEITHER is a configuration error in a money path — it used to
- * silently pay 1 point (so a mis-seeded KL zone would quietly underpay an
- * 8-point run). Now it throws ZONE_POINTS_MISSING so the trip cannot
- * finalize at wrong pay; the fix is adding the zone's DestinationRate row.
+ * A zone with NEITHER used to be a hard stop — it threw ZONE_POINTS_MISSING
+ * so a mis-seeded zone could never quietly underpay (the original bug this
+ * guarded against: a KL zone silently paying 1 point on an 8-point run).
+ *
+ * Owner directive, 9 Sep 2026: "don't care if incentive is wrong, make the
+ * system as flexible as possible" — scoped to "stop blocking bookings/
+ * dispatch over incentive edge cases." This THROW blocked a DRIVER's own
+ * "mark delivered" action in the field over a missing back-office rate
+ * config, which is worse than the assignment-time block it mirrors — so it
+ * is gone too. An unresolved zone now scores 0 points for that drop rather
+ * than refusing to finalize; the trip completes, and the admin can add the
+ * missing DestinationRate row and correct the pay afterward (append-only
+ * IncentiveAdjustment — see incentive-correction, PR #215) rather than the
+ * driver being stuck mid-delivery.
  */
 export function dropZonePoints(
   stop: { zone_points: number | null },
   livePoints: number | undefined,
   zoneCode?: string
 ): number {
-  const points = stop.zone_points ?? livePoints;
-  if (points == null) {
-    throw new ApiError(
-      422,
-      "ZONE_POINTS_MISSING",
-      `Zone ${zoneCode ?? "(unknown)"} has no destination points configured — add it on the Incentive Rates page before this trip can be finalized.`
-    );
-  }
-  return points;
+  void zoneCode; // kept in the signature — call sites still pass it for logging/debugging.
+  return stop.zone_points ?? livePoints ?? 0;
 }
 
 /**
@@ -244,21 +246,21 @@ export async function snapshotStopZonePoints(
 
   for (const s of stops) {
     const points = pointsByZone.get(s.consignee.zone_code);
-    if (points == null) {
-      // Loud, at ASSIGNMENT time: a zone without points must never be
-      // snapshotted as a silent 1-point payday. Manual assign surfaces this
-      // as a 422 to the admin; auto-dispatch aborts and leaves the trip
-      // pending with the needs-attention flag.
-      throw new ApiError(
-        422,
-        "ZONE_POINTS_MISSING",
-        `Zone ${s.consignee.zone_code} has no destination points configured — add it on the Incentive Rates page before assigning this trip.`
-      );
-    }
+    // Owner directive, 9 Sep 2026: "don't care if incentive is wrong, make
+    // the system as flexible as possible" — scoped to "stop blocking
+    // bookings/dispatch over incentive edge cases, worry about the payout
+    // amount later." A zone with no destination rate configured USED TO
+    // refuse the assignment outright (422 to the admin; auto-dispatch left
+    // the trip pending). It no longer does — the trip is assigned with
+    // zone_points left null, and dropZonePoints (finalize time) now treats
+    // an unresolved zone as 0 rather than throwing. The admin can add the
+    // rate at any point before or after finalization; nothing here is
+    // silent — a null/0 point stop is visible in the pay breakdown same as
+    // any other, it just isn't blocking.
     await tx.tripStop.update({
       where: { id: s.id },
       // zone_code: the identity lock, written next to the points it explains.
-      data: { zone_points: points, zone_code: s.consignee.zone_code },
+      data: { zone_points: points ?? null, zone_code: s.consignee.zone_code },
     });
   }
 }
