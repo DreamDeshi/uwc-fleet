@@ -217,6 +217,21 @@ export interface TimelineStep {
   stopLabel?: string;
 }
 
+// Append-only pay correction for a completed trip (R6-2/R6-3, owner ruling
+// 29 Aug 2026). `effective_month` is always the month the adjustment was
+// CREATED in — never the trip's own pay-attribution month, which stays
+// untouched. See api/prisma/schema.prisma's IncentiveAdjustment model.
+export interface IncentiveAdjustment {
+  id: string;
+  trip_id: string;
+  delta: string; // Decimal serialises as string
+  reason: string;
+  created_by: string;
+  created_at: string;
+  effective_month: string; // "YYYY-MM"
+  creator?: { name: string };
+}
+
 export interface Trip {
   id: string;
   ticket_number: string;

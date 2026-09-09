@@ -16,7 +16,9 @@ import { useTranslation } from "react-i18next";
 import {
   useApproveTrip,
   useAssignExternal,
+  useCreateIncentiveAdjustment,
   useDrivers,
+  useIncentiveAdjustments,
   useRejectTrip,
   useReassignTrip,
   useTrip,
@@ -1688,6 +1690,39 @@ function CompletedPanel({ trip }: { trip: Trip }) {
   const stops = [...trip.stops].sort((a, b) => a.sequence - b.sequence);
   const hasBreakdown = stops.some((s) => s.points_awarded !== null && s.points_awarded !== undefined);
   const wide = mode === "wide";
+
+  const adjustments = useIncentiveAdjustments(trip.id);
+  const createAdjustment = useCreateIncentiveAdjustment();
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [deltaText, setDeltaText] = useState("");
+  const [adjustReason, setAdjustReason] = useState("");
+  const [adjustError, setAdjustError] = useState<string | null>(null);
+
+  const paidNow =
+    Number(trip.incentive_final ?? trip.incentive_earned ?? 0) +
+    (adjustments.data ?? []).reduce((sum, a) => sum + Number(a.delta), 0);
+
+  async function submitAdjustment() {
+    setAdjustError(null);
+    const delta = Number(deltaText);
+    if (!Number.isFinite(delta) || delta === 0) {
+      setAdjustError(t("admin.trips.adjustDeltaInvalid"));
+      return;
+    }
+    if (adjustReason.trim().length < 3) {
+      setAdjustError(t("admin.trips.adjustReasonRequired"));
+      return;
+    }
+    try {
+      await createAdjustment.mutateAsync({ tripId: trip.id, delta, reason: adjustReason.trim() });
+      setAdjustOpen(false);
+      setDeltaText("");
+      setAdjustReason("");
+    } catch (e) {
+      setAdjustError(apiErrorMessage(e));
+    }
+  }
+
   return (
     <View>
       <View style={{ backgroundColor: colors.greenTint, borderRadius: radius.md, padding: 14, marginBottom: 14, flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -1743,6 +1778,72 @@ function CompletedPanel({ trip }: { trip: Trip }) {
           <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.noBreakdown")}</Text>
         )}
       </View>
+
+      {/* Append-only pay correction (R6-2/R6-3, owner ruling 29 Aug 2026): the
+          approved figure above is write-once, so fixing a wrong payout is a
+          NEW line here, never an edit to it. Each row lands in the CURRENT
+          month's payroll, whatever month the trip itself was paid in. */}
+      <View style={{ marginTop: 16 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <Text style={{ fontSize: font.sm, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, color: colors.textMuted }}>
+            {t("admin.trips.adjustments")}
+          </Text>
+          <Button variant="ghost" size="sm" onPress={() => setAdjustOpen(true)}>
+            {t("admin.trips.adjustIncentive")}
+          </Button>
+        </View>
+        {adjustments.data && adjustments.data.length > 0 ? (
+          <View style={{ backgroundColor: colors.panel, borderRadius: radius.sm, paddingVertical: 10, paddingHorizontal: 12, gap: 8 }}>
+            {adjustments.data.map((a) => (
+              <View key={a.id} style={{ flexDirection: "row", justifyContent: "space-between", gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: font.sm, color: colors.text }}>{a.reason}</Text>
+                  <Text style={{ fontSize: font.xs, color: colors.textMuted }}>
+                    {formatDateTime(a.created_at)} · {a.creator?.name ?? "—"} · {t("admin.trips.effectiveMonth", { month: a.effective_month })}
+                  </Text>
+                </View>
+                <Text style={{ fontWeight: "700", fontSize: font.sm, color: Number(a.delta) >= 0 ? colors.green : colors.red }}>
+                  {Number(a.delta) >= 0 ? "+" : ""}
+                  {formatMoney(a.delta)}
+                </Text>
+              </View>
+            ))}
+            <View style={{ borderTopWidth: 1, borderTopColor: colors.border, marginTop: 3, paddingTop: 7, flexDirection: "row", justifyContent: "space-between", gap: 10 }}>
+              <Text style={{ flex: 1, fontSize: font.sm, fontWeight: "700", color: colors.text }}>{t("admin.trips.paidNow")}</Text>
+              <Text style={{ fontWeight: "800", color: colors.text, fontSize: font.sm }}>{formatMoney(paidNow)}</Text>
+            </View>
+          </View>
+        ) : (
+          <Text style={{ fontSize: font.sm, color: colors.textMuted }}>{t("admin.trips.noAdjustments")}</Text>
+        )}
+      </View>
+
+      <Modal open={adjustOpen} onClose={() => setAdjustOpen(false)} title={t("admin.trips.adjustIncentive")}>
+        <Input
+          label={t("admin.trips.adjustDeltaLabel")}
+          value={deltaText}
+          onChange={setDeltaText}
+          type="number"
+          placeholder={t("admin.trips.adjustDeltaPlaceholder")}
+        />
+        <Input
+          label={t("admin.trips.adjustReasonLabel")}
+          value={adjustReason}
+          onChange={setAdjustReason}
+          placeholder={t("admin.trips.adjustReasonPlaceholder")}
+        />
+        {adjustError ? (
+          <Text style={{ color: colors.red, fontSize: font.sm, marginBottom: 10 }}>{adjustError}</Text>
+        ) : null}
+        <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-end" }}>
+          <Button variant="ghost" size="sm" disabled={createAdjustment.isPending} onPress={() => setAdjustOpen(false)}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant="primary" size="sm" disabled={createAdjustment.isPending} onPress={submitAdjustment}>
+            {createAdjustment.isPending ? t("admin.trips.adjustSubmitting") : t("admin.trips.adjustSubmit")}
+          </Button>
+        </View>
+      </Modal>
     </View>
   );
 }
