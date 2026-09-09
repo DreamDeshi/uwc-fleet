@@ -1760,6 +1760,20 @@ function CompletedPanel({ trip }: { trip: Trip }) {
                 </Text>
               </View>
             ))}
+            {/* R5 A2 (IM10) — interplant pays in whole ROUND TRIPS: the day's
+                first leg scores points but is held for the return, so a
+                delivered stop can sit next to RM0. Without this line that
+                reads as the system losing the driver's money — same reason
+                the driver-side breakdown carries it. Renders only when
+                something was actually withheld. */}
+            {trip.round_trip_shortfall != null && trip.round_trip_shortfall > 0 ? (
+              <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 10 }}>
+                <Text style={{ flex: 1, fontSize: font.sm, color: colors.text }}>{t("admin.trips.roundTripHeld")}</Text>
+                <Text style={{ fontWeight: "700", fontSize: font.sm, color: colors.text }}>
+                  −{t("admin.trips.ptsAwarded", { count: trip.round_trip_shortfall })}
+                </Text>
+              </View>
+            ) : null}
             <View style={{ borderTopWidth: 1, borderTopColor: colors.border, marginTop: 3, paddingTop: 7, flexDirection: "row", justifyContent: "space-between", gap: 10 }}>
               <Text style={{ flex: 1, fontSize: font.sm, color: colors.textMuted }}>
                 {trip.rate_used != null

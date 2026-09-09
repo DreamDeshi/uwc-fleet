@@ -1594,6 +1594,7 @@
       "deductionApplied": "potongan harian −{{count}} mata",
       "deductionApplied_one": "potongan harian −{{count}} mata",
       "deductionApplied_other": "potongan harian −{{count}} mata",
+      "roundTripHeld": "Ditahan untuk perjalanan balik (dibayar bagi perjalanan pergi-balik)",
       "noBreakdown": "Pecahan tidak direkod (trip selesai sebelum sejarah bayaran per-hantaran disimpan).",
       "adjustments": "Pelarasan",
       "adjustIncentive": "Laraskan insentif",
