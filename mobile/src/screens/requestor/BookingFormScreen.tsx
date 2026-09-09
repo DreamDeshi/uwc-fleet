@@ -1686,24 +1686,29 @@ function StepWhat({
           <Text style={styles.cargoSizeHint}>{t("booking.cargoSizeFeetHint")}</Text>
           <View style={styles.palletList}>
             {PALLET_SIZES.map((size, i) => (
-              <View key={size} style={[styles.palletRow, i < PALLET_SIZES.length - 1 && styles.palletDivider]}>
-                <Text style={styles.palletSize}>{t("booking.cargoSizeRow", { size })}</Text>
-                {isInterplantBooking && palletQtys[i] > 0 ? (
-                  <PickupPlantButton
-                    value={palletPickups[i]}
-                    onChange={(id) => setPalletPickups((prev) => prev.map((v, idx) => (idx === i ? id : v)))}
-                    plants={plants}
-                  />
-                ) : null}
-                <View style={styles.stepper}>
-                  <TouchableOpacity style={styles.stepBtnMinus} onPress={() => updateQty(i, -1)}>
-                    <Text style={styles.stepBtnMinusText}>−</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.stepVal}>{palletQtys[i]}</Text>
-                  <TouchableOpacity style={styles.stepBtnPlus} onPress={() => updateQty(i, 1)}>
-                    <Text style={styles.stepBtnPlusText}>+</Text>
-                  </TouchableOpacity>
+              <View key={size} style={i < PALLET_SIZES.length - 1 && styles.palletDivider}>
+                <View style={styles.palletRow}>
+                  <Text style={styles.palletSize}>{t("booking.cargoSizeRow", { size })}</Text>
+                  <View style={styles.stepper}>
+                    <TouchableOpacity style={styles.stepBtnMinus} onPress={() => updateQty(i, -1)}>
+                      <Text style={styles.stepBtnMinusText}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.stepVal}>{palletQtys[i]}</Text>
+                    <TouchableOpacity style={styles.stepBtnPlus} onPress={() => updateQty(i, 1)}>
+                      <Text style={styles.stepBtnPlusText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
+                {isInterplantBooking && palletQtys[i] > 0 ? (
+                  <View style={styles.pickupPointRow}>
+                    <Text style={styles.pickupPointLabel}>{t("booking.pickupPointLabel")}</Text>
+                    <PickupPlantButton
+                      value={palletPickups[i]}
+                      onChange={(id) => setPalletPickups((prev) => prev.map((v, idx) => (idx === i ? id : v)))}
+                      plants={plants}
+                    />
+                  </View>
+                ) : null}
               </View>
             ))}
           </View>
@@ -1772,20 +1777,25 @@ function StepWhat({
       {cargoType === "box" && (
         <>
           <FieldLabel>{t("booking.numBoxes")}</FieldLabel>
-          <View style={[styles.palletRow, { backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md }]}>
-            <Text style={styles.palletSize}>{t("booking.box")}</Text>
-            {isInterplantBooking && boxQty > 0 ? (
-              <PickupPlantButton value={boxPickup} onChange={setBoxPickup} plants={plants} />
-            ) : null}
-            <View style={styles.stepper}>
-              <TouchableOpacity style={styles.stepBtnMinus} onPress={() => oncePerTap(() => setBoxQty((q) => Math.max(0, q - 1)))}>
-                <Text style={styles.stepBtnMinusText}>−</Text>
-              </TouchableOpacity>
-              <Text style={styles.stepVal}>{boxQty}</Text>
-              <TouchableOpacity style={styles.stepBtnPlus} onPress={() => oncePerTap(() => setBoxQty((q) => q + 1))}>
-                <Text style={styles.stepBtnPlusText}>+</Text>
-              </TouchableOpacity>
+          <View style={styles.cargoCard}>
+            <View style={styles.palletRow}>
+              <Text style={styles.palletSize}>{t("booking.box")}</Text>
+              <View style={styles.stepper}>
+                <TouchableOpacity style={styles.stepBtnMinus} onPress={() => oncePerTap(() => setBoxQty((q) => Math.max(0, q - 1)))}>
+                  <Text style={styles.stepBtnMinusText}>−</Text>
+                </TouchableOpacity>
+                <Text style={styles.stepVal}>{boxQty}</Text>
+                <TouchableOpacity style={styles.stepBtnPlus} onPress={() => oncePerTap(() => setBoxQty((q) => q + 1))}>
+                  <Text style={styles.stepBtnPlusText}>+</Text>
+                </TouchableOpacity>
+              </View>
             </View>
+            {isInterplantBooking && boxQty > 0 ? (
+              <View style={styles.pickupPointRow}>
+                <Text style={styles.pickupPointLabel}>{t("booking.pickupPointLabel")}</Text>
+                <PickupPlantButton value={boxPickup} onChange={setBoxPickup} plants={plants} />
+              </View>
+            ) : null}
           </View>
           <Text style={styles.estimateHint}>{t("booking.boxNoSpaceHint")}</Text>
         </>
@@ -1815,20 +1825,25 @@ function StepWhat({
             <Text style={styles.dimFt}>{t("booking.ft")}</Text>
           </View>
           <FieldLabel>{t("booking.quantity")}</FieldLabel>
-          <View style={[styles.palletRow, { backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md }]}>
-            <Text style={styles.palletSize}>{t(`booking.${cargoType}`)}</Text>
-            {isInterplantBooking && dimQty > 0 ? (
-              <PickupPlantButton value={dimPickup} onChange={setDimPickup} plants={plants} />
-            ) : null}
-            <View style={styles.stepper}>
-              <TouchableOpacity style={styles.stepBtnMinus} onPress={() => oncePerTap(() => setDimQty((q) => Math.max(1, q - 1)))}>
-                <Text style={styles.stepBtnMinusText}>−</Text>
-              </TouchableOpacity>
-              <Text style={styles.stepVal}>{dimQty}</Text>
-              <TouchableOpacity style={styles.stepBtnPlus} onPress={() => oncePerTap(() => setDimQty((q) => q + 1))}>
-                <Text style={styles.stepBtnPlusText}>+</Text>
-              </TouchableOpacity>
+          <View style={styles.cargoCard}>
+            <View style={styles.palletRow}>
+              <Text style={styles.palletSize}>{t(`booking.${cargoType}`)}</Text>
+              <View style={styles.stepper}>
+                <TouchableOpacity style={styles.stepBtnMinus} onPress={() => oncePerTap(() => setDimQty((q) => Math.max(1, q - 1)))}>
+                  <Text style={styles.stepBtnMinusText}>−</Text>
+                </TouchableOpacity>
+                <Text style={styles.stepVal}>{dimQty}</Text>
+                <TouchableOpacity style={styles.stepBtnPlus} onPress={() => oncePerTap(() => setDimQty((q) => q + 1))}>
+                  <Text style={styles.stepBtnPlusText}>+</Text>
+                </TouchableOpacity>
+              </View>
             </View>
+            {isInterplantBooking && dimQty > 0 ? (
+              <View style={styles.pickupPointRow}>
+                <Text style={styles.pickupPointLabel}>{t("booking.pickupPointLabel")}</Text>
+                <PickupPlantButton value={dimPickup} onChange={setDimPickup} plants={plants} />
+              </View>
+            ) : null}
           </View>
           {/* All three dimensioned types (rack since 27 Aug 2026, crate/custom
               since 9 Sep 2026) now size the truck like a pallet when their
@@ -2382,6 +2397,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.tintBlue,
   },
   pickupBtnText: { fontSize: 11, fontWeight: "700", color: colors.blue, flexShrink: 1 },
+  // Discoverability fix, 9 Sep 2026: Mr. Teh tested the picker and could not
+  // find it ("i cant find during booking") — it used to sit as a quiet pill
+  // squeezed between the size label and the stepper, with nothing telling the
+  // eye to look there. Now a labeled row of its own, same visual language as
+  // every other field on this screen (a caption above its control).
+  cargoCard: { backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, overflow: "hidden" },
+  pickupPointRow: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, gap: 6, borderTopWidth: 1, borderTopColor: colors.bg },
+  pickupPointLabel: { fontSize: 11, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
   pickupModalTitle: { fontSize: 16, fontWeight: "800", color: colors.navy, marginBottom: 12, textAlign: "center" },
   pickupOption: {
     flexDirection: "row",

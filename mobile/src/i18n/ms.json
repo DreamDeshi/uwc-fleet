@@ -468,6 +468,7 @@
     "cargoSizeFeetHint": "Saiz dalam kaki (lebar × panjang).",
     "cargoSizeRow": "{{size}} kaki",
     "pickupDefault": "Lokasi asal lalai",
+    "pickupPointLabel": "Lokasi ambilan",
     "pickupPlantTitle": "Ambil dari",
     "pickupSummary": "Diambil dari: {{list}}",
     "legacyCargoLabel": "Saiz lama (tidak lagi boleh dipilih)",
