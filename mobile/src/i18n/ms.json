@@ -152,6 +152,7 @@
     "stops": "Hentian",
     "stop": "Hentian {{n}}",
     "arrivedAtPickup": "Tiba di Lokasi Ambil",
+    "driveToPickup": "Pandu ke lokasi ambil",
     "markDelivered": "Telah Dihantar",
     "approxLocation": "Pin anggaran — kawasan {{zone}}, bukan bangunan tepat. Semak alamat.",
     "stopOrderHint": "Hantar ikut sebarang urutan. Susunan senarai hanya cadangan.",
