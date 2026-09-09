@@ -1928,12 +1928,16 @@ function StepWhen({
       {pickupLocation !== undefined && (
         <>
           <FieldLabel>{t("booking.pickupLocationLabel")}</FieldLabel>
+          {/* Single-line field — was styles.textarea (minHeight 90, built for
+              wrapped multi-line text), which left it nearly double the height
+              of Pickup Date/Time right above it for one line of text. Matches
+              slotField's compact sizing instead. */}
           <TextInput
             value={pickupLocation}
             onChangeText={setPickupLocation}
             placeholder={t("booking.pickupLocationPlaceholder")}
             placeholderTextColor={colors.textFaint}
-            style={styles.textarea}
+            style={styles.singleLineField}
             maxLength={200}
           />
           <Text style={styles.slotHint}>{t("booking.pickupLocationHint")}</Text>
@@ -1943,11 +1947,16 @@ function StepWhen({
       {cutoffReason !== null && cutoffReason !== undefined && (
         <>
           <FieldLabel>{t("booking.cutoffReasonLabel")}</FieldLabel>
+          {/* Unlike pickup_location, this one keeps the tall textarea — a
+              written reason genuinely warrants more than one line. It was
+              just missing `multiline`, so it could not actually wrap into
+              the space the box already gave it. */}
           <TextInput
             value={cutoffReason}
             onChangeText={setCutoffReason}
             placeholder={t("booking.cutoffReasonPlaceholder")}
             placeholderTextColor={colors.textFaint}
+            multiline
             style={styles.textarea}
             maxLength={200}
           />
@@ -2460,6 +2469,18 @@ const styles = StyleSheet.create({
   },
   slotValue: { flex: 1, fontSize: 15, fontWeight: "600", color: colors.navy },
   slotHint: { fontSize: 13, color: colors.textMuted, lineHeight: 18, marginTop: 8 },
+  // A single-line text entry the same height as slotField beside it —
+  // textarea's minHeight: 90 is for wrapped multi-line content only.
+  singleLineField: {
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    minHeight: 52,
+    fontSize: 15,
+    color: colors.navy,
+    backgroundColor: colors.white,
+  },
 
   confirmCard: { backgroundColor: colors.white, borderRadius: radius.md, padding: 14, marginBottom: 10, borderWidth: 1.5, borderColor: colors.borderLight },
   confirmHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8 },
