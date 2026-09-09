@@ -373,6 +373,23 @@ export const createTripSchema = z.object({
    * booking. Bounded like every other free-text field here.
    */
   cutoff_override_reason: z.string().trim().min(3).max(200).optional(),
+  // Free-text pickup location (Customer/Supplier "any place" per Mr. Teh's R1
+  // answer, 9 Sep 2026 request). Deliberately unrestricted — no format/enum
+  // check — display-only, never read by dispatch/rate logic.
+  //
+  // Three-way, not two: OMITTED (undefined) means "not proposed — preserve
+  // whatever the trip already has", same preserve-when-omitted convention as
+  // cargo_details on an edit. An explicit EMPTY string means "clear it back
+  // to the default origin" and becomes null. Collapsing both to one value
+  // would make the change-request flow (which never sends this field at all)
+  // silently WIPE an existing pickup location on every approval — see the
+  // summarizeTripChanges/PATCH-handler comments for the other half of this.
+  pickup_location: z
+    .string()
+    .trim()
+    .max(200)
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "" ? null : v)),
   stops: z
     .array(
       z.object({
@@ -390,8 +407,16 @@ router.post(
   validateBody(createTripSchema),
   async (req, res, next) => {
     try {
-      const { client_request_id, route_type_id, pickup_datetime, is_external, stops, cargo_details, cutoff_override_reason } =
-        req.body;
+      const {
+        client_request_id,
+        route_type_id,
+        pickup_datetime,
+        is_external,
+        stops,
+        cargo_details,
+        cutoff_override_reason,
+        pickup_location,
+      } = req.body;
 
       // ── DG-T7 idempotency, fast path ──────────────────────────────────────
       // The form reuses one key for every retry of the SAME booking, so a
@@ -520,6 +545,7 @@ router.post(
               requestor_id: req.user!.id,
               route_type_id,
               pickup_datetime,
+              pickup_location: pickup_location ?? null,
               is_external: is_external ?? false,
               stops: {
                 // Normalised to a contiguous, tie-free 1..N — the truck pick and
@@ -646,6 +672,7 @@ router.post(
 export const updateTripSchema = z.object({
   route_type_id: z.string().min(1),
   pickup_datetime: z.coerce.date(),
+  pickup_location: createTripSchema.shape.pickup_location,
   stops: createTripSchema.shape.stops,
   // Full/legacy vocabulary so a historical 1×1/1×2 line still PARSES on edit (the
   // create schema's BOOKABLE enum would 400 the whole update). Optional: when the
@@ -670,6 +697,7 @@ type UpdateTripInput = z.infer<typeof updateTripSchema>;
 export interface TripEditInput {
   route_type_id: string;
   pickup_datetime: Date;
+  pickup_location?: string | null;
   stops: { sequence?: number | null; consignee_id: string }[];
   cargo_details: {
     pallet_type: string;
@@ -722,6 +750,7 @@ export function deprecatedCargoViolations(
 export interface TripEditSnapshot {
   route_type_id: string;
   pickup_datetime: Date;
+  pickup_location?: string | null;
   stops: { sequence: number; consignee_id: string }[];
   cargo_details: {
     pallet_type: string;
@@ -749,6 +778,12 @@ export function summarizeTripChanges(existing: TripEditSnapshot, next: TripEditI
 
   if (existing.route_type_id !== next.route_type_id) changed.push("route type");
   if (existing.pickup_datetime.getTime() !== next.pickup_datetime.getTime()) changed.push("pickup time");
+  // undefined = omitted = "not proposed" (see the schema comment) — never
+  // compared, so a caller that doesn't send this field (the A19 change-request
+  // routes, today) can never register a spurious change here.
+  if (next.pickup_location !== undefined && (existing.pickup_location ?? null) !== next.pickup_location) {
+    changed.push("pickup location");
+  }
 
   const orderedConsignees = (stops: { sequence?: number | null; consignee_id: string }[]) =>
     stops
@@ -802,7 +837,7 @@ async function validateTripEdit(
   existing: Prisma.TripGetPayload<{ include: { stops: true; cargo_details: true } }>,
   input: UpdateTripInput
 ): Promise<{ effectiveCargo: TripEditInput["cargo_details"]; changeNote: string | null }> {
-  const { route_type_id, pickup_datetime, stops, cargo_details } = input;
+  const { route_type_id, pickup_datetime, pickup_location, stops, cargo_details } = input;
 
   // Cargo is OPTIONAL: when omitted, preserve the existing cargo unchanged
   // (resolved from the stored rows). When present, it replaces the cargo — but
@@ -892,6 +927,7 @@ async function validateTripEdit(
   const changeNote = summarizeTripChanges(existing, {
     route_type_id,
     pickup_datetime,
+    pickup_location,
     stops,
     cargo_details: effectiveCargo,
   });
@@ -905,7 +941,7 @@ router.patch(
   async (req, res, next) => {
     try {
       const { id } = req.params;
-      const { route_type_id, pickup_datetime, stops, cargo_details } = req.body as UpdateTripInput;
+      const { route_type_id, pickup_datetime, pickup_location, stops, cargo_details } = req.body as UpdateTripInput;
 
       const existing = await prisma.trip.findUnique({
         where: { id },
@@ -954,6 +990,7 @@ router.patch(
       const { effectiveCargo, changeNote } = await validateTripEdit(existing, {
         route_type_id,
         pickup_datetime,
+        pickup_location,
         stops,
         cargo_details,
       });
@@ -980,6 +1017,9 @@ router.patch(
           data: {
             route_type_id,
             pickup_datetime,
+            // Omitted = preserve (see schema comment) — only write when the
+            // requestor's edit form actually sent a value.
+            ...(pickup_location !== undefined ? { pickup_location } : {}),
             auto_dispatch_failed: false,
             auto_dispatch_note: null,
           },

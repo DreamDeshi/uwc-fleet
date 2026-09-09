@@ -211,6 +211,9 @@ export interface Trip {
   round_trip_shortfall?: number | null;
   is_external: boolean;
   rejection_reason?: string | null;
+  // Free-text pickup location for Customer/Supplier bookings. Display-only —
+  // null means the default origin (ORIGIN_LABEL, "UWC Batu Kawan").
+  pickup_location?: string | null;
   created_at: string;
   requestor?: { id: string; name: string; phone: string };
   driver?: { id: string; name: string; phone: string } | null;

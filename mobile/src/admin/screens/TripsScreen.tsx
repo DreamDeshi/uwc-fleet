@@ -944,7 +944,7 @@ function TripCard({
       <View style={{ marginBottom: 7 }}>
         <Text style={{ fontSize: 14.5, fontWeight: "700", color: colors.text, lineHeight: 18 }}>{tripDestination(trip)}</Text>
         <Text style={{ fontSize: font.sm, color: colors.textMuted, marginTop: 2 }}>
-          {t("admin.trips.fromOrigin", { origin: ORIGIN_LABEL })}
+          {t("admin.trips.fromOrigin", { origin: trip.pickup_location?.trim() || ORIGIN_LABEL })}
         </Text>
       </View>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -1002,7 +1002,7 @@ function TripDetail({ trip, onDone, onSchedule }: { trip: Trip; onDone: () => vo
           <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: colors.yellow }} />
         </View>
         <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
-          <Text style={{ color: "#fff", fontSize: font.sm }}>{ORIGIN_LABEL}</Text>
+          <Text style={{ color: "#fff", fontSize: font.sm }}>{trip.pickup_location?.trim() || ORIGIN_LABEL}</Text>
           <Text style={{ color: "#fff", fontSize: font.sm, fontWeight: "700" }}>{tripDestination(trip)}</Text>
         </View>
         <Text style={{ fontSize: font.xs, color: "rgba(255,255,255,0.8)", marginTop: 6 }}>
