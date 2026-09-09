@@ -365,6 +365,17 @@ export function ActiveTripScreen() {
       `https://www.google.com/maps/dir/?api=1&destination=${c.latitude},${c.longitude}&travelmode=driving`
     );
   };
+  // Customer/Supplier pickup can now be anywhere (free text, not just UWC —
+  // see mobile pickup_location). There is no stored coordinate for it, so
+  // this hands the TEXT ADDRESS to Google Maps as the destination query
+  // rather than lat/long — Maps geocodes it live, same as if the driver
+  // typed the address into Maps themselves. Only rendered when set.
+  const openMapsForPickup = () => {
+    if (!trip.pickup_location?.trim()) return;
+    Linking.openURL(
+      `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(trip.pickup_location.trim())}&travelmode=driving`
+    );
+  };
   const callConsignee = (s?: TripStop) => {
     if (s?.consignee?.phone) Linking.openURL(`tel:${s.consignee.phone}`);
   };
@@ -598,16 +609,33 @@ export function ActiveTripScreen() {
   const footer = (() => {
     if (!activeStop || stage === null) return null;
     if (stage === "arrived") {
+      const pickupText = trip.pickup_location?.trim();
       return {
         meta: t("trip.stepNOfTotal", { n: 1, total: 3 }),
         node: (
-          <Button
-            title={t("trip.arrivedAtPickup")}
-            onPress={() => onArrived(activeStop)}
-            loading={busy}
-            size="xl"
-            icon={<Ionicons name="location" size={24} color={colors.white} />}
-          />
+          <View style={{ gap: 10 }}>
+            {/* Only Customer/Supplier trips with a non-default pickup carry
+                this — Inter-Plant uses its own P1-P9 picker, and a plain UWC
+                pickup needs no card since the driver is already there. */}
+            {pickupText ? (
+              <View style={styles.pickupNoticeCard}>
+                <View style={styles.pickupNoticeRow}>
+                  <Ionicons name="business-outline" size={16} color={colors.blue} />
+                  <Text style={styles.pickupNoticeText} numberOfLines={2}>{pickupText}</Text>
+                </View>
+                <View style={styles.chipRow}>
+                  <Chip icon="navigate" label={t("trip.driveToPickup")} onPress={openMapsForPickup} grow />
+                </View>
+              </View>
+            ) : null}
+            <Button
+              title={t("trip.arrivedAtPickup")}
+              onPress={() => onArrived(activeStop)}
+              loading={busy}
+              size="xl"
+              icon={<Ionicons name="location" size={24} color={colors.white} />}
+            />
+          </View>
         ),
       };
     }
@@ -1375,6 +1403,10 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   mapsCtaText: { fontSize: typeScale.sm, fontWeight: "800", color: colors.blue },
+
+  pickupNoticeCard: { backgroundColor: colors.tintBlue, borderRadius: radius.md, padding: 12, gap: 4 },
+  pickupNoticeRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  pickupNoticeText: { flex: 1, fontSize: typeScale.sm, fontWeight: "700", color: colors.navy },
 
   chipRow: { flexDirection: "row", gap: 6, marginTop: 8 },
   chipRowWide: { flexDirection: "row", gap: 8, marginTop: 10 },
