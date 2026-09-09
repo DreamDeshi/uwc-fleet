@@ -16,20 +16,22 @@ import { userIdByPhone, bookTrip, approveTrip, startTrip, arriveAndDeliver, num 
  * which is the pre-A2 behaviour, twice the money, and unrecoverable after
  * approval (BL9).
  *
- * ⚠ MEASURED, by deleting `roundTripHalving: pool === "interplant"` from
- * tripFinalize and running both suites:
+ * ⚠ IM11 FIX (9 Sep 2026) changed the arithmetic itself — see incentiveEngine's
+ * `payable` comment. The halving no longer floors: every leg now pays exactly
+ * HALF its own points, immediately, regardless of pairing. Re-measured the same
+ * way the original numbers were: forcing `roundTripHalving: false` into the
+ * call in tripFinalize and running both suites —
  *
- *   tests/interplantRoundTrip.test.ts ....... 10 passed. Notices NOTHING.
- *   this file ............................... 3 of 3 RED.
- *
- *     "outbound leg PAID nothing" ...... expected 8 to be 0
- *     "return leg pays it ONCE" ........ expected 16 to be 8   ← day total
- *     "third leg waits for its pair" ... expected 8 to be 0
- *
- * ⚠ The middle one is red only because of its DAY-TOTAL assertion. Its per-leg
- * line (`incentive === rate`) passes unwired too, since one unhalved leg also
- * pays exactly one rate — identical numbers, opposite rules. That line is
- * scaffolding; the day total is the test.
+ *   tests/interplantRoundTrip.test.ts ....... 13 passed. Notices NOTHING.
+ *   this file ............................... 3 of 3 RED, every one
+ *                                              "expected 8 to be 4" — the
+ *                                              unhalved off-peak rate (8) where
+ *                                              half of it (4) was expected. The
+ *                                              exact numbers move with the rate
+ *                                              in effect when the suite runs;
+ *                                              what does not move is that all
+ *                                              three fail the instant the flag
+ *                                              is unwired.
  *
  * ⚠ And `resetDb` in beforeAll is load-bearing for all three. Without it these
  * read a ledger carrying whatever a previous run left behind, and the first
@@ -80,7 +82,9 @@ async function runOneLeg(): Promise<{
     incentive: num(row.incentive_earned),
     rate: num(row.rate_used),
     points: row.stops.reduce((sum, s) => sum + (s.points_awarded ?? 0), 0),
-    shortfall: row.round_trip_shortfall,
+    // DECIMAL column (IM11) — null still means "not recorded", so this can't
+    // use `num()` (Number(null) === 0, which would erase that distinction).
+    shortfall: row.round_trip_shortfall === null ? null : num(row.round_trip_shortfall),
   };
 }
 
@@ -105,41 +109,41 @@ describe("interplant round trips — what the driver is actually paid", () => {
     interplantRt = await interplantRouteTypeId(requestor);
   });
 
-  it("the outbound leg SCORES a point and is PAID nothing", async () => {
+  it("a lone leg SCORES a point and is PAID half — not nothing (IM11)", async () => {
     const leg = await runOneLeg();
     // The point is real and recorded — this is not "the leg didn't count".
     expect(leg.points).toBe(1);
-    // But a single leg is half a round trip, and half a round trip pays nothing.
-    expect(leg.incentive).toBe(0);
-    // ⚠ IM10: and the WHY is now on the row. Without this the driver's
-    // breakdown shows a delivered stop worth 1 point above a total of RM0 and
-    // nothing to explain the gap. `1`, not null — null means "not recorded".
-    expect(leg.shortfall).toBe(1);
-  });
-
-  it("the return leg pays the whole round trip, ONCE across the two legs", async () => {
-    const back = await runOneLeg();
-    expect(back.points).toBe(1);
-    // floor(2/2) = 1 round trip × the interplant rate. Reading the rate from the
+    // Half a round trip now pays half, not zero. Reading the rate from the
     // trip's own snapshot rather than hard-coding RM6 keeps this correct when
     // the run lands after 18:00 MYT (CI runners are UTC — a fifth of the day).
-    expect(back.incentive).toBe(back.rate);
-    expect([6, 8]).toContain(back.rate); // interplant pay (A3), never PND's own RM11/13
-
-    // ⚠ THIS is the assertion that discriminates. The line above passes with the
-    // rule unwired too, because one unhalved leg also pays exactly one rate. Two
-    // legs paying one rate BETWEEN them is what only the halving produces.
-    expect(await paidToday()).toBe(back.rate);
-    // The leg that PAID withheld nothing — 0, recorded, so the breakdown grows
-    // no "held back" line on it.
-    expect(back.shortfall).toBe(0);
+    expect(leg.incentive).toBe(leg.rate * 0.5);
+    expect([6, 8]).toContain(leg.rate); // interplant pay (A3), never PND's own RM11/13
+    // ⚠ IM10/IM11: and the WHY is now on the row, as a HALF-point, not a whole
+    // one — the gap between points scored and points paid is only half now.
+    expect(leg.shortfall).toBe(0.5);
   });
 
-  it("a third leg waits for its pair — the day stays at whole round trips", async () => {
-    const third = await runOneLeg();
-    expect(third.incentive).toBe(0);
+  it("the return leg: BOTH legs pay half, evenly — not zero-then-full", async () => {
+    const back = await runOneLeg();
+    expect(back.points).toBe(1);
+    // Unlike before IM11, the SECOND leg does not pick up the whole pair —
+    // it pays exactly the same half-rate the first leg did.
+    expect(back.incentive).toBe(back.rate * 0.5);
+    expect(back.shortfall).toBe(0.5); // every leg carries a standing half, always
 
-    // The day, read back as a whole: 3 legs, 3 points scored, 1 round trip paid.
-    expect(await paidToday()).toBe(third.rate * Math.floor(3 / 2));
+    // ⚠ THIS is the assertion that discriminates. It passes with the rule
+    // unwired too if read alone (one unhalved leg also pays exactly one rate),
+    // but the DAY TOTAL is what only the halving produces: two halves summing
+    // to exactly one round trip, split evenly across the two bookings.
+    expect(await paidToday()).toBe(back.rate);
+  });
+
+  it("a third leg pays half too, same as the other two — nothing 'waits' any more", async () => {
+    const third = await runOneLeg();
+    expect(third.incentive).toBe(third.rate * 0.5);
+
+    // The day, read back as a whole: 3 legs, 3 points scored, 1.5 round trips
+    // paid (was 1, floored, before IM11 — the third leg no longer sits idle).
+    expect(await paidToday()).toBe(third.rate * 1.5);
   });
 });

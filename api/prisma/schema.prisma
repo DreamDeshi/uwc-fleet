@@ -408,27 +408,32 @@ model Trip {
   rate_used                 Decimal?       @db.Decimal(10, 2) // RM/point actually paid
   off_peak                  Boolean? // which tier picked rate_used
   deduction_applied         Int? // deduction points actually subtracted (may be < the truck's figure when floored at 0)
-  // R5 A2 (IM10) — points this trip SCORED but was not PAID for, because the
-  // day's interplant legs do not yet make up whole round trips. The engine has
-  // always computed it (`roundTripShortfall`); it had nowhere to be stored, and
-  // that gap cost twice over:
-  //   • the driver's pay breakdown renders only from finalize evidence, so the
-  //     day's first interplant leg reads RM0 against a delivered stop with no
-  //     line explaining it — the first place in this system where completed work
-  //     legitimately earns nothing;
+  // R5 A2 (IM10/IM11) — points this trip SCORED but was not paid at the FULL
+  // rate, because interplant pays per round trip and this leg's own points
+  // didn't complete one on their own. The engine has always computed it
+  // (`roundTripShortfall`); it had nowhere to be stored, and that gap cost
+  // twice over:
+  //   • the driver's pay breakdown renders only from finalize evidence, so a
+  //     delivered stop could show a payout with no line explaining the gap
+  //     between points scored and points paid;
   //   • A4 (last-trip OT) recovers a trip's PAID points as
   //     Σ points_awarded − deduction_applied, which OVERSTATES an interplant
   //     trip by exactly this figure, forcing it onto the money-quotient
   //     fallback. With this column the stored-points path covers interplant too.
-  // 0 on every customer/supplier trip and on any interplant trip that completes
-  // its pair. NULL means NOT RECORDED (finalized before this column existed) —
-  // deliberately distinguishable from a recorded zero, and never backfilled: no
-  // interplant trip has ever been finalized in production, so there is nothing
-  // to reconstruct and a guessed value would be indistinguishable from a
-  // measured one. Kept OUT of deduction_applied: interplant is the one work type
-  // with no deduction, so folding them would print a deduction the client says
-  // does not exist.
-  round_trip_shortfall      Int?
+  // 0 on every customer/supplier trip and on any interplant trip whose points
+  // divided evenly into round trips. NULL means NOT RECORDED (finalized before
+  // this column existed) — deliberately distinguishable from a recorded zero,
+  // and never backfilled: no interplant trip has ever been finalized in
+  // production, so there is nothing to reconstruct and a guessed value would
+  // be indistinguishable from a measured one. Kept OUT of deduction_applied:
+  // interplant is the one work type with no deduction, so folding them would
+  // print a deduction the client says does not exist.
+  //
+  // DECIMAL, not Int (widened 9 Sep 2026, IM11 fix): the halving rule pays
+  // points / 2 with no floor, so a lone/unpaired leg's shortfall is a genuine
+  // half-point (0.5), not a whole one. Safe to widen with no data migration —
+  // this column has never held a non-null value in production (see above).
+  round_trip_shortfall      Decimal?       @db.Decimal(10, 2)
   // POD-approval gate (Mr. Teh 16 Jul 2026): `incentive_earned` above is the
   // engine's PROPOSAL, computed and frozen when the last stop is delivered (the
   // trip then sits `pending_approval`). At admin approval `incentive_final` is

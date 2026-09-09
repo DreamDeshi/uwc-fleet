@@ -1766,11 +1766,14 @@ function CompletedPanel({ trip }: { trip: Trip }) {
                 reads as the system losing the driver's money — same reason
                 the driver-side breakdown carries it. Renders only when
                 something was actually withheld. */}
-            {trip.round_trip_shortfall != null && trip.round_trip_shortfall > 0 ? (
+            {/* Decimal on the wire since IM11 (9 Sep 2026) — Prisma serialises it as
+                a STRING ("0.50"), not a number, so it's coerced once here rather
+                than compared/interpolated raw. */}
+            {trip.round_trip_shortfall != null && Number(trip.round_trip_shortfall) > 0 ? (
               <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 10 }}>
                 <Text style={{ flex: 1, fontSize: font.sm, color: colors.text }}>{t("admin.trips.roundTripHeld")}</Text>
                 <Text style={{ fontWeight: "700", fontSize: font.sm, color: colors.text }}>
-                  −{t("admin.trips.ptsAwarded", { count: trip.round_trip_shortfall })}
+                  −{t("admin.trips.ptsAwarded", { count: Number(trip.round_trip_shortfall) })}
                 </Text>
               </View>
             ) : null}

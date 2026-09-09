@@ -10,9 +10,20 @@ import { calculateDeliveryIncentive } from "../src/services/incentiveEngine";
  *    pay only for 9 points (18 divide by 2), if the interplant point is 17point
  *    for whole days, then he will only entitle for 8 points"
  *
- * So: the DAY's interplant points ÷ 2, FLOORED. 17 → 8, not 8.5 and not 9 — the
- * odd leg is an incomplete round trip and earns nothing yet. Counting at day
- * level is what removes the Delivery-to-Return pairing problem entirely.
+ * So: the DAY's interplant points ÷ 2. Counting at day level is what removes
+ * the Delivery-to-Return pairing problem entirely.
+ *
+ * ⚠ IM11 FIX (owner decision, 9 Sep 2026) — NO LONGER FLOORED. Teh's literal
+ * arithmetic floors an odd leftover to nothing (17 → 8), which is exactly what
+ * let a round trip split by the MYT day boundary pay ZERO on both sides — a
+ * genuinely completed round trip earning nothing, with no way to recover it.
+ * The fix removes the floor (points / 2, not floor(points / 2)): a KNOWN,
+ * ACCEPTED deviation from his exact numbers (17 → 8.5, not 8), made because a
+ * lone leg's worst case is now half rate, never zero. See the `payable`
+ * comment in incentiveEngine.ts for the full reasoning, including why this
+ * also makes the midnight straddle stop being a special case at all — the
+ * formula is now linear, so every leg's marginal pay is exactly half its own
+ * points, independent of pairing, order, or which day it lands in.
  *
  * The interplant rate pair and the separate interplant day ledger are
  * interplantRate.test.ts's subject. This file is only about the halving.
@@ -54,35 +65,33 @@ const interplant = (params: { drops: ReturnType<typeof legs>; priorPointsToday: 
     roundTripHalving: true,
   });
 
-describe("R5 A2 — his own two numbers", () => {
-  it("18 points in a day pays 9", () => {
+describe("R5 A2 — his own two numbers (one now deviates, deliberately — see IM11)", () => {
+  it("18 points in a day pays 9 — even split, unaffected by the IM11 fix", () => {
     const res = interplant({ drops: legs(18), priorPointsToday: 0 });
     expect(res.pointsThisTrip).toBe(18);
     expect(res.incentiveThisTrip).toBe(9 * 6);
     expect(res.roundTripShortfall).toBe(9);
   });
 
-  it("17 points in a day pays 8 — FLOOR, because the odd leg is an incomplete round trip", () => {
+  it("17 points in a day pays 8.5, not 8 — the floor was removed (IM11)", () => {
     const res = interplant({ drops: legs(17), priorPointsToday: 0 });
     expect(res.pointsThisTrip).toBe(17);
-    expect(res.incentiveThisTrip).toBe(8 * 6);
-    // Not 8.5 × 6 = RM51, and not 9 × 6 = RM54.
-    expect(res.incentiveThisTrip).not.toBe(8.5 * 6);
-    expect(res.roundTripShortfall).toBe(9);
+    // Was 8 × 6 = RM48 (floored). Now 8.5 × 6 = RM51 — the odd leg earns half,
+    // not nothing. Teh's own example said 8; this is the accepted deviation.
+    expect(res.incentiveThisTrip).toBe(8.5 * 6);
+    expect(res.incentiveThisTrip).not.toBe(8 * 6);
+    expect(res.roundTripShortfall).toBe(8.5);
   });
 });
 
 /**
- * THE HALVING IS A DAY RULE, NOT A TRIP RULE — and it has to telescope, because
- * each leg is its own booking that finalizes on its own. Same shape as the daily
- * deduction: this group's pay = floor(dayTotal WITH it / 2) − floor(dayTotal
- * BEFORE it / 2), so the day's legs sum to floor(dayTotal / 2) however they are
- * split across trips.
- *
- * ⚠ The consequence, stated because it will be the first support question: the
- * day's FIRST leg pays RM0 and the pay lands on the second. That is the rule.
+ * THE HALVING IS NOW A PURE LINEAR RULE — no telescoping state needed. Each
+ * leg's marginal pay is exactly half of its own scored points, full stop,
+ * regardless of what came before it that day. (Before the IM11 fix, the floor
+ * made this order-dependent: the day's first leg paid RM0 and the second
+ * picked up the full pair. That asymmetry is gone.)
  */
-describe("R5 A2 — one leg per booking, telescoping across the day", () => {
+describe("R5 A2 — one leg per booking: every leg pays exactly half, independent of order", () => {
   const dayOf = (legCount: number) => {
     const paid: number[] = [];
     for (let i = 0; i < legCount; i++) {
@@ -91,19 +100,19 @@ describe("R5 A2 — one leg per booking, telescoping across the day", () => {
     return paid;
   };
 
-  it("the outbound leg earns nothing and the return leg earns the round trip", () => {
-    expect(dayOf(2)).toEqual([0, 6]);
+  it("two legs: BOTH pay half the round trip, not zero-then-full", () => {
+    expect(dayOf(2)).toEqual([3, 3]);
   });
 
-  it("a lone leg with no return earns nothing at all", () => {
-    expect(dayOf(1)).toEqual([0]);
+  it("a lone leg with no return earns HALF, not nothing — the IM11 fix itself", () => {
+    expect(dayOf(1)).toEqual([3]);
   });
 
-  it("three legs pay one round trip — the third waits for its pair", () => {
-    expect(dayOf(3)).toEqual([0, 6, 0]);
+  it("three legs: every leg pays the same half-rate, none of them 'waits'", () => {
+    expect(dayOf(3)).toEqual([3, 3, 3]);
   });
 
-  it("every split of the same day sums to the same money", () => {
+  it("every split of the same day sums to the same money, and now splits evenly too", () => {
     const total = (paid: number[]) => paid.reduce((a, b) => a + b, 0);
     // Six legs, taken as six bookings…
     expect(total(dayOf(6))).toBe(3 * 6);
@@ -113,9 +122,10 @@ describe("R5 A2 — one leg per booking, telescoping across the day", () => {
     const first = interplant({ drops: legs(3), priorPointsToday: 0 });
     const second = interplant({ drops: legs(3), priorPointsToday: 3 });
     expect(first.incentiveThisTrip + second.incentiveThisTrip).toBe(3 * 6);
-    // The pay lands unevenly (1 round trip then 2), which is correct: it is the
-    // DAY that is halved, and the split between bookings is arbitrary.
-    expect([first.incentiveThisTrip, second.incentiveThisTrip]).toEqual([6, 12]);
+    // Unlike the old floored rule (which paid [6, 12] — uneven, order-dependent),
+    // the linear formula pays each booking exactly half its own points: even,
+    // and independent of how the day is split into bookings.
+    expect([first.incentiveThisTrip, second.incentiveThisTrip]).toEqual([9, 9]);
   });
 });
 
@@ -144,7 +154,7 @@ describe("R5 A2 — customer/supplier work is not halved", () => {
     expect(res.deductionApplied).toBe(2);
   });
 
-  it("an odd point total is paid in full, not floored to an even one", () => {
+  it("an odd point total is paid in full, not halved to a fractional one", () => {
     const res = customer([{ zoneCode: "K1", zonePoints: 3 }]);
     expect(res.incentiveThisTrip).toBe((3 - 2) * 11);
   });
@@ -172,33 +182,32 @@ describe("R5 A2 — deduction and halving compose in one order", () => {
     });
 
   it("deducts from the day total FIRST, then halves the remainder", () => {
-    // 7 points, deduction 2 → 5 survive → floor(5/2) = 2 round trips.
+    // 7 points, deduction 2 → 5 survive → 5 / 2 = 2.5 round trips (no floor).
     const res = both(legs(7), 2);
-    expect(res.incentiveThisTrip).toBe(2 * 6);
-    // Halving the 7 first would give 3 − 2 = 1 round trip = RM6. It does not.
-    expect(res.incentiveThisTrip).not.toBe(6);
+    expect(res.incentiveThisTrip).toBe(2.5 * 6);
+    // Halving the 7 first would give 3.5 − 2 = 1.5 round trips = RM9. It does not.
+    expect(res.incentiveThisTrip).not.toBe(1.5 * 6);
   });
 
   it("reports the two withholdings separately, never as one number", () => {
     const res = both(legs(7), 2);
-    // 7 scored → 2 taken by the deduction → 5 survive → 2 round trips PAID and
-    // 3 points held back by the halving. The two withholdings must not be
+    // 7 scored → 2 taken by the deduction → 5 survive → 2.5 round trips PAID
+    // and 2.5 points held back by the halving. The two withholdings must not be
     // summed into one field: interplant is the work with NO deduction, so a
     // `deduction_applied` of 5 on an interplant trip would be a printed
     // contradiction of the client's own rule.
     expect(res.deductionApplied).toBe(2);
-    expect(res.roundTripShortfall).toBe(3);
-    expect(res.pointsThisTrip - res.deductionApplied - res.roundTripShortfall).toBe(2 * 1);
+    expect(res.roundTripShortfall).toBe(2.5);
+    expect(res.pointsThisTrip - res.deductionApplied - res.roundTripShortfall).toBe(2.5);
   });
 });
 
 /**
- * ⚠ THE MIDNIGHT STRADDLE — A COMPLETED ROUND TRIP THAT PAYS NOTHING.
- *
- * This is a REAL, REACHABLE hole, pinned here rather than fixed. Halving the DAY
- * means a round trip split by the day boundary earns floor(1/2) on each side:
- * zero, twice, for work the client's rule was written to reward. There is no
- * carry-forward — an unpaired leg is lost when its day closes.
+ * ⚠ THE MIDNIGHT STRADDLE — WAS "A COMPLETED ROUND TRIP THAT PAYS NOTHING",
+ * NOW FIXED (IM11, 9 Sep 2026). This used to be a known, deliberately
+ * unresolved hole (git blame this file for the original version). Removing
+ * the floor fixes it as a side effect, without adding any pairing logic: the
+ * formula no longer cares which day either leg landed in.
  *
  * Reachable two ways, neither exotic:
  *   1. the Return leg is BOOKED for the next morning. Send Monday evening,
@@ -206,39 +215,33 @@ describe("R5 A2 — deduction and halving compose in one order", () => {
  *      its own day's operating window, so no rule is broken.
  *   2. ONE booking whose two stops straddle midnight, which the engine already
  *      splits into two delivery-day groups of one point each.
- *
- * Batu Kawan plant runs are short, so (1) is the likely route in and it needs
- * only a requestor booking the return for the next morning.
- *
- * NOT FIXED, deliberately: every repair pairs legs across a day boundary, and
- * pairing is exactly what counting at day level removed ("18points for that
- * day"). Picking a pairing rule now would invent an answer to a question
- * Mr. Teh was never asked. Logged as an open item; these tests exist so the
- * next reader finds it here instead of in a driver's complaint.
  */
-describe("⚠ R5 A2 — a round trip split by midnight pays NOTHING (known, unresolved)", () => {
-  it("pays zero on BOTH sides of the boundary for one completed round trip", () => {
+describe("R5 A2 — a round trip split by midnight now pays half on both sides (IM11 fixed)", () => {
+  it("pays half on BOTH sides of the boundary, not zero", () => {
     // Monday's ledger and Tuesday's ledger each start empty: priorPointsToday is
-    // bounded by the MYT day, so neither leg can ever see the other.
+    // bounded by the MYT day, so neither leg can ever see the other — and it no
+    // longer needs to, since each leg's pay depends only on its own points.
     const monday = interplant({ drops: legs(1), priorPointsToday: 0 });
     const tuesday = interplant({ drops: legs(1), priorPointsToday: 0 });
 
-    expect(monday.incentiveThisTrip).toBe(0);
-    expect(tuesday.incentiveThisTrip).toBe(0);
-    // The same two legs delivered before midnight would have paid one round trip.
-    expect(interplant({ drops: legs(1), priorPointsToday: 1 }).incentiveThisTrip).toBe(6);
+    expect(monday.incentiveThisTrip).toBe(3);
+    expect(tuesday.incentiveThisTrip).toBe(3);
+    // A same-day pair pays the SAME per leg — 3 + 3 = 6, one round trip's
+    // worth, split evenly instead of 0-then-6.
+    expect(interplant({ drops: legs(1), priorPointsToday: 1 }).incentiveThisTrip).toBe(3);
   });
 
-  it("scores both points and pays for neither — the work is recorded, the pay is not", () => {
+  it("scores the point and pays half for it — not fully withheld any more", () => {
     const monday = interplant({ drops: legs(1), priorPointsToday: 0 });
     expect(monday.pointsThisTrip).toBe(1); // the leg happened and is on the record
-    expect(monday.roundTripShortfall).toBe(1); // and all of it was withheld
+    expect(monday.roundTripShortfall).toBe(0.5); // half withheld, not all of it
   });
 
-  it("loses the odd leg permanently — nothing carries into the next day", () => {
-    // Monday: 3 legs -> 1 round trip paid, 1 leg orphaned.
-    expect(interplant({ drops: legs(3), priorPointsToday: 0 }).incentiveThisTrip).toBe(6);
-    // Tuesday starts from zero. Monday's orphan does not join Tuesday's first leg.
-    expect(interplant({ drops: legs(1), priorPointsToday: 0 }).incentiveThisTrip).toBe(0);
+  it("nothing is lost across the day boundary any more — each side pays independently", () => {
+    // Monday: 3 legs -> each pays half, same as any other day (no more "the
+    // third waits for its pair" — there is no pairing state left to wait on).
+    expect(interplant({ drops: legs(3), priorPointsToday: 0 }).incentiveThisTrip).toBe(1.5 * 6);
+    // Tuesday starts from zero and pays its own lone leg half, same as Monday's did.
+    expect(interplant({ drops: legs(1), priorPointsToday: 0 }).incentiveThisTrip).toBe(3);
   });
 });
