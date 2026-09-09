@@ -245,6 +245,9 @@ export interface Trip {
   deduction_applied?: number | null;
   is_external: boolean;
   rejection_reason: string | null;
+  // Free-text pickup location for Customer/Supplier bookings. Display-only —
+  // null means the default origin (ORIGIN_LABEL, "UWC Batu Kawan").
+  pickup_location?: string | null;
   // Phase 2: true when auto-dispatch couldn't place this booking. Self-clearing.
   // "Needs attention" UI shows for (status === "pending" && auto_dispatch_failed).
   auto_dispatch_failed: boolean;

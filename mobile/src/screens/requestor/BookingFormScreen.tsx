@@ -244,6 +244,9 @@ export function BookingFormScreen() {
   const [palletPickups, setPalletPickups] = useState<(string | undefined)[]>(() => PALLET_SIZES.map(() => undefined));
   const [boxPickup, setBoxPickup] = useState<string | undefined>(undefined);
   const [dimPickup, setDimPickup] = useState<string | undefined>(undefined);
+  // Free-text pickup location (Customer/Supplier only — Inter-Plant keeps its
+  // own P1-P9 picker above). Empty = today's default origin (ORIGIN_LABEL).
+  const [pickupLocation, setPickupLocation] = useState("");
   // Deprecated (1×1/1×2) lines carried in from a historical booking on edit. They
   // are NOT selectable/editable via the steppers — kept read-only and re-appended
   // verbatim on save so an unrelated edit can never silently drop them. Removal is
@@ -532,6 +535,7 @@ export function BookingFormScreen() {
     setPalletPickups(pickups);
     setBoxQty(box?.quantity ?? 0);
     setBoxPickup(box?.pickup_consignee_id ?? undefined);
+    setPickupLocation(tr.pickup_location ?? "");
     if (dimLine) {
       setDimType(dimLine.pallet_type as "crate" | "rack" | "custom");
       setDimW(dimLine.width_ft != null ? String(dimLine.width_ft) : "");
@@ -731,6 +735,11 @@ export function BookingFormScreen() {
         // ignores it otherwise and records nothing, so this can never become a
         // way to attach free text to an ordinary booking.
         ...(needsCutoffReason ? { cutoff_override_reason: cutoffReason.trim() } : {}),
+        // Customer/Supplier only (Inter-Plant has its own P1-P9 picker), and
+        // deliberately OMITTED on a change-request proposal — the server reads
+        // an omitted field as "not proposed, preserve the existing value", so
+        // this can never silently wipe an assigned trip's pickup location.
+        ...(!isChangeRequest && !isInterplantBooking ? { pickup_location: pickupLocation.trim() } : {}),
       };
 
       if (isChangeRequest && editTripId) {
@@ -905,6 +914,8 @@ export function BookingFormScreen() {
           setRemarks={setRemarks}
           cutoffReason={needsCutoffReason ? cutoffReason : null}
           setCutoffReason={setCutoffReason}
+          pickupLocation={!isInterplantBooking ? pickupLocation : undefined}
+          setPickupLocation={setPickupLocation}
         />
       )}
       {step === 3 && (
@@ -921,6 +932,7 @@ export function BookingFormScreen() {
           uploadingDoc={uploadDoc.isPending}
           canSaveTemplate={canSaveTemplate && !isEdit}
           onSaveTemplate={() => setTemplateSaveOpen(true)}
+          pickupLocation={!isInterplantBooking ? pickupLocation : undefined}
         />
       )}
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -1848,6 +1860,8 @@ function StepWhen({
   setRemarks,
   cutoffReason,
   setCutoffReason,
+  pickupLocation,
+  setPickupLocation,
 }: {
   pickupDate: Date;
   onPickPickup: () => void;
@@ -1860,6 +1874,10 @@ function StepWhen({
    *  the box does not exist on the ordinary booking path at all. */
   cutoffReason?: string | null;
   setCutoffReason?: (v: string) => void;
+  /** Customer/Supplier free-text pickup location. Undefined on an Inter-Plant
+   *  booking, which has its own P1-P9 picker and no use for this field. */
+  pickupLocation?: string;
+  setPickupLocation?: (v: string) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -1891,6 +1909,21 @@ function StepWhen({
             <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
           </TouchableOpacity>
           <Text style={styles.slotHint}>{t("booking.fleetHoursHint")}</Text>
+        </>
+      )}
+
+      {pickupLocation !== undefined && (
+        <>
+          <FieldLabel>{t("booking.pickupLocationLabel")}</FieldLabel>
+          <TextInput
+            value={pickupLocation}
+            onChangeText={setPickupLocation}
+            placeholder={t("booking.pickupLocationPlaceholder")}
+            placeholderTextColor={colors.textFaint}
+            style={styles.textarea}
+            maxLength={200}
+          />
+          <Text style={styles.slotHint}>{t("booking.pickupLocationHint")}</Text>
         </>
       )}
 
@@ -1936,6 +1969,7 @@ function StepConfirm({
   uploadingDoc,
   canSaveTemplate,
   onSaveTemplate,
+  pickupLocation,
 }: {
   routeTypeName?: string;
   stops: Consignee[];
@@ -1950,6 +1984,9 @@ function StepConfirm({
   uploadingDoc: boolean;
   canSaveTemplate: boolean;
   onSaveTemplate: () => void;
+  /** Customer/Supplier free-text pickup location, or undefined on Inter-Plant
+   *  (which shows pickupSummary instead) or when left blank. */
+  pickupLocation?: string;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -2040,7 +2077,7 @@ function StepConfirm({
           <View style={{ flex: 1 }}>
             <Text style={styles.confirmLineMain}>{formatTime(pickupDate)}</Text>
             <Text style={styles.confirmLineSub}>
-              {formatDate(pickupDate)} · {ORIGIN_LABEL}
+              {formatDate(pickupDate)} · {pickupLocation?.trim() || ORIGIN_LABEL}
             </Text>
           </View>
         </View>

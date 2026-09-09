@@ -486,6 +486,18 @@ model Trip {
   // requestor's (guessed or replayed) key return ANOTHER requestor's booking.
   // Composite means a replay can only ever return your own trip.
   client_request_id         String?
+  // Free-text pickup location for Customer/Supplier bookings (Mr. Teh, 9 Sep
+  // 2026: "let them pick any location, same like we arrange to customer" —
+  // his own R1 answer already said customer/supplier pickup "can be any
+  // place", unlike Inter-Plant which is fenced to the nine UWC plants via
+  // CargoDetail.pickup_consignee_id). Deliberately a single free-text field,
+  // not a picker or a new consignee row: no fixed list exists to pick from.
+  // Display-only — NEVER read by zone/rate/dispatch logic, which keys off the
+  // DESTINATION stops, not pickup. Null = today's single hardcoded origin
+  // (ORIGIN_LABEL, "UWC Batu Kawan"), so every existing trip renders exactly
+  // as before. Not wired into the A19 change-request flow — that is a
+  // separate surface, deliberately left for its own pass.
+  pickup_location            String?
   // Failed-delivery / exception workflow (Phase 1, feature-flagged). A trip's
   // exception state is DERIVED, not stored: Trip.status stays `in_progress` while
   // an exception is open. `open_exception_id` is a CACHE/pointer (cheap "has an

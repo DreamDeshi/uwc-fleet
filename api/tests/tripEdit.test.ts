@@ -18,6 +18,7 @@ import {
 const existing: TripEditSnapshot = {
   route_type_id: "rt1",
   pickup_datetime: new Date("2026-07-20T02:00:00.000Z"),
+  pickup_location: "Supplier Site A",
   stops: [
     { sequence: 1, consignee_id: "c1" },
     { sequence: 2, consignee_id: "c2" },
@@ -74,6 +75,28 @@ describe("updateTripSchema", () => {
   it("PARSES an existing deprecated 1×1/1×2 cargo line (legacy edit compatibility)", () => {
     expect(updateTripSchema.safeParse({ ...sameInput, cargo_details: [{ pallet_type: "1×1", quantity: 2 }] }).success).toBe(true);
     expect(updateTripSchema.safeParse({ ...sameInput, cargo_details: [{ pallet_type: "1x2", quantity: 1 }] }).success).toBe(true); // ASCII
+  });
+
+  it("parses a pickup_location string, trimmed", () => {
+    const r = updateTripSchema.safeParse({ ...sameInput, pickup_location: "  Supplier Site A  " });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.pickup_location).toBe("Supplier Site A");
+  });
+
+  it("an explicit empty pickup_location becomes null (clear back to the default origin)", () => {
+    const r = updateTripSchema.safeParse({ ...sameInput, pickup_location: "" });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.pickup_location).toBeNull();
+  });
+
+  it("an OMITTED pickup_location stays undefined (preserve — see the A19 tests below)", () => {
+    const r = updateTripSchema.safeParse(sameInput);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.pickup_location).toBeUndefined();
+  });
+
+  it("rejects a pickup_location over 200 characters", () => {
+    expect(updateTripSchema.safeParse({ ...sameInput, pickup_location: "x".repeat(201) }).success).toBe(false);
   });
 
   it("accepts an OMITTED cargo_details (handler preserves existing cargo unchanged)", () => {
@@ -203,6 +226,34 @@ describe("summarizeTripChanges", () => {
         { pallet_type: "4×4", quantity: 2, cartons: undefined, custom_size: undefined, remark: "fragile" },
       ],
     });
+    expect(r).toBeNull();
+  });
+
+  // ⚠ THE A19 SAFETY TEST. The change-request routes (POST .../change-request
+  // and its approval) never send pickup_location at all — reuse the SAME
+  // updateTripSchema/validateTripEdit path as a direct edit, so if "omitted"
+  // were ever treated as "clear it", every change-request approval would
+  // silently wipe an assigned trip's pickup location. Proven by reverting the
+  // `next.pickup_location !== undefined` guard in summarizeTripChanges: this
+  // test goes from null to "pickup location" the moment that guard is removed.
+  it("an OMITTED pickup_location is never treated as a change, even though the trip has one set", () => {
+    expect("pickup_location" in sameInput).toBe(false); // sanity: sameInput really omits it
+    const r = summarizeTripChanges(existing, sameInput);
+    expect(r).toBeNull();
+  });
+
+  it("reports an explicit new pickup_location as changed", () => {
+    const r = summarizeTripChanges(existing, { ...sameInput, pickup_location: "Supplier Site B" });
+    expect(r).toBe("pickup location");
+  });
+
+  it("reports an explicit clear (null) of an existing pickup_location as changed", () => {
+    const r = summarizeTripChanges(existing, { ...sameInput, pickup_location: null });
+    expect(r).toBe("pickup location");
+  });
+
+  it("does not flag re-submitting the SAME pickup_location", () => {
+    const r = summarizeTripChanges(existing, { ...sameInput, pickup_location: "Supplier Site A" });
     expect(r).toBeNull();
   });
 
