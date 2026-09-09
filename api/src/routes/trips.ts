@@ -399,6 +399,14 @@ export const createTripSchema = z.object({
     )
     .min(1, "At least one stop is required."),
   cargo_details: z.array(cargoLineSchema(BOOKABLE_CARGO_TYPES)).min(1, "At least one cargo line is required."),
+  // Admin booking on a requestor's behalf (the office takes a phone-in order,
+  // say). Ignored for a requestor caller — a requestor can only ever book as
+  // themselves. Without this the trip silently attributed to the ADMIN's own
+  // account (BL6, found 17 Aug 2026 rebuilding the SDG demo: five admin-placed
+  // bookings left the real requestor's own list empty, `GET /trips` returning
+  // 0) — the trip existed and dispatched correctly, but the person it was
+  // booked for had no way to see it in the app at all.
+  requestor_id: z.string().min(1).optional(),
 });
 
 router.post(
@@ -416,7 +424,24 @@ router.post(
         cargo_details,
         cutoff_override_reason,
         pickup_location,
+        requestor_id: requestedRequestorId,
       } = req.body;
+
+      // BL6 — an admin booking on someone else's behalf. Ignored for a
+      // requestor caller (self only, never spoofable). Validated against a
+      // real, active requestor rather than trusted blind, since this is the
+      // one place a caller can name an id that is not their own.
+      let requestorId = req.user!.id;
+      if (req.user!.role === "admin" && requestedRequestorId) {
+        const targetRequestor = await prisma.user.findUnique({
+          where: { id: requestedRequestorId },
+          select: { id: true, role: true },
+        });
+        if (!targetRequestor || targetRequestor.role !== "requestor") {
+          throw new ApiError(400, "REQUESTOR_NOT_FOUND", "Requestor does not exist.");
+        }
+        requestorId = targetRequestor.id;
+      }
 
       // ── DG-T7 idempotency, fast path ──────────────────────────────────────
       // The form reuses one key for every retry of the SAME booking, so a
@@ -429,7 +454,7 @@ router.post(
       // below is what actually closes the concurrent race.
       if (client_request_id) {
         const existing = await prisma.trip.findFirst({
-          where: { requestor_id: req.user!.id, client_request_id },
+          where: { requestor_id: requestorId, client_request_id },
           include: tripInclude,
         });
         if (existing) {
@@ -542,7 +567,7 @@ router.post(
             data: {
               ticket_number,
               client_request_id,
-              requestor_id: req.user!.id,
+              requestor_id: requestorId,
               route_type_id,
               pickup_datetime,
               pickup_location: pickup_location ?? null,
@@ -575,7 +600,7 @@ router.post(
           // retry, preserving the existing behaviour exactly.
           if (client_request_id && isUniqueViolationOnField(err, "client_request_id")) {
             const winner = await prisma.trip.findFirst({
-              where: { requestor_id: req.user!.id, client_request_id },
+              where: { requestor_id: requestorId, client_request_id },
               include: tripInclude,
             });
             if (winner) {
