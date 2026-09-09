@@ -64,20 +64,25 @@ describe("Q10 — Box / Crate / Rack / structured Custom cargo", () => {
     expect(after.status).toBe("assigned");
   });
 
-  it("Crate: structured dimensions stored + canonical W × L ft; ALWAYS manual (unchanged)", async () => {
+  it("Crate: structured dimensions stored + canonical W × L ft; SIZED and auto-dispatches (owner directive, 9 Sep 2026)", async () => {
+    // Crate joined rack's 27 Aug 2026 treatment on 9 Sep 2026 ("make the
+    // system as flexible as possible") — same area ÷ 16 rule, so this no
+    // longer forces manual assignment.
     const trip = await book([{ pallet_type: "crate", quantity: 1, width_ft: 4, length_ft: 3 }]);
     const rows = await cargoOf(trip.id);
     const crate = rows.find((r) => r.pallet_type === "crate")!;
     expect(crate.width_ft).toBe(4);
     expect(crate.length_ft).toBe(3);
     expect(crate.custom_size).toBe("4 × 3 ft");
-    expect((await autoDispatch(admin, trip.id)).status).toBe(409);
+    const res = await autoDispatch(admin, trip.id);
+    expect(res.status).toBe(200);
+    const after = (await prisma.trip.findUnique({ where: { id: trip.id } }))!;
+    expect(after.status).toBe("assigned");
   });
 
   it("Rack: structured dimensions stored + canonical W × L ft; SIZED and auto-dispatches (owner ruling, 27 Aug 2026)", async () => {
-    // Unlike crate, a rack's dims now convert to a real capacity number (area
-    // ÷ 16, same as a pallet) — "auto assign work with those have dimension
-    // pallet or rack" — so this no longer forces manual assignment.
+    // A rack's dims convert to a real capacity number (area ÷ 16, same as a
+    // pallet) — "auto assign work with those have dimension pallet or rack".
     const trip = await book([{ pallet_type: "rack", quantity: 2, width_ft: 5, length_ft: 5 }]);
     const rows = await cargoOf(trip.id);
     const rack = rows.find((r) => r.pallet_type === "rack")!;
@@ -90,12 +95,15 @@ describe("Q10 — Box / Crate / Rack / structured Custom cargo", () => {
     expect(after.status).toBe("assigned");
   });
 
-  it("a Crate mixed with a sized Rack still forces manual — one always-manual line is enough", async () => {
+  it("a Crate mixed with a sized Rack auto-dispatches — both are sized the same way now", async () => {
     const trip = await book([
       { pallet_type: "rack", quantity: 1, width_ft: 4, length_ft: 4 },
       { pallet_type: "crate", quantity: 1, width_ft: 3, length_ft: 3 },
     ]);
-    expect((await autoDispatch(admin, trip.id)).status).toBe(409);
+    const res = await autoDispatch(admin, trip.id);
+    expect(res.status).toBe(200);
+    const after = (await prisma.trip.findUnique({ where: { id: trip.id } }))!;
+    expect(after.status).toBe("assigned");
   });
 
   it("Custom: structured width × length required + validated; free-text rejected on a NEW booking", async () => {
@@ -109,6 +117,14 @@ describe("Q10 — Box / Crate / Rack / structured Custom cargo", () => {
     const [row] = await cargoOf(trip.id);
     expect(row.width_ft).toBe(6.5);
     expect(row.custom_size).toBe("6.5 × 4 ft");
+  });
+
+  it("Custom: SIZED and auto-dispatches when dims are valid (owner directive, 9 Sep 2026)", async () => {
+    const trip = await book([{ pallet_type: "custom", quantity: 1, width_ft: 4, length_ft: 4 }]);
+    const res = await autoDispatch(admin, trip.id);
+    expect(res.status).toBe(200);
+    const after = (await prisma.trip.findUnique({ where: { id: trip.id } }))!;
+    expect(after.status).toBe("assigned");
   });
 
   it("edit round-trip: changing crate dimensions updates the stored + canonical values", async () => {
@@ -151,6 +167,11 @@ describe("Q10 — Box / Crate / Rack / structured Custom cargo", () => {
     const [row] = await cargoOf(t.id);
     expect(row.custom_size).toBe("irregular steel frame"); // preserved verbatim
     expect(row.width_ft).toBeNull();
+
+    // The sizing change is scoped to VALID dims. A legacy free-text custom
+    // row (no width_ft/length_ft) still has no capacity number to give it, so
+    // it still forces manual — no estimate exists on this row either.
+    expect((await autoDispatch(admin, t.id)).status).toBe(409);
   });
 
   it("mixed payload preserves every line: standard pallet + Box + Crate + structured Custom", async () => {

@@ -32,23 +32,25 @@ export const UNSIZED_CARGO_TYPES = ["carton", "custom"] as const;
 export const NONPALLET_CARGO_TYPES = ["carton", "custom", "box", "crate", "rack"] as const;
 
 /** Q10: cargo types carrying structured dimensions (width_ft × length_ft, feet).
- *  Rack's dims now feed the capacity calculation (see DIMENSION_SIZED_TYPES);
- *  crate/custom's dims remain display-only. Mirrors the API. */
+ *  All three now feed the capacity calculation when dims are valid (see
+ *  DIMENSION_SIZED_TYPES). Mirrors the API. */
 export const DIMENSIONED_CARGO_TYPES = ["crate", "rack", "custom"] as const;
 
 /**
- * Rack-only (owner ruling, 27 Aug 2026): the ONE dimensioned type whose
- * width_ft × length_ft is a real capacity number, area ÷ 16 like a pallet —
- * see `dimensionedEquivalent`. Crate/custom stay out on purpose; mirrors the API.
+ * Every DIMENSIONED_CARGO_TYPES member: width_ft × length_ft is a real
+ * capacity number, area ÷ 16 like a pallet — see `dimensionedEquivalent`.
+ * Rack got this 27 Aug 2026; crate/custom joined 9 Sep 2026 (owner directive
+ * — "make the system as flexible as possible"). Mirrors the API.
  */
-export const DIMENSION_SIZED_TYPES = ["rack"] as const;
+export const DIMENSION_SIZED_TYPES = ["rack", "crate", "custom"] as const;
 
 /** Q10: cargo types that ALWAYS route to manual admin assignment regardless of
- *  dimensions or an estimate — crate/custom have no authoritative auto-dispatch
- *  rule. `box` and `rack` are excluded as of 27 Aug 2026: box needs no truck
- *  space, rack is sized via DIMENSION_SIZED_TYPES. carton is excluded (legacy
- *  estimate-sized dispatch preserved). Mirrors the API. */
-export const ALWAYS_MANUAL_TYPES = ["crate", "custom"] as const;
+ *  dimensions or an estimate. Empty as of 9 Sep 2026 — crate/custom (the last
+ *  members) are now sized via DIMENSION_SIZED_TYPES when dims are valid, same
+ *  as rack (which left 27 Aug 2026). `box` needs no truck space; `carton` was
+ *  never a member. Kept as the extension point for a future truly-unsizeable
+ *  type. Mirrors the API. */
+export const ALWAYS_MANUAL_TYPES = [] as const;
 export function isAlwaysManualType(palletType: string): boolean {
   return (ALWAYS_MANUAL_TYPES as readonly string[]).includes(palletType);
 }
@@ -56,9 +58,10 @@ export function isDimensionedType(palletType: string): boolean {
   return (DIMENSIONED_CARGO_TYPES as readonly string[]).includes(palletType);
 }
 
-/** A dimensioned line's 4×4-equivalent for DIMENSION_SIZED_TYPES (rack only) —
- *  area ÷ 16, from width_ft × length_ft rather than a name lookup. `null` when
- *  the type isn't sized this way, or dims are missing/invalid. Mirrors the API. */
+/** A dimensioned line's 4×4-equivalent for DIMENSION_SIZED_TYPES (rack, crate,
+ *  custom) — area ÷ 16, from width_ft × length_ft rather than a name lookup.
+ *  `null` when the type isn't sized this way, or dims are missing/invalid.
+ *  Mirrors the API. */
 export function dimensionedEquivalent(c: {
   pallet_type: string;
   width_ft?: number | null;
@@ -232,10 +235,11 @@ export interface CargoLine {
  * Total 4×4-pallet-equivalent load for a set of cargo lines. Rounded to 4 dp —
  * every factor is area ÷ 16, so the finest is 1/16 = 0.0625 and 3 dp would
  * round it to 0.063. Must match the server's rounding exactly or the form's
- * warning disagrees with the server's capacity verdict. For a carton/custom
- * line the requestor's estimate (if given) IS the line's equivalent; without
- * one it contributes 0. A DIMENSION_SIZED_TYPES line (rack) contributes its own
- * area÷16 equivalent, checked first — mirrors the API.
+ * warning disagrees with the server's capacity verdict. For a carton/custom-
+ * without-dims line the requestor's estimate (if given) IS the line's
+ * equivalent; without one it contributes 0. A DIMENSION_SIZED_TYPES line
+ * (rack, crate, custom-with-dims) contributes its own area÷16 equivalent,
+ * checked first — mirrors the API.
  */
 export function palletEquivalents(cargo: CargoLine[]): number {
   const total = cargo.reduce((sum, c) => {
